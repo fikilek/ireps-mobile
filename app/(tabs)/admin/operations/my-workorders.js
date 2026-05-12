@@ -680,6 +680,7 @@ function WorkItemCard({ item, deciding, onAccept, onReject, onExecute }) {
           icon="map-marker-outline"
           label="Address"
           value={item.address}
+          fullWidth={true}
         />
         <InfoLine icon="home-city-outline" label="ERF No" value={item.erfNo} />
         <InfoLine
@@ -786,10 +787,11 @@ function WorkItemCard({ item, deciding, onAccept, onReject, onExecute }) {
   );
 }
 
-function InfoLine({ icon, label, value }) {
+function InfoLine({ icon, label, value, fullWidth = false }) {
   return (
-    <View style={styles.infoLine}>
+    <View style={[styles.infoLine, fullWidth && styles.infoLineFull]}>
       <MaterialCommunityIcons name={icon} size={15} color="#64748b" />
+
       <View style={styles.infoLineMain}>
         <Text style={styles.infoLabel}>{label}</Text>
         <Text style={styles.infoValue}>{value || "NAv"}</Text>
@@ -1106,42 +1108,97 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900",
   },
+
   filterRow: {
     paddingHorizontal: 12,
-    paddingBottom: 9,
-    gap: 8,
+    paddingTop: 2,
+    paddingBottom: 4,
+    gap: 6,
   },
+
   filterChip: {
-    height: 34,
-    borderRadius: 17,
-    paddingHorizontal: 11,
+    minHeight: 28,
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     backgroundColor: "#ffffff",
     borderWidth: 1,
     borderColor: "#e2e8f0",
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 5,
   },
+
   filterChipActive: {
     backgroundColor: "#0f172a",
     borderColor: "#0f172a",
   },
+
   filterChipText: {
     color: "#475569",
-    fontSize: 11,
-    fontWeight: "900",
-  },
-  filterChipTextActive: {
-    color: "#ffffff",
-  },
-  filterCountText: {
-    color: "#94a3b8",
     fontSize: 10,
     fontWeight: "900",
   },
-  filterCountTextActive: {
-    color: "#cbd5e1",
+
+  filterChipTextActive: {
+    color: "#ffffff",
   },
+
+  filterCountText: {
+    minWidth: 18,
+    minHeight: 18,
+    borderRadius: 9,
+    overflow: "hidden",
+    backgroundColor: "#f1f5f9",
+    color: "#64748b",
+    fontSize: 9,
+    fontWeight: "900",
+    textAlign: "center",
+    paddingHorizontal: 4,
+    paddingTop: 2,
+  },
+
+  filterCountTextActive: {
+    backgroundColor: "#334155",
+    color: "#e2e8f0",
+  },
+
+  // filterRow: {
+  //   paddingHorizontal: 12,
+  //   paddingBottom: 9,
+  //   gap: 8,
+  // },
+  // filterChip: {
+  //   height: 34,
+  //   borderRadius: 17,
+  //   paddingHorizontal: 11,
+  //   backgroundColor: "#ffffff",
+  //   borderWidth: 1,
+  //   borderColor: "#e2e8f0",
+  //   flexDirection: "row",
+  //   alignItems: "center",
+  //   gap: 6,
+  // },
+  // filterChipActive: {
+  //   backgroundColor: "#0f172a",
+  //   borderColor: "#0f172a",
+  // },
+  // filterChipText: {
+  //   color: "#475569",
+  //   fontSize: 11,
+  //   fontWeight: "900",
+  // },
+  // filterChipTextActive: {
+  //   color: "#ffffff",
+  // },
+  // filterCountText: {
+  //   color: "#94a3b8",
+  //   fontSize: 10,
+  //   fontWeight: "900",
+  // },
+  // filterCountTextActive: {
+  //   color: "#cbd5e1",
+  // },
   workCard: {
     backgroundColor: "#ffffff",
     borderRadius: 17,
@@ -1198,14 +1255,26 @@ const styles = StyleSheet.create({
   badgeMuted: { backgroundColor: "#f1f5f9" },
   badgeMutedText: { color: "#475569" },
   infoGrid: {
-    gap: 7,
-  },
-  infoLine: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-    paddingBottom: 6,
+  },
+
+  infoLine: {
+    width: "48%",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+  },
+
+  infoLineFull: {
+    width: "100%",
   },
   infoLineMain: {
     flex: 1,

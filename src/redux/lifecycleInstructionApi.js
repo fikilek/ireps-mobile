@@ -407,6 +407,29 @@ function isMncSupervisor({ actor, serviceProviders = [] }) {
   return serviceProviderLooksMnc(actorSp || {});
 }
 
+function isSubcSupervisor({ actor, serviceProviders = [] }) {
+  if (normalizeUpper(actor?.role) !== "SPV") return false;
+
+  const actorSp = serviceProviders.find((sp) => sp?.id === actor?.spId) || null;
+  if (!actorSp) return false;
+
+  const parentMncId = getParentMncId(actorSp);
+
+  return Boolean(parentMncId) && !serviceProviderLooksMnc(actorSp);
+}
+
+function isFieldExecutionActor({ actor, serviceProviders = [] }) {
+  const role = normalizeUpper(actor?.role);
+
+  if (role === "FWR") return true;
+
+  if (role === "SPV") {
+    return isSubcSupervisor({ actor, serviceProviders });
+  }
+
+  return false;
+}
+
 function isManagerScopeActor({ actor, serviceProviders = [] }) {
   const role = normalizeUpper(actor?.role);
   return (
@@ -546,19 +569,36 @@ function buildDecision(trn = {}) {
   };
 }
 
-function normalizeWmsWorkItem({ trn, actor, teamMap, managerCanSee }) {
+function normalizeWmsWorkItem({
+  trn,
+  actor,
+  teamMap,
+  managerCanSee,
+  serviceProviders = [],
+}) {
   const trnType = getTrnType(trn);
   const workflowState = getWorkflowState(trn);
   const typeMeta = getTrnTypeMeta(trnType);
   const scopeBucket = getScopeBucket({ trn, actor, teamMap, managerCanSee });
   const decision = buildDecision(trn);
   const targets = getAssignmentTargets(trn);
-  const isFwr = normalizeUpper(actor?.role) === "FWR";
+
+  const isFieldExecutor = isFieldExecutionActor({
+    actor,
+    serviceProviders,
+  });
+
   const canFieldAct = ["MY_WORK", "TEAM_WORK", "SP_WORK"].includes(scopeBucket);
+
   const canAcceptReject =
-    isFwr && canFieldAct && ["ISSUED", "REASSIGNED"].includes(workflowState);
+    isFieldExecutor &&
+    canFieldAct &&
+    ["ISSUED", "REASSIGNED"].includes(workflowState);
+
   const canExecute =
-    isFwr && canFieldAct && ["ACCEPTED", "IN_PROGRESS"].includes(workflowState);
+    isFieldExecutor &&
+    canFieldAct &&
+    ["ACCEPTED", "IN_PROGRESS"].includes(workflowState);
 
   return {
     id: trn?.id || "NAv",
@@ -672,7 +712,14 @@ function buildWmsData({ trns = [], teams = [], serviceProviders = [], actor }) {
     .map((trn) => {
       const managerCanSee =
         isManager && isInManagementScope({ trn, allowedSpIds });
-      return normalizeWmsWorkItem({ trn, actor, teamMap, managerCanSee });
+
+      return normalizeWmsWorkItem({
+        trn,
+        actor,
+        teamMap,
+        managerCanSee,
+        serviceProviders,
+      });
     })
     .filter((item) => item.scopeBucket !== "HIDDEN")
     .sort(
