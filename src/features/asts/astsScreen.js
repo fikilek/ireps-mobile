@@ -1,16 +1,24 @@
 import { FlashList } from "@shopify/flash-list";
+import { useMemo } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { useWarehouse } from "../../context/WarehouseContext";
+import { useAstFilter } from "../../hooks/useAstFilter";
 import AstItem from "./astItem";
+import { filterAsts } from "./filterAsts";
 
 export default function AstsScreen() {
-  // console.log("AstsScreen --mounting");
-
   const { filtered, sync, loading } = useWarehouse();
-  // console.log(`AstsScreen -- filtered`, filtered);
+  const { filterState, isFiltering } = useAstFilter();
 
-  const asts = filtered?.meters || [];
+  const baseAsts = useMemo(() => {
+    return filtered?.meters || [];
+  }, [filtered?.meters]);
+
+  const asts = useMemo(() => {
+    return filterAsts(baseAsts, filterState);
+  }, [baseAsts, filterState]);
+
   const scopeSync = sync?.scope || {};
 
   const isLoading = loading;
@@ -40,12 +48,16 @@ export default function AstsScreen() {
       <FlashList
         data={asts}
         renderItem={({ item }) => <AstItem item={item} />}
-        keyExtractor={(item) => item?.id}
+        keyExtractor={(item) => item?.id || item?.trnId}
         estimatedItemSize={120}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 }}
         ListEmptyComponent={
           <View style={[styles.center, { paddingTop: 40 }]}>
-            <Text style={styles.loadingText}>No meters in this ward.</Text>
+            <Text style={styles.loadingText}>
+              {isFiltering
+                ? "No meters match the current filters."
+                : "No meters in this ward."}
+            </Text>
           </View>
         }
       />
@@ -66,6 +78,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#64748B",
     fontWeight: "600",
+    textAlign: "center",
   },
   errorText: {
     marginTop: 12,

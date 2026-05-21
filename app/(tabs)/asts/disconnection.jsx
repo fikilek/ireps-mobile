@@ -54,6 +54,8 @@ const EMPTY_SELECT_WITH_OTHER = {
   otherText: "",
 };
 
+const DCN_SUBMIT_TIMEOUT_MS = 15000; // TEST ONLY - restore to 15000 after MMKV reconciliation test
+
 const EXECUTION_MEDIA_TAGS = [
   "disconnectionLevelEvidence",
   "disconnectionMeterReadingEvidence",
@@ -1243,12 +1245,18 @@ export default function FormMeterDisconnection() {
   const disconnectionInstructionLookup = useIrepsLookupOptions(
     "METER_DISCONNECTION_INSTRUCTION",
   );
+  console.log(
+    `disconnnection --disconnectionInstructionLookup`,
+    disconnectionInstructionLookup,
+  );
 
   const levelLookup = useIrepsLookupOptions("METER_DISCONNECTION_LEVEL");
+  console.log(`disconnnection --levelLookup`, levelLookup);
 
   const noReadingReasonLookup = useIrepsLookupOptions(
     "METER_NO_READING_REASON",
   );
+  console.log(`disconnnection --noReadingReasonLookup`, noReadingReasonLookup);
 
   function buildTrnSystemFields() {
     return {
@@ -1711,7 +1719,7 @@ export default function FormMeterDisconnection() {
       try {
         const callableResult = await withSubmitTimeout(
           onMeterLifecycleTrnCallable(cleanPayload),
-          15000,
+          DCN_SUBMIT_TIMEOUT_MS,
         );
 
         result = callableResult?.data || {};
@@ -1756,48 +1764,6 @@ export default function FormMeterDisconnection() {
 
       router.replace("/admin/operations/my-workorders");
       return;
-
-      // if (queueItemId) {
-      //   await removeSubmissionQueueItem(queueItemId);
-      // }
-
-      // setInProgress(false);
-
-      // if (isNoAccess(values)) {
-      //   setSubmitOutcome({
-      //     visible: true,
-      //     type: "noAccess",
-      //     title: "DCN COMPLETED - NO ACCESS",
-      //     message: buildDisconnectionFailureMessage(values, result),
-      //     goBackOnContinue: true,
-      //   });
-
-      //   return;
-      // }
-
-      // if (
-      //   result?.astStatusChanged === true &&
-      //   result?.astStatusAfter === "DISCONNECTED"
-      // ) {
-      //   setSubmitOutcome({
-      //     visible: true,
-      //     type: "success",
-      //     title: "METER DISCONNECTED",
-      //     message:
-      //       "The DCN was submitted and the meter was moved to DISCONNECTED.",
-      //     goBackOnContinue: true,
-      //   });
-
-      //   return;
-      // }
-
-      // setSubmitOutcome({
-      //   visible: true,
-      //   type: "disconnectionFailed",
-      //   title: "DCN COMPLETED",
-      //   message: buildDisconnectionFailureMessage(values, result),
-      //   goBackOnContinue: true,
-      // });
     } catch (error) {
       console.error("Disconnection Submission Error:", error);
       Alert.alert("Error", error?.message || "Submission failed");

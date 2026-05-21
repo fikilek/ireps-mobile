@@ -37,32 +37,20 @@ export default function OperationsHub() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.grid}>
           <OpCard
+            title="WMS Dashboard"
+            subtitle="Ward workorder control cockpit"
+            icon="view-dashboard-outline"
+            color="#1d4ed8"
+            disabled={isNavigating}
+            onPress={() => handleNavigate("/admin/operations/dashboard")}
+          />
+          <OpCard
             title="Operational Teams"
             subtitle="Personnel deployment & allocation"
             icon="account-group"
             color="#2563eb"
             disabled={isNavigating}
             onPress={() => handleNavigate("/admin/operations/teams")}
-          />
-
-          <OpCard
-            title="Revenue Analytics"
-            subtitle="Analysis of LM prepaid revenues"
-            icon="currency-usd"
-            color="#0891b2"
-            disabled={isNavigating}
-            onPress={() =>
-              handleNavigate("/admin/operations/revenue-analytics")
-            }
-          />
-
-          <OpCard
-            title="Geo-Fencing"
-            subtitle="Geospatial work jurisdictions"
-            icon="vector-polygon"
-            color="#8b5cf6"
-            disabled={isNavigating}
-            onPress={() => handleNavigate("/admin/operations/geo-fences")}
           />
 
           <OpCard
@@ -75,12 +63,32 @@ export default function OperationsHub() {
           />
 
           <OpCard
+            title="Geo-Fencing"
+            subtitle="Geospatial work jurisdictions"
+            icon="vector-polygon"
+            color="#8b5cf6"
+            disabled={isNavigating}
+            onPress={() => handleNavigate("/admin/operations/geo-fences")}
+          />
+
+          <OpCard
             title="Field Analytics"
             subtitle="Deployment performance"
             icon="trending-up"
             color="#ea580c"
             disabled={isNavigating}
             onPress={() => handleNavigate("/admin/operations/field-analytics")}
+          />
+
+          <OpCard
+            title="Revenue Analytics"
+            subtitle="Analysis of LM prepaid revenues"
+            icon="currency-usd"
+            color="#0891b2"
+            disabled={isNavigating}
+            onPress={() =>
+              handleNavigate("/admin/operations/revenue-analytics")
+            }
           />
 
           <OpCard

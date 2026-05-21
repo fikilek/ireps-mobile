@@ -20,6 +20,15 @@ export function IrepsNoAccessSection({
 }) {
   const noAccessReasonLookup = useIrepsLookupOptions("METER_NO_ACCESS_REASON");
 
+  // console.log("IrepsNoAccessSection -- METER_NO_ACCESS_REASON", {
+  //   optionsCount: noAccessReasonLookup?.options?.length,
+  //   options: noAccessReasonLookup?.options,
+  //   allowOther: noAccessReasonLookup?.allowOther,
+  //   isLoading: noAccessReasonLookup?.isLoading,
+  //   isFetching: noAccessReasonLookup?.isFetching,
+  //   error: noAccessReasonLookup?.error,
+  // });
+
   if (!visible) return null;
 
   return (

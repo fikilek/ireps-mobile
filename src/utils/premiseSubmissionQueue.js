@@ -263,15 +263,33 @@ export const markPremiseQueueItemFailed = async (
   updatedByUid = "SYSTEM",
   updatedByUser = "SYSTEM",
 ) => {
+  const existingItem = await getPremiseQueueItemById(id);
+
+  console.log("markPremiseQueueItemFailed -- keeping item PENDING", {
+    id,
+    previousStatus: existingItem?.status,
+    code: result?.code || "FAILED",
+    message:
+      result?.message || "Sync failed. This draft remains pending for retry.",
+    premiseId: result?.premiseId || "NAv",
+    result,
+  });
+
   return await updatePremiseQueueItem(
     id,
     {
-      status: "FAILED",
+      status: "PENDING",
       result: {
         success: false,
         code: result?.code || "FAILED",
-        message: result?.message || "Sync failed",
+        message:
+          result?.message ||
+          "Sync failed. This draft remains pending for retry.",
         premiseId: result?.premiseId || "NAv",
+      },
+      sync: {
+        ...(existingItem?.sync || {}),
+        nextRetryAt: "NAv",
       },
     },
     updatedByUid,

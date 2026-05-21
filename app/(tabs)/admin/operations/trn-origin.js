@@ -52,6 +52,11 @@ const LCT_TYPES = {
     title: "Meter Removal",
     prefix: "TRN_MREM",
   },
+  METER_READING: {
+    short: "MREAD",
+    title: "Meter Reading",
+    prefix: "TRN_MREAD",
+  },
 };
 
 const INSTRUCTION_LOOKUP_KEYS = {
@@ -59,6 +64,7 @@ const INSTRUCTION_LOOKUP_KEYS = {
   METER_DISCONNECTION: "METER_DISCONNECTION_INSTRUCTION",
   METER_RECONNECTION: "METER_RECONNECTION_INSTRUCTION",
   METER_REMOVAL: "METER_REMOVAL_INSTRUCTION",
+  METER_READING: "METER_READING_INSTRUCTION",
 };
 
 function normalizeUpper(value) {
@@ -248,6 +254,16 @@ function getMeterType(asset) {
 
 function getStatus(asset) {
   return asset?.status?.state || "NAv";
+}
+
+function isLifecycleInstructionEligible({ trnType, asset }) {
+  const status = normalizeUpper(getStatus(asset));
+
+  if (trnType === "METER_INSPECTION") {
+    return ["FIELD", "CONNECTED", "DISCONNECTED", "REMOVED"].includes(status);
+  }
+
+  return true;
 }
 
 function getWardPcode(asset, geoState) {
@@ -629,9 +645,14 @@ export default function TrnOriginScreen() {
   const astId = getAstId(asset, params);
   const premiseId = getPremiseId(asset, params);
   const busy = creating || submitting;
+  const isEligibleLifecycleInstruction = isLifecycleInstructionEligible({
+    trnType,
+    asset,
+  });
 
   const canSubmit =
     canCreateInstruction &&
+    isEligibleLifecycleInstruction &&
     !busy &&
     asset &&
     trnType &&
@@ -923,6 +944,19 @@ export default function TrnOriginScreen() {
             />
             <Text style={styles.warningText}>
               Only MNG and MNC supervisors can create lifecycle instructions.
+            </Text>
+          </View>
+        )}
+
+        {!isEligibleLifecycleInstruction && (
+          <View style={styles.warningCard}>
+            <MaterialCommunityIcons
+              name="alert-circle-outline"
+              size={20}
+              color="#b45309"
+            />
+            <Text style={styles.warningText}>
+              This meter is not eligible for {trnConfig.title}.
             </Text>
           </View>
         )}

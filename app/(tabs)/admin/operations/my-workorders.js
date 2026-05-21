@@ -22,6 +22,7 @@ import {
   useAcceptRejectLifecycleInstructionMutation,
   useGetWmsLifecycleWorkItemsQuery,
 } from "../../../../src/redux/lifecycleInstructionApi";
+import { removeSubmissionQueueItemsByInstructionTrnId } from "../../../../src/utils/submissionQueue";
 
 const WMS_GROUPS = [
   {
@@ -48,6 +49,12 @@ const WMS_GROUPS = [
     short: "REM",
     icon: "countertop-outline",
   },
+  {
+    key: "METER_READING",
+    title: "Meter Readings",
+    short: "MREAD",
+    icon: "counter",
+  },
 ];
 
 const STATE_FILTERS = [
@@ -60,9 +67,11 @@ const STATE_FILTERS = [
 ];
 
 const EXECUTION_ROUTES = {
+  METER_INSPECTION: "/asts/inspection",
   METER_REMOVAL: "/asts/removal",
   METER_DISCONNECTION: "/asts/disconnection",
   METER_RECONNECTION: "/asts/reconnection",
+  METER_READING: "/asts/meter-reading",
 };
 
 const RejectSchema = object().shape({
@@ -296,6 +305,8 @@ export default function WorkorderManagementSystem() {
   }
 
   async function handleReject(values, helpers) {
+    const rejectedInstructionTrnId = rejectItem?.id || "NAv";
+
     const success = await submitDecision({
       item: rejectItem,
       action: "REJECT",
@@ -305,8 +316,35 @@ export default function WorkorderManagementSystem() {
     helpers.setSubmitting(false);
 
     if (success) {
+      try {
+        const mmkvRemoveResult =
+          await removeSubmissionQueueItemsByInstructionTrnId(
+            rejectedInstructionTrnId,
+            {
+              updatedByUid: actorUid || "SYSTEM",
+              updatedByUser: actorName || "SYSTEM",
+            },
+          );
+
+        console.log("WMS reject -- local MMKV cleanup result", {
+          rejectedInstructionTrnId,
+          removedCount: mmkvRemoveResult?.removedCount || 0,
+          removedItemIds: mmkvRemoveResult?.removedItemIds || [],
+          result: mmkvRemoveResult,
+        });
+      } catch (error) {
+        console.log("WMS reject -- local MMKV cleanup error", {
+          rejectedInstructionTrnId,
+          code: error?.code,
+          message: error?.message,
+          stack: error?.stack,
+          raw: error,
+        });
+      }
+
       helpers.resetForm();
       setRejectItem(null);
+      refetch?.();
     }
   }
 
@@ -431,7 +469,7 @@ export default function WorkorderManagementSystem() {
           <Text style={styles.headerCountText}>{directItems.length}</Text>
         </View>
 
-        <Pressable
+        {/* <Pressable
           style={styles.refreshBtn}
           onPress={refetch}
           disabled={isFetching}
@@ -441,7 +479,7 @@ export default function WorkorderManagementSystem() {
           ) : (
             <MaterialCommunityIcons name="refresh" size={21} color="#0f172a" />
           )}
-        </Pressable>
+        </Pressable> */}
       </View>
 
       {selectedGroup ? (
@@ -694,11 +732,26 @@ function getInstructionMediaSummary(mediaItems = []) {
   return `${mediaItems.length} instruction files`;
 }
 
+function getWorkItemMeterKind(item = {}) {
+  return (
+    item?.meterKind ||
+    item?.raw?.ast?.astData?.meter?.type ||
+    item?.raw?.astData?.meter?.type ||
+    "NAv"
+  );
+}
+
 function WorkItemCard({ item, deciding, onAccept, onReject, onExecute }) {
   const [instructionMediaVisible, setInstructionMediaVisible] = useState(false);
 
   const instructionMedia = getInstructionMedia(item);
   const hasInstructionMedia = instructionMedia.length > 0;
+  const isAcceptedWorkItem = normalizeUpper(item?.workflowState) === "ACCEPTED";
+
+  const canRejectAcceptedWork =
+    item?.permissions?.canExecute === true &&
+    isAcceptedWorkItem &&
+    item?.permissions?.canReject !== true;
 
   return (
     <View style={styles.workCard}>
@@ -713,7 +766,9 @@ function WorkItemCard({ item, deciding, onAccept, onReject, onExecute }) {
 
         <View style={styles.workHeaderMain}>
           <Text style={styles.workTitle}>{item.trnTypeLabel}</Text>
-          <Text style={styles.workId}>{item.id}</Text>
+          <Text style={styles.workId} numberOfLines={1} ellipsizeMode="middle">
+            {item.id}
+          </Text>
         </View>
 
         <View
@@ -732,6 +787,12 @@ function WorkItemCard({ item, deciding, onAccept, onReject, onExecute }) {
 
       <View style={styles.infoGrid}>
         <InfoLine icon="counter" label="Meter No" value={item.meterNo} />
+
+        <InfoLine
+          icon="countertop-outline"
+          label="Meter Kind"
+          value={getWorkItemMeterKind(item)}
+        />
 
         <InfoLine
           icon="map-marker-outline"
@@ -863,8 +924,23 @@ function WorkItemCard({ item, deciding, onAccept, onReject, onExecute }) {
           <Pressable
             style={[styles.actionBtn, styles.executeBtn]}
             onPress={() => onExecute(item)}
+            disabled={deciding}
           >
             <Text style={styles.executeBtnText}>EXECUTE</Text>
+          </Pressable>
+        ) : null}
+
+        {canRejectAcceptedWork ? (
+          <Pressable
+            style={[
+              styles.actionBtn,
+              styles.rejectWorkBtn,
+              deciding && styles.actionDisabled,
+            ]}
+            onPress={() => onReject(item)}
+            disabled={deciding}
+          >
+            <Text style={styles.rejectWorkBtnText}>REJECT WORK</Text>
           </Pressable>
         ) : null}
 
@@ -1061,6 +1137,15 @@ function MiniCount({ label, value }) {
 }
 
 function RejectModal({ visible, item, busy, onClose, onSubmit }) {
+  const isAcceptedWorkItem = normalizeUpper(item?.workflowState) === "ACCEPTED";
+  const title = isAcceptedWorkItem
+    ? "Reject Accepted Work"
+    : "Reject Work Item";
+  const placeholder = isAcceptedWorkItem
+    ? "Explain why this accepted work item cannot be executed"
+    : "Explain why this work item cannot be accepted";
+  const submitText = isAcceptedWorkItem ? "REJECT WORK" : "SUBMIT REJECTION";
+
   return (
     <Modal
       visible={visible}
@@ -1080,7 +1165,7 @@ function RejectModal({ visible, item, busy, onClose, onSubmit }) {
             </View>
 
             <View style={styles.modalHeaderMain}>
-              <Text style={styles.modalTitle}>Reject Work Item</Text>
+              <Text style={styles.modalTitle}>{title}</Text>
               <Text style={styles.modalSub}>{item?.id || "NAv"}</Text>
             </View>
 
@@ -1114,7 +1199,7 @@ function RejectModal({ visible, item, busy, onClose, onSubmit }) {
                   value={values.rejectReason}
                   onChangeText={handleChange("rejectReason")}
                   onBlur={handleBlur("rejectReason")}
-                  placeholder="Explain why this work item cannot be accepted"
+                  placeholder={placeholder}
                   placeholderTextColor="#94a3b8"
                   style={[
                     styles.rejectInput,
@@ -1152,9 +1237,7 @@ function RejectModal({ visible, item, busy, onClose, onSubmit }) {
                     {busy || isSubmitting ? (
                       <ActivityIndicator size="small" color="#7f1d1d" />
                     ) : (
-                      <Text style={styles.modalRejectText}>
-                        SUBMIT REJECTION
-                      </Text>
+                      <Text style={styles.modalRejectText}>{submitText}</Text>
                     )}
                   </Pressable>
                 </View>
@@ -1360,97 +1443,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
-  // filterRow: {
-  //   paddingHorizontal: 12,
-  //   paddingTop: 2,
-  //   paddingBottom: 4,
-  //   gap: 6,
-  // },
-
-  // filterChip: {
-  //   minHeight: 28,
-  //   borderRadius: 14,
-  //   paddingHorizontal: 9,
-  //   paddingVertical: 4,
-  //   backgroundColor: "#ffffff",
-  //   borderWidth: 1,
-  //   borderColor: "#e2e8f0",
-  //   flexDirection: "row",
-  //   alignItems: "center",
-  //   gap: 5,
-  // },
-
-  // filterChipActive: {
-  //   backgroundColor: "#0f172a",
-  //   borderColor: "#0f172a",
-  // },
-
-  // filterChipText: {
-  //   color: "#475569",
-  //   fontSize: 10,
-  //   fontWeight: "900",
-  // },
-
-  // filterChipTextActive: {
-  //   color: "#ffffff",
-  // },
-
-  // filterCountText: {
-  //   minWidth: 18,
-  //   minHeight: 18,
-  //   borderRadius: 9,
-  //   overflow: "hidden",
-  //   backgroundColor: "#f1f5f9",
-  //   color: "#64748b",
-  //   fontSize: 9,
-  //   fontWeight: "900",
-  //   textAlign: "center",
-  //   paddingHorizontal: 4,
-  //   paddingTop: 2,
-  // },
-
-  // filterCountTextActive: {
-  //   backgroundColor: "#334155",
-  //   color: "#e2e8f0",
-  // },
-
-  // filterRow: {
-  //   paddingHorizontal: 12,
-  //   paddingBottom: 9,
-  //   gap: 8,
-  // },
-  // filterChip: {
-  //   height: 34,
-  //   borderRadius: 17,
-  //   paddingHorizontal: 11,
-  //   backgroundColor: "#ffffff",
-  //   borderWidth: 1,
-  //   borderColor: "#e2e8f0",
-  //   flexDirection: "row",
-  //   alignItems: "center",
-  //   gap: 6,
-  // },
-  // filterChipActive: {
-  //   backgroundColor: "#0f172a",
-  //   borderColor: "#0f172a",
-  // },
-  // filterChipText: {
-  //   color: "#475569",
-  //   fontSize: 11,
-  //   fontWeight: "900",
-  // },
-  // filterChipTextActive: {
-  //   color: "#ffffff",
-  // },
-  // filterCountText: {
-  //   color: "#94a3b8",
-  //   fontSize: 10,
-  //   fontWeight: "900",
-  // },
-  // filterCountTextActive: {
-  //   color: "#cbd5e1",
-  // },
-
   filterScroll: {
     flexGrow: 0,
     maxHeight: 34,
@@ -1545,9 +1537,10 @@ const styles = StyleSheet.create({
   },
   workId: {
     color: "#64748b",
-    fontSize: 9,
+    fontSize: 7,
     fontWeight: "800",
     marginTop: 2,
+    lineHeight: 10,
   },
   stateBadge: {
     borderRadius: 999,
@@ -1670,6 +1663,16 @@ const styles = StyleSheet.create({
   },
   rejectBtnText: {
     color: "#991b1b",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  rejectWorkBtn: {
+    backgroundColor: "#fff7ed",
+    borderWidth: 1,
+    borderColor: "#fed7aa",
+  },
+  rejectWorkBtnText: {
+    color: "#c2410c",
     fontSize: 11,
     fontWeight: "900",
   },
@@ -1842,7 +1845,7 @@ const styles = StyleSheet.create({
   },
 
   instructionMediaLine: {
-    width: "100%",
+    width: "48%",
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
@@ -1865,7 +1868,7 @@ const styles = StyleSheet.create({
 
   instructionMediaLineValue: {
     color: "#1d4ed8",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900",
     marginTop: 1,
   },

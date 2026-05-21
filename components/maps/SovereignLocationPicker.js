@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { getIn, useFormikContext } from "formik";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from "react-native-maps";
 import {
@@ -113,6 +113,62 @@ const SovereignLocationPicker = ({
 
   const currentCoords = getCoords(rawValue);
   const selectedErfCoords = getCoords(erfCentroid);
+
+  const getErfLabel = (erf = {}) => {
+    return (
+      erf?.erfNo ||
+      erf?.erf_no ||
+      erf?.erfNumber ||
+      erf?.sg?.erfNo ||
+      erf?.sg?.parcelNo ||
+      erf?.parcelNo ||
+      erf?.code ||
+      "NAv"
+    );
+  };
+
+  const getErfLabelCoordinate = (erf = {}) => {
+    if (erf?.centroid?.latitude != null && erf?.centroid?.longitude != null) {
+      return erf.centroid;
+    }
+
+    if (erf?.centroid?.lat != null && erf?.centroid?.lng != null) {
+      return {
+        latitude: Number(erf.centroid.lat),
+        longitude: Number(erf.centroid.lng),
+      };
+    }
+
+    const boundary = Array.isArray(erf?.boundary) ? erf.boundary : [];
+
+    if (!boundary.length) return null;
+
+    const validPoints = boundary
+      .map((point) => ({
+        latitude: Number(point?.latitude),
+        longitude: Number(point?.longitude),
+      }))
+      .filter(
+        (point) =>
+          Number.isFinite(point.latitude) && Number.isFinite(point.longitude),
+      );
+
+    if (!validPoints.length) return null;
+
+    const sum = validPoints.reduce(
+      (acc, point) => {
+        acc.latitude += point.latitude;
+        acc.longitude += point.longitude;
+        return acc;
+      },
+      { latitude: 0, longitude: 0 },
+    );
+
+    return {
+      latitude: sum.latitude / validPoints.length,
+      longitude: sum.longitude / validPoints.length,
+    };
+  };
 
   useEffect(() => {
     if (!modalVisible) return;
@@ -318,15 +374,38 @@ const SovereignLocationPicker = ({
                 {showNeighbourhoods && (
                   <>
                     {/* 🔶 Nearby ERFs */}
-                    {nearbyErfs.map((erf) => (
-                      <Polygon
-                        key={`erf-${erf.id}`}
-                        coordinates={erf.boundary}
-                        strokeColor="#64748b"
-                        fillColor="rgba(100,116,139,0.1)"
-                        strokeWidth={1}
-                      />
-                    ))}
+                    {nearbyErfs.map((erf) => {
+                      const labelCoordinate = getErfLabelCoordinate(erf);
+
+                      return (
+                        <Fragment key={`erf-context-${erf.id}`}>
+                          {Array.isArray(erf.boundary) &&
+                            erf.boundary.length > 0 && (
+                              <Polygon
+                                coordinates={erf.boundary}
+                                strokeColor="#64748b"
+                                fillColor="rgba(100,116,139,0.1)"
+                                strokeWidth={1}
+                              />
+                            )}
+
+                          {labelCoordinate && (
+                            <Marker
+                              coordinate={labelCoordinate}
+                              anchor={{ x: 0.5, y: 0.5 }}
+                              tracksViewChanges={false}
+                              zIndex={10}
+                            >
+                              <View style={styles.neighbourErfLabel}>
+                                <Text style={styles.neighbourErfLabelText}>
+                                  {getErfLabel(erf)}
+                                </Text>
+                              </View>
+                            </Marker>
+                          )}
+                        </Fragment>
+                      );
+                    })}
 
                     {/* 🔷 Nearby Premises */}
                     {nearbyPremises.map((prem) => (

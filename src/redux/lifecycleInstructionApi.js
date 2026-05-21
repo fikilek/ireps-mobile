@@ -8,12 +8,14 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../firebase";
+import { reconcileSubmissionQueueWithServerTrns } from "../utils/submissionQueue";
 
 const WMS_LCT_TYPES = [
   "METER_INSPECTION",
   "METER_DISCONNECTION",
   "METER_RECONNECTION",
   "METER_REMOVAL",
+  "METER_READING",
 ];
 
 const WMS_WORKFLOW_STATES = [
@@ -52,6 +54,12 @@ const WMS_GROUPS = [
     title: "Removals",
     short: "REM",
     icon: "countertop-outline",
+  },
+  {
+    key: "METER_READING",
+    title: "Meter Readings",
+    short: "MREAD",
+    icon: "counter",
   },
 ];
 
@@ -830,6 +838,20 @@ export const lifecycleInstructionApi = createApi({
                 id: docSnap.id,
                 ...docSnap.data(),
               }));
+
+              reconcileSubmissionQueueWithServerTrns({
+                trns: latestTrns,
+                updatedByUid: "WMS_TRN_STREAM",
+                updatedByUser: "WMS TRN Stream",
+              })
+                .then((result) => {
+                  if (result?.changedCount > 0) {
+                    console.log("✅ [WMS_QUEUE_RECONCILED]", result);
+                  }
+                })
+                .catch((error) => {
+                  console.log("❌ [WMS_QUEUE_RECONCILE_ERROR]", error);
+                });
 
               rebuild();
             },
