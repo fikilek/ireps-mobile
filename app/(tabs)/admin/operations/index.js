@@ -37,6 +37,14 @@ export default function OperationsHub() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.grid}>
           <OpCard
+            title="WMS Dashboard"
+            subtitle="Ward workorder control cockpit"
+            icon="view-dashboard-outline"
+            color="#1d4ed8"
+            disabled={isNavigating}
+            onPress={() => handleNavigate("/admin/operations/dashboard")}
+          />
+          <OpCard
             title="Operational Teams"
             subtitle="Personnel deployment & allocation"
             icon="account-group"
@@ -46,14 +54,12 @@ export default function OperationsHub() {
           />
 
           <OpCard
-            title="Revenue Analytics"
-            subtitle="Analysis of LM Prepaid Revenues"
-            icon="currency-usd"
-            color="#0891b2"
+            title="My Workorders"
+            subtitle="Accept, reject & execute assigned lifecycle TRNs"
+            icon="clipboard-list-outline"
+            color="#059669"
             disabled={isNavigating}
-            onPress={() =>
-              handleNavigate("/admin/operations/revenue-analytics")
-            }
+            onPress={() => handleNavigate("/admin/operations/my-workorders")}
           />
 
           <OpCard
@@ -66,21 +72,23 @@ export default function OperationsHub() {
           />
 
           <OpCard
-            title="Workorders"
-            subtitle="Queue management & monitoring"
-            icon="clipboard-list"
-            color="#059669"
-            disabled={isNavigating}
-            onPress={() => handleNavigate("/admin/operations/workorders")}
-          />
-
-          <OpCard
             title="Field Analytics"
             subtitle="Deployment performance"
             icon="trending-up"
             color="#ea580c"
             disabled={isNavigating}
             onPress={() => handleNavigate("/admin/operations/field-analytics")}
+          />
+
+          <OpCard
+            title="Revenue Analytics"
+            subtitle="Analysis of LM prepaid revenues"
+            icon="currency-usd"
+            color="#0891b2"
+            disabled={isNavigating}
+            onPress={() =>
+              handleNavigate("/admin/operations/revenue-analytics")
+            }
           />
 
           <OpCard
@@ -116,16 +124,21 @@ const OpCard = ({ title, subtitle, icon, color, onPress, disabled }) => (
 );
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
-  scrollContent: { padding: 16 },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#1e293b",
-    marginBottom: 20,
-    letterSpacing: -0.5,
+  container: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
   },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+
+  scrollContent: {
+    padding: 16,
+  },
+
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+
   card: {
     backgroundColor: "#fff",
     width: "48%",
@@ -138,9 +151,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 10,
   },
+
   cardDisabled: {
     opacity: 0.5,
   },
+
   iconContainer: {
     width: 48,
     height: 48,
@@ -149,12 +164,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 8,
   },
+
   cardTitle: {
     fontSize: 14,
     fontWeight: "900",
     color: "#1e293b",
     marginTop: 4,
   },
+
   cardSubtitle: {
     fontSize: 10,
     color: "#64748b",

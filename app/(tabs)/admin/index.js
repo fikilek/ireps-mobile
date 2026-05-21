@@ -103,7 +103,7 @@ export default function AdminDashboard() {
         </Section>
       )}
 
-      {(isSPU || isADM || isMNG || isSPV) && (
+      {(isSPU || isADM || isMNG || isSPV || isFWR) && (
         <Section title="Reporting & Intelligence">
           <Card
             title="Management Reports"

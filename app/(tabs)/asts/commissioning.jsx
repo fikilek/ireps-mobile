@@ -72,6 +72,31 @@ function removeUndefined(value) {
   );
 }
 
+function sanitizeCommissioningPayload(payload = {}) {
+  const {
+    assignment,
+    instruction,
+    createdFor,
+    targets,
+    workflow,
+    processing,
+    status,
+    instructionTrnId,
+    execution,
+    acceptedRejectedAt,
+    acceptedRejectedUid,
+    acceptedRejectedUser,
+    rejectReason,
+    cancelledAt,
+    cancelledByUid,
+    cancelledByUser,
+    cancelReason,
+    ...cleanPayload
+  } = payload || {};
+
+  return cleanPayload;
+}
+
 function toLatLng(value) {
   if (!value) return null;
 
@@ -142,11 +167,27 @@ function resolveMncServiceProvider(spId, allServiceProviders, visited = []) {
   ]);
 }
 
-const buildCommissioningSchema = (isPrepaidMeter) =>
+function serviceProviderLooksMnc(serviceProvider = {}) {
+  const clients = Array.isArray(serviceProvider?.clients)
+    ? serviceProvider.clients
+    : [];
+
+  return clients.some(
+    (client) =>
+      String(client?.clientType || "").toUpperCase() === "LM" &&
+      String(client?.relationshipType || "").toUpperCase() === "MNC",
+  );
+}
+
+const buildCommissioningSchema = ({
+  isPrepaidElectricityMeter,
+  isElectricityMeter,
+  isWaterMeter,
+}) =>
   object().shape({
     commissioning: object().shape({
       vendingConfirmed: object().shape({
-        answer: isPrepaidMeter
+        answer: isPrepaidElectricityMeter
           ? string().oneOf(["yes", "no"]).required("Required")
           : string().notRequired(),
         notes: string().when("answer", {
@@ -157,7 +198,9 @@ const buildCommissioningSchema = (isPrepaidMeter) =>
       }),
 
       finalSwitchOnTested: object().shape({
-        answer: string().oneOf(["yes", "no"]).required("Required"),
+        answer: isElectricityMeter
+          ? string().oneOf(["yes", "no"]).required("Required")
+          : string().notRequired(),
         notes: string().when("answer", {
           is: "no",
           then: (s) => s.trim().required("Notes required when answer is no"),
@@ -166,7 +209,29 @@ const buildCommissioningSchema = (isPrepaidMeter) =>
       }),
 
       keypadIssued: object().shape({
-        answer: isPrepaidMeter
+        answer: isPrepaidElectricityMeter
+          ? string().oneOf(["yes", "no"]).required("Required")
+          : string().notRequired(),
+        notes: string().when("answer", {
+          is: "no",
+          then: (s) => s.trim().required("Notes required when answer is no"),
+          otherwise: (s) => s.notRequired(),
+        }),
+      }),
+
+      waterMeterOperational: object().shape({
+        answer: isWaterMeter
+          ? string().oneOf(["yes", "no"]).required("Required")
+          : string().notRequired(),
+        notes: string().when("answer", {
+          is: "no",
+          then: (s) => s.trim().required("Notes required when answer is no"),
+          otherwise: (s) => s.notRequired(),
+        }),
+      }),
+
+      waterReadingOrFlowConfirmed: object().shape({
+        answer: isWaterMeter
           ? string().oneOf(["yes", "no"]).required("Required")
           : string().notRequired(),
         notes: string().when("answer", {
@@ -184,16 +249,14 @@ const buildCommissioningSchema = (isPrepaidMeter) =>
         "Commissioning evidence missing",
         function (value) {
           const commissioning = this.parent?.commissioning || {};
+          const media = Array.isArray(value) ? value : [];
 
-          const vendingAnswer = commissioning?.vendingConfirmed?.answer;
-          const finalSwitchOnAnswer =
-            commissioning?.finalSwitchOnTested?.answer;
-          const keypadIssuedAnswer = commissioning?.keypadIssued?.answer;
+          const hasMediaTag = (tag) => media.some((m) => m?.tag === tag);
 
           if (
-            isPrepaidMeter &&
-            vendingAnswer === "yes" &&
-            !value?.some((m) => m.tag === "vendingEvidence")
+            isPrepaidElectricityMeter &&
+            commissioning?.vendingConfirmed?.answer === "yes" &&
+            !hasMediaTag("vendingEvidence")
           ) {
             return this.createError({
               message: "Vending evidence required",
@@ -201,8 +264,9 @@ const buildCommissioningSchema = (isPrepaidMeter) =>
           }
 
           if (
-            finalSwitchOnAnswer === "yes" &&
-            !value?.some((m) => m.tag === "finalSwitchOnEvidence")
+            isElectricityMeter &&
+            commissioning?.finalSwitchOnTested?.answer === "yes" &&
+            !hasMediaTag("finalSwitchOnEvidence")
           ) {
             return this.createError({
               message: "Final switch-on evidence required",
@@ -210,12 +274,32 @@ const buildCommissioningSchema = (isPrepaidMeter) =>
           }
 
           if (
-            isPrepaidMeter &&
-            keypadIssuedAnswer === "yes" &&
-            !value?.some((m) => m.tag === "keypadIssuedEvidence")
+            isPrepaidElectricityMeter &&
+            commissioning?.keypadIssued?.answer === "yes" &&
+            !hasMediaTag("keypadIssuedEvidence")
           ) {
             return this.createError({
               message: "Keypad issued evidence required",
+            });
+          }
+
+          if (
+            isWaterMeter &&
+            commissioning?.waterMeterOperational?.answer === "yes" &&
+            !hasMediaTag("waterOperationalEvidence")
+          ) {
+            return this.createError({
+              message: "Water operational evidence required",
+            });
+          }
+
+          if (
+            isWaterMeter &&
+            commissioning?.waterReadingOrFlowConfirmed?.answer === "yes" &&
+            !hasMediaTag("waterReadingEvidence")
+          ) {
+            return this.createError({
+              message: "Water reading / flow evidence required",
             });
           }
 
@@ -313,8 +397,13 @@ export default function FormMeterCommissioning() {
 
   const router = useRouter();
   const { all } = useWarehouse();
-  const { profile, user } = useAuth();
-  const { data: allServiceProviders = [] } = useGetServiceProvidersQuery();
+
+  const { profile, user, isFWR, isSPV } = useAuth();
+
+  const {
+    data: allServiceProviders = [],
+    isLoading: isServiceProvidersLoading,
+  } = useGetServiceProvidersQuery();
 
   const [editQueueItem, setEditQueueItem] = useState(undefined);
   const [inProgress, setInProgress] = useState(false);
@@ -328,50 +417,6 @@ export default function FormMeterCommissioning() {
     message: "",
     goBackOnContinue: true,
   });
-
-  function getCommissioningFailureReasons(values, isPrepaidMeter) {
-    const reasons = [];
-
-    if (
-      isPrepaidMeter &&
-      values?.commissioning?.vendingConfirmed?.answer !== "yes"
-    ) {
-      reasons.push("Vending was not confirmed.");
-    }
-
-    if (values?.commissioning?.finalSwitchOnTested?.answer !== "yes") {
-      reasons.push("Final switch-on was not tested.");
-    }
-
-    if (
-      isPrepaidMeter &&
-      values?.commissioning?.keypadIssued?.answer !== "yes"
-    ) {
-      reasons.push("Keypad was not issued to the user.");
-    }
-
-    return reasons;
-  }
-
-  function buildCommissioningFailedMessage(values, result) {
-    const reasons = getCommissioningFailureReasons(values, isPrepaidMeter);
-
-    const reasonText = reasons.length
-      ? reasons.map((reason) => `• ${reason}`).join("\n")
-      : "• Commissioning rules were not fully satisfied.";
-
-    return [
-      "The commissioning TRN was submitted and saved for audit, but the meter was not moved to CONNECTED.",
-      "",
-      "Reason:",
-      reasonText,
-      "",
-      `AST status: ${result?.astStatusAfter || "FIELD"}`,
-      "",
-      "This submitted form cannot be modified.",
-      "A new commissioning form must be completed and submitted.",
-    ].join("\n");
-  }
 
   const agentUid = user?.uid || "unknown_uid";
   const agentName = profile?.profile?.displayName || "Field Agent";
@@ -420,8 +465,21 @@ export default function FormMeterCommissioning() {
   const astData = astDoc?.ast?.astData || {};
   const meter = astData?.meter || {};
   const meterNo = astData?.astNo || action?.meterNo || "NAv";
+
   const meterType = astDoc?.meterType || action?.meterType || "NAv";
-  const meterKind = String(meter?.type || "NAv").toLowerCase();
+  const normalizedMeterType = String(meterType || "").toLowerCase();
+
+  const meterKind = String(meter?.type || "NAv")
+    .trim()
+    .toLowerCase();
+
+  const isElectricityMeter = normalizedMeterType === "electricity";
+  const isWaterMeter = normalizedMeterType === "water";
+  const isValidCommissionMeterType = isElectricityMeter || isWaterMeter;
+
+  const isPrepaidElectricityMeter =
+    isElectricityMeter && meterKind === "prepaid";
+
   const currentStatus = String(
     astDoc?.status?.state || "UNKNOWN",
   ).toUpperCase();
@@ -449,11 +507,14 @@ export default function FormMeterCommissioning() {
     [wardPcode, erfNo, meterType],
   );
 
-  const isPrepaidMeter = meterKind === "prepaid";
-
   const commissioningSchema = useMemo(
-    () => buildCommissioningSchema(isPrepaidMeter),
-    [isPrepaidMeter],
+    () =>
+      buildCommissioningSchema({
+        isPrepaidElectricityMeter,
+        isElectricityMeter,
+        isWaterMeter,
+      }),
+    [isPrepaidElectricityMeter, isElectricityMeter, isWaterMeter],
   );
 
   useEffect(() => {
@@ -468,7 +529,8 @@ export default function FormMeterCommissioning() {
     if (!firstStatus || !firstMeterType) return;
 
     setInitialEligible(
-      firstStatus === "FIELD" && firstMeterType === "electricity",
+      firstStatus === "FIELD" &&
+        ["electricity", "water"].includes(firstMeterType),
     );
   }, [
     initialEligible,
@@ -478,11 +540,33 @@ export default function FormMeterCommissioning() {
     action?.meterType,
   ]);
 
-  const isEligible = initialEligible === true;
+  const userSpId = profile?.employment?.serviceProvider?.id;
+
+  const actorServiceProvider = useMemo(() => {
+    if (!userSpId) return null;
+
+    return (
+      allServiceProviders.find((serviceProvider) => {
+        return serviceProvider?.id === userSpId;
+      }) || null
+    );
+  }, [allServiceProviders, userSpId]);
+
+  const isSubcSpv =
+    isSPV &&
+    Boolean(actorServiceProvider) &&
+    !serviceProviderLooksMnc(actorServiceProvider);
+
+  const canCreateAndSubmitCommissioning = isFWR || isSubcSpv;
+
+  const isCommissionRoleLoading = isSPV && isServiceProvidersLoading;
+
+  const isEligible =
+    initialEligible === true &&
+    isValidCommissionMeterType &&
+    canCreateAndSubmitCommissioning;
 
   console.log(`isEligible`, isEligible);
-
-  const userSpId = profile?.employment?.serviceProvider?.id;
 
   const serviceProvider = useMemo(() => {
     const resolvedMnc = resolveMncServiceProvider(
@@ -564,42 +648,19 @@ export default function FormMeterCommissioning() {
           answer: "",
           notes: "",
         },
-      },
-
-      assignment: {
-        instruction: {
-          code: "METER_COMMISSIONING",
-          text: "Confirm meter can vend and is ready for final switch-on",
+        waterMeterOperational: {
+          answer: "",
           notes: "",
-          mediaRequired: true,
         },
-
-        createdFor: {
-          type: "USER",
-          id: agentUid,
-          name: agentName,
+        waterReadingOrFlowConfirmed: {
+          answer: "",
+          notes: "",
         },
-
-        acceptedRejectedAt: null,
-        acceptedRejectedUid: null,
-        acceptedRejectedUser: null,
-        rejectReason: "",
-
-        cancelledAt: null,
-        cancelledByUid: null,
-        cancelledByUser: null,
-        cancelReason: "",
       },
 
       meterType,
 
       media: [],
-
-      status: {
-        state: astDoc?.status?.state || "FIELD",
-        id: astDoc?.status?.id || lmPcode || "NAv",
-        detail: astDoc?.status?.detail || lmPcode || "NAv",
-      },
     };
   }
 
@@ -625,6 +686,29 @@ export default function FormMeterCommissioning() {
     ],
   );
 
+  function didCommissioningPass(values) {
+    if (isPrepaidElectricityMeter) {
+      return (
+        values?.commissioning?.vendingConfirmed?.answer === "yes" &&
+        values?.commissioning?.finalSwitchOnTested?.answer === "yes" &&
+        values?.commissioning?.keypadIssued?.answer === "yes"
+      );
+    }
+
+    if (isElectricityMeter) {
+      return values?.commissioning?.finalSwitchOnTested?.answer === "yes";
+    }
+
+    if (isWaterMeter) {
+      return (
+        values?.commissioning?.waterMeterOperational?.answer === "yes" &&
+        values?.commissioning?.waterReadingOrFlowConfirmed?.answer === "yes"
+      );
+    }
+
+    return false;
+  }
+
   const handleSubmitCommissioning = async (values) => {
     if (!astDoc?.id) {
       Alert.alert("Error", "AST data not found.");
@@ -634,29 +718,29 @@ export default function FormMeterCommissioning() {
     if (!isEligible) {
       Alert.alert(
         "Not Eligible",
-        "Only FIELD electricity meters can be commissioned.",
+        "Only FIELD electricity or water meters can be commissioned by FWR or SPV(SUBC).",
       );
       return;
     }
 
     const baseSystemFields = buildTrnSystemFields();
 
-    let cleanPayload = removeUndefined({
-      id: values.id,
+    let cleanPayload = sanitizeCommissioningPayload(
+      removeUndefined({
+        id: values.id,
 
-      accessData: {
-        ...baseSystemFields,
-        access: values.accessData.access,
-      },
+        accessData: {
+          ...baseSystemFields,
+          access: values.accessData.access,
+        },
 
-      ast: values.ast,
-      commissioning: values.commissioning,
-      assignment: values.assignment,
-      meterType: values.meterType,
-      media: values.media || [],
-      status: values.status,
-      serviceProvider,
-    });
+        ast: values.ast,
+        commissioning: values.commissioning,
+        meterType: values.meterType,
+        media: values.media || [],
+        serviceProvider,
+      }),
+    );
 
     const saveCommissioningDraftToQueue = async (messageTitle, messageBody) => {
       const nextContext = {
@@ -775,26 +859,30 @@ export default function FormMeterCommissioning() {
         }),
       );
 
-      cleanPayload = {
+      cleanPayload = sanitizeCommissioningPayload({
         ...cleanPayload,
         media: syncedMedia,
-      };
+      });
 
-      const onMeterLifecycleTrnCallable = httpsCallable(
+      // console.log(`handleSubmitCommissioning --cleanPayload`, cleanPayload);
+      const onCreateMeterCommissioningCallable = httpsCallable(
         functions,
-        "onMeterLifecycleTrnCallable",
+        "onCreateMeterCommissioningCallable",
       );
 
       let result = null;
 
       try {
         const callableResult = await withSubmitTimeout(
-          onMeterLifecycleTrnCallable(cleanPayload),
+          onCreateMeterCommissioningCallable(cleanPayload),
           15000,
         );
 
         result = callableResult?.data || {};
+
+        // console.log("handleSubmitCommissioning --result", result);
       } catch (error) {
+        // console.log(`handleSubmitCommissioning --error`, error);
         if (error?.message === "SUBMISSION_TIMEOUT") {
           await saveCommissioningDraftToQueue(
             "Saved Locally",
@@ -817,6 +905,7 @@ export default function FormMeterCommissioning() {
 
       if (!result?.success) {
         setInProgress(false);
+        // console.log(`handleSubmitCommissioning --result`, result);
 
         Alert.alert(
           "Submission Failed",
@@ -832,27 +921,30 @@ export default function FormMeterCommissioning() {
 
       setInProgress(false);
 
-      if (
-        result?.astStatusChanged === true &&
-        result?.astStatusAfter === "CONNECTED"
-      ) {
+      if (result?.idempotent === true) {
         setSubmitOutcome({
           visible: true,
           type: "success",
-          title: "COMMISSIONING SUCCESSFUL",
+          title: "COMMISSIONING ALREADY SUBMITTED",
           message:
-            "The commissioning TRN was submitted and the meter status updated to CONNECTED.",
+            "This commissioning TRN already exists and is treated as successful.",
           goBackOnContinue: true,
         });
 
         return;
       }
 
+      const commissioningPassed = didCommissioningPass(values);
+
       setSubmitOutcome({
         visible: true,
-        type: "commissioningFailed",
-        title: "COMMISSIONING DID NOT PASS",
-        message: buildCommissioningFailedMessage(values, result),
+        type: commissioningPassed ? "success" : "commissioningFailed",
+        title: commissioningPassed
+          ? "COMMISSIONING SUBMITTED"
+          : "COMMISSIONING SUBMITTED - NOT PASSED",
+        message: commissioningPassed
+          ? "The commissioning TRN was created successfully. The meter will update from FIELD to CONNECTED."
+          : "The commissioning TRN was created successfully for audit, but one or more commissioning checks did not pass. The meter will remain in FIELD.",
         goBackOnContinue: true,
       });
     } catch (error) {
@@ -879,7 +971,7 @@ export default function FormMeterCommissioning() {
     );
   }
 
-  if (!astDoc || initialEligible === null) {
+  if (!astDoc || initialEligible === null || isCommissionRoleLoading) {
     return (
       <View style={styles.loaderWrap}>
         <ActivityIndicator size="large" color="#2563eb" />
@@ -888,7 +980,7 @@ export default function FormMeterCommissioning() {
     );
   }
 
-  if (initialEligible === false) {
+  if (!isEligible) {
     return (
       <ScrollView style={styles.container}>
         <Stack.Screen
@@ -910,7 +1002,8 @@ export default function FormMeterCommissioning() {
           </Text>
 
           <Text style={styles.notEligibleText}>
-            Only FIELD electricity meters can be commissioned.
+            Only FIELD electricity or water meters can be commissioned by FWR or
+            SPV(SUBC).
           </Text>
 
           <Divider style={{ width: "100%", marginVertical: 16 }} />
@@ -935,7 +1028,7 @@ export default function FormMeterCommissioning() {
       <ScreenLock
         visible={inProgress}
         title="COMMISSIONING"
-        status="Securing lifecycle transaction..."
+        status="Submitting commissioning..."
       />
 
       <Formik
@@ -1018,7 +1111,7 @@ export default function FormMeterCommissioning() {
                   </View>
 
                   <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>Vending Type</Text>
+                    <Text style={styles.summaryLabel}>Meter Kind</Text>
                     <Text style={styles.summaryValue}>{meterKind}</Text>
                   </View>
 
@@ -1052,7 +1145,7 @@ export default function FormMeterCommissioning() {
                   <Text style={styles.sectionTitle}>Commissioning Checks</Text>
                 </View>
 
-                {isPrepaidMeter && (
+                {isPrepaidElectricityMeter && (
                   <YesNoQuestion
                     title="Confirm vending"
                     description="Confirm that the prepaid meter can accept a vending token."
@@ -1080,33 +1173,35 @@ export default function FormMeterCommissioning() {
                   </YesNoQuestion>
                 )}
 
-                <YesNoQuestion
-                  title="Final switch-on tested"
-                  description="Confirm the meter has been tested for final switch-on."
-                  value={values?.commissioning?.finalSwitchOnTested?.answer}
-                  notes={values?.commissioning?.finalSwitchOnTested?.notes}
-                  answerPath="commissioning.finalSwitchOnTested.answer"
-                  notesPath="commissioning.finalSwitchOnTested.notes"
-                  setFieldValue={setFieldValue}
-                  errorText={
-                    commissioningErrors?.finalSwitchOnTested?.answer ||
-                    commissioningErrors?.finalSwitchOnTested?.notes
-                  }
-                >
-                  <IrepsMedia
-                    name="media"
-                    tag="finalSwitchOnEvidence"
-                    agentName={agentName}
-                    agentUid={agentUid}
-                    fallbackGps={fallbackGps}
-                    required={
-                      values?.commissioning?.finalSwitchOnTested?.answer ===
-                      "yes"
+                {isElectricityMeter && (
+                  <YesNoQuestion
+                    title="Final switch-on / energisation confirmed"
+                    description="Confirm the electricity meter has been energised and tested."
+                    value={values?.commissioning?.finalSwitchOnTested?.answer}
+                    notes={values?.commissioning?.finalSwitchOnTested?.notes}
+                    answerPath="commissioning.finalSwitchOnTested.answer"
+                    notesPath="commissioning.finalSwitchOnTested.notes"
+                    setFieldValue={setFieldValue}
+                    errorText={
+                      commissioningErrors?.finalSwitchOnTested?.answer ||
+                      commissioningErrors?.finalSwitchOnTested?.notes
                     }
-                  />
-                </YesNoQuestion>
+                  >
+                    <IrepsMedia
+                      name="media"
+                      tag="finalSwitchOnEvidence"
+                      agentName={agentName}
+                      agentUid={agentUid}
+                      fallbackGps={fallbackGps}
+                      required={
+                        values?.commissioning?.finalSwitchOnTested?.answer ===
+                        "yes"
+                      }
+                    />
+                  </YesNoQuestion>
+                )}
 
-                {isPrepaidMeter && (
+                {isPrepaidElectricityMeter && (
                   <YesNoQuestion
                     title="Keypad issued"
                     description="Confirm the user has been issued with the keypad."
@@ -1131,6 +1226,73 @@ export default function FormMeterCommissioning() {
                       }
                     />
                   </YesNoQuestion>
+                )}
+
+                {isWaterMeter && (
+                  <>
+                    <YesNoQuestion
+                      title="Meter operational / service confirmed"
+                      description="Confirm the water meter is operational and the service is active."
+                      value={
+                        values?.commissioning?.waterMeterOperational?.answer
+                      }
+                      notes={
+                        values?.commissioning?.waterMeterOperational?.notes
+                      }
+                      answerPath="commissioning.waterMeterOperational.answer"
+                      notesPath="commissioning.waterMeterOperational.notes"
+                      setFieldValue={setFieldValue}
+                      errorText={
+                        commissioningErrors?.waterMeterOperational?.answer ||
+                        commissioningErrors?.waterMeterOperational?.notes
+                      }
+                    >
+                      <IrepsMedia
+                        name="media"
+                        tag="waterOperationalEvidence"
+                        agentName={agentName}
+                        agentUid={agentUid}
+                        fallbackGps={fallbackGps}
+                        required={
+                          values?.commissioning?.waterMeterOperational
+                            ?.answer === "yes"
+                        }
+                      />
+                    </YesNoQuestion>
+
+                    <YesNoQuestion
+                      title="Reading or flow confirmed"
+                      description="Confirm a meter reading was captured or water flow was confirmed."
+                      value={
+                        values?.commissioning?.waterReadingOrFlowConfirmed
+                          ?.answer
+                      }
+                      notes={
+                        values?.commissioning?.waterReadingOrFlowConfirmed
+                          ?.notes
+                      }
+                      answerPath="commissioning.waterReadingOrFlowConfirmed.answer"
+                      notesPath="commissioning.waterReadingOrFlowConfirmed.notes"
+                      setFieldValue={setFieldValue}
+                      errorText={
+                        commissioningErrors?.waterReadingOrFlowConfirmed
+                          ?.answer ||
+                        commissioningErrors?.waterReadingOrFlowConfirmed?.notes
+                      }
+                    >
+                      <IrepsMedia
+                        name="media"
+                        tag="waterReadingEvidence"
+                        agentName={agentName}
+                        agentUid={agentUid}
+                        fallbackGps={fallbackGps}
+                        required={
+                          values?.commissioning?.waterReadingOrFlowConfirmed
+                            ?.answer === "yes"
+                        }
+                      />
+                    </YesNoQuestion>
+                  </>
                 )}
               </Surface>
 

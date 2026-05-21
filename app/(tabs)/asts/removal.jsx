@@ -2,9 +2,11 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Image,
+  Linking,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -25,11 +27,19 @@ import { array, object, string } from "yup";
 import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
+import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
+import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
+import IrepsSelectWithOther, {
+  isSelectWithOtherFilled,
+  normalizeSelectWithOtherValue,
+  selectWithOtherToText,
+} from "../../../components/IrepsSelectWithOther";
 import { IrepsMedia } from "../../../components/media/IrepsMedia";
 import { ScreenLock } from "../../../components/SceenLock";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
 import { functions } from "../../../src/firebase";
 import { useAuth } from "../../../src/hooks/useAuth";
+import { useIrepsLookupOptions } from "../../../src/hooks/useIrepsLookupOptions";
 import { useGetServiceProvidersQuery } from "../../../src/redux/spApi";
 import {
   addSubmissionQueueItem,
@@ -38,30 +48,58 @@ import {
   updateSubmissionQueueItem,
 } from "../../../src/utils/submissionQueue";
 
-import IrepsSelectWithOther, {
-  isSelectWithOtherFilled,
-  normalizeSelectWithOtherValue,
-  selectWithOtherToText,
-} from "../../../components/IrepsSelectWithOther";
+const EMPTY_SELECT_WITH_OTHER = {
+  code: "",
+  label: "",
+  otherText: "",
+};
 
-import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
-import { useIrepsLookupOptions } from "../../../src/hooks/useIrepsLookupOptions";
+const REM_SUBMIT_TIMEOUT_MS = 15000;
 
-function buildMeterRemovalTrnId({ wardPcode, erfNo, meterType }) {
-  const ts = Date.now();
+const EXECUTION_MEDIA_TAGS = [
+  "removalEvidence",
+  "removalMeterReadingEvidence",
+  "tokenReadingPhoto",
+  "safetyEvidence",
+  "noAccessPhoto",
+];
 
-  const safeWardPcode = String(wardPcode || "NAv")
-    .replace(/[^A-Za-z0-9]/g, "")
-    .slice(0, 12);
+function makeEmptySelectWithOther() {
+  return { ...EMPTY_SELECT_WITH_OTHER };
+}
 
-  const safeErfNo = String(erfNo || "NAv")
-    .replace(/[^A-Za-z0-9]/g, "")
-    .slice(0, 12);
+function readFirstString(...values) {
+  for (const value of values) {
+    const clean = String(value || "").trim();
+    if (clean) return clean;
+  }
 
-  const typeCode =
-    meterType === "water" ? "WTR" : meterType === "electricity" ? "ELC" : "NA";
+  return "";
+}
 
-  return `TRN_MREM_${ts}_${typeCode}_${safeWardPcode}_${safeErfNo}`;
+function getInstructionWorkflowState(action = {}) {
+  return String(
+    action?.workflowState || action?.workflow?.state || "",
+  ).toUpperCase();
+}
+
+function isLifecycleInstructionLocked(action = {}) {
+  const workflowState = getInstructionWorkflowState(action);
+
+  return (
+    action?.source === "WMS" ||
+    Boolean(action?.instructionTrnId) ||
+    Boolean(action?.trnId) ||
+    Boolean(action?.id) ||
+    [
+      "ISSUED",
+      "REASSIGNED",
+      "ACCEPTED",
+      "REJECTED",
+      "COMPLETED",
+      "CANCELLED",
+    ].includes(workflowState)
+  );
 }
 
 function withSubmitTimeout(promise, timeoutMs = 15000) {
@@ -151,16 +189,6 @@ function resolveMncServiceProvider(spId, allServiceProviders, visited = []) {
   ]);
 }
 
-const EMPTY_SELECT_WITH_OTHER = {
-  code: "",
-  label: "",
-  otherText: "",
-};
-
-function makeEmptySelectWithOther() {
-  return { ...EMPTY_SELECT_WITH_OTHER };
-}
-
 function textToOtherSelectValue(text) {
   const clean = String(text || "").trim();
 
@@ -173,7 +201,7 @@ function textToOtherSelectValue(text) {
   };
 }
 
-function normalizeRemovalInstructionValue(value) {
+function normalizeInstructionValue(value) {
   if (!value) return makeEmptySelectWithOther();
 
   if (typeof value === "string") {
@@ -205,142 +233,320 @@ function normalizeNoReadingReasonValue(value) {
   return makeEmptySelectWithOther();
 }
 
-function buildBackendRemovalPayload(removal = {}) {
-  return {
-    removalInstruction: {
-      text: selectWithOtherToText(removal?.removalInstruction),
-    },
+function normalizeNoAccessReasonValue(value, reasonText = "") {
+  if (value?.code !== undefined || value?.otherText !== undefined) {
+    return normalizeSelectWithOtherValue(value);
+  }
 
+  if (reasonText && reasonText !== "NAv") {
+    return textToOtherSelectValue(reasonText);
+  }
+
+  return makeEmptySelectWithOther();
+}
+
+function normalizeMeterKindForReading(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]/g, "");
+}
+
+function isPrepaidMeterKind(value) {
+  return normalizeMeterKindForReading(value) === "prepaid";
+}
+
+function getHasAccess(values = {}) {
+  return String(values?.accessData?.access?.hasAccess || "yes").toLowerCase();
+}
+
+function isNoAccess(values = {}) {
+  return getHasAccess(values) === "no";
+}
+
+function hasMediaTag(media = [], tag) {
+  return (Array.isArray(media) ? media : []).some((item) => item?.tag === tag);
+}
+
+function filterExecutionMedia(media = []) {
+  return (Array.isArray(media) ? media : []).filter((item) =>
+    EXECUTION_MEDIA_TAGS.includes(item?.tag),
+  );
+}
+
+function buildBackendRemovalPayload(
+  removal = {},
+  { isPrepaid = false, noAccess = false } = {},
+) {
+  if (noAccess) {
+    return {
+      meterRemoved: {
+        answer: "",
+        notes: "",
+      },
+
+      meterReading: "",
+      tokenReading: "",
+      noReadingReason: "",
+
+      safetyConfirmed: {
+        answer: "",
+        notes: "",
+      },
+    };
+  }
+
+  return {
     meterRemoved: {
       answer: removal?.meterRemoved?.answer || "",
       notes: removal?.meterRemoved?.notes || "",
     },
 
-    finalReading: {
-      reading: String(removal?.finalReading?.reading || ""),
-      noReadingReason: selectWithOtherToText(
-        removal?.finalReading?.noReadingReason,
-      ),
-    },
+    meterReading: isPrepaid ? "" : String(removal?.meterReading || ""),
+    tokenReading: isPrepaid ? String(removal?.tokenReading || "") : "",
 
-    supplyMadeSafe: {
-      answer: removal?.supplyMadeSafe?.answer || "",
-      notes: removal?.supplyMadeSafe?.notes || "",
+    noReadingReason: selectWithOtherToText(removal?.noReadingReason),
+
+    safetyConfirmed: {
+      answer: removal?.safetyConfirmed?.answer || "",
+      notes: removal?.safetyConfirmed?.notes || "",
     },
   };
 }
 
-const RemovalSchema = object().shape({
-  removal: object().shape({
-    removalInstruction: object()
-      .shape({
-        code: string().notRequired(),
-        label: string().notRequired(),
-        otherText: string().notRequired(),
-      })
-      .test(
-        "removal-instruction-required",
-        "Removal instruction is required",
-        function (value) {
-          return isSelectWithOtherFilled(value);
+function buildAssignmentPayload({
+  assignment = {},
+  officeInstruction = {},
+  instructionLocked = true,
+}) {
+  const { instructionSelect, createdFor, ...restAssignment } = assignment || {};
+
+  const targetFromCreatedFor = createdFor?.id
+    ? [
+        {
+          type: createdFor?.type || "USER",
+          id: createdFor.id,
+          name: createdFor?.name || "NAv",
         },
-      ),
+      ]
+    : [];
 
-    meterRemoved: object().shape({
-      answer: string().oneOf(["yes", "no"]).required("Required"),
-      notes: string().when("answer", {
-        is: "no",
-        then: (s) => s.trim().required("Notes required when answer is no"),
-        otherwise: (s) => s.notRequired(),
-      }),
-    }),
+  const targets =
+    Array.isArray(restAssignment?.targets) && restAssignment.targets.length
+      ? restAssignment.targets
+      : targetFromCreatedFor;
 
-    finalReading: object().shape({
-      reading: string().test(
-        "reading-or-reason",
-        "Final reading or no-reading reason is required",
-        function (value) {
-          const noReadingReason = this.parent?.noReadingReason;
+  const instructionText = instructionLocked
+    ? String(
+        officeInstruction?.text || restAssignment?.instruction?.text || "",
+      ).trim()
+    : selectWithOtherToText(instructionSelect);
 
-          return (
-            !!String(value || "").trim() ||
-            isSelectWithOtherFilled(noReadingReason)
-          );
-        },
-      ),
+  return {
+    ...restAssignment,
+    targets,
+    instruction: {
+      code:
+        restAssignment?.instruction?.code ||
+        officeInstruction?.code ||
+        "METER_REMOVAL",
+      text: instructionText,
+      notes: String(
+        restAssignment?.instruction?.notes || officeInstruction?.notes || "",
+      ).trim(),
+      mediaRequired:
+        restAssignment?.instruction?.mediaRequired === true ||
+        officeInstruction?.mediaRequired === true,
+    },
+  };
+}
 
-      noReadingReason: object()
-        .shape({
+function normalizeFirebaseStorageImageUrl(rawUrl) {
+  const url = String(rawUrl || "").trim();
+
+  if (!url) return "";
+
+  const marker = "firebasestorage.googleapis.com/v0/b/";
+  const objectMarker = "/o/";
+
+  if (!url.includes(marker) || !url.includes(objectMarker)) {
+    return url;
+  }
+
+  try {
+    const [beforeQuery, query = ""] = url.split("?");
+    const objectMarkerIndex = beforeQuery.indexOf(objectMarker);
+
+    if (objectMarkerIndex < 0) return url;
+
+    const prefix = beforeQuery.slice(
+      0,
+      objectMarkerIndex + objectMarker.length,
+    );
+    const objectPath = beforeQuery.slice(
+      objectMarkerIndex + objectMarker.length,
+    );
+
+    const decodedObjectPath = decodeURIComponent(objectPath);
+    const encodedObjectPath = encodeURIComponent(decodedObjectPath);
+
+    return `${prefix}${encodedObjectPath}${query ? `?${query}` : ""}`;
+  } catch (error) {
+    console.log("normalizeFirebaseStorageImageUrl --error", error);
+
+    return url;
+  }
+}
+
+function getMediaPreviewUrl(mediaItem = {}) {
+  return normalizeFirebaseStorageImageUrl(
+    mediaItem?.url || mediaItem?.uri || "",
+  );
+}
+
+const RemovalSchema = object()
+  .shape({
+    accessData: object().shape({
+      access: object().shape({
+        hasAccess: string()
+          .oneOf(["yes", "no"])
+          .required("Access outcome is required"),
+        reason: string().notRequired(),
+        reasonSelect: object().shape({
           code: string().notRequired(),
           label: string().notRequired(),
           otherText: string().notRequired(),
-        })
-        .test(
-          "reason-or-reading",
-          "No-reading reason is required when no final reading is captured",
-          function (value) {
-            const reading = this.parent?.reading;
-
-            return (
-              !!String(reading || "").trim() || isSelectWithOtherFilled(value)
-            );
-          },
-        ),
-    }),
-
-    supplyMadeSafe: object().shape({
-      answer: string().oneOf(["yes", "no"]).required("Required"),
-      notes: string().when("answer", {
-        is: "no",
-        then: (s) => s.trim().required("Notes required when answer is no"),
-        otherwise: (s) => s.notRequired(),
+        }),
       }),
     }),
-  }),
 
-  media: array()
-    .of(object())
-    .test("removal-evidence", "Removal evidence missing", function (value) {
-      const removal = this.parent?.removal || {};
+    assignment: object().shape({
+      instructionSelect: object().shape({
+        code: string().notRequired(),
+        label: string().notRequired(),
+        otherText: string().notRequired(),
+      }),
+    }),
 
-      const finalReading = String(removal?.finalReading?.reading || "").trim();
+    removal: object().shape({
+      meterRemoved: object().shape({
+        answer: string().notRequired(),
+        notes: string().notRequired(),
+      }),
 
-      if (!value?.some((m) => m.tag === "removalInstructionEvidence")) {
+      meterReading: string().notRequired(),
+      tokenReading: string().notRequired(),
+
+      noReadingReason: object().shape({
+        code: string().notRequired(),
+        label: string().notRequired(),
+        otherText: string().notRequired(),
+      }),
+
+      safetyConfirmed: object().shape({
+        answer: string().notRequired(),
+        notes: string().notRequired(),
+      }),
+    }),
+
+    media: array().of(object()),
+  })
+  .test("rem-v01-validation", "REM validation failed", function (values = {}) {
+    const access = values?.accessData?.access || {};
+    const removal = values?.removal || {};
+    const media = values?.media || [];
+
+    if (String(access?.hasAccess || "").toLowerCase() === "no") {
+      if (!isSelectWithOtherFilled(access?.reasonSelect)) {
         return this.createError({
-          message: "Removal instruction evidence required",
+          path: "accessData.access.reasonSelect",
+          message: "No-access reason is required",
         });
       }
 
-      if (
-        removal?.meterRemoved?.answer === "yes" &&
-        !value?.some((m) => m.tag === "removalEvidence")
-      ) {
+      if (!hasMediaTag(media, "noAccessPhoto")) {
         return this.createError({
-          message: "Removal evidence required",
-        });
-      }
-
-      if (
-        finalReading &&
-        !value?.some((m) => m.tag === "finalReadingEvidence")
-      ) {
-        return this.createError({
-          message: "Final reading evidence required",
-        });
-      }
-
-      if (
-        removal?.supplyMadeSafe?.answer === "yes" &&
-        !value?.some((m) => m.tag === "supplySafeEvidence")
-      ) {
-        return this.createError({
-          message: "Supply safe evidence required",
+          path: "media",
+          message: "No access photo is required",
         });
       }
 
       return true;
-    }),
-});
+    }
+
+    if (!["yes", "no"].includes(removal?.meterRemoved?.answer)) {
+      return this.createError({
+        path: "removal.meterRemoved.answer",
+        message: "Meter removed answer is required",
+      });
+    }
+
+    if (removal?.meterRemoved?.answer !== "yes") {
+      return this.createError({
+        path: "removal.meterRemoved.answer",
+        message: "Meter must be confirmed as removed before submit",
+      });
+    }
+
+    if (!hasMediaTag(media, "removalEvidence")) {
+      return this.createError({
+        path: "media",
+        message: "Removal evidence required",
+      });
+    }
+
+    const meterReading = String(removal?.meterReading || "").trim();
+    const tokenReading = String(removal?.tokenReading || "").trim();
+
+    if (
+      !meterReading &&
+      !tokenReading &&
+      !isSelectWithOtherFilled(removal?.noReadingReason)
+    ) {
+      return this.createError({
+        path: "removal.noReadingReason",
+        message:
+          "Meter reading, token reading, or no-reading reason is required",
+      });
+    }
+
+    if (meterReading && !hasMediaTag(media, "removalMeterReadingEvidence")) {
+      return this.createError({
+        path: "media",
+        message: "Removal meter reading evidence required",
+      });
+    }
+
+    if (tokenReading && !hasMediaTag(media, "tokenReadingPhoto")) {
+      return this.createError({
+        path: "media",
+        message: "Token reading photo is required",
+      });
+    }
+
+    if (!["yes", "no"].includes(removal?.safetyConfirmed?.answer)) {
+      return this.createError({
+        path: "removal.safetyConfirmed.answer",
+        message: "Safety confirmed answer is required",
+      });
+    }
+
+    if (removal?.safetyConfirmed?.answer !== "yes") {
+      return this.createError({
+        path: "removal.safetyConfirmed.answer",
+        message: "Safety must be confirmed before submit",
+      });
+    }
+
+    if (!hasMediaTag(media, "safetyEvidence")) {
+      return this.createError({
+        path: "media",
+        message: "Safety evidence required",
+      });
+    }
+
+    return true;
+  });
 
 const YesNoQuestion = ({
   title,
@@ -405,15 +611,301 @@ const YesNoQuestion = ({
   );
 };
 
+const AccessOutcomeCard = ({ value, setFieldValue }) => {
+  return (
+    <Surface style={styles.card} elevation={1}>
+      <View style={styles.sectionHeader}>
+        <MaterialCommunityIcons name="gate-alert" size={18} color="#DC2626" />
+        <Text style={styles.sectionTitle}>Site Access Outcome</Text>
+      </View>
+
+      <Text style={styles.accessHelpText}>
+        Select YES if the meter or supply point was accessed. Select NO ACCESS
+        if the executor could not safely reach the meter or supply point.
+      </Text>
+
+      <RadioButton.Group
+        value={value}
+        onValueChange={(nextValue) => {
+          setFieldValue("accessData.access.hasAccess", nextValue);
+
+          if (nextValue === "yes") {
+            setFieldValue("accessData.access.reason", "NAv");
+            setFieldValue(
+              "accessData.access.reasonSelect",
+              makeEmptySelectWithOther(),
+            );
+          }
+        }}
+      >
+        <View style={styles.accessChoiceRow}>
+          <TouchableOpacity
+            style={[
+              styles.accessChoice,
+              value === "yes" && styles.accessChoiceYes,
+            ]}
+            onPress={() => {
+              setFieldValue("accessData.access.hasAccess", "yes");
+              setFieldValue("accessData.access.reason", "NAv");
+              setFieldValue(
+                "accessData.access.reasonSelect",
+                makeEmptySelectWithOther(),
+              );
+            }}
+            activeOpacity={0.85}
+          >
+            <RadioButton value="yes" />
+            <View style={styles.accessChoiceTextWrap}>
+              <Text style={styles.accessChoiceTitle}>ACCESS YES</Text>
+              <Text style={styles.accessChoiceSub}>
+                Continue with REM checks
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.accessChoice,
+              value === "no" && styles.accessChoiceNo,
+            ]}
+            onPress={() => setFieldValue("accessData.access.hasAccess", "no")}
+            activeOpacity={0.85}
+          >
+            <RadioButton value="no" />
+            <View style={styles.accessChoiceTextWrap}>
+              <Text style={styles.accessChoiceTitle}>NO ACCESS</Text>
+              <Text style={styles.accessChoiceSub}>
+                Complete as unsuccessful
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </RadioButton.Group>
+    </Surface>
+  );
+};
+
+const OfficeInstructionSection = ({
+  title,
+  icon,
+  color,
+  instruction,
+  media,
+}) => {
+  const [activeMedia, setActiveMedia] = useState(null);
+
+  const cleanMedia = useMemo(() => {
+    return (Array.isArray(media) ? media : []).filter(
+      (item) => item?.url || item?.uri,
+    );
+  }, [media]);
+
+  const hasMedia = cleanMedia.length > 0;
+  const activeUrl = getMediaPreviewUrl(activeMedia);
+
+  async function openActiveMediaExternal() {
+    if (!activeUrl) return;
+
+    try {
+      await Linking.openURL(activeUrl);
+    } catch (error) {
+      console.log(
+        "OfficeInstructionSection openActiveMediaExternal --error",
+        error,
+      );
+
+      Alert.alert(
+        "Open Media Failed",
+        "Could not open this instruction media item.",
+      );
+    }
+  }
+
+  return (
+    <Surface style={styles.card} elevation={1}>
+      <View style={styles.sectionHeader}>
+        <MaterialCommunityIcons name={icon} size={18} color={color} />
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
+
+      <View style={styles.readOnlyBox}>
+        <Text style={styles.readOnlyLabel}>Instruction</Text>
+        <Text style={styles.readOnlyValue}>{instruction?.text || "NAv"}</Text>
+
+        <Text style={styles.readOnlyLabel}>Instruction Notes</Text>
+        <Text style={styles.readOnlyValue}>
+          {instruction?.notes || "No notes captured."}
+        </Text>
+
+        <Text style={styles.readOnlyLabel}>Instruction Media</Text>
+
+        {!hasMedia ? (
+          <Text style={styles.readOnlyValue}>
+            No instruction media captured.
+          </Text>
+        ) : (
+          <View style={styles.readOnlyMediaList}>
+            {cleanMedia.map((item, index) => {
+              const itemUrl = item?.url || item?.uri || "";
+              const isImage =
+                String(item?.type || "").toLowerCase() === "image" ||
+                itemUrl.toLowerCase().includes(".jpg") ||
+                itemUrl.toLowerCase().includes(".jpeg") ||
+                itemUrl.toLowerCase().includes(".png") ||
+                itemUrl.toLowerCase().includes(".webp");
+
+              return (
+                <TouchableOpacity
+                  key={`${itemUrl || "instruction-media"}-${index}`}
+                  style={styles.mediaReadOnlyRow}
+                  activeOpacity={0.8}
+                  onPress={() => setActiveMedia(item)}
+                >
+                  <View style={styles.mediaReadOnlyThumbWrap}>
+                    {isImage ? (
+                      <Image
+                        source={{ uri: getMediaPreviewUrl(item) }}
+                        style={styles.mediaReadOnlyThumb}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <MaterialCommunityIcons
+                        name="file-eye-outline"
+                        size={20}
+                        color="#2563EB"
+                      />
+                    )}
+                  </View>
+
+                  <View style={styles.mediaReadOnlyMain}>
+                    <Text style={styles.mediaReadOnlyText}>
+                      {item?.tag || "instructionMedia"} •{" "}
+                      {item?.type || "media"}
+                    </Text>
+
+                    {!!item?.created?.byUser && (
+                      <Text style={styles.mediaReadOnlyMeta}>
+                        Uploaded by {item.created.byUser}
+                      </Text>
+                    )}
+
+                    <Text style={styles.mediaReadOnlyHint}>Tap to preview</Text>
+                  </View>
+
+                  <MaterialCommunityIcons
+                    name="chevron-right"
+                    size={20}
+                    color="#2563EB"
+                  />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+      </View>
+
+      <Portal>
+        <Modal
+          visible={Boolean(activeMedia)}
+          onDismiss={() => setActiveMedia(null)}
+          contentContainerStyle={styles.instructionMediaModal}
+        >
+          <View style={styles.instructionMediaModalHeader}>
+            <View style={styles.instructionMediaModalIcon}>
+              <MaterialCommunityIcons
+                name="image-multiple-outline"
+                size={22}
+                color="#2563EB"
+              />
+            </View>
+
+            <View style={styles.instructionMediaModalTitleWrap}>
+              <Text style={styles.instructionMediaModalTitle}>
+                Instruction Media
+              </Text>
+              <Text style={styles.instructionMediaModalSub}>
+                {activeMedia?.tag || "instructionMedia"} •{" "}
+                {activeMedia?.type || "media"}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.instructionMediaModalClose}
+              onPress={() => setActiveMedia(null)}
+            >
+              <MaterialCommunityIcons name="close" size={22} color="#0F172A" />
+            </TouchableOpacity>
+          </View>
+
+          {activeUrl ? (
+            <>
+              <View style={styles.instructionMediaPreviewFrame}>
+                <Image
+                  source={{ uri: activeUrl }}
+                  style={styles.instructionMediaPreviewImage}
+                  resizeMode="contain"
+                />
+              </View>
+
+              <View style={styles.instructionMediaMetaBox}>
+                <Text style={styles.instructionMediaMetaText}>
+                  Uploaded by: {activeMedia?.created?.byUser || "NAv"}
+                </Text>
+                <Text style={styles.instructionMediaMetaText}>
+                  Tag: {activeMedia?.tag || "NAv"}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.openInstructionMediaButton}
+                onPress={openActiveMediaExternal}
+                activeOpacity={0.85}
+              >
+                <MaterialCommunityIcons
+                  name="open-in-new"
+                  size={17}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.openInstructionMediaButtonText}>
+                  OPEN FULL IMAGE
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <View style={styles.instructionMediaEmptyBox}>
+              <MaterialCommunityIcons
+                name="image-off-outline"
+                size={34}
+                color="#94A3B8"
+              />
+              <Text style={styles.readOnlyValue}>No media URL found.</Text>
+            </View>
+          )}
+        </Modal>
+      </Portal>
+    </Surface>
+  );
+};
+
 export default function FormMeterRemoval() {
   const {
     astId: astIdRaw,
+    sourceAstId: sourceAstIdRaw,
     premiseId: premiseIdRaw,
+    instructionTrnId: instructionTrnIdRaw,
+    trnId: trnIdRaw,
     action: actionRaw,
     queueItemId: queueItemIdRaw,
   } = useLocalSearchParams();
 
-  const astId = Array.isArray(astIdRaw) ? astIdRaw[0] : astIdRaw;
+  const routeAstId = Array.isArray(astIdRaw) ? astIdRaw[0] : astIdRaw;
+  const routeSourceAstId = Array.isArray(sourceAstIdRaw)
+    ? sourceAstIdRaw[0]
+    : sourceAstIdRaw;
+  const routeInstructionTrnId = Array.isArray(instructionTrnIdRaw)
+    ? instructionTrnIdRaw[0]
+    : instructionTrnIdRaw;
+  const routeTrnId = Array.isArray(trnIdRaw) ? trnIdRaw[0] : trnIdRaw;
   const premiseId = Array.isArray(premiseIdRaw)
     ? premiseIdRaw[0]
     : premiseIdRaw;
@@ -429,6 +921,44 @@ export default function FormMeterRemoval() {
     }
   }, [actionRaw]);
 
+  const instructionTrnId = readFirstString(
+    routeInstructionTrnId,
+    routeTrnId,
+    action?.instructionTrnId,
+    action?.trnId,
+    action?.id,
+    action?.trn?.id,
+  );
+
+  const sourceAstId = readFirstString(
+    routeSourceAstId,
+    routeAstId,
+    action?.sourceAstId,
+    action?.astId,
+    action?.ast?.astData?.astId,
+  );
+
+  const officeInstruction = useMemo(() => {
+    return action?.officeInstruction || action?.assignment?.instruction || {};
+  }, [action]);
+
+  const officeInstructionMedia = useMemo(() => {
+    if (Array.isArray(action?.officeInstructionMedia)) {
+      return action.officeInstructionMedia;
+    }
+
+    if (Array.isArray(action?.media)) {
+      return action.media.filter((media) => media?.tag === "instructionMedia");
+    }
+
+    return [];
+  }, [action]);
+
+  const instructionLocked = useMemo(() => {
+    return Boolean(instructionTrnId) || isLifecycleInstructionLocked(action);
+  }, [action, instructionTrnId]);
+  console.log(`instructionLocked`, instructionLocked);
+
   const router = useRouter();
   const { all } = useWarehouse();
   const { profile, user } = useAuth();
@@ -436,11 +966,12 @@ export default function FormMeterRemoval() {
 
   const [editQueueItem, setEditQueueItem] = useState(undefined);
   const [inProgress, setInProgress] = useState(false);
+  const [saveInProgress, setSaveInProgress] = useState(false);
   const [initialEligible, setInitialEligible] = useState(null);
 
   const [submitOutcome, setSubmitOutcome] = useState({
     visible: false,
-    type: null, // "success" | "removalFailed" | "savedLocally"
+    type: null,
     title: "",
     message: "",
     goBackOnContinue: true,
@@ -475,11 +1006,85 @@ export default function FormMeterRemoval() {
   const isEditMode = !!queueItemId;
 
   const astDoc = useMemo(() => {
-    const id = astId || action?.astId;
+    const id = sourceAstId;
     if (!id) return null;
 
-    return (all?.meters || []).find((meter) => meter?.id === id) || null;
-  }, [all?.meters, astId, action?.astId]);
+    const warehouseAst =
+      (all?.meters || []).find((meterDoc) => meterDoc?.id === id) || null;
+
+    if (warehouseAst) return warehouseAst;
+
+    const actionAst = action?.ast || {};
+    const actionAstData = actionAst?.astData || {};
+    const actionAccessData = action?.accessData || {};
+    const actionStatus = action?.status || {};
+
+    const actionMeterNo = readFirstString(
+      actionAstData?.astNo,
+      action?.meterNo,
+    );
+
+    if (!actionAstData?.astId && !actionMeterNo) {
+      return null;
+    }
+
+    return {
+      id,
+      ast: {
+        ...actionAst,
+        astData: {
+          ...actionAstData,
+          astId: readFirstString(actionAstData?.astId, id),
+          astNo: readFirstString(actionAstData?.astNo, action?.meterNo, "NAv"),
+          astManufacturer: readFirstString(
+            actionAstData?.astManufacturer,
+            "NAv",
+          ),
+          astName: readFirstString(actionAstData?.astName, "NAv"),
+          meter: actionAstData?.meter || {
+            type: readFirstString(action?.meterKind, "NAv"),
+            category: readFirstString(action?.meterType, "NAv"),
+          },
+        },
+      },
+      accessData: {
+        ...actionAccessData,
+        erfId: readFirstString(actionAccessData?.erfId, action?.erfId, "NAv"),
+        erfNo: readFirstString(actionAccessData?.erfNo, action?.erfNo, "NAv"),
+        parents: actionAccessData?.parents || {},
+        premise: {
+          ...(actionAccessData?.premise || {}),
+          id: readFirstString(
+            actionAccessData?.premise?.id,
+            action?.premiseId,
+            premiseId,
+            "NAv",
+          ),
+          address: readFirstString(
+            actionAccessData?.premise?.address,
+            action?.address,
+            "NAv",
+          ),
+          propertyType: readFirstString(
+            actionAccessData?.premise?.propertyType,
+            action?.propertyType,
+            "NAv",
+          ),
+        },
+      },
+      status: {
+        ...actionStatus,
+        state: readFirstString(
+          actionStatus?.state,
+          action?.meterPreStatus,
+          "UNKNOWN",
+        ),
+        id: readFirstString(actionStatus?.id, "NAv"),
+        detail: readFirstString(actionStatus?.detail, "NAv"),
+      },
+      meterType: readFirstString(action?.meterType, "NAv"),
+    };
+  }, [all?.meters, sourceAstId, action, premiseId]);
 
   const premise = useMemo(() => {
     const id =
@@ -487,22 +1092,72 @@ export default function FormMeterRemoval() {
 
     if (!id) return null;
 
-    return (all?.prems || []).find((p) => p?.id === id) || null;
-  }, [all?.prems, premiseId, astDoc?.accessData?.premise?.id, action]);
+    const warehousePremise =
+      (all?.prems || []).find((premiseDoc) => premiseDoc?.id === id) || null;
+
+    if (warehousePremise) return warehousePremise;
+
+    if (astDoc?.accessData?.premise?.id) {
+      return {
+        id: astDoc.accessData.premise.id,
+        erfNo: astDoc?.accessData?.erfNo || action?.erfNo || "NAv",
+        parents: astDoc?.accessData?.parents || {},
+        address: {
+          strNo: "",
+          strName:
+            astDoc?.accessData?.premise?.address || action?.address || "",
+          strType: "",
+        },
+        propertyType: {
+          type: "",
+          name: astDoc?.accessData?.premise?.propertyType || "NAv",
+          unitNo: "",
+        },
+        geometry: {
+          centroid: null,
+        },
+      };
+    }
+
+    return null;
+  }, [
+    all?.prems,
+    premiseId,
+    astDoc?.accessData?.premise?.id,
+    astDoc?.accessData?.premise?.address,
+    astDoc?.accessData?.premise?.propertyType,
+    astDoc?.accessData?.erfNo,
+    astDoc?.accessData?.parents,
+    action,
+  ]);
 
   const astData = astDoc?.ast?.astData || {};
   const meter = astData?.meter || {};
-  const meterNo = astData?.astNo || action?.meterNo || "NAv";
-  const meterType = astDoc?.meterType || action?.meterType || "NAv";
-  const meterKind = String(meter?.type || "NAv").toLowerCase();
+
+  const meterNo = readFirstString(astData?.astNo, action?.meterNo, "NAv");
+
+  const meterType = readFirstString(
+    astDoc?.meterType,
+    action?.meterType,
+    meter?.category,
+    "NAv",
+  );
+
+  const meterKind = String(
+    readFirstString(meter?.type, action?.meterKind, "NAv"),
+  ).toLowerCase();
+
+  const isPrepaidReading = isPrepaidMeterKind(meterKind);
+
   const currentStatus = String(
-    astDoc?.status?.state || "UNKNOWN",
+    readFirstString(astDoc?.status?.state, action?.meterPreStatus, "UNKNOWN"),
   ).toUpperCase();
 
   const parents = astDoc?.accessData?.parents || premise?.parents || {};
   const wardPcode = parents?.wardPcode || "NAv";
   const lmPcode = parents?.lmPcode || "NAv";
-  const erfNo = astDoc?.accessData?.erfNo || premise?.erfNo || "NAv";
+  const erfNo =
+    astDoc?.accessData?.erfNo || premise?.erfNo || action?.erfNo || "NAv";
 
   const premiseAddress = getPremiseAddress(premise, astDoc);
   const propType = getPropertyType(premise, astDoc);
@@ -512,26 +1167,25 @@ export default function FormMeterRemoval() {
     toLatLng(premise?.geometry?.centroid) ||
     null;
 
-  const trnId = useMemo(
-    () =>
-      buildMeterRemovalTrnId({
-        wardPcode,
-        erfNo,
-        meterType,
-      }),
-    [wardPcode, erfNo, meterType],
-  );
-
   useEffect(() => {
     if (initialEligible !== null) return;
     if (!astDoc?.id) return;
 
-    const firstStatus = String(astDoc?.status?.state || "").toUpperCase();
+    const firstStatus = String(
+      astDoc?.status?.state || action?.meterPreStatus || "",
+    ).toUpperCase();
 
     if (!firstStatus) return;
 
-    setInitialEligible(firstStatus !== "REMOVED");
-  }, [initialEligible, astDoc?.id, astDoc?.status?.state]);
+    setInitialEligible(
+      ["FIELD", "CONNECTED", "DISCONNECTED"].includes(firstStatus),
+    );
+  }, [
+    initialEligible,
+    astDoc?.id,
+    astDoc?.status?.state,
+    action?.meterPreStatus,
+  ]);
 
   const isEligible = initialEligible === true;
 
@@ -556,46 +1210,12 @@ export default function FormMeterRemoval() {
   ]);
 
   const removalInstructionLookup = useIrepsLookupOptions(
-    "METER_REMOVAL_REMOVAL_INSTRUCTION",
+    "METER_REMOVAL_INSTRUCTION",
   );
 
   const noReadingReasonLookup = useIrepsLookupOptions(
-    "METER_REMOVAL_NO_READING_REASON",
+    "METER_NO_READING_REASON",
   );
-
-  function buildRemovalFailureReasons(values) {
-    const reasons = [];
-
-    if (values?.removal?.meterRemoved?.answer !== "yes") {
-      reasons.push("Meter removal was not confirmed.");
-    }
-
-    if (values?.removal?.supplyMadeSafe?.answer !== "yes") {
-      reasons.push("Supply was not confirmed safe.");
-    }
-
-    return reasons;
-  }
-
-  function buildRemovalFailedMessage(values, result) {
-    const reasons = buildRemovalFailureReasons(values);
-
-    const reasonText = reasons.length
-      ? reasons.map((reason) => `• ${reason}`).join("\n")
-      : "• Removal rules were not fully satisfied.";
-
-    return [
-      "The removal TRN was submitted and saved for audit, but the meter was not moved to REMOVED.",
-      "",
-      "Reason:",
-      reasonText,
-      "",
-      `AST status: ${result?.astStatusAfter || currentStatus}`,
-      "",
-      "This submitted form cannot be modified.",
-      "A new removal form must be completed and submitted.",
-    ].join("\n");
-  }
 
   function buildTrnSystemFields() {
     return {
@@ -619,43 +1239,264 @@ export default function FormMeterRemoval() {
     };
   }
 
-  function getInitialValues() {
+  function buildQueueContext(values, baseSystemFields) {
+    return {
+      trnType: "METER_REMOVAL",
+      instructionTrnId: instructionTrnId || "NAv",
+      sourceAstId: astDoc?.id || sourceAstId || "NAv",
+      astId: astDoc?.id || sourceAstId || "NAv",
+      meterNo: values?.ast?.astData?.astNo || "NAv",
+      meterType: values?.meterType || "NAv",
+      erfId: baseSystemFields?.erfId || "NAv",
+      erfNo: baseSystemFields?.erfNo || "NAv",
+      premiseId: baseSystemFields?.premise?.id || "NAv",
+      lmPcode: lmPcode || "NAv",
+      wardPcode: wardPcode || "NAv",
+    };
+  }
+
+  function buildExecutionPayload(values, mediaOverride) {
+    const baseSystemFields = buildTrnSystemFields();
+    const noAccess = isNoAccess(values);
+    const noAccessReason = noAccess
+      ? selectWithOtherToText(values?.accessData?.access?.reasonSelect)
+      : "NAv";
+
+    const executionOutcome = {
+      outcome: noAccess ? "NO_ACCESS" : "SUCCESS",
+      success: !noAccess,
+    };
+
+    return removeUndefined({
+      id: instructionTrnId,
+      instructionTrnId,
+      sourceAstId: astDoc?.id || sourceAstId || "NAv",
+
+      trnType: "METER_REMOVAL",
+
+      accessData: {
+        ...baseSystemFields,
+        access: {
+          hasAccess: values?.accessData?.access?.hasAccess || "yes",
+          reason: noAccessReason || "NAv",
+          reasonSelect: values?.accessData?.access?.reasonSelect,
+        },
+      },
+
+      ast: values.ast,
+
+      removal: buildBackendRemovalPayload(values.removal, {
+        isPrepaid: isPrepaidReading,
+        noAccess,
+      }),
+
+      executionOutcome,
+
+      assignment: buildAssignmentPayload({
+        assignment: values.assignment,
+        officeInstruction,
+        instructionLocked,
+      }),
+
+      meterType: values.meterType,
+      media: filterExecutionMedia(mediaOverride || values.media || []),
+      status: values.status,
+      serviceProvider,
+    });
+  }
+
+  function buildRemovalFailureMessage(values, result) {
+    const noAccess = isNoAccess(values);
+
+    if (noAccess) {
+      return [
+        "The REM was completed as NO ACCESS.",
+        "",
+        "Result:",
+        "• The field attempt was completed.",
+        "• The meter was not moved to REMOVED.",
+        "",
+        `AST status: ${result?.astStatusAfter || currentStatus}`,
+      ].join("\n");
+    }
+
+    return [
+      "The removal TRN was submitted, but the meter was not moved to REMOVED.",
+      "",
+      `AST status: ${result?.astStatusAfter || currentStatus}`,
+      "",
+      "Please review the completed TRN result.",
+    ].join("\n");
+  }
+
+  async function saveDraftToQueue(values, messageTitle, messageBody) {
+    const baseSystemFields = buildTrnSystemFields();
+    const cleanPayload = buildExecutionPayload(values, values?.media || []);
+    const nextContext = buildQueueContext(values, baseSystemFields);
+
+    let queueResult = null;
+
+    if (queueItemId) {
+      const existingSync = editQueueItem?.sync || {
+        attempts: 0,
+        lastAttemptAt: "NAv",
+        nextRetryAt: "NAv",
+      };
+
+      queueResult = await updateSubmissionQueueItem(
+        queueItemId,
+        {
+          payload: cleanPayload,
+          context: nextContext,
+          status: "IN_PROGRESS",
+          result: {
+            success: false,
+            code: "LOCAL_SAVE_ONLY",
+            message: "Saved locally only. Not submitted.",
+            trnId: instructionTrnId || "NAv",
+          },
+          sync: {
+            ...existingSync,
+            nextRetryAt: "NAv",
+          },
+        },
+        agentUid,
+        agentName,
+      );
+    } else {
+      queueResult = await addSubmissionQueueItem({
+        formType: "METER_REMOVAL",
+        payload: cleanPayload,
+        context: nextContext,
+        status: "IN_PROGRESS",
+        createdByUid: agentUid,
+        createdByUser: agentName,
+      });
+    }
+
+    if (!queueResult?.success) {
+      Alert.alert("Draft Save Failed", "Failed to save removal draft locally.");
+      return false;
+    }
+
+    setSubmitOutcome({
+      visible: true,
+      type: "savedLocally",
+      title: messageTitle || "SAVED LOCALLY",
+      message:
+        messageBody ||
+        "This REMOVAL execution form was saved locally only. No backend update was made.",
+      goBackOnContinue: true,
+    });
+
+    return true;
+  }
+
+  async function handleSaveRemoval(values) {
+    try {
+      setSaveInProgress(true);
+
+      await saveDraftToQueue(
+        values,
+        "SAVED LOCALLY",
+        "This REM execution form was saved locally only. It was not submitted and no backend update was made.",
+      );
+
+      setSaveInProgress(false);
+    } catch (error) {
+      console.log("handleSaveRemoval--error", error);
+      setSaveInProgress(false);
+
+      Alert.alert(
+        "Save Failed",
+        error?.message || "Failed to save this REM form locally.",
+      );
+    }
+  }
+
+  const getInitialValues = useCallback(() => {
     const editPayload = editQueueItem?.payload || null;
 
     if (editPayload) {
+      const { removal: _removal, ...cleanEditPayload } = editPayload || {};
+      const editRemoval = editPayload?.removal || {};
+
       return {
-        ...editPayload,
-        removal: {
-          ...editPayload?.removal,
+        ...cleanEditPayload,
+        id: instructionTrnId || editPayload?.id || "NAv",
+        instructionTrnId:
+          instructionTrnId || editPayload?.instructionTrnId || "NAv",
+        sourceAstId: sourceAstId || editPayload?.sourceAstId || "NAv",
 
-          removalInstruction: normalizeRemovalInstructionValue(
-            editPayload?.removal?.removalInstruction,
-          ),
-
-          finalReading: {
-            ...editPayload?.removal?.finalReading,
-            reading: editPayload?.removal?.finalReading?.reading || "",
-            noReadingReason: normalizeNoReadingReasonValue(
-              editPayload?.removal?.finalReading?.noReadingReason,
+        accessData: {
+          ...editPayload?.accessData,
+          access: {
+            hasAccess:
+              editPayload?.accessData?.access?.hasAccess === "no"
+                ? "no"
+                : "yes",
+            reason: editPayload?.accessData?.access?.reason || "NAv",
+            reasonSelect: normalizeNoAccessReasonValue(
+              editPayload?.accessData?.access?.reasonSelect,
+              editPayload?.accessData?.access?.reason,
             ),
           },
         },
+
+        assignment: {
+          ...editPayload?.assignment,
+          instructionSelect: normalizeInstructionValue(
+            editPayload?.assignment?.instructionSelect ||
+              editPayload?.assignment?.instruction,
+          ),
+        },
+
+        removal: {
+          ...editRemoval,
+
+          meterReading:
+            typeof editRemoval?.meterReading === "object"
+              ? editRemoval?.meterReading?.reading || ""
+              : editRemoval?.meterReading || "",
+
+          tokenReading: editRemoval?.tokenReading || "",
+
+          noReadingReason: normalizeNoReadingReasonValue(
+            editRemoval?.noReadingReason ||
+              editRemoval?.meterReading?.noReadingReason,
+          ),
+
+          meterRemoved: editRemoval?.meterRemoved || {
+            answer: "",
+            notes: "",
+          },
+
+          safetyConfirmed: editRemoval?.safetyConfirmed || {
+            answer: "",
+            notes: "",
+          },
+        },
+
+        media: filterExecutionMedia(editPayload?.media || []),
       };
     }
 
     return {
-      id: trnId,
+      id: instructionTrnId,
+      instructionTrnId,
+      sourceAstId: astDoc?.id || sourceAstId || "NAv",
 
       accessData: {
         access: {
           hasAccess: "yes",
           reason: "NAv",
+          reasonSelect: makeEmptySelectWithOther(),
         },
       },
 
       ast: {
         astData: {
-          astId: astDoc?.id || astId || "NAv",
+          astId: astDoc?.id || sourceAstId || "NAv",
           astNo: astData?.astNo || "NAv",
           astManufacturer: astData?.astManufacturer || "NAv",
           astName: astData?.astName || "NAv",
@@ -667,47 +1508,59 @@ export default function FormMeterRemoval() {
       },
 
       removal: {
-        removalInstruction: makeEmptySelectWithOther(),
-
         meterRemoved: {
           answer: "",
           notes: "",
         },
 
-        finalReading: {
-          reading: "",
-          noReadingReason: makeEmptySelectWithOther(),
-        },
+        meterReading: "",
+        tokenReading: "",
+        noReadingReason: makeEmptySelectWithOther(),
 
-        supplyMadeSafe: {
+        safetyConfirmed: {
           answer: "",
           notes: "",
         },
       },
 
       assignment: {
-        instruction: {
-          code: "METER_REMOVAL",
-          text: "Remove meter and confirm supply has been made safe",
-          notes: "",
-          mediaRequired: true,
-        },
+        instructionSelect: instructionLocked
+          ? normalizeInstructionValue(officeInstruction)
+          : makeEmptySelectWithOther(),
 
-        createdFor: {
-          type: "USER",
-          id: agentUid,
-          name: agentName,
-        },
+        instruction: instructionLocked
+          ? {
+              code: officeInstruction?.code || "METER_REMOVAL",
+              text: officeInstruction?.text || "",
+              notes: officeInstruction?.notes || "",
+              mediaRequired: officeInstruction?.mediaRequired === true,
+            }
+          : {
+              code: "METER_REMOVAL",
+              text: "",
+              notes: "",
+              mediaRequired: true,
+            },
 
-        acceptedRejectedAt: null,
-        acceptedRejectedUid: null,
-        acceptedRejectedUser: null,
-        rejectReason: "",
+        targets: Array.isArray(action?.assignment?.targets)
+          ? action.assignment.targets
+          : [
+              {
+                type: "USER",
+                id: agentUid,
+                name: agentName,
+              },
+            ],
 
-        cancelledAt: null,
-        cancelledByUid: null,
-        cancelledByUser: null,
-        cancelReason: "",
+        acceptedRejectedAt: action?.assignment?.acceptedRejectedAt || null,
+        acceptedRejectedUid: action?.assignment?.acceptedRejectedUid || null,
+        acceptedRejectedUser: action?.assignment?.acceptedRejectedUser || null,
+        rejectReason: action?.assignment?.rejectReason || "",
+
+        cancelledAt: action?.assignment?.cancelledAt || null,
+        cancelledByUid: action?.assignment?.cancelledByUid || null,
+        cancelledByUser: action?.assignment?.cancelledByUser || null,
+        cancelReason: action?.assignment?.cancelReason || "",
       },
 
       meterType,
@@ -720,130 +1573,59 @@ export default function FormMeterRemoval() {
         detail: astDoc?.status?.detail || lmPcode || "NAv",
       },
     };
-  }
+  }, [
+    editQueueItem,
+    instructionTrnId,
+    sourceAstId,
+    astDoc?.id,
+    astData?.astNo,
+    astData?.astManufacturer,
+    astData?.astName,
+    meter?.type,
+    meter?.category,
+    meterType,
+    agentUid,
+    agentName,
+    lmPcode,
+    astDoc?.status?.state,
+    astDoc?.status?.id,
+    astDoc?.status?.detail,
+    officeInstruction,
+    instructionLocked,
+    action?.assignment?.targets,
+    action?.assignment?.acceptedRejectedAt,
+    action?.assignment?.acceptedRejectedUid,
+    action?.assignment?.acceptedRejectedUser,
+    action?.assignment?.rejectReason,
+    action?.assignment?.cancelledAt,
+    action?.assignment?.cancelledByUid,
+    action?.assignment?.cancelledByUser,
+    action?.assignment?.cancelReason,
+  ]);
 
-  const actionInit = useMemo(
-    () => getInitialValues(),
-    [
-      editQueueItem,
-      trnId,
-      astDoc?.id,
-      astId,
-      astData?.astNo,
-      astData?.astManufacturer,
-      astData?.astName,
-      meter?.type,
-      meter?.category,
-      meterType,
-      agentUid,
-      agentName,
-      lmPcode,
-      astDoc?.status?.state,
-      astDoc?.status?.id,
-      astDoc?.status?.detail,
-    ],
-  );
+  const actionInit = useMemo(() => getInitialValues(), [getInitialValues]);
 
   const handleSubmitRemoval = async (values) => {
+    if (!instructionTrnId) {
+      Alert.alert(
+        "Missing Instruction",
+        "This REM execution form must be opened from an accepted WMS instruction.",
+      );
+      return;
+    }
+
     if (!astDoc?.id) {
       Alert.alert("Error", "AST data not found.");
       return;
     }
 
     if (!isEligible) {
-      Alert.alert("Not Eligible", "Removed meters cannot be removed again.");
+      Alert.alert(
+        "Not Eligible",
+        "Only FIELD, CONNECTED, or DISCONNECTED meters can be removed.",
+      );
       return;
     }
-
-    const baseSystemFields = buildTrnSystemFields();
-
-    let cleanPayload = removeUndefined({
-      id: values.id,
-
-      accessData: {
-        ...baseSystemFields,
-        access: values.accessData.access,
-      },
-
-      ast: values.ast,
-      removal: buildBackendRemovalPayload(values.removal),
-      assignment: values.assignment,
-      meterType: values.meterType,
-      media: values.media || [],
-      status: values.status,
-      serviceProvider,
-    });
-
-    const saveRemovalDraftToQueue = async (messageTitle, messageBody) => {
-      const nextContext = {
-        trnType: "METER_REMOVAL",
-        astId: astDoc?.id || "NAv",
-        meterNo: values?.ast?.astData?.astNo || "NAv",
-        meterType: cleanPayload?.meterType || "NAv",
-        erfId: baseSystemFields?.erfId || "NAv",
-        erfNo: baseSystemFields?.erfNo || "NAv",
-        premiseId: baseSystemFields?.premise?.id || "NAv",
-        lmPcode: lmPcode || "NAv",
-        wardPcode: wardPcode || "NAv",
-      };
-
-      let queueResult = null;
-
-      if (queueItemId) {
-        const existingSync = editQueueItem?.sync || {
-          attempts: 0,
-          lastAttemptAt: "NAv",
-          nextRetryAt: "NAv",
-        };
-
-        queueResult = await updateSubmissionQueueItem(
-          queueItemId,
-          {
-            payload: cleanPayload,
-            context: nextContext,
-            status: "PENDING",
-            result: {
-              success: false,
-              code: "NAv",
-              message: "NAv",
-              trnId: "NAv",
-            },
-            sync: {
-              ...existingSync,
-              nextRetryAt: "NAv",
-            },
-          },
-          agentUid,
-          agentName,
-        );
-      } else {
-        queueResult = await addSubmissionQueueItem({
-          formType: "METER_REMOVAL",
-          payload: cleanPayload,
-          context: nextContext,
-          createdByUid: agentUid,
-          createdByUser: agentName,
-        });
-      }
-
-      if (!queueResult?.success) {
-        Alert.alert(
-          "Draft Save Failed",
-          "Failed to save removal draft locally.",
-        );
-        return false;
-      }
-
-      setSubmitOutcome({
-        visible: true,
-        type: "savedLocally",
-        title: messageTitle || "SAVED LOCALLY",
-        message: messageBody,
-        goBackOnContinue: true,
-      });
-
-      return true;
-    };
 
     try {
       setInProgress(true);
@@ -852,21 +1634,22 @@ export default function FormMeterRemoval() {
       const isOnline = netState.isConnected && netState.isInternetReachable;
 
       if (!isOnline) {
-        await saveRemovalDraftToQueue(
-          "Saved Offline",
-          "No internet connection. This removal TRN was saved locally.",
+        setInProgress(false);
+
+        Alert.alert(
+          "Offline",
+          "You are offline. Use SAVE to keep this REM execution form locally, then submit when online.",
         );
 
-        setInProgress(false);
         return;
       }
 
       const storage = getStorage();
 
       const syncedMedia = await Promise.all(
-        (values?.media || []).map(async (item) => {
+        filterExecutionMedia(values?.media || []).map(async (item) => {
           if (item.uri && !item.url) {
-            const fileName = `${baseSystemFields.erfId}_${item.tag}_${Date.now()}.jpg`;
+            const fileName = `${instructionTrnId}_${item.tag}_${Date.now()}.jpg`;
             const storageRef = ref(
               storage,
               `meters/lifecycle/removal/${fileName}`,
@@ -880,6 +1663,7 @@ export default function FormMeterRemoval() {
             const downloadUrl = await getDownloadURL(storageRef);
 
             const { uri, ...cleanItem } = item;
+
             return {
               ...cleanItem,
               url: downloadUrl,
@@ -891,10 +1675,7 @@ export default function FormMeterRemoval() {
         }),
       );
 
-      cleanPayload = {
-        ...cleanPayload,
-        media: syncedMedia,
-      };
+      const cleanPayload = buildExecutionPayload(values, syncedMedia);
 
       const onMeterLifecycleTrnCallable = httpsCallable(
         functions,
@@ -906,15 +1687,16 @@ export default function FormMeterRemoval() {
       try {
         const callableResult = await withSubmitTimeout(
           onMeterLifecycleTrnCallable(cleanPayload),
-          15000,
+          REM_SUBMIT_TIMEOUT_MS,
         );
 
         result = callableResult?.data || {};
       } catch (error) {
         if (error?.message === "SUBMISSION_TIMEOUT") {
-          await saveRemovalDraftToQueue(
-            "Saved Locally",
-            "The submission is taking too long. Your removal data has been saved locally.",
+          await saveDraftToQueue(
+            values,
+            "SAVED LOCALLY",
+            "The submission took too long. The REM form was saved locally only and was not confirmed by the backend.",
           );
 
           setInProgress(false);
@@ -948,40 +1730,36 @@ export default function FormMeterRemoval() {
 
       setInProgress(false);
 
-      if (
-        result?.astStatusChanged === true &&
-        result?.astStatusAfter === "REMOVED"
-      ) {
-        setSubmitOutcome({
-          visible: true,
-          type: "success",
-          title: "METER REMOVED",
-          message:
-            "The removal TRN was submitted and the meter was moved to REMOVED.",
-          goBackOnContinue: true,
-        });
-
-        return;
-      }
-
-      setSubmitOutcome({
-        visible: true,
-        type: "removalFailed",
-        title: "REMOVAL DID NOT PASS",
-        message: buildRemovalFailedMessage(values, result),
-        goBackOnContinue: true,
-      });
+      router.replace("/admin/operations/my-workorders");
+      return;
     } catch (error) {
-      console.error("Removal Submission Error:", error);
+      console.error("RemovalSubmission Error:", error);
       Alert.alert("Error", error?.message || "Submission failed");
       setInProgress(false);
     }
   };
 
+  function closeAfterExecutionOutcome(outcomeType) {
+    setSubmitOutcome({
+      visible: false,
+      type: null,
+      title: "",
+      message: "",
+      goBackOnContinue: true,
+    });
+
+    if (outcomeType === "savedLocally") {
+      router.replace("/(tabs)/admin/operations/my-workorders");
+      return;
+    }
+
+    router.replace("/(tabs)/admin/operations/my-workorders");
+  }
+
   const confirmCancel = () => {
     Alert.alert(
       "Cancel Removal Form?",
-      "This removal form has not been submitted. If you cancel now, the captured data will be lost.",
+      "This removal form has not been submitted. If you cancel now, the captured data will be lost unless you use SAVE.",
       [
         {
           text: "STAY",
@@ -1010,6 +1788,42 @@ export default function FormMeterRemoval() {
       <View style={styles.loaderWrap}>
         <Text style={styles.loaderText}>Draft not found.</Text>
       </View>
+    );
+  }
+
+  if (!instructionTrnId) {
+    return (
+      <ScrollView style={styles.container}>
+        <Stack.Screen
+          options={{
+            title: "Remove Meter",
+            headerTitleStyle: { fontSize: 14, fontWeight: "900" },
+          }}
+        />
+
+        <Surface style={styles.notEligibleCard} elevation={2}>
+          <MaterialCommunityIcons
+            name="file-alert-outline"
+            size={42}
+            color="#ef4444"
+          />
+
+          <Text style={styles.notEligibleTitle}>
+            Missing REMOVAL Instruction
+          </Text>
+
+          <Text style={styles.notEligibleText}>
+            REMOVAL execution must be opened from an accepted WMS instruction.
+          </Text>
+
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.backButtonText}>GO BACK</Text>
+          </TouchableOpacity>
+        </Surface>
+      </ScrollView>
     );
   }
 
@@ -1044,7 +1858,7 @@ export default function FormMeterRemoval() {
           </Text>
 
           <Text style={styles.notEligibleText}>
-            This meter has already been removed.
+            Only FIELD, CONNECTED, or DISCONNECTED meters can be removed.
           </Text>
 
           <Divider style={{ width: "100%", marginVertical: 16 }} />
@@ -1067,9 +1881,13 @@ export default function FormMeterRemoval() {
   return (
     <>
       <ScreenLock
-        visible={inProgress}
+        visible={inProgress || saveInProgress}
         title="REMOVAL"
-        status="Securing lifecycle transaction..."
+        status={
+          saveInProgress
+            ? "Saving locally..."
+            : "Securing lifecycle transaction..."
+        }
       />
 
       <Formik
@@ -1090,7 +1908,10 @@ export default function FormMeterRemoval() {
           isValid,
         }) => {
           const removalErrors = errors?.removal || {};
-          console.log(`FormMeterRemoval --errors`, errors);
+          const assignmentErrors = errors?.assignment || {};
+          const accessErrors = errors?.accessData?.access || {};
+          const noAccess = isNoAccess(values);
+
           return (
             <ScrollView
               style={styles.container}
@@ -1132,6 +1953,11 @@ export default function FormMeterRemoval() {
                 </View>
 
                 <View style={styles.summaryGrid}>
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryLabel}>Instruction TRN</Text>
+                    <Text style={styles.summaryValue}>{instructionTrnId}</Text>
+                  </View>
+
                   <View style={styles.summaryItem}>
                     <Text style={styles.summaryLabel}>Meter No</Text>
                     <Text style={styles.summaryValue}>{meterNo}</Text>
@@ -1181,185 +2007,264 @@ export default function FormMeterRemoval() {
                 </View>
               </Surface>
 
-              {/* REMOVAL INSTRUCTIONS */}
-              <Surface style={styles.card} elevation={1}>
-                <View style={styles.sectionHeader}>
-                  <MaterialCommunityIcons
-                    name="text-box-remove-outline"
-                    size={18}
-                    color="#ef4444"
-                  />
-                  <Text style={styles.sectionTitle}>Removal Instruction</Text>
-                </View>
-
-                <IrepsSelectWithOther
-                  label="Removal Instruction"
-                  placeholder="Select removal instruction"
-                  options={removalInstructionLookup.options}
-                  includeOther={removalInstructionLookup.allowOther ?? true}
-                  otherCode={removalInstructionLookup.otherCode || "OTHER"}
-                  otherLabel={removalInstructionLookup.otherLabel || "Other"}
-                  loading={
-                    removalInstructionLookup.isLoading ||
-                    removalInstructionLookup.isFetching
-                  }
-                  value={values?.removal?.removalInstruction}
-                  onChange={(nextValue) =>
-                    setFieldValue("removal.removalInstruction", nextValue)
-                  }
-                  errorText={
-                    typeof removalErrors?.removalInstruction === "string"
-                      ? removalErrors.removalInstruction
-                      : ""
-                  }
+              {instructionLocked ? (
+                <OfficeInstructionSection
+                  title="Removal Instruction"
+                  icon="text-box-remove-outline"
+                  color="#ef4444"
+                  instruction={officeInstruction}
+                  media={officeInstructionMedia}
                 />
-
-                <IrepsMedia
-                  name="media"
-                  tag="removalInstructionEvidence"
-                  agentName={agentName}
-                  agentUid={agentUid}
-                  fallbackGps={fallbackGps}
-                  required={
-                    !!String(
-                      values?.removal?.removalInstruction?.text || "",
-                    ).trim()
-                  }
-                />
-
-                {typeof errors?.media === "string" &&
-                  errors.media.toLowerCase().includes("instruction") && (
-                    <Text style={styles.errorText}>{errors.media}</Text>
-                  )}
-              </Surface>
-
-              {/* REMOVAL CHECKS */}
-              <Surface style={styles.card} elevation={1}>
-                <View style={styles.sectionHeader}>
-                  <MaterialCommunityIcons
-                    name="clipboard-check-outline"
-                    size={18}
-                    color="#ef4444"
-                  />
-                  <Text style={styles.sectionTitle}>Removal Checks</Text>
-                </View>
-
-                <YesNoQuestion
-                  title="Meter removed"
-                  description="Confirm that the physical meter has been removed."
-                  value={values?.removal?.meterRemoved?.answer}
-                  notes={values?.removal?.meterRemoved?.notes}
-                  answerPath="removal.meterRemoved.answer"
-                  notesPath="removal.meterRemoved.notes"
-                  setFieldValue={setFieldValue}
-                  errorText={
-                    removalErrors?.meterRemoved?.answer ||
-                    removalErrors?.meterRemoved?.notes
-                  }
-                >
-                  <IrepsMedia
-                    name="media"
-                    tag="removalEvidence"
-                    agentName={agentName}
-                    agentUid={agentUid}
-                    fallbackGps={fallbackGps}
-                    required={values?.removal?.meterRemoved?.answer === "yes"}
-                  />
-                </YesNoQuestion>
-
-                {/* FINAL READING */}
-                <Surface style={styles.questionCard} elevation={1}>
-                  <View style={styles.questionHeader}>
-                    <Text style={styles.questionTitle}>Final reading</Text>
-                    <Text style={styles.questionDescription}>
-                      Enter the final meter reading. If no reading is available,
-                      provide the reason.
-                    </Text>
+              ) : (
+                <Surface style={styles.card} elevation={1}>
+                  <View style={styles.sectionHeader}>
+                    <MaterialCommunityIcons
+                      name="text-box-remove-outline"
+                      size={18}
+                      color="#ef4444"
+                    />
+                    <Text style={styles.sectionTitle}>Removal Instruction</Text>
                   </View>
+
+                  <IrepsSelectWithOther
+                    label="Removal Instruction"
+                    placeholder="Select removal instruction"
+                    options={removalInstructionLookup.options}
+                    includeOther={removalInstructionLookup.allowOther ?? true}
+                    otherCode={removalInstructionLookup.otherCode || "OTHER"}
+                    otherLabel={removalInstructionLookup.otherLabel || "Other"}
+                    loading={
+                      removalInstructionLookup.isLoading ||
+                      removalInstructionLookup.isFetching
+                    }
+                    value={values?.assignment?.instructionSelect}
+                    onChange={(nextValue) => {
+                      setFieldValue("assignment.instructionSelect", nextValue);
+                      setFieldValue(
+                        "assignment.instruction.text",
+                        selectWithOtherToText(nextValue),
+                      );
+                    }}
+                    errorText={
+                      typeof assignmentErrors?.instructionSelect === "string"
+                        ? assignmentErrors?.instructionSelect
+                        : ""
+                    }
+                  />
 
                   <TextInput
                     mode="outlined"
-                    label="Final Reading"
-                    value={values?.removal?.finalReading?.reading}
+                    label="Instruction Notes"
+                    value={values?.assignment?.instruction?.notes || ""}
                     onChangeText={(text) =>
-                      setFieldValue(
-                        "removal.finalReading.reading",
-                        text.replace(/[^\d.]/g, ""),
-                      )
+                      setFieldValue("assignment.instruction.notes", text)
                     }
-                    keyboardType="numeric"
-                    style={styles.readingInput}
+                    multiline
+                    numberOfLines={3}
+                    style={styles.notesInput}
                   />
-
-                  <IrepsSelectWithOther
-                    label="No Reading Reason"
-                    placeholder="Select reason"
-                    options={noReadingReasonLookup.options}
-                    includeOther={noReadingReasonLookup.allowOther ?? true}
-                    otherCode={noReadingReasonLookup.otherCode || "OTHER"}
-                    otherLabel={noReadingReasonLookup.otherLabel || "Other"}
-                    loading={
-                      noReadingReasonLookup.isLoading ||
-                      noReadingReasonLookup.isFetching
-                    }
-                    value={values?.removal?.finalReading?.noReadingReason}
-                    onChange={(nextValue) =>
-                      setFieldValue(
-                        "removal.finalReading.noReadingReason",
-                        nextValue,
-                      )
-                    }
-                    errorText={removalErrors?.finalReading?.noReadingReason}
-                  />
-
-                  <View style={styles.questionEvidenceSlot}>
-                    <IrepsMedia
-                      name="media"
-                      tag="finalReadingEvidence"
-                      agentName={agentName}
-                      agentUid={agentUid}
-                      fallbackGps={fallbackGps}
-                      required={
-                        !!String(
-                          values?.removal?.finalReading?.reading || "",
-                        ).trim()
-                      }
-                    />
-                  </View>
-
-                  {!!(
-                    removalErrors?.finalReading?.reading ||
-                    removalErrors?.finalReading?.noReadingReason
-                  ) && (
-                    <Text style={styles.errorText}>
-                      {removalErrors?.finalReading?.reading ||
-                        removalErrors?.finalReading?.noReadingReason}
-                    </Text>
-                  )}
                 </Surface>
+              )}
 
-                <YesNoQuestion
-                  title="Supply made safe"
-                  description="Confirm that supply has been made safe after removal."
-                  value={values?.removal?.supplyMadeSafe?.answer}
-                  notes={values?.removal?.supplyMadeSafe?.notes}
-                  answerPath="removal.supplyMadeSafe.answer"
-                  notesPath="removal.supplyMadeSafe.notes"
-                  setFieldValue={setFieldValue}
-                  errorText={
-                    removalErrors?.supplyMadeSafe?.answer ||
-                    removalErrors?.supplyMadeSafe?.notes
-                  }
-                >
-                  <IrepsMedia
-                    name="media"
-                    tag="supplySafeEvidence"
+              <AccessOutcomeCard
+                value={values?.accessData?.access?.hasAccess || "yes"}
+                setFieldValue={setFieldValue}
+              />
+
+              <Surface style={styles.card} elevation={1}>
+                <View style={styles.sectionHeader}>
+                  <MaterialCommunityIcons
+                    name="power-plug-off-outline"
+                    size={18}
+                    color="#ef4444"
+                  />
+                  <Text style={styles.sectionTitle}>Removal Execution</Text>
+                </View>
+
+                {noAccess ? (
+                  <IrepsNoAccessSection
+                    visible={true}
+                    value={values?.accessData?.access?.reasonSelect}
+                    onChange={(nextValue) => {
+                      setFieldValue(
+                        "accessData.access.reasonSelect",
+                        nextValue,
+                      );
+                      setFieldValue(
+                        "accessData.access.reason",
+                        selectWithOtherToText(nextValue),
+                      );
+                    }}
+                    mediaName="media"
+                    mediaTag="noAccessPhoto"
                     agentName={agentName}
                     agentUid={agentUid}
                     fallbackGps={fallbackGps}
-                    required={values?.removal?.supplyMadeSafe?.answer === "yes"}
+                    reasonErrorText={
+                      typeof accessErrors?.reasonSelect === "string"
+                        ? accessErrors.reasonSelect
+                        : ""
+                    }
+                    mediaErrorText={
+                      typeof errors?.media === "string" &&
+                      errors.media.toLowerCase().includes("access")
+                        ? errors.media
+                        : ""
+                    }
                   />
-                </YesNoQuestion>
+                ) : (
+                  <>
+                    <YesNoQuestion
+                      title="Meter removed"
+                      description="Confirm that the meter was physically removed from the field/site."
+                      value={values?.removal?.meterRemoved?.answer}
+                      notes={values?.removal?.meterRemoved?.notes}
+                      answerPath="removal.meterRemoved.answer"
+                      notesPath="removal.meterRemoved.notes"
+                      setFieldValue={setFieldValue}
+                      errorText={
+                        removalErrors?.meterRemoved?.answer ||
+                        removalErrors?.meterRemoved?.notes
+                      }
+                    >
+                      <IrepsMedia
+                        name="media"
+                        tag="removalEvidence"
+                        agentName={agentName}
+                        agentUid={agentUid}
+                        fallbackGps={fallbackGps}
+                        required={
+                          values?.removal?.meterRemoved?.answer === "yes"
+                        }
+                      />
+                    </YesNoQuestion>
+
+                    <Surface style={styles.questionCard} elevation={1}>
+                      <View style={styles.questionHeader}>
+                        <Text style={styles.questionTitle}>
+                          {isPrepaidReading ? "Token reading" : "Meter reading"}
+                        </Text>
+
+                        <Text style={styles.questionDescription}>
+                          {isPrepaidReading
+                            ? "Capture the prepaid token/register reading at removal. If unavailable, provide the reason."
+                            : "Capture the meter reading at removal. If unavailable, provide the reason."}
+                        </Text>
+                      </View>
+
+                      {isPrepaidReading ? (
+                        <>
+                          <TextInput
+                            mode="outlined"
+                            label="Token Reading"
+                            value={values?.removal?.tokenReading}
+                            onChangeText={(text) =>
+                              setFieldValue(
+                                "removal.tokenReading",
+                                text.replace(/[^\d.]/g, ""),
+                              )
+                            }
+                            keyboardType="numeric"
+                            style={styles.readingInput}
+                          />
+
+                          <View style={styles.questionEvidenceSlot}>
+                            <IrepsMedia
+                              name="media"
+                              tag="tokenReadingPhoto"
+                              agentName={agentName}
+                              agentUid={agentUid}
+                              fallbackGps={fallbackGps}
+                              required={
+                                !!String(
+                                  values?.removal?.tokenReading || "",
+                                ).trim()
+                              }
+                            />
+                          </View>
+                        </>
+                      ) : (
+                        <>
+                          <TextInput
+                            mode="outlined"
+                            label="Meter Reading"
+                            value={values?.removal?.meterReading}
+                            onChangeText={(text) =>
+                              setFieldValue(
+                                "removal.meterReading",
+                                text.replace(/[^\d.]/g, ""),
+                              )
+                            }
+                            keyboardType="numeric"
+                            style={styles.readingInput}
+                          />
+
+                          <View style={styles.questionEvidenceSlot}>
+                            <IrepsMedia
+                              name="media"
+                              tag="removalMeterReadingEvidence"
+                              agentName={agentName}
+                              agentUid={agentUid}
+                              fallbackGps={fallbackGps}
+                              required={
+                                !!String(
+                                  values?.removal?.meterReading || "",
+                                ).trim()
+                              }
+                            />
+                          </View>
+                        </>
+                      )}
+
+                      <IrepsSelectWithOther
+                        label="No Reading Reason"
+                        placeholder="Select reason"
+                        options={noReadingReasonLookup.options}
+                        includeOther={noReadingReasonLookup.allowOther ?? true}
+                        otherCode={noReadingReasonLookup.otherCode || "OTHER"}
+                        otherLabel={noReadingReasonLookup.otherLabel || "Other"}
+                        loading={
+                          noReadingReasonLookup.isLoading ||
+                          noReadingReasonLookup.isFetching
+                        }
+                        value={values?.removal?.noReadingReason}
+                        onChange={(nextValue) =>
+                          setFieldValue("removal.noReadingReason", nextValue)
+                        }
+                        errorText={
+                          typeof removalErrors?.noReadingReason === "string"
+                            ? removalErrors.noReadingReason
+                            : ""
+                        }
+                      />
+                    </Surface>
+
+                    <YesNoQuestion
+                      title="Safety confirmed"
+                      description="Confirm that the removal was left safe after the work was done."
+                      value={values?.removal?.safetyConfirmed?.answer}
+                      notes={values?.removal?.safetyConfirmed?.notes}
+                      answerPath="removal.safetyConfirmed.answer"
+                      notesPath="removal.safetyConfirmed.notes"
+                      setFieldValue={setFieldValue}
+                      errorText={
+                        removalErrors?.safetyConfirmed?.answer ||
+                        removalErrors?.safetyConfirmed?.notes
+                      }
+                    >
+                      <IrepsMedia
+                        name="media"
+                        tag="safetyEvidence"
+                        agentName={agentName}
+                        agentUid={agentUid}
+                        fallbackGps={fallbackGps}
+                        required={
+                          values?.removal?.safetyConfirmed?.answer === "yes"
+                        }
+                      />
+                    </YesNoQuestion>
+                  </>
+                )}
 
                 {typeof errors?.media === "string" && (
                   <Text style={styles.errorText}>{errors.media}</Text>
@@ -1368,9 +2273,12 @@ export default function FormMeterRemoval() {
 
               <IrepsFormActions
                 resetLabel="RESET"
+                saveLabel="SAVE"
                 submitLabel="SUBMIT REMOVAL"
+                canSave={true}
                 canSubmit={isValid}
                 loading={inProgress}
+                saveLoading={saveInProgress}
                 onReset={() => {
                   Alert.alert(
                     "Reset Form?",
@@ -1386,14 +2294,15 @@ export default function FormMeterRemoval() {
                         onPress: () => {
                           resetForm();
 
-                          requestAnimationFrame(() => {
+                          setTimeout(() => {
                             validateForm();
-                          });
+                          }, 0);
                         },
                       },
                     ],
                   );
                 }}
+                onSave={() => handleSaveRemoval(values)}
                 onSubmit={handleSubmit}
                 disabledReason="Complete all required fields before submitting."
               />
@@ -1406,6 +2315,8 @@ export default function FormMeterRemoval() {
                     styles.successModal,
                     submitOutcome.type === "removalFailed" &&
                       styles.failedOutcomeModal,
+                    submitOutcome.type === "noAccess" &&
+                      styles.noAccessOutcomeModal,
                   ]}
                 >
                   <View style={styles.successContent}>
@@ -1416,6 +2327,8 @@ export default function FormMeterRemoval() {
                           styles.failedIconCircle,
                         submitOutcome.type === "savedLocally" &&
                           styles.savedLocallyIconCircle,
+                        submitOutcome.type === "noAccess" &&
+                          styles.noAccessIconCircle,
                       ]}
                     >
                       <Feather
@@ -1424,7 +2337,9 @@ export default function FormMeterRemoval() {
                             ? "alert-triangle"
                             : submitOutcome.type === "savedLocally"
                               ? "download-cloud"
-                              : "check"
+                              : submitOutcome.type === "noAccess"
+                                ? "slash"
+                                : "check"
                         }
                         size={46}
                         color="#fff"
@@ -1436,6 +2351,8 @@ export default function FormMeterRemoval() {
                         styles.successTitle,
                         submitOutcome.type === "removalFailed" &&
                           styles.failedOutcomeTitle,
+                        submitOutcome.type === "noAccess" &&
+                          styles.noAccessOutcomeTitle,
                       ]}
                     >
                       {submitOutcome.title}
@@ -1450,36 +2367,15 @@ export default function FormMeterRemoval() {
                         styles.continueBtn,
                         submitOutcome.type === "removalFailed" &&
                           styles.failedContinueBtn,
+                        submitOutcome.type === "noAccess" &&
+                          styles.noAccessContinueBtn,
                       ]}
                       onPress={() => {
-                        const shouldGoBack = submitOutcome.goBackOnContinue;
-
-                        setSubmitOutcome({
-                          visible: false,
-                          type: null,
-                          title: "",
-                          message: "",
-                          goBackOnContinue: true,
-                        });
-
-                        if (shouldGoBack) {
-                          router.back();
-                        }
+                        closeAfterExecutionOutcome(submitOutcome.type);
                       }}
                     >
                       <Text style={styles.continueBtnText}>CONTINUE</Text>
                     </TouchableOpacity>
-
-                    {/* <TouchableOpacity
-                      style={[
-                        styles.continueBtn,
-                        submitOutcome.type === "removalFailed" &&
-                          styles.failedContinueBtn,
-                      ]}
-                      onPress={confirmCancel}
-                    >
-                      <Text style={styles.continueBtnText}>CONTINUE</Text>
-                    </TouchableOpacity> */}
                   </View>
                 </Modal>
               </Portal>
@@ -1564,7 +2460,7 @@ const styles = StyleSheet.create({
   },
 
   summaryValue: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#0F172A",
     fontWeight: "800",
   },
@@ -1580,6 +2476,58 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     flex: 1,
+  },
+
+  accessHelpText: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    marginBottom: 12,
+  },
+
+  accessChoiceRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  accessChoice: {
+    flex: 1,
+    minHeight: 64,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+  },
+
+  accessChoiceYes: {
+    borderColor: "#22C55E",
+    backgroundColor: "#F0FDF4",
+  },
+
+  accessChoiceNo: {
+    borderColor: "#EF4444",
+    backgroundColor: "#FEF2F2",
+  },
+
+  accessChoiceTextWrap: {
+    flex: 1,
+  },
+
+  accessChoiceTitle: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+
+  accessChoiceSub: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#64748B",
+    marginTop: 2,
   },
 
   questionCard: {
@@ -1662,47 +2610,56 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
 
-  footer: {
-    flexDirection: "row",
-    gap: 12,
-    marginHorizontal: 12,
-    marginTop: 8,
-    marginBottom: 24,
-  },
-
-  footerButton: {
-    minHeight: 50,
+  readOnlyBox: {
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
     borderRadius: 14,
-    justifyContent: "center",
-    alignItems: "center",
+    padding: 12,
+    gap: 8,
   },
 
-  cancelButton: {
-    flex: 0.8,
+  readOnlyLabel: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#64748B",
+    textTransform: "uppercase",
+  },
+
+  readOnlyValue: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+    lineHeight: 18,
+  },
+
+  readOnlyMediaList: {
+    gap: 8,
+  },
+
+  mediaReadOnlyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: "#E2E8F0",
+    borderRadius: 10,
+    padding: 9,
   },
 
-  cancelButtonText: {
-    color: "#475569",
-    fontWeight: "900",
+  mediaReadOnlyText: {
+    flex: 1,
     fontSize: 12,
+    fontWeight: "800",
+    color: "#334155",
   },
 
-  submitButton: {
-    flex: 2,
-    backgroundColor: "#DC2626",
-  },
-
-  submitButtonDisabled: {
-    backgroundColor: "#94A3B8",
-  },
-
-  submitButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "900",
-    fontSize: 12,
+  mediaReadOnlyMeta: {
+    marginTop: 2,
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#64748B",
   },
 
   successModal: {
@@ -1735,6 +2692,10 @@ const styles = StyleSheet.create({
 
   savedLocallyIconCircle: {
     backgroundColor: "#2563EB",
+  },
+
+  noAccessIconCircle: {
+    backgroundColor: "#DC2626",
   },
 
   successTitle: {
@@ -1809,12 +2770,21 @@ const styles = StyleSheet.create({
     borderColor: "#F97316",
   },
 
+  noAccessOutcomeModal: {
+    borderWidth: 2,
+    borderColor: "#DC2626",
+  },
+
   failedIconCircle: {
     backgroundColor: "#F97316",
   },
 
   failedOutcomeTitle: {
     color: "#9A3412",
+  },
+
+  noAccessOutcomeTitle: {
+    color: "#991B1B",
   },
 
   outcomeMessage: {
@@ -1829,5 +2799,140 @@ const styles = StyleSheet.create({
 
   failedContinueBtn: {
     backgroundColor: "#F97316",
+  },
+
+  noAccessContinueBtn: {
+    backgroundColor: "#DC2626",
+  },
+
+  mediaReadOnlyThumbWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 10,
+    backgroundColor: "#EFF6FF",
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  mediaReadOnlyThumb: {
+    width: "100%",
+    height: "100%",
+  },
+
+  mediaReadOnlyMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  mediaReadOnlyHint: {
+    marginTop: 2,
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#2563EB",
+  },
+
+  instructionMediaModal: {
+    backgroundColor: "#FFFFFF",
+    margin: 18,
+    borderRadius: 20,
+    padding: 14,
+    maxHeight: "88%",
+  },
+
+  instructionMediaModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 12,
+  },
+
+  instructionMediaModalIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#EFF6FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  instructionMediaModalTitleWrap: {
+    flex: 1,
+  },
+
+  instructionMediaModalTitle: {
+    color: "#0F172A",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+
+  instructionMediaModalSub: {
+    color: "#64748B",
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+
+  instructionMediaModalClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  instructionMediaPreviewFrame: {
+    height: 330,
+    borderRadius: 16,
+    backgroundColor: "#020617",
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  instructionMediaPreviewImage: {
+    width: "100%",
+    height: "100%",
+  },
+
+  instructionMediaMetaBox: {
+    marginTop: 10,
+    borderRadius: 12,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 9,
+  },
+
+  instructionMediaMetaText: {
+    color: "#475569",
+    fontSize: 11,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+
+  openInstructionMediaButton: {
+    minHeight: 44,
+    borderRadius: 13,
+    backgroundColor: "#2563EB",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+
+  openInstructionMediaButtonText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  instructionMediaEmptyBox: {
+    minHeight: 180,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
 });

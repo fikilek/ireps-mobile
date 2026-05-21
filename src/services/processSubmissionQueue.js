@@ -4,6 +4,7 @@ import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { functions } from "../firebase";
 
 import {
+  getCallableNameForSubmissionQueueItem,
   getSubmissionQueue,
   markSubmissionQueueItemFailed,
   markSubmissionQueueItemSuccess,
@@ -40,19 +41,20 @@ export const processSubmissionQueue = async ({
 
     const queue = await getSubmissionQueue();
 
-    const pendingItems = queue.filter((item) => item?.status === "PENDING");
+    const retryableItems = queue.filter(
+      (item) => item?.status === "PENDING" || item?.status === "FAILED",
+    );
 
-    if (!pendingItems.length) {
+    if (!retryableItems.length) {
       return {
         success: true,
-        message: "No pending queue items",
+        message: "No retryable queue items",
       };
     }
 
     const storage = getStorage();
-    const callable = httpsCallable(functions, "onMeterDiscoveryCallable");
 
-    for (const item of pendingItems) {
+    for (const item of retryableItems) {
       try {
         await markSubmissionQueueItemSyncing(item.id, agentUid, agentName);
 
@@ -97,7 +99,41 @@ export const processSubmissionQueue = async ({
           media: syncedMedia,
         };
 
+        const callableName = getCallableNameForSubmissionQueueItem(item);
+
+        if (!callableName) {
+          await markSubmissionQueueItemFailed(
+            item.id,
+            {
+              code: "UNKNOWN_QUEUE_FORM_TYPE",
+              message:
+                "This local queue item does not have a recognised form type and cannot be synced safely.",
+              trnId: finalPayload?.id || "NAv",
+            },
+            agentUid,
+            agentName,
+          );
+
+          continue;
+        }
+
+        const callable = httpsCallable(functions, callableName);
+
         const callableResponse = await callable(finalPayload);
+
+        console.log("processSubmissionQueue -- callable routing", {
+          queueItemId: item?.id,
+          status: item?.status,
+          formType: item?.formType,
+          trnType:
+            item?.context?.trnType ||
+            item?.payload?.accessData?.trnType ||
+            item?.payload?.trnType,
+          callableName,
+          erfNo: item?.context?.erfNo || item?.payload?.accessData?.erfNo,
+          meterNo: item?.context?.meterNo || item?.payload?.ast?.astData?.astNo,
+        });
+
         const result = callableResponse?.data || {};
 
         if (!result?.success) {

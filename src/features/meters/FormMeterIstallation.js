@@ -1087,7 +1087,7 @@ export default function FormMeterInstallation() {
 
         Alert.alert(
           "Submission Failed",
-          error?.message || "Meter discovery submission failed.",
+          error?.message || "Meter Installation submission failed.",
         );
 
         return;

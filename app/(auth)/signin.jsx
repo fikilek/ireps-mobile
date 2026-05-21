@@ -22,7 +22,7 @@ import { auth } from "../../src/firebase";
 import { useSigninMutation } from "../../src/redux/authApi";
 
 const initialValues = {
-  email: "spu@smars.co.za",
+  email: "zm@gmail.com",
   password: "fkpass123",
 };
 
@@ -55,10 +55,19 @@ const Signin = () => {
       }
 
       setIsRedirecting(false);
+      console.log(`"Access Denied", "Invalid credentials."`);
       Alert.alert("Access Denied", "Invalid credentials.");
-    } catch (err) {
+    } catch (error) {
       setIsRedirecting(false);
-      Alert.alert("Access Denied", err?.message || "Invalid credentials.");
+      console.log(`handleSignin ---error`, error);
+      console.log("handleSignin ---error", {
+        code: error?.code,
+        message: error?.message,
+        name: error?.name,
+        stack: error?.stack,
+        raw: error,
+      });
+      Alert.alert("Signin failed", "Network error.");
     }
   };
 

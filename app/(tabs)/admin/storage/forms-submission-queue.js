@@ -21,6 +21,7 @@ import { useAuth } from "../../../../src/hooks/useAuth";
 import { processSubmissionQueue } from "../../../../src/services/processSubmissionQueue";
 import {
   clearSubmissionQueue,
+  getCallableNameForSubmissionQueueItem,
   getSubmissionQueue,
   getSubmissionQueueItemById,
   markSubmissionQueueItemFailed,
@@ -30,10 +31,88 @@ import {
   updateSubmissionQueueItem,
 } from "../../../../src/utils/submissionQueue";
 
+const getLifecycleEditRoute = (trnType) => {
+  const cleanTrnType = String(trnType || "")
+    .trim()
+    .toUpperCase();
+
+  if (cleanTrnType === "METER_INSPECTION") {
+    return "/(tabs)/asts/inspection";
+  }
+
+  if (cleanTrnType === "METER_DISCONNECTION") {
+    return "/(tabs)/asts/disconnection";
+  }
+
+  if (cleanTrnType === "METER_RECONNECTION") {
+    return "/(tabs)/asts/reconnection";
+  }
+
+  if (cleanTrnType === "METER_REMOVAL") {
+    return "/(tabs)/asts/removal";
+  }
+
+  if (cleanTrnType === "METER_READING") {
+    return "/(tabs)/asts/meter-reading";
+  }
+
+  return "";
+};
+
+const getQueueTrnType = (item = {}) => {
+  return String(
+    item?.context?.trnType ||
+      item?.payload?.accessData?.trnType ||
+      item?.payload?.trnType ||
+      item?.formType ||
+      "",
+  )
+    .trim()
+    .toUpperCase();
+};
+
+const getQueueInstructionTrnId = (item = {}) => {
+  return String(
+    item?.context?.instructionTrnId ||
+      item?.context?.trnId ||
+      item?.payload?.instructionTrnId ||
+      item?.payload?.id ||
+      item?.payload?.trnId ||
+      "",
+  ).trim();
+};
+
+const getQueueSourceAstId = (item = {}) => {
+  return String(
+    item?.context?.sourceAstId ||
+      item?.context?.astId ||
+      item?.payload?.sourceAstId ||
+      item?.payload?.ast?.astData?.astId ||
+      "",
+  ).trim();
+};
+
 const getQueueUpdatedAtMs = (item) => {
   const raw = item?.metadata?.updatedAt || item?.metadata?.createdAt || "";
   const ms = new Date(raw).getTime();
   return Number.isNaN(ms) ? 0 : ms;
+};
+
+const isAlreadyCompletedLifecycleResult = (result = {}) => {
+  const code = String(result?.code || "")
+    .trim()
+    .toUpperCase();
+
+  const message = String(result?.message || "")
+    .trim()
+    .toUpperCase();
+
+  return (
+    code.includes("ALREADY_COMPLETED") ||
+    code.includes("TRN_ALREADY_COMPLETED") ||
+    code.includes("WORKFLOW_ALREADY_COMPLETED") ||
+    (message.includes("ALREADY") && message.includes("COMPLETED"))
+  );
 };
 
 const processSingleSubmissionQueueItem = async (
@@ -66,7 +145,6 @@ const processSingleSubmissionQueueItem = async (
     const originalMedia = Array.isArray(payload?.media) ? payload.media : [];
 
     const storage = getStorage();
-    const callable = httpsCallable(functions, "onMeterDiscoveryCallable");
 
     const syncedMedia = await Promise.all(
       originalMedia.map(async (mediaItem) => {
@@ -104,11 +182,85 @@ const processSingleSubmissionQueueItem = async (
       media: syncedMedia,
     };
 
+    const callableName = getCallableNameForSubmissionQueueItem(item);
+
+    if (!callableName) {
+      await markSubmissionQueueItemFailed(
+        queueItemId,
+        {
+          code: "UNKNOWN_QUEUE_FORM_TYPE",
+          message:
+            "This local queue item does not have a recognised form type and cannot be synced safely.",
+          trnId: finalPayload?.id || "NAv",
+        },
+        agentUid,
+        agentName,
+      );
+
+      return {
+        success: false,
+        message:
+          "This local queue item does not have a recognised form type and cannot be synced safely.",
+      };
+    }
+
+    console.log("processSingleSubmissionQueueItem -- callable routing", {
+      queueItemId: item?.id,
+      status: item?.status,
+      formType: item?.formType,
+      trnType:
+        item?.context?.trnType ||
+        item?.payload?.accessData?.trnType ||
+        item?.payload?.trnType,
+      callableName,
+      erfNo: item?.context?.erfNo || item?.payload?.accessData?.erfNo,
+      meterNo: item?.context?.meterNo || item?.payload?.ast?.astData?.astNo,
+    });
+
+    const callable = httpsCallable(functions, callableName);
+
     const callableResponse = await callable(finalPayload);
     const result = callableResponse?.data || {};
 
     if (!result?.success) {
       const code = result?.code || "SYNC_FAILED";
+
+      console.log(
+        "processSingleSubmissionQueueItem -- callable returned failure",
+        {
+          queueItemId,
+          callableName,
+          code,
+          message: result?.message,
+          trnId: result?.trnId || finalPayload?.id || "NAv",
+          formType: item?.formType,
+          trnType:
+            item?.context?.trnType ||
+            item?.payload?.accessData?.trnType ||
+            item?.payload?.trnType,
+          result,
+        },
+      );
+
+      if (isAlreadyCompletedLifecycleResult(result)) {
+        await markSubmissionQueueItemSuccess(
+          queueItemId,
+          {
+            code: code || "ALREADY_COMPLETED",
+            message:
+              result?.message || "Server already completed this lifecycle TRN.",
+            trnId: result?.trnId || finalPayload?.id || "NAv",
+          },
+          agentUid,
+          agentName,
+        );
+
+        return {
+          success: true,
+          message:
+            result?.message || "Server already completed this lifecycle TRN.",
+        };
+      }
 
       if (code === "INVALID_PREMISE_ID" || code === "PREMISE_NOT_FOUND") {
         await updateSubmissionQueueItem(
@@ -171,7 +323,13 @@ const processSingleSubmissionQueueItem = async (
   } catch (error) {
     console.log(
       "SubmissionQueueScreen -- processSingleSubmissionQueueItem error",
-      error,
+      {
+        queueItemId,
+        code: error?.code,
+        message: error?.message,
+        stack: error?.stack,
+        raw: error,
+      },
     );
 
     const message = error?.message || "";
@@ -355,7 +513,9 @@ export default function SubmissionQueueScreen() {
 
     if (!item?.id) return;
 
-    if (item?.status !== "PENDING") {
+    const canSync = item?.status === "PENDING" || item?.status === "FAILED";
+
+    if (!canSync) {
       ToastAndroid.show(
         "Only pending drafts can be synced.",
         ToastAndroid.SHORT,
@@ -394,20 +554,69 @@ export default function SubmissionQueueScreen() {
   };
 
   const handleEditItem = (item) => {
-    const canEdit = item?.status === "PENDING" || item?.status === "FAILED";
+    const canEdit =
+      item?.status === "PENDING" ||
+      item?.status === "FAILED" ||
+      item?.status === "IN_PROGRESS";
 
     if (!canEdit) {
       Alert.alert(
         "Edit Not Allowed",
-        "Only pending or failed queue items can be edited.",
+        "Only pending or locally saved queue items can be edited.",
       );
+      return;
+    }
+
+    const trnType = getQueueTrnType(item);
+    const lifecycleRoute = getLifecycleEditRoute(trnType);
+
+    if (lifecycleRoute) {
+      const instructionTrnId = getQueueInstructionTrnId(item);
+      const sourceAstId = getQueueSourceAstId(item);
+
+      const premiseId =
+        item?.context?.premiseId ||
+        item?.payload?.accessData?.premise?.id ||
+        "NAv";
+
+      router.push({
+        pathname: lifecycleRoute,
+        params: {
+          queueItemId: item?.id,
+
+          instructionTrnId: instructionTrnId || "NAv",
+          trnId: instructionTrnId || "NAv",
+
+          sourceAstId: sourceAstId || "NAv",
+          astId: sourceAstId || "NAv",
+
+          premiseId,
+
+          action: JSON.stringify({
+            source: "MMKV_QUEUE",
+            trnType,
+            instructionTrnId: instructionTrnId || "NAv",
+            trnId: instructionTrnId || "NAv",
+            sourceAstId: sourceAstId || "NAv",
+            astId: sourceAstId || "NAv",
+            premiseId,
+
+            accessData: item?.payload?.accessData || {},
+            ast: item?.payload?.ast || {},
+            status: item?.payload?.status || {},
+            meterType: item?.payload?.meterType || item?.context?.meterType,
+            assignment: item?.payload?.assignment || {},
+            officeInstruction: item?.payload?.assignment?.instruction || {},
+          }),
+        },
+      });
+
       return;
     }
 
     const hasAccess =
       item?.payload?.accessData?.access?.hasAccess === "no" ? "no" : "yes";
 
-    // const meterType = hasAccess === "no" ? "" : item?.payload?.meterType || "";
     const meterType =
       hasAccess === "no" ? "NA" : item?.payload?.meterType || "";
 
@@ -485,7 +694,7 @@ export default function SubmissionQueueScreen() {
     <>
       <Stack.Screen
         options={{
-          title: "Meter Discovery Queue",
+          title: "Submission Queue",
           headerTitleStyle: { fontSize: 16, fontWeight: "900" },
         }}
       />
@@ -498,7 +707,7 @@ export default function SubmissionQueueScreen() {
         }
       >
         <Surface style={styles.headerCard} elevation={1}>
-          <Text style={styles.headerTitle}>Offline Meter Discovery Forms</Text>
+          <Text style={styles.headerTitle}>Offline Submission Forms</Text>
           <Text style={styles.headerSub}>Total Items: {queueItems.length}</Text>
 
           <View style={styles.actionsRow}>

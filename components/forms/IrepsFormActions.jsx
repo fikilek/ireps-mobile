@@ -8,14 +8,26 @@ import {
 
 export function IrepsFormActions({
   resetLabel = "RESET",
+  saveLabel = "SAVE",
   submitLabel = "SUBMIT",
+
   onReset,
+  onSave,
   onSubmit,
+
+  canSave = true,
   canSubmit = false,
+
   loading = false,
+  saveLoading = false,
+
   disabledReason = "",
+  saveDisabledReason = "",
 }) {
-  const isSubmitDisabled = !canSubmit || loading;
+  const hasSave = typeof onSave === "function";
+
+  const isSaveDisabled = !canSave || loading || saveLoading;
+  const isSubmitDisabled = !canSubmit || loading || saveLoading;
 
   return (
     <View style={styles.wrap}>
@@ -24,21 +36,52 @@ export function IrepsFormActions({
           style={[
             styles.button,
             styles.resetButton,
-            loading && styles.resetButtonDisabled,
+            (loading || saveLoading) && styles.resetButtonDisabled,
           ]}
           onPress={onReset}
-          disabled={loading}
+          disabled={loading || saveLoading}
           activeOpacity={0.82}
         >
           <Text
             style={[
               styles.resetButtonText,
-              loading && styles.resetButtonTextDisabled,
+              (loading || saveLoading) && styles.resetButtonTextDisabled,
             ]}
           >
             {resetLabel}
           </Text>
         </TouchableOpacity>
+
+        {hasSave && (
+          <TouchableOpacity
+            style={[
+              styles.button,
+              styles.saveButton,
+              !canSave && !saveLoading && styles.saveButtonInvalid,
+              canSave && !saveLoading && styles.saveButtonReady,
+              saveLoading && styles.saveButtonLoading,
+            ]}
+            onPress={onSave}
+            disabled={isSaveDisabled}
+            activeOpacity={0.86}
+          >
+            {saveLoading ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color="#1E3A8A" size="small" />
+                <Text style={styles.saveButtonLoadingText}>SAVING</Text>
+              </View>
+            ) : (
+              <Text
+                style={[
+                  styles.saveButtonText,
+                  !canSave && styles.saveButtonInvalidText,
+                ]}
+              >
+                {saveLabel}
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={[
@@ -69,6 +112,14 @@ export function IrepsFormActions({
           )}
         </TouchableOpacity>
       </View>
+
+      {!!saveDisabledReason && hasSave && !canSave && !saveLoading && (
+        <Text style={styles.disabledReason}>{saveDisabledReason}</Text>
+      )}
+
+      {!!disabledReason && !canSubmit && !loading && (
+        <Text style={styles.disabledReason}>{disabledReason}</Text>
+      )}
     </View>
   );
 }
@@ -82,7 +133,7 @@ const styles = StyleSheet.create({
 
   row: {
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
   },
 
   button: {
@@ -93,7 +144,7 @@ const styles = StyleSheet.create({
   },
 
   resetButton: {
-    flex: 0.8,
+    flex: 0.75,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#CBD5E1",
@@ -116,8 +167,45 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
   },
 
+  saveButton: {
+    flex: 0.9,
+  },
+
+  saveButtonInvalid: {
+    backgroundColor: "#CBD5E1",
+  },
+
+  saveButtonReady: {
+    backgroundColor: "#DBEAFE",
+    borderWidth: 1,
+    borderColor: "#93C5FD",
+  },
+
+  saveButtonLoading: {
+    backgroundColor: "#BFDBFE",
+  },
+
+  saveButtonText: {
+    color: "#1D4ED8",
+    fontWeight: "900",
+    fontSize: 12,
+    letterSpacing: 0.4,
+  },
+
+  saveButtonInvalidText: {
+    color: "#64748B",
+  },
+
+  saveButtonLoadingText: {
+    color: "#1E3A8A",
+    fontWeight: "900",
+    fontSize: 12,
+    letterSpacing: 0.4,
+    marginLeft: 8,
+  },
+
   submitButton: {
-    flex: 2,
+    flex: 1.7,
   },
 
   submitButtonInvalid: {

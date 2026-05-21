@@ -28,6 +28,7 @@ import { usersApi } from "./usersApi";
 import { geofenceApi } from "./geofenceApi";
 import { irepsLookupOptionsApi } from "./irepsLookupOptionsApi";
 import { irepsSelectLookupsApi } from "./irepsSelectLookupsApi";
+import { lifecycleInstructionApi } from "./lifecycleInstructionApi";
 import newTrnsReducer from "./newTrnsSlice";
 import offlineReducer from "./offlineSlice";
 
@@ -49,6 +50,7 @@ const rootReducer = combineReducers({
   [geofenceApi.reducerPath]: geofenceApi.reducer,
   [irepsSelectLookupsApi.reducerPath]: irepsSelectLookupsApi.reducer,
   [irepsLookupOptionsApi.reducerPath]: irepsLookupOptionsApi.reducer,
+  [lifecycleInstructionApi.reducerPath]: lifecycleInstructionApi.reducer,
 
   offline: offlineReducer,
   newTrns: newTrnsReducer,
@@ -79,6 +81,9 @@ const persistConfig = {
     premisesApi.reducerPath,
     salesApi.reducerPath,
     geofenceApi.reducerPath,
+    irepsSelectLookupsApi.reducerPath,
+    irepsLookupOptionsApi.reducerPath,
+    lifecycleInstructionApi.reducerPath,
     "newTrns",
   ],
 };
@@ -114,6 +119,7 @@ export const store = configureStore({
       geofenceApi.middleware,
       irepsSelectLookupsApi.middleware,
       irepsLookupOptionsApi.middleware,
+      lifecycleInstructionApi.middleware,
     ),
 });
 

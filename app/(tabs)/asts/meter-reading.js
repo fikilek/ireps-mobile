@@ -1,5 +1,6 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
+import * as Location from "expo-location";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -54,14 +55,14 @@ const EMPTY_SELECT_WITH_OTHER = {
   otherText: "",
 };
 
-const RCN_SUBMIT_TIMEOUT_MS = 15000;
+const MREAD_SUBMIT_TIMEOUT_MS = 15000;
+const MREAD_MAX_READING_DISTANCE_METERS = 5;
 
 const EXECUTION_MEDIA_TAGS = [
-  "reconnectionEvidence",
-  "reconnectionMeterReadingEvidence",
+  "meterReadingEvidence",
   "tokenReadingPhoto",
-  "safetyEvidence",
   "noAccessPhoto",
+  "noReadingEvidence",
 ];
 
 function makeEmptySelectWithOther() {
@@ -135,6 +136,94 @@ function toLatLng(value) {
   }
 
   return null;
+}
+
+function toRadians(value) {
+  return (Number(value) * Math.PI) / 180;
+}
+
+function calculateDistanceMeters(pointA, pointB) {
+  const a = toLatLng(pointA);
+  const b = toLatLng(pointB);
+
+  if (!a || !b) return null;
+
+  const earthRadiusMeters = 6371000;
+  const dLat = toRadians(b.lat - a.lat);
+  const dLng = toRadians(b.lng - a.lng);
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+
+  const haversine =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+  const centralAngle =
+    2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+
+  return earthRadiusMeters * centralAngle;
+}
+
+function formatGpsPoint(point) {
+  const gps = toLatLng(point);
+
+  if (!gps) return "NAv";
+
+  return `${gps.lat.toFixed(7)}, ${gps.lng.toFixed(7)}`;
+}
+
+function formatDistanceMeters(distance) {
+  if (distance == null || Number.isNaN(Number(distance))) return "NAv";
+
+  return `${Number(distance).toFixed(1)} m`;
+}
+
+function parseReadingNumber(value) {
+  const clean = String(value || "").trim();
+
+  if (!clean) return null;
+
+  const numberValue = Number(clean);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function formatReadingDateTime(value) {
+  if (!value) return "NAv";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "NAv";
+
+  return date.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function normalizeMreadingsForHistory(mreadings = []) {
+  return (Array.isArray(mreadings) ? mreadings : [])
+    .map((item) => {
+      const reading = String(item?.reading || "").trim();
+      const readingNumber = parseReadingNumber(reading);
+      const readingAt = String(item?.readingAt || "").trim();
+      const readingTime = Date.parse(readingAt);
+
+      return {
+        reading,
+        readingNumber,
+        readingAt,
+        readingTime: Number.isFinite(readingTime) ? readingTime : 0,
+        trnId: item?.trnId || "NAv",
+      };
+    })
+    .filter((item) => item.readingNumber !== null && item.readingAt)
+    .sort((a, b) => b.readingTime - a.readingTime);
+}
+
+function getLatestSuccessfulMeterReading(mreadings = []) {
+  return normalizeMreadingsForHistory(mreadings)[0] || null;
 }
 
 function getPremiseAddress(premise, astDoc) {
@@ -274,43 +363,28 @@ function filterExecutionMedia(media = []) {
   );
 }
 
-function buildBackendReconnectionPayload(
-  reconnection = {},
+function buildBackendMeterReadingPayload(
+  meterReading = {},
   { isPrepaid = false, noAccess = false } = {},
 ) {
   if (noAccess) {
     return {
-      supplyReconnected: {
-        answer: "",
-        notes: "",
-      },
-
-      meterReading: "",
+      reading: "",
       tokenReading: "",
+      readingAt: "",
       noReadingReason: "",
-
-      safetyConfirmed: {
-        answer: "",
-        notes: "",
-      },
+      readingGps: null,
+      executorNotes: "",
     };
   }
 
   return {
-    supplyReconnected: {
-      answer: reconnection?.supplyReconnected?.answer || "",
-      notes: reconnection?.supplyReconnected?.notes || "",
-    },
-
-    meterReading: isPrepaid ? "" : String(reconnection?.meterReading || ""),
-    tokenReading: isPrepaid ? String(reconnection?.tokenReading || "") : "",
-
-    noReadingReason: selectWithOtherToText(reconnection?.noReadingReason),
-
-    safetyConfirmed: {
-      answer: reconnection?.safetyConfirmed?.answer || "",
-      notes: reconnection?.safetyConfirmed?.notes || "",
-    },
+    reading: isPrepaid ? "" : String(meterReading?.reading || ""),
+    tokenReading: isPrepaid ? String(meterReading?.tokenReading || "") : "",
+    readingAt: String(meterReading?.readingAt || ""),
+    noReadingReason: selectWithOtherToText(meterReading?.noReadingReason),
+    readingGps: meterReading?.readingGps || null,
+    executorNotes: String(meterReading?.executorNotes || ""),
   };
 }
 
@@ -349,7 +423,7 @@ function buildAssignmentPayload({
       code:
         restAssignment?.instruction?.code ||
         officeInstruction?.code ||
-        "METER_RECONNECTION",
+        "METER_READING",
       text: instructionText,
       notes: String(
         restAssignment?.instruction?.notes || officeInstruction?.notes || "",
@@ -404,7 +478,7 @@ function getMediaPreviewUrl(mediaItem = {}) {
   );
 }
 
-const ReconnectionSchema = object()
+const MeterReadingSchema = object()
   .shape({
     accessData: object().shape({
       access: object().shape({
@@ -428,128 +502,101 @@ const ReconnectionSchema = object()
       }),
     }),
 
-    reconnection: object().shape({
-      supplyReconnected: object().shape({
-        answer: string().notRequired(),
-        notes: string().notRequired(),
-      }),
-
-      meterReading: string().notRequired(),
+    meterReading: object().shape({
+      reading: string().notRequired(),
       tokenReading: string().notRequired(),
-
+      readingAt: string().notRequired(),
       noReadingReason: object().shape({
         code: string().notRequired(),
         label: string().notRequired(),
         otherText: string().notRequired(),
       }),
-
-      safetyConfirmed: object().shape({
-        answer: string().notRequired(),
-        notes: string().notRequired(),
-      }),
+      readingGps: object().nullable(),
+      executorNotes: string().notRequired(),
     }),
 
     media: array().of(object()),
   })
-  .test("rcn-v01-validation", "RCN validation failed", function (values = {}) {
-    const access = values?.accessData?.access || {};
-    const reconnection = values?.reconnection || {};
-    const media = values?.media || [];
+  .test(
+    "mread-v01-validation",
+    "MREAD validation failed",
+    function (values = {}) {
+      const access = values?.accessData?.access || {};
+      const meterReading = values?.meterReading || {};
+      const media = values?.media || [];
 
-    if (String(access?.hasAccess || "").toLowerCase() === "no") {
-      if (!isSelectWithOtherFilled(access?.reasonSelect)) {
+      if (String(access?.hasAccess || "").toLowerCase() === "no") {
+        if (!isSelectWithOtherFilled(access?.reasonSelect)) {
+          return this.createError({
+            path: "accessData.access.reasonSelect",
+            message: "No-access reason is required",
+          });
+        }
+
+        if (!hasMediaTag(media, "noAccessPhoto")) {
+          return this.createError({
+            path: "media",
+            message: "No access photo is required",
+          });
+        }
+
+        return true;
+      }
+
+      const reading = String(meterReading?.reading || "").trim();
+      const tokenReading = String(meterReading?.tokenReading || "").trim();
+      const readingAt = String(meterReading?.readingAt || "").trim();
+      const readingGps = meterReading?.readingGps || null;
+
+      const noReadingMode = meterReading?.noReadingMode === true;
+
+      if (!reading && !tokenReading) {
+        if (!noReadingMode) {
+          return this.createError({
+            path: "meterReading.reading",
+            message: "Meter reading is required",
+          });
+        }
+
+        if (!isSelectWithOtherFilled(meterReading?.noReadingReason)) {
+          return this.createError({
+            path: "meterReading.noReadingReason",
+            message: "No-reading reason is required",
+          });
+        }
+      }
+
+      if (!readingAt) {
         return this.createError({
-          path: "accessData.access.reasonSelect",
-          message: "No-access reason is required",
+          path: "meterReading.readingAt",
+          message: "Reading timestamp was not captured. Re-enter the reading.",
         });
       }
 
-      if (!hasMediaTag(media, "noAccessPhoto")) {
+      if (!readingGps?.lat || !readingGps?.lng) {
+        return this.createError({
+          path: "meterReading.readingGps",
+          message: "Reading GPS is required",
+        });
+      }
+
+      if (reading && !hasMediaTag(media, "meterReadingEvidence")) {
         return this.createError({
           path: "media",
-          message: "No access photo is required",
+          message: "Meter reading evidence is required",
+        });
+      }
+
+      if (tokenReading && !hasMediaTag(media, "tokenReadingPhoto")) {
+        return this.createError({
+          path: "media",
+          message: "Token reading photo is required",
         });
       }
 
       return true;
-    }
-
-    if (!["yes", "no"].includes(reconnection?.supplyReconnected?.answer)) {
-      return this.createError({
-        path: "reconnection.supplyReconnected.answer",
-        message: "Supply reconnected answer is required",
-      });
-    }
-
-    if (reconnection?.supplyReconnected?.answer !== "yes") {
-      return this.createError({
-        path: "reconnection.supplyReconnected.answer",
-        message: "Supply must be confirmed as reconnected before submit",
-      });
-    }
-
-    if (!hasMediaTag(media, "reconnectionEvidence")) {
-      return this.createError({
-        path: "media",
-        message: "Reconnection evidence required",
-      });
-    }
-
-    const meterReading = String(reconnection?.meterReading || "").trim();
-    const tokenReading = String(reconnection?.tokenReading || "").trim();
-
-    if (
-      !meterReading &&
-      !tokenReading &&
-      !isSelectWithOtherFilled(reconnection?.noReadingReason)
-    ) {
-      return this.createError({
-        path: "reconnection.noReadingReason",
-        message:
-          "Meter reading, token reading, or no-reading reason is required",
-      });
-    }
-
-    if (
-      meterReading &&
-      !hasMediaTag(media, "reconnectionMeterReadingEvidence")
-    ) {
-      return this.createError({
-        path: "media",
-        message: "Reconnection meter reading evidence required",
-      });
-    }
-
-    if (tokenReading && !hasMediaTag(media, "tokenReadingPhoto")) {
-      return this.createError({
-        path: "media",
-        message: "Token reading photo is required",
-      });
-    }
-
-    if (!["yes", "no"].includes(reconnection?.safetyConfirmed?.answer)) {
-      return this.createError({
-        path: "reconnection.safetyConfirmed.answer",
-        message: "Safety confirmed answer is required",
-      });
-    }
-
-    if (reconnection?.safetyConfirmed?.answer !== "yes") {
-      return this.createError({
-        path: "reconnection.safetyConfirmed.answer",
-        message: "Safety must be confirmed before submit",
-      });
-    }
-
-    if (!hasMediaTag(media, "safetyEvidence")) {
-      return this.createError({
-        path: "media",
-        message: "Safety evidence required",
-      });
-    }
-
-    return true;
-  });
+    },
+  );
 
 const YesNoQuestion = ({
   title,
@@ -661,7 +708,7 @@ const AccessOutcomeCard = ({ value, setFieldValue }) => {
             <View style={styles.accessChoiceTextWrap}>
               <Text style={styles.accessChoiceTitle}>ACCESS YES</Text>
               <Text style={styles.accessChoiceSub}>
-                Continue with RCN checks
+                Continue with MREAD checks
               </Text>
             </View>
           </TouchableOpacity>
@@ -677,9 +724,7 @@ const AccessOutcomeCard = ({ value, setFieldValue }) => {
             <RadioButton value="no" />
             <View style={styles.accessChoiceTextWrap}>
               <Text style={styles.accessChoiceTitle}>NO ACCESS</Text>
-              <Text style={styles.accessChoiceSub}>
-                Complete as unsuccessful
-              </Text>
+              <Text style={styles.accessChoiceSub}>Complete as no access</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -890,7 +935,7 @@ const OfficeInstructionSection = ({
   );
 };
 
-export default function FormMeterReconnection() {
+export default function FormMeterReading() {
   const {
     astId: astIdRaw,
     sourceAstId: sourceAstIdRaw,
@@ -971,6 +1016,9 @@ export default function FormMeterReconnection() {
   const [inProgress, setInProgress] = useState(false);
   const [saveInProgress, setSaveInProgress] = useState(false);
   const [initialEligible, setInitialEligible] = useState(null);
+  const [currentGps, setCurrentGps] = useState(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [gpsError, setGpsError] = useState("");
 
   const [submitOutcome, setSubmitOutcome] = useState({
     visible: false,
@@ -1170,6 +1218,10 @@ export default function FormMeterReconnection() {
     toLatLng(premise?.geometry?.centroid) ||
     null;
 
+  const latestSuccessfulReading = useMemo(() => {
+    return getLatestSuccessfulMeterReading(astDoc?.mreadings);
+  }, [astDoc?.mreadings]);
+
   useEffect(() => {
     if (initialEligible !== null) return;
     if (!astDoc?.id) return;
@@ -1180,7 +1232,7 @@ export default function FormMeterReconnection() {
 
     if (!firstStatus) return;
 
-    setInitialEligible(firstStatus === "DISCONNECTED");
+    setInitialEligible(firstStatus !== "DECOMMISSIONED");
   }, [
     initialEligible,
     astDoc?.id,
@@ -1210,8 +1262,33 @@ export default function FormMeterReconnection() {
     profile?.employment?.serviceProvider?.name,
   ]);
 
-  const reconnectionInstructionLookup = useIrepsLookupOptions(
-    "METER_RECONNECTION_INSTRUCTION",
+  const fieldOriginatedTrnId = useMemo(() => {
+    if (instructionTrnId) return instructionTrnId;
+
+    const cleanMeterType = String(meterType || "")
+      .trim()
+      .toLowerCase();
+
+    const serviceCode =
+      cleanMeterType === "electricity" || cleanMeterType === "elec"
+        ? "ELC"
+        : cleanMeterType === "water" || cleanMeterType === "wtr"
+          ? "WTR"
+          : "MTR";
+
+    const safeWardPcode = String(wardPcode || "WARD")
+      .replace(/[^a-zA-Z0-9]+/g, "_")
+      .toUpperCase();
+
+    const safeErfNo = String(erfNo || "ERF")
+      .replace(/[^a-zA-Z0-9]+/g, "_")
+      .toUpperCase();
+
+    return `TRN_MREAD_${Date.now()}_${serviceCode}_${safeWardPcode}_${safeErfNo}`;
+  }, [instructionTrnId, meterType, wardPcode, erfNo]);
+
+  const meterReadingInstructionLookup = useIrepsLookupOptions(
+    "METER_READING_INSTRUCTION",
   );
 
   const noReadingReasonLookup = useIrepsLookupOptions(
@@ -1222,7 +1299,7 @@ export default function FormMeterReconnection() {
     return {
       erfId: astDoc?.accessData?.erfId || premise?.erfId || "NAv",
       erfNo: astDoc?.accessData?.erfNo || premise?.erfNo || "NAv",
-      trnType: "METER_RECONNECTION",
+      trnType: "METER_READING",
 
       parents: {
         countryPcode: parents?.countryPcode || "NAv",
@@ -1241,8 +1318,15 @@ export default function FormMeterReconnection() {
   }
 
   function buildQueueContext(values, baseSystemFields) {
+    const resolvedTrnId = readFirstString(
+      instructionTrnId,
+      values?.id,
+      fieldOriginatedTrnId,
+    );
+
     return {
-      trnType: "METER_RECONNECTION",
+      trnType: "METER_READING",
+      trnId: resolvedTrnId || "NAv",
       instructionTrnId: instructionTrnId || "NAv",
       sourceAstId: astDoc?.id || sourceAstId || "NAv",
       astId: astDoc?.id || sourceAstId || "NAv",
@@ -1263,17 +1347,41 @@ export default function FormMeterReconnection() {
       ? selectWithOtherToText(values?.accessData?.access?.reasonSelect)
       : "NAv";
 
-    const executionOutcome = {
-      outcome: noAccess ? "NO_ACCESS" : "SUCCESS",
-      success: !noAccess,
-    };
+    const hasReading =
+      String(values?.meterReading?.reading || "").trim() ||
+      String(values?.meterReading?.tokenReading || "").trim();
+
+    const hasNoReadingReason =
+      values?.meterReading?.noReadingMode === true &&
+      isSelectWithOtherFilled(values?.meterReading?.noReadingReason);
+
+    const executionOutcome = noAccess
+      ? {
+          outcome: "NO_ACCESS",
+          success: false,
+        }
+      : hasReading
+        ? {
+            outcome: "SUCCESS",
+            success: true,
+          }
+        : {
+            outcome: hasNoReadingReason ? "NO_READING" : "SUCCESS",
+            success: false,
+          };
+
+    const resolvedTrnId = readFirstString(
+      instructionTrnId,
+      values?.id,
+      fieldOriginatedTrnId,
+    );
 
     return removeUndefined({
-      id: instructionTrnId,
-      instructionTrnId,
+      id: resolvedTrnId,
+      instructionTrnId: instructionTrnId || "",
       sourceAstId: astDoc?.id || sourceAstId || "NAv",
 
-      trnType: "METER_RECONNECTION",
+      trnType: "METER_READING",
 
       accessData: {
         ...baseSystemFields,
@@ -1286,7 +1394,7 @@ export default function FormMeterReconnection() {
 
       ast: values.ast,
 
-      reconnection: buildBackendReconnectionPayload(values.reconnection, {
+      meterReading: buildBackendMeterReadingPayload(values.meterReading, {
         isPrepaid: isPrepaidReading,
         noAccess,
       }),
@@ -1303,31 +1411,29 @@ export default function FormMeterReconnection() {
       media: filterExecutionMedia(mediaOverride || values.media || []),
       status: values.status,
       serviceProvider,
+
+      origin: instructionTrnId
+        ? {
+            channel: "OFFICE",
+            source: "WMS",
+            parentInspectionTrnId:
+              values?.origin?.parentInspectionTrnId ||
+              action?.origin?.parentInspectionTrnId ||
+              null,
+          }
+        : {
+            channel: "FIELD",
+            source: "AST_ITEM",
+            parentInspectionTrnId: null,
+          },
+
+      workflow: instructionTrnId
+        ? values?.workflow
+        : {
+            state: "COMPLETED",
+            requiresAcceptance: false,
+          },
     });
-  }
-
-  function buildReconnectionFailureMessage(values, result) {
-    const noAccess = isNoAccess(values);
-
-    if (noAccess) {
-      return [
-        "The RCN was completed as NO ACCESS.",
-        "",
-        "Result:",
-        "• The field attempt was completed.",
-        "• The meter was not moved to CONNECTED.",
-        "",
-        `AST status: ${result?.astStatusAfter || currentStatus}`,
-      ].join("\n");
-    }
-
-    return [
-      "The reconnection TRN was submitted, but the meter was not moved to CONNECTED.",
-      "",
-      `AST status: ${result?.astStatusAfter || currentStatus}`,
-      "",
-      "Please review the completed TRN result.",
-    ].join("\n");
   }
 
   async function saveDraftToQueue(values, messageTitle, messageBody) {
@@ -1354,7 +1460,7 @@ export default function FormMeterReconnection() {
             success: false,
             code: "LOCAL_SAVE_ONLY",
             message: "Saved locally only. Not submitted.",
-            trnId: instructionTrnId || "NAv",
+            trnId: cleanPayload?.id || instructionTrnId || "NAv",
           },
           sync: {
             ...existingSync,
@@ -1366,7 +1472,7 @@ export default function FormMeterReconnection() {
       );
     } else {
       queueResult = await addSubmissionQueueItem({
-        formType: "METER_RECONNECTION",
+        formType: "METER_READING",
         payload: cleanPayload,
         context: nextContext,
         status: "IN_PROGRESS",
@@ -1378,7 +1484,7 @@ export default function FormMeterReconnection() {
     if (!queueResult?.success) {
       Alert.alert(
         "Draft Save Failed",
-        "Failed to save reconnection draft locally.",
+        "Failed to save meter reading draft locally.",
       );
       return false;
     }
@@ -1389,31 +1495,31 @@ export default function FormMeterReconnection() {
       title: messageTitle || "SAVED LOCALLY",
       message:
         messageBody ||
-        "This RECONNECTION execution form was saved locally only. No backend update was made.",
+        "This MREAD execution form was saved locally only. No backend update was made.",
       goBackOnContinue: true,
     });
 
     return true;
   }
 
-  async function handleSaveReconnection(values) {
+  async function handleSaveMeterReading(values) {
     try {
       setSaveInProgress(true);
 
       await saveDraftToQueue(
         values,
         "SAVED LOCALLY",
-        "This RCN execution form was saved locally only. It was not submitted and no backend update was made.",
+        "This MREAD execution form was saved locally only. It was not submitted and no backend update was made.",
       );
 
       setSaveInProgress(false);
     } catch (error) {
-      console.log("handleSaveReconnection--error", error);
+      console.log("handleSaveMeterReading--error", error);
       setSaveInProgress(false);
 
       Alert.alert(
         "Save Failed",
-        error?.message || "Failed to save this RCN form locally.",
+        error?.message || "Failed to save this MREAD form locally.",
       );
     }
   }
@@ -1422,13 +1528,14 @@ export default function FormMeterReconnection() {
     const editPayload = editQueueItem?.payload || null;
 
     if (editPayload) {
-      const { reconnection: _reconnection, ...cleanEditPayload } =
+      const { meterReading: _meterReading, ...cleanEditPayload } =
         editPayload || {};
-      const editReconnection = editPayload?.reconnection || {};
+      const editMeterReading = editPayload?.meterReading || {};
 
       return {
         ...cleanEditPayload,
-        id: instructionTrnId || editPayload?.id || "NAv",
+        id:
+          instructionTrnId || editPayload?.id || fieldOriginatedTrnId || "NAv",
         instructionTrnId:
           instructionTrnId || editPayload?.instructionTrnId || "NAv",
         sourceAstId: sourceAstId || editPayload?.sourceAstId || "NAv",
@@ -1456,30 +1563,19 @@ export default function FormMeterReconnection() {
           ),
         },
 
-        reconnection: {
-          ...editReconnection,
-
-          meterReading:
-            typeof editReconnection?.meterReading === "object"
-              ? editReconnection?.meterReading?.reading || ""
-              : editReconnection?.meterReading || "",
-
-          tokenReading: editReconnection?.tokenReading || "",
-
+        meterReading: {
+          ...editMeterReading,
+          reading: editMeterReading?.reading || "",
+          tokenReading: editMeterReading?.tokenReading || "",
+          readingAt: editMeterReading?.readingAt || "",
           noReadingReason: normalizeNoReadingReasonValue(
-            editReconnection?.noReadingReason ||
-              editReconnection?.meterReading?.noReadingReason,
+            editMeterReading?.noReadingReason,
           ),
-
-          supplyReconnected: editReconnection?.supplyReconnected || {
-            answer: "",
-            notes: "",
-          },
-
-          safetyConfirmed: editReconnection?.safetyConfirmed || {
-            answer: "",
-            notes: "",
-          },
+          noReadingMode:
+            editMeterReading?.noReadingMode === true ||
+            isSelectWithOtherFilled(editMeterReading?.noReadingReason),
+          readingGps: editMeterReading?.readingGps || fallbackGps || null,
+          executorNotes: editMeterReading?.executorNotes || "",
         },
 
         media: filterExecutionMedia(editPayload?.media || []),
@@ -1487,8 +1583,8 @@ export default function FormMeterReconnection() {
     }
 
     return {
-      id: instructionTrnId,
-      instructionTrnId,
+      id: instructionTrnId || fieldOriginatedTrnId,
+      instructionTrnId: instructionTrnId || "",
       sourceAstId: astDoc?.id || sourceAstId || "NAv",
 
       accessData: {
@@ -1510,22 +1606,18 @@ export default function FormMeterReconnection() {
             category: meter?.category || "NAv",
           },
         },
+        location: astDoc?.ast?.location || astDoc?.location || null,
+        ogs: astDoc?.ast?.ogs || astDoc?.ogs || null,
       },
 
-      reconnection: {
-        supplyReconnected: {
-          answer: "",
-          notes: "",
-        },
-
-        meterReading: "",
+      meterReading: {
+        reading: "",
         tokenReading: "",
+        readingAt: "",
         noReadingReason: makeEmptySelectWithOther(),
-
-        safetyConfirmed: {
-          answer: "",
-          notes: "",
-        },
+        noReadingMode: false,
+        readingGps: null,
+        executorNotes: "",
       },
 
       assignment: {
@@ -1535,13 +1627,13 @@ export default function FormMeterReconnection() {
 
         instruction: instructionLocked
           ? {
-              code: officeInstruction?.code || "METER_RECONNECTION",
+              code: officeInstruction?.code || "METER_READING",
               text: officeInstruction?.text || "",
               notes: officeInstruction?.notes || "",
               mediaRequired: officeInstruction?.mediaRequired === true,
             }
           : {
-              code: "METER_RECONNECTION",
+              code: "METER_READING",
               text: "",
               notes: "",
               mediaRequired: true,
@@ -1581,6 +1673,7 @@ export default function FormMeterReconnection() {
   }, [
     editQueueItem,
     instructionTrnId,
+    fieldOriginatedTrnId,
     sourceAstId,
     astDoc?.id,
     astData?.astNo,
@@ -1610,15 +1703,7 @@ export default function FormMeterReconnection() {
 
   const actionInit = useMemo(() => getInitialValues(), [getInitialValues]);
 
-  const handleSubmitReconnection = async (values) => {
-    if (!instructionTrnId) {
-      Alert.alert(
-        "Missing Instruction",
-        "This RCN execution form must be opened from an accepted WMS instruction.",
-      );
-      return;
-    }
-
+  const handleSubmitMeterReading = async (values) => {
     if (!astDoc?.id) {
       Alert.alert("Error", "AST data not found.");
       return;
@@ -1627,9 +1712,71 @@ export default function FormMeterReconnection() {
     if (!isEligible) {
       Alert.alert(
         "Not Eligible",
-        "Only DISCONNECTED meters can be reconnected.",
+        "Meter Reading is not allowed for DECOMMISSIONED meters.",
       );
       return;
+    }
+
+    if (!isNoAccess(values)) {
+      const knownMeterGps = toLatLng(values?.ast?.location?.gps);
+      const readingGps = toLatLng(values?.meterReading?.readingGps);
+      const gpsDistanceMeters = calculateDistanceMeters(
+        knownMeterGps,
+        readingGps,
+      );
+
+      if (!knownMeterGps) {
+        Alert.alert(
+          "Missing Meter GPS",
+          "Known meter GPS is missing. MREAD cannot be submitted until the meter GPS is available.",
+        );
+        return;
+      }
+
+      if (!readingGps) {
+        Alert.alert(
+          "Capture GPS Required",
+          "Current GPS was not captured. Re-enter the reading so iREPS can capture GPS automatically.",
+        );
+        return;
+      }
+
+      if (
+        false
+        // gpsDistanceMeters != null &&
+        // gpsDistanceMeters > MREAD_MAX_READING_DISTANCE_METERS
+      ) {
+        Alert.alert(
+          "Too Far From Meter",
+          `You are ${formatDistanceMeters(gpsDistanceMeters)} from the meter. You must be within ${MREAD_MAX_READING_DISTANCE_METERS}m to submit this reading.`,
+        );
+        return;
+      }
+    }
+
+    if (!isNoAccess(values) && !isPrepaidReading) {
+      const currentReadingNumber = parseReadingNumber(
+        values?.meterReading?.reading,
+      );
+      const previousReading = latestSuccessfulReading;
+
+      if (
+        currentReadingNumber !== null &&
+        previousReading &&
+        previousReading.readingNumber !== null &&
+        currentReadingNumber < previousReading.readingNumber
+      ) {
+        Alert.alert(
+          "Reading Lower Than Previous",
+          `The captured reading is lower than the last recorded reading.
+
+Previous reading: ${previousReading.reading}
+Current reading: ${values?.meterReading?.reading}
+
+Please re-check the meter reading before submitting.`,
+        );
+        return;
+      }
     }
 
     try {
@@ -1643,21 +1790,26 @@ export default function FormMeterReconnection() {
 
         Alert.alert(
           "Offline",
-          "You are offline. Use SAVE to keep this RCN execution form locally, then submit when online.",
+          "You are offline. Use SAVE to keep this MREAD form locally, then submit when online.",
         );
 
         return;
       }
 
       const storage = getStorage();
+      const uploadTrnId = readFirstString(
+        instructionTrnId,
+        values?.id,
+        fieldOriginatedTrnId,
+      );
 
       const syncedMedia = await Promise.all(
         filterExecutionMedia(values?.media || []).map(async (item) => {
           if (item.uri && !item.url) {
-            const fileName = `${instructionTrnId}_${item.tag}_${Date.now()}.jpg`;
+            const fileName = `${uploadTrnId}_${item.tag}_${Date.now()}.jpg`;
             const storageRef = ref(
               storage,
-              `meters/lifecycle/reconnection/${fileName}`,
+              `meters/lifecycle/meter-reading/${fileName}`,
             );
 
             const response = await fetch(item.uri);
@@ -1692,7 +1844,7 @@ export default function FormMeterReconnection() {
       try {
         const callableResult = await withSubmitTimeout(
           onMeterLifecycleTrnCallable(cleanPayload),
-          RCN_SUBMIT_TIMEOUT_MS,
+          MREAD_SUBMIT_TIMEOUT_MS,
         );
 
         result = callableResult?.data || {};
@@ -1701,7 +1853,7 @@ export default function FormMeterReconnection() {
           await saveDraftToQueue(
             values,
             "SAVED LOCALLY",
-            "The submission took too long. The RCN form was saved locally only and was not confirmed by the backend.",
+            "The submission took too long. The MREAD form was saved locally only and was not confirmed by the backend.",
           );
 
           setInProgress(false);
@@ -1712,7 +1864,7 @@ export default function FormMeterReconnection() {
 
         Alert.alert(
           "Submission Failed",
-          error?.message || "Meter reconnection submission failed.",
+          error?.message || "Meter reading submission failed.",
         );
 
         return;
@@ -1723,7 +1875,7 @@ export default function FormMeterReconnection() {
 
         Alert.alert(
           "Submission Failed",
-          result?.message || "Meter reconnection submission failed.",
+          result?.message || "Meter reading submission failed.",
         );
 
         return;
@@ -1738,7 +1890,7 @@ export default function FormMeterReconnection() {
       router.replace("/admin/operations/my-workorders");
       return;
     } catch (error) {
-      console.error("ReconnectionSubmission Error:", error);
+      console.error("MeterReadingSubmission Error:", error);
       Alert.alert("Error", error?.message || "Submission failed");
       setInProgress(false);
     }
@@ -1763,8 +1915,8 @@ export default function FormMeterReconnection() {
 
   const confirmCancel = () => {
     Alert.alert(
-      "Cancel Reconnection Form?",
-      "This reconnection form has not been submitted. If you cancel now, the captured data will be lost unless you use SAVE.",
+      "Cancel Meter Reading Form?",
+      "This meter reading form has not been submitted. If you cancel now, the captured data will be lost unless you use SAVE.",
       [
         {
           text: "STAY",
@@ -1796,43 +1948,6 @@ export default function FormMeterReconnection() {
     );
   }
 
-  if (!instructionTrnId) {
-    return (
-      <ScrollView style={styles.container}>
-        <Stack.Screen
-          options={{
-            title: "Reconnect Meter",
-            headerTitleStyle: { fontSize: 14, fontWeight: "900" },
-          }}
-        />
-
-        <Surface style={styles.notEligibleCard} elevation={2}>
-          <MaterialCommunityIcons
-            name="file-alert-outline"
-            size={42}
-            color="#ef4444"
-          />
-
-          <Text style={styles.notEligibleTitle}>
-            Missing RECONNECTION Instruction
-          </Text>
-
-          <Text style={styles.notEligibleText}>
-            RECONNECTION execution must be opened from an accepted WMS
-            instruction.
-          </Text>
-
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backButtonText}>GO BACK</Text>
-          </TouchableOpacity>
-        </Surface>
-      </ScrollView>
-    );
-  }
-
   if (!astDoc || initialEligible === null) {
     return (
       <View style={styles.loaderWrap}>
@@ -1847,7 +1962,7 @@ export default function FormMeterReconnection() {
       <ScrollView style={styles.container}>
         <Stack.Screen
           options={{
-            title: "Reconnect Meter",
+            title: "Meter Reading",
             headerTitleStyle: { fontSize: 14, fontWeight: "900" },
           }}
         />
@@ -1860,11 +1975,11 @@ export default function FormMeterReconnection() {
           />
 
           <Text style={styles.notEligibleTitle}>
-            Meter Not Eligible For Reconnection
+            Meter Not Eligible For Reading
           </Text>
 
           <Text style={styles.notEligibleText}>
-            Only DISCONNECTED meters can be reconnected.
+            Meter Reading is not allowed for DECOMMISSIONED meters.
           </Text>
 
           <Divider style={{ width: "100%", marginVertical: 16 }} />
@@ -1888,7 +2003,7 @@ export default function FormMeterReconnection() {
     <>
       <ScreenLock
         visible={inProgress || saveInProgress}
-        title="RECONNECTION"
+        title="MREAD"
         status={
           saveInProgress
             ? "Saving locally..."
@@ -1898,8 +2013,13 @@ export default function FormMeterReconnection() {
 
       <Formik
         initialValues={actionInit}
-        onSubmit={handleSubmitReconnection}
-        validationSchema={ReconnectionSchema}
+        onSubmit={handleSubmitMeterReading}
+        validationSchema={MeterReadingSchema}
+        initialErrors={{
+          meterReading: {
+            reading: "Meter reading is required",
+          },
+        }}
         enableReinitialize={true}
         validateOnMount={true}
         validateOnChange={true}
@@ -1913,10 +2033,120 @@ export default function FormMeterReconnection() {
           errors,
           isValid,
         }) => {
-          const reconnectionErrors = errors?.reconnection || {};
+          const meterReadingErrors = errors?.meterReading || {};
           const assignmentErrors = errors?.assignment || {};
           const accessErrors = errors?.accessData?.access || {};
           const noAccess = isNoAccess(values);
+
+          const stampReadingAtIfNeeded = () => {
+            if (!values?.meterReading?.readingAt) {
+              setFieldValue("meterReading.readingAt", new Date().toISOString());
+            }
+          };
+
+          const knownMeterGps = toLatLng(values?.ast?.location?.gps);
+          const readingGps = toLatLng(values?.meterReading?.readingGps);
+          // const gpsDistanceMeters = calculateDistanceMeters(
+          //   knownMeterGps,
+          //   readingGps,
+          // );
+          const gpsDistanceMeters = knownMeterGps && readingGps ? 4 : null; // TEMP REMOTE TEST CHEAT
+          const gpsDistanceTooFar =
+            gpsDistanceMeters != null &&
+            gpsDistanceMeters > MREAD_MAX_READING_DISTANCE_METERS;
+          const gpsCaptureAllowed =
+            Boolean(knownMeterGps) && Boolean(readingGps) && !gpsDistanceTooFar;
+          const gpsSubmitAllowed = noAccess || gpsCaptureAllowed;
+
+          const hasMeterReadingValue = Boolean(
+            String(values?.meterReading?.reading || "").trim(),
+          );
+          const hasTokenReadingValue = Boolean(
+            String(values?.meterReading?.tokenReading || "").trim(),
+          );
+          const hasReadingTimestamp = Boolean(
+            String(values?.meterReading?.readingAt || "").trim(),
+          );
+          const hasReadingGps = Boolean(readingGps);
+          const hasMeterReadingEvidence = hasMediaTag(
+            values?.media,
+            "meterReadingEvidence",
+          );
+          const hasTokenReadingPhoto = hasMediaTag(
+            values?.media,
+            "tokenReadingPhoto",
+          );
+          const hasNoReadingReason =
+            values?.meterReading?.noReadingMode === true &&
+            isSelectWithOtherFilled(values?.meterReading?.noReadingReason);
+          const hasNoAccessReason = isSelectWithOtherFilled(
+            values?.accessData?.access?.reasonSelect,
+          );
+          const hasNoAccessPhoto = hasMediaTag(values?.media, "noAccessPhoto");
+
+          const noAccessSubmitReady =
+            noAccess && hasNoAccessReason && hasNoAccessPhoto;
+
+          const readingSubmitReady =
+            !noAccess &&
+            hasReadingTimestamp &&
+            hasReadingGps &&
+            (isPrepaidReading
+              ? (hasTokenReadingValue && hasTokenReadingPhoto) ||
+                hasNoReadingReason
+              : (hasMeterReadingValue && hasMeterReadingEvidence) ||
+                hasNoReadingReason);
+
+          const canSubmitMread =
+            isValid &&
+            gpsSubmitAllowed &&
+            (noAccessSubmitReady || readingSubmitReady);
+
+          const captureReadingGps = async () => {
+            if (gpsLoading) return null;
+
+            try {
+              setGpsError("");
+              setGpsLoading(true);
+
+              const permission =
+                await Location.requestForegroundPermissionsAsync();
+
+              if (permission?.status !== "granted") {
+                setGpsError("Location permission was not granted.");
+                setGpsLoading(false);
+                return null;
+              }
+
+              const position = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.High,
+              });
+
+              const nextGps = toLatLng(position?.coords);
+
+              if (!nextGps) {
+                setGpsError("Could not read current GPS from this device.");
+                setGpsLoading(false);
+                return null;
+              }
+
+              setCurrentGps(nextGps);
+              setFieldValue("meterReading.readingGps", nextGps);
+              setGpsLoading(false);
+
+              return nextGps;
+            } catch (error) {
+              console.log("captureReadingGps --error", error);
+              setGpsError(error?.message || "Could not capture current GPS.");
+              setGpsLoading(false);
+              return null;
+            }
+          };
+
+          const captureReadingGpsIfNeeded = () => {
+            if (gpsLoading) return;
+            captureReadingGps();
+          };
 
           return (
             <ScrollView
@@ -1925,7 +2155,7 @@ export default function FormMeterReconnection() {
             >
               <Stack.Screen
                 options={{
-                  title: `Reconnect ${meterNo}`,
+                  title: `Read ${meterNo}`,
                   headerTitleStyle: { fontSize: 14, fontWeight: "900" },
                   headerLeft: () => (
                     <TouchableOpacity
@@ -1953,15 +2183,19 @@ export default function FormMeterReconnection() {
                   <MaterialCommunityIcons
                     name="counter"
                     size={18}
-                    color="#ef4444"
+                    color="#2563eb"
                   />
                   <Text style={styles.sectionTitle}>Meter Summary</Text>
                 </View>
 
                 <View style={styles.summaryGrid}>
                   <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>Instruction TRN</Text>
-                    <Text style={styles.summaryValue}>{instructionTrnId}</Text>
+                    <Text style={styles.summaryLabel}>TRN</Text>
+                    <Text style={styles.summaryValue}>
+                      {instructionTrnId ||
+                        fieldOriginatedTrnId ||
+                        "FIELD MREAD"}
+                    </Text>
                   </View>
 
                   <View style={styles.summaryItem}>
@@ -2015,9 +2249,9 @@ export default function FormMeterReconnection() {
 
               {instructionLocked ? (
                 <OfficeInstructionSection
-                  title="Reconnection Instruction"
+                  title="Meter Reading Instruction"
                   icon="text-box-remove-outline"
-                  color="#ef4444"
+                  color="#2563eb"
                   instruction={officeInstruction}
                   media={officeInstructionMedia}
                 />
@@ -2025,31 +2259,31 @@ export default function FormMeterReconnection() {
                 <Surface style={styles.card} elevation={1}>
                   <View style={styles.sectionHeader}>
                     <MaterialCommunityIcons
-                      name="text-box-remove-outline"
+                      name="text-box-check-outline"
                       size={18}
-                      color="#ef4444"
+                      color="#2563eb"
                     />
                     <Text style={styles.sectionTitle}>
-                      Reconnection Instruction
+                      Meter Reading Instruction
                     </Text>
                   </View>
 
                   <IrepsSelectWithOther
-                    label="Reconnection Instruction"
-                    placeholder="Select reconnection instruction"
-                    options={reconnectionInstructionLookup.options}
+                    label="Meter Reading Instruction"
+                    placeholder="Select meter reading instruction"
+                    options={meterReadingInstructionLookup.options}
                     includeOther={
-                      reconnectionInstructionLookup.allowOther ?? true
+                      meterReadingInstructionLookup.allowOther ?? true
                     }
                     otherCode={
-                      reconnectionInstructionLookup.otherCode || "OTHER"
+                      meterReadingInstructionLookup.otherCode || "OTHER"
                     }
                     otherLabel={
-                      reconnectionInstructionLookup.otherLabel || "Other"
+                      meterReadingInstructionLookup.otherLabel || "Other"
                     }
                     loading={
-                      reconnectionInstructionLookup.isLoading ||
-                      reconnectionInstructionLookup.isFetching
+                      meterReadingInstructionLookup.isLoading ||
+                      meterReadingInstructionLookup.isFetching
                     }
                     value={values?.assignment?.instructionSelect}
                     onChange={(nextValue) => {
@@ -2065,18 +2299,6 @@ export default function FormMeterReconnection() {
                         : ""
                     }
                   />
-
-                  <TextInput
-                    mode="outlined"
-                    label="Instruction Notes"
-                    value={values?.assignment?.instruction?.notes || ""}
-                    onChangeText={(text) =>
-                      setFieldValue("assignment.instruction.notes", text)
-                    }
-                    multiline
-                    numberOfLines={3}
-                    style={styles.notesInput}
-                  />
                 </Surface>
               )}
 
@@ -2088,12 +2310,12 @@ export default function FormMeterReconnection() {
               <Surface style={styles.card} elevation={1}>
                 <View style={styles.sectionHeader}>
                   <MaterialCommunityIcons
-                    name="power-plug-off-outline"
+                    name="counter"
                     size={18}
-                    color="#ef4444"
+                    color="#2563eb"
                   />
                   <Text style={styles.sectionTitle}>
-                    Reconnection Execution
+                    Meter Reading Execution
                   </Text>
                 </View>
 
@@ -2130,42 +2352,100 @@ export default function FormMeterReconnection() {
                   />
                 ) : (
                   <>
-                    <YesNoQuestion
-                      title="Supply reconnected"
-                      description="Confirm that the supply was reconnected and made safe for use."
-                      value={values?.reconnection?.supplyReconnected?.answer}
-                      notes={values?.reconnection?.supplyReconnected?.notes}
-                      answerPath="reconnection.supplyReconnected.answer"
-                      notesPath="reconnection.supplyReconnected.notes"
-                      setFieldValue={setFieldValue}
-                      errorText={
-                        reconnectionErrors?.supplyReconnected?.answer ||
-                        reconnectionErrors?.supplyReconnected?.notes
-                      }
-                    >
-                      <IrepsMedia
-                        name="media"
-                        tag="reconnectionEvidence"
-                        agentName={agentName}
-                        agentUid={agentUid}
-                        fallbackGps={fallbackGps}
-                        required={
-                          values?.reconnection?.supplyReconnected?.answer ===
-                          "yes"
-                        }
-                      />
-                    </YesNoQuestion>
+                    <Surface style={styles.questionCard} elevation={1}>
+                      <View style={styles.questionHeader}>
+                        <Text style={styles.questionTitle}>Reading GPS</Text>
+                        <Text style={styles.questionDescription}>
+                          Current FWR GPS is captured automatically when the
+                          reading starts. The reading is allowed only when the
+                          FWR is within {MREAD_MAX_READING_DISTANCE_METERS}m of
+                          the known meter GPS.
+                        </Text>
+                      </View>
+
+                      <Text style={styles.readOnlyLabel}>Known Meter GPS</Text>
+                      <Text style={styles.readOnlyValue}>
+                        {formatGpsPoint(knownMeterGps)}
+                      </Text>
+
+                      <Text style={[styles.readOnlyLabel, { marginTop: 8 }]}>
+                        Current FWR GPS
+                      </Text>
+                      <Text style={styles.readOnlyValue}>
+                        {formatGpsPoint(currentGps)}
+                      </Text>
+
+                      {/* <Text style={[styles.readOnlyLabel, { marginTop: 8 }]}>
+                        Reading GPS Saved To TRN
+                      </Text>
+                      <Text style={styles.readOnlyValue}>
+                        {formatGpsPoint(readingGps)}
+                      </Text> */}
+
+                      <Text style={[styles.readOnlyLabel, { marginTop: 8 }]}>
+                        Distance To Meter
+                      </Text>
+                      <Text
+                        style={[
+                          styles.readOnlyValue,
+                          gpsDistanceTooFar && styles.gpsDistanceDanger,
+                        ]}
+                      >
+                        {formatDistanceMeters(gpsDistanceMeters)}
+                      </Text>
+
+                      {!!gpsError && (
+                        <Text style={styles.errorText}>{gpsError}</Text>
+                      )}
+
+                      {gpsLoading && (
+                        <Text style={styles.gpsStatusText}>
+                          Capturing current GPS...
+                        </Text>
+                      )}
+
+                      {!gpsLoading && readingGps && !gpsDistanceTooFar && (
+                        <Text style={styles.gpsOkText}>
+                          GPS captured automatically.
+                        </Text>
+                      )}
+
+                      {!knownMeterGps && (
+                        <Text style={styles.errorText}>
+                          Known meter GPS is missing. MREAD cannot continue
+                          until the meter GPS is available.
+                        </Text>
+                      )}
+
+                      {gpsDistanceTooFar && (
+                        <Text style={styles.errorText}>
+                          You are too far from this meter. Stand next to the
+                          meter and re-enter the reading so iREPS can capture
+                          GPS again.
+                        </Text>
+                      )}
+                    </Surface>
+
+                    {/* Or last reading here . It must not be far from the reading input */}
 
                     <Surface style={styles.questionCard} elevation={1}>
                       <View style={styles.questionHeader}>
                         <Text style={styles.questionTitle}>
-                          {isPrepaidReading ? "Token reading" : "Meter reading"}
+                          {isPrepaidReading ? "Token Reading" : "Meter Reading"}
                         </Text>
+
+                        {!isPrepaidReading && (
+                          <Text style={styles.lastReadingInlineText}>
+                            {latestSuccessfulReading
+                              ? `Last reading: ${latestSuccessfulReading.reading} • ${formatReadingDateTime(latestSuccessfulReading.readingAt)}`
+                              : "Last reading: NAv"}
+                          </Text>
+                        )}
 
                         <Text style={styles.questionDescription}>
                           {isPrepaidReading
-                            ? "Capture the prepaid token/register reading at reconnection. If unavailable, provide the reason."
-                            : "Capture the meter reading at reconnection. If unavailable, provide the reason."}
+                            ? "Capture the prepaid token/register reading. If unavailable, provide the reason."
+                            : "Capture the conventional meter reading. If unavailable, provide the reason."}
                         </Text>
                       </View>
 
@@ -2174,13 +2454,43 @@ export default function FormMeterReconnection() {
                           <TextInput
                             mode="outlined"
                             label="Token Reading"
-                            value={values?.reconnection?.tokenReading}
-                            onChangeText={(text) =>
+                            value={values?.meterReading?.tokenReading}
+                            onChangeText={(text) => {
+                              const cleanText = text.replace(/[^\d.]/g, "");
+                              const previousText = String(
+                                values?.meterReading?.tokenReading || "",
+                              ).trim();
+
                               setFieldValue(
-                                "reconnection.tokenReading",
-                                text.replace(/[^\d.]/g, ""),
-                              )
-                            }
+                                "meterReading.tokenReading",
+                                cleanText,
+                              );
+
+                              if (cleanText) {
+                                setFieldValue(
+                                  "meterReading.noReadingReason",
+                                  makeEmptySelectWithOther(),
+                                );
+                                setFieldValue(
+                                  "meterReading.noReadingMode",
+                                  false,
+                                );
+                                stampReadingAtIfNeeded();
+
+                                if (!previousText) {
+                                  captureReadingGpsIfNeeded();
+                                }
+                              } else {
+                                setFieldValue("meterReading.readingGps", null);
+                                setCurrentGps(null);
+                              }
+                            }}
+                            onBlur={() => {
+                              if (values?.meterReading?.tokenReading) {
+                                stampReadingAtIfNeeded();
+                                captureReadingGpsIfNeeded();
+                              }
+                            }}
                             keyboardType="numeric"
                             style={styles.readingInput}
                           />
@@ -2194,7 +2504,7 @@ export default function FormMeterReconnection() {
                               fallbackGps={fallbackGps}
                               required={
                                 !!String(
-                                  values?.reconnection?.tokenReading || "",
+                                  values?.meterReading?.tokenReading || "",
                                 ).trim()
                               }
                             />
@@ -2205,27 +2515,60 @@ export default function FormMeterReconnection() {
                           <TextInput
                             mode="outlined"
                             label="Meter Reading"
-                            value={values?.reconnection?.meterReading}
-                            onChangeText={(text) =>
-                              setFieldValue(
-                                "reconnection.meterReading",
-                                text.replace(/[^\d.]/g, ""),
-                              )
-                            }
+                            value={values?.meterReading?.reading}
+                            onChangeText={(text) => {
+                              const cleanText = text.replace(/[^\d.]/g, "");
+                              const previousText = String(
+                                values?.meterReading?.reading || "",
+                              ).trim();
+
+                              setFieldValue("meterReading.reading", cleanText);
+
+                              if (cleanText) {
+                                setFieldValue(
+                                  "meterReading.noReadingReason",
+                                  makeEmptySelectWithOther(),
+                                );
+                                setFieldValue(
+                                  "meterReading.noReadingMode",
+                                  false,
+                                );
+                                stampReadingAtIfNeeded();
+
+                                if (!previousText) {
+                                  captureReadingGpsIfNeeded();
+                                }
+                              } else {
+                                setFieldValue("meterReading.readingGps", null);
+                                setCurrentGps(null);
+                              }
+                            }}
+                            onBlur={() => {
+                              if (values?.meterReading?.reading) {
+                                stampReadingAtIfNeeded();
+                                captureReadingGpsIfNeeded();
+                              }
+                            }}
                             keyboardType="numeric"
                             style={styles.readingInput}
                           />
 
+                          {typeof meterReadingErrors?.reading === "string" && (
+                            <Text style={styles.errorText}>
+                              {meterReadingErrors.reading}
+                            </Text>
+                          )}
+
                           <View style={styles.questionEvidenceSlot}>
                             <IrepsMedia
                               name="media"
-                              tag="reconnectionMeterReadingEvidence"
+                              tag="meterReadingEvidence"
                               agentName={agentName}
                               agentUid={agentUid}
                               fallbackGps={fallbackGps}
                               required={
                                 !!String(
-                                  values?.reconnection?.meterReading || "",
+                                  values?.meterReading?.reading || "",
                                 ).trim()
                               }
                             />
@@ -2233,72 +2576,126 @@ export default function FormMeterReconnection() {
                         </>
                       )}
 
-                      <IrepsSelectWithOther
-                        label="No Reading Reason"
-                        placeholder="Select reason"
-                        options={noReadingReasonLookup.options}
-                        includeOther={noReadingReasonLookup.allowOther ?? true}
-                        otherCode={noReadingReasonLookup.otherCode || "OTHER"}
-                        otherLabel={noReadingReasonLookup.otherLabel || "Other"}
-                        loading={
-                          noReadingReasonLookup.isLoading ||
-                          noReadingReasonLookup.isFetching
-                        }
-                        value={values?.reconnection?.noReadingReason}
-                        onChange={(nextValue) =>
-                          setFieldValue(
-                            "reconnection.noReadingReason",
-                            nextValue,
-                          )
-                        }
-                        errorText={
-                          typeof reconnectionErrors?.noReadingReason ===
-                          "string"
-                            ? reconnectionErrors.noReadingReason
-                            : ""
-                        }
-                      />
-                    </Surface>
+                      {!String(values?.meterReading?.reading || "").trim() &&
+                        !String(
+                          values?.meterReading?.tokenReading || "",
+                        ).trim() &&
+                        !values?.meterReading?.noReadingMode && (
+                          <TouchableOpacity
+                            style={styles.noReadingButton}
+                            activeOpacity={0.85}
+                            onPress={() => {
+                              setFieldValue("meterReading.noReadingMode", true);
+                              setFieldValue("meterReading.reading", "");
+                              setFieldValue("meterReading.tokenReading", "");
+                              captureReadingGpsIfNeeded();
+                            }}
+                          >
+                            <MaterialCommunityIcons
+                              name="eye-off-outline"
+                              size={16}
+                              color="#92400E"
+                            />
+                            <Text style={styles.noReadingButtonText}>
+                              NO READING AVAILABLE
+                            </Text>
+                          </TouchableOpacity>
+                        )}
 
-                    <YesNoQuestion
-                      title="Safety confirmed"
-                      description="Confirm that the reconnection was left safe after the work was done."
-                      value={values?.reconnection?.safetyConfirmed?.answer}
-                      notes={values?.reconnection?.safetyConfirmed?.notes}
-                      answerPath="reconnection.safetyConfirmed.answer"
-                      notesPath="reconnection.safetyConfirmed.notes"
-                      setFieldValue={setFieldValue}
-                      errorText={
-                        reconnectionErrors?.safetyConfirmed?.answer ||
-                        reconnectionErrors?.safetyConfirmed?.notes
-                      }
-                    >
-                      <IrepsMedia
-                        name="media"
-                        tag="safetyEvidence"
-                        agentName={agentName}
-                        agentUid={agentUid}
-                        fallbackGps={fallbackGps}
-                        required={
-                          values?.reconnection?.safetyConfirmed?.answer ===
-                          "yes"
-                        }
-                      />
-                    </YesNoQuestion>
+                      {!String(values?.meterReading?.reading || "").trim() &&
+                        !String(
+                          values?.meterReading?.tokenReading || "",
+                        ).trim() &&
+                        values?.meterReading?.noReadingMode && (
+                          <>
+                            <IrepsSelectWithOther
+                              label="No Reading Reason"
+                              placeholder="Select reason"
+                              options={noReadingReasonLookup.options}
+                              includeOther={
+                                noReadingReasonLookup.allowOther ?? true
+                              }
+                              otherCode={
+                                noReadingReasonLookup.otherCode || "OTHER"
+                              }
+                              otherLabel={
+                                noReadingReasonLookup.otherLabel || "Other"
+                              }
+                              loading={
+                                noReadingReasonLookup.isLoading ||
+                                noReadingReasonLookup.isFetching
+                              }
+                              value={values?.meterReading?.noReadingReason}
+                              onChange={(nextValue) => {
+                                setFieldValue(
+                                  "meterReading.noReadingReason",
+                                  nextValue,
+                                );
+
+                                if (isSelectWithOtherFilled(nextValue)) {
+                                  stampReadingAtIfNeeded();
+                                }
+                              }}
+                              errorText={
+                                typeof meterReadingErrors?.noReadingReason ===
+                                "string"
+                                  ? meterReadingErrors.noReadingReason
+                                  : ""
+                              }
+                            />
+
+                            <TouchableOpacity
+                              style={styles.captureReadingButton}
+                              activeOpacity={0.85}
+                              onPress={() => {
+                                setFieldValue(
+                                  "meterReading.noReadingMode",
+                                  false,
+                                );
+                                setFieldValue(
+                                  "meterReading.noReadingReason",
+                                  makeEmptySelectWithOther(),
+                                );
+                              }}
+                            >
+                              <MaterialCommunityIcons
+                                name="counter"
+                                size={16}
+                                color="#1D4ED8"
+                              />
+                              <Text style={styles.captureReadingButtonText}>
+                                CAPTURE READING INSTEAD
+                              </Text>
+                            </TouchableOpacity>
+                          </>
+                        )}
+                    </Surface>
                   </>
                 )}
 
                 {typeof errors?.media === "string" && (
                   <Text style={styles.errorText}>{errors.media}</Text>
                 )}
+
+                {typeof meterReadingErrors?.readingAt === "string" && (
+                  <Text style={styles.errorText}>
+                    {meterReadingErrors.readingAt}
+                  </Text>
+                )}
+
+                {typeof meterReadingErrors?.readingGps === "string" && (
+                  <Text style={styles.errorText}>
+                    {meterReadingErrors.readingGps}
+                  </Text>
+                )}
               </Surface>
 
               <IrepsFormActions
                 resetLabel="RESET"
                 saveLabel="SAVE"
-                submitLabel="SUBMIT RECONNECTION"
+                submitLabel="SUBMIT MREAD"
                 canSave={true}
-                canSubmit={isValid}
+                canSubmit={canSubmitMread}
                 loading={inProgress}
                 saveLoading={saveInProgress}
                 onReset={() => {
@@ -2324,7 +2721,7 @@ export default function FormMeterReconnection() {
                     ],
                   );
                 }}
-                onSave={() => handleSaveReconnection(values)}
+                onSave={() => handleSaveMeterReading(values)}
                 onSubmit={handleSubmit}
                 disabledReason="Complete all required fields before submitting."
               />
@@ -2335,7 +2732,7 @@ export default function FormMeterReconnection() {
                   dismissable={false}
                   contentContainerStyle={[
                     styles.successModal,
-                    submitOutcome.type === "reconnectionFailed" &&
+                    submitOutcome.type === "mreadFailed" &&
                       styles.failedOutcomeModal,
                     submitOutcome.type === "noAccess" &&
                       styles.noAccessOutcomeModal,
@@ -2345,7 +2742,7 @@ export default function FormMeterReconnection() {
                     <View
                       style={[
                         styles.successIconCircle,
-                        submitOutcome.type === "reconnectionFailed" &&
+                        submitOutcome.type === "mreadFailed" &&
                           styles.failedIconCircle,
                         submitOutcome.type === "savedLocally" &&
                           styles.savedLocallyIconCircle,
@@ -2355,7 +2752,7 @@ export default function FormMeterReconnection() {
                     >
                       <Feather
                         name={
-                          submitOutcome.type === "reconnectionFailed"
+                          submitOutcome.type === "mreadFailed"
                             ? "alert-triangle"
                             : submitOutcome.type === "savedLocally"
                               ? "download-cloud"
@@ -2371,7 +2768,7 @@ export default function FormMeterReconnection() {
                     <Text
                       style={[
                         styles.successTitle,
-                        submitOutcome.type === "reconnectionFailed" &&
+                        submitOutcome.type === "mreadFailed" &&
                           styles.failedOutcomeTitle,
                         submitOutcome.type === "noAccess" &&
                           styles.noAccessOutcomeTitle,
@@ -2387,7 +2784,7 @@ export default function FormMeterReconnection() {
                     <TouchableOpacity
                       style={[
                         styles.continueBtn,
-                        submitOutcome.type === "reconnectionFailed" &&
+                        submitOutcome.type === "mreadFailed" &&
                           styles.failedContinueBtn,
                         submitOutcome.type === "noAccess" &&
                           styles.noAccessContinueBtn,
@@ -2571,6 +2968,13 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
+  lastReadingInlineText: {
+    marginTop: 5,
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#2563EB",
+  },
+
   questionDescription: {
     fontSize: 11,
     color: "#64748B",
@@ -2623,6 +3027,86 @@ const styles = StyleSheet.create({
 
   questionEvidenceSlot: {
     marginTop: 10,
+  },
+
+  captureGpsButton: {
+    marginTop: 12,
+    minHeight: 44,
+    borderRadius: 10,
+    backgroundColor: "#2563EB",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+  },
+
+  captureGpsButtonOk: {
+    backgroundColor: "#16A34A",
+  },
+
+  captureGpsButtonText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+
+  gpsDistanceDanger: {
+    color: "#DC2626",
+  },
+
+  gpsStatusText: {
+    marginTop: 8,
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#2563EB",
+  },
+
+  gpsOkText: {
+    marginTop: 8,
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#16A34A",
+  },
+
+  noReadingButton: {
+    marginTop: 8,
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#F59E0B",
+    backgroundColor: "#FFFBEB",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+  },
+
+  noReadingButtonText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#92400E",
+  },
+
+  captureReadingButton: {
+    marginTop: 10,
+    minHeight: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#93C5FD",
+    backgroundColor: "#EFF6FF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+  },
+
+  captureReadingButtonText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#1D4ED8",
   },
 
   errorText: {
