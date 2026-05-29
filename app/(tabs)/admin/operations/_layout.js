@@ -27,7 +27,7 @@ export default function OperationsLayout() {
       <Stack.Screen
         name="geo-fences"
         options={{
-          title: "Geo-Fencing",
+          title: "",
         }}
       />
 

@@ -29,17 +29,6 @@ export function FilterHeaderBase({
   return (
     <View style={styles.headerContainer}>
       <View style={styles.leftSection}>
-        {!!title && (
-          <>
-            <View style={styles.titlePod}>
-              <Text style={styles.titleText} numberOfLines={1}>
-                {title}
-              </Text>
-            </View>
-            <View style={styles.podDivider} />
-          </>
-        )}
-
         <View style={styles.statPod}>
           <Text style={styles.statLabel}>{totalLabel}</Text>
           <Text style={styles.statValue}>{safeTotalCount}</Text>
