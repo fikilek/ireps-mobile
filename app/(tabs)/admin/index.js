@@ -156,6 +156,17 @@ export default function AdminDashboard() {
               handleNavigate("/(tabs)/admin/storage/premise-offline-storage")
             }
           />
+
+          <Card
+            title="Account Data Queue"
+            subtitle="Offline FormAccountData / FAD queue"
+            disabled={isNavigating}
+            onPress={() =>
+              handleNavigate(
+                "/(tabs)/admin/storage/account-data-submission-queue",
+              )
+            }
+          />
         </Section>
       )}
     </ScrollView>

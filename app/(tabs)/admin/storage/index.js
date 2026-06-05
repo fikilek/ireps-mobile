@@ -1,13 +1,13 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
-import { Surface, Text } from "react-native-paper";
+import { Text } from "react-native-paper";
 import { useAuth } from "../../../../src/hooks/useAuth";
 
 function StorageCard({ title, subtitle, icon, onPress }) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
-      <Surface style={styles.card} elevation={1}>
+      <View style={styles.card}>
         <View style={styles.cardLeft}>
           <View style={styles.iconWrap}>
             <MaterialCommunityIcons name={icon} size={24} color="#0f172a" />
@@ -16,7 +16,7 @@ function StorageCard({ title, subtitle, icon, onPress }) {
 
         <View style={styles.cardBody}>
           <Text style={styles.cardTitle}>{title}</Text>
-          <Text style={styles.cardSubtitle}>{subtitle}</Text>
+          {!!subtitle && <Text style={styles.cardSubtitle}>{subtitle}</Text>}
         </View>
 
         <MaterialCommunityIcons
@@ -24,7 +24,7 @@ function StorageCard({ title, subtitle, icon, onPress }) {
           size={24}
           color="#94a3b8"
         />
-      </Surface>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -48,7 +48,7 @@ export default function LocalStorageScreen() {
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
       >
-        <Surface style={styles.heroCard} elevation={1}>
+        <View style={styles.heroCard}>
           <View style={styles.heroHeader}>
             <MaterialCommunityIcons
               name="database-cog-outline"
@@ -59,10 +59,10 @@ export default function LocalStorageScreen() {
           </View>
 
           <Text style={styles.heroSubtitle}>
-            Manage offline ward ERFs availability, prepaid sales sync, and
-            queued form submissions.
+            Manage offline ward ERFs availability, prepaid sales sync, queued
+            meter forms, and data cleansing account data.
           </Text>
-        </Surface>
+        </View>
 
         {canViewStorage ? (
           <View style={styles.cardsWrap}>
@@ -77,27 +77,38 @@ export default function LocalStorageScreen() {
 
             <StorageCard
               title="Sales Sync"
-              // subtitle="Download monthly prepaid sales to this device"
+              subtitle="Download monthly prepaid sales to this device"
               icon="database-arrow-down-outline"
               onPress={() => router.push("/(tabs)/admin/storage/sales-sync")}
             />
 
             <StorageCard
               title="Forms Storage"
-              subtitle="Offline forms submission queue"
+              subtitle="Offline meter/TRN forms submission queue"
               icon="file-document-outline"
               onPress={() =>
                 router.push("/(tabs)/admin/storage/forms-submission-queue")
               }
             />
+
+            <StorageCard
+              title="Account Data Queue"
+              subtitle="Data Cleansing FormAccountData drafts and local queue"
+              icon="account-cash-outline"
+              onPress={() =>
+                router.push(
+                  "/(tabs)/admin/storage/account-data-submission-queue",
+                )
+              }
+            />
           </View>
         ) : (
-          <Surface style={styles.emptyCard} elevation={1}>
+          <View style={styles.emptyCard}>
             <Text style={styles.emptyTitle}>Access Restricted</Text>
             <Text style={styles.emptySubtitle}>
               You do not have permission to view local storage tools.
             </Text>
-          </Surface>
+          </View>
         )}
       </ScrollView>
     </>
@@ -119,17 +130,19 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   heroHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
     marginBottom: 8,
   },
   heroTitle: {
     fontSize: 16,
     fontWeight: "900",
     color: "#0F172A",
+    marginLeft: 8,
   },
   heroSubtitle: {
     fontSize: 13,
@@ -137,15 +150,16 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  cardsWrap: {
-    gap: 12,
-  },
+  cardsWrap: {},
   card: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 14,
     flexDirection: "row",
     alignItems: "center",
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   cardLeft: {
     marginRight: 12,
@@ -177,6 +191,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   emptyTitle: {
     fontSize: 15,

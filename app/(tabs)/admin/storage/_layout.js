@@ -7,6 +7,7 @@ export default function StorageLayout() {
         headerShown: true,
         headerTitleAlign: "center",
         headerShadowVisible: false,
+        animation: "none",
         headerStyle: {
           backgroundColor: "#FFFFFF",
         },
@@ -32,6 +33,13 @@ export default function StorageLayout() {
         name="forms-submission-queue"
         options={{
           title: "Meter Discovery Queue",
+        }}
+      />
+
+      <Stack.Screen
+        name="account-data-submission-queue"
+        options={{
+          title: "Account Data Queue",
         }}
       />
 
