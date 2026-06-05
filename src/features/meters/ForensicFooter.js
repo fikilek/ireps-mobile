@@ -78,7 +78,7 @@ export const ForensicFooter = ({ isTrnLoading }) => {
           );
         }}
         style={styles.resetBtn}
-        disabled={isTrnLoading}
+        disabled={loading}
         textColor="#64748B"
       >
         RESET
@@ -87,9 +87,9 @@ export const ForensicFooter = ({ isTrnLoading }) => {
       <Button
         mode="contained"
         onPress={handleSubmit}
-        disabled={isTrnLoading}
+        disabled={loading}
         icon={({ size, color }) =>
-          isTrnLoading ? (
+          loading ? (
             <ActivityIndicator size={size} color={config.color} />
           ) : (
             <MaterialCommunityIcons

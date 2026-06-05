@@ -326,7 +326,6 @@ export default function FormPremise() {
 
     const baseContext = selectedErf?.isTownship ? "Township" : "Suburb";
 
-    // 🟣 DRAFT MODE (highest priority)
     // QUEUE EDIT
     if (isQueueEdit && queueItem?.payload) {
       const payload = queueItem.payload;
@@ -695,7 +694,7 @@ export default function FormPremise() {
      ------------------------------------------------ */
       const storage = getStorage();
 
-      const uploadStartedAtMs = Date.now();
+      // const uploadStartedAtMs = Date.now();
 
       const syncedMedia = await Promise.all(
         (basePayload?.media || []).map(async (item, index) => {
@@ -766,12 +765,12 @@ export default function FormPremise() {
         if (isEdit) {
           result = await withSubmitTimeout(
             updatePremise(finalValues).unwrap(),
-            1000,
+            15000,
           );
         } else {
           result = await withSubmitTimeout(
             createPremise(finalValues).unwrap(),
-            1000,
+            15000,
           );
         }
 
