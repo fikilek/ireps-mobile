@@ -2,7 +2,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { FlashList } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo } from "react";
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ActivityIndicator, Surface } from "react-native-paper";
 
 import MissionDiscoveryModal from "../../../components/MissionDiscoveryModal";
@@ -137,28 +137,10 @@ export default function PremisesScreen() {
 
   const handleAccountPress = useCallback(
     (p) => {
-      const accountCount = Array.isArray(p?.accountRefs)
-        ? p.accountRefs.length
-        : 0;
-
-      const title = "Account Data Capture";
-      const message =
-        accountCount > 0
-          ? "This premise already has linked account data. You can still capture another account number or update the latest account data. A new field_account_data history record will be created."
-          : "This will open FormAccountData for this premise. You can capture one or more municipal account numbers.";
-
-      Alert.alert(title, message, [
-        { text: "CANCEL", style: "cancel" },
-        {
-          text: "CONTINUE",
-          onPress: () => {
-            router.push({
-              pathname: "/(tabs)/premises/formAccountData",
-              params: { premiseId: p?.id },
-            });
-          },
-        },
-      ]);
+      router.push({
+        pathname: "/(tabs)/premises/formAccountData",
+        params: { premiseId: p?.id },
+      });
     },
     [router],
   );

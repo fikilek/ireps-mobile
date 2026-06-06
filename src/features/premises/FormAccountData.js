@@ -1,7 +1,9 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
+import { httpsCallable } from "firebase/functions";
+import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { FieldArray, Formik } from "formik";
+import { FieldArray, Formik, getIn } from "formik";
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -11,10 +13,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { ActivityIndicator, Modal, Portal, Surface, Text } from "react-native-paper";
+import { ActivityIndicator, Button, Modal, Portal, Surface, Text } from "react-native-paper";
 import { array, object, string } from "yup";
 
 import { IrepsMedia } from "../../../components/media/IrepsMedia";
+import { functions } from "../../firebase";
+import {
+  useGetAccountMastersByPremiseIdQuery,
+} from "../../redux/accountDataApi";
 import { useWarehouse } from "../../context/WarehouseContext";
 import { useAuth } from "../../hooks/useAuth";
 import {
@@ -23,7 +29,6 @@ import {
   removeAccountDataDraftByPremiseId,
   saveAccountDataDraft,
 } from "../../utils/accountDataSubmissionQueue";
-import { ForensicFooter } from "../meters/ForensicFooter";
 import FormInputAccountNo from "./FormInputAccountNo";
 
 const ACCOUNT_DATA_MEDIA_TAGS = [
@@ -140,6 +145,142 @@ function buildInitialValues() {
   };
 }
 
+
+function fromNAv(value) {
+  const clean = String(value || "").trim();
+  const upper = clean.toUpperCase();
+
+  if (!clean || upper === "NAV" || upper === "N/A" || upper === "NA") {
+    return "";
+  }
+
+  return clean;
+}
+
+function formatDateLabel(value) {
+  if (!value || value === "NAv") return "NAv";
+
+  try {
+    return new Date(value).toLocaleString();
+  } catch (_error) {
+    return "NAv";
+  }
+}
+
+function getAccountMasterAccountNo(accountMaster = {}) {
+  return (
+    accountMaster?.account?.accountNo ||
+    accountMaster?.account?.accountNoNormalized ||
+    accountMaster?.accountNo ||
+    "NAv"
+  );
+}
+
+function getAccountMasterOwnerLabel(accountMaster = {}) {
+  const owner = accountMaster?.owner || {};
+
+  if (owner?.ownerType === "JURISTIC_PERSON") {
+    return (
+      fromNAv(owner?.juristicPerson?.registeredName) ||
+      fromNAv(owner?.juristicPerson?.tradingName) ||
+      "NAv"
+    );
+  }
+
+  const fullName = [
+    fromNAv(owner?.naturalPerson?.name),
+    fromNAv(owner?.naturalPerson?.surname),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return fullName || "NAv";
+}
+
+function buildValuesFromAccountMaster(accountMaster = {}, media = []) {
+  const baseValues = buildInitialValues();
+  const owner = accountMaster?.owner || {};
+  const occupant = accountMaster?.occupant || {};
+  const ownerType =
+    owner?.ownerType === "JURISTIC_PERSON" ? "JURISTIC_PERSON" : "NATURAL_PERSON";
+
+  return {
+    ...baseValues,
+
+    owner: {
+      ownerType,
+
+      naturalPerson: {
+        name: fromNAv(owner?.naturalPerson?.name),
+        surname: fromNAv(owner?.naturalPerson?.surname),
+        idNumber: fromNAv(owner?.naturalPerson?.idNumber),
+      },
+
+      juristicPerson: {
+        registeredName: fromNAv(owner?.juristicPerson?.registeredName),
+        registrationNumber: fromNAv(owner?.juristicPerson?.registrationNumber),
+        tradingName: fromNAv(owner?.juristicPerson?.tradingName),
+      },
+
+      contact: {
+        phone: fromNAv(owner?.contact?.phone),
+        whatsapp: fromNAv(owner?.contact?.whatsapp),
+        email: fromNAv(owner?.contact?.email),
+      },
+    },
+
+    occupant: {
+      isOwner: "no",
+      name: fromNAv(occupant?.name),
+      surname: fromNAv(occupant?.surname),
+      idNumber: fromNAv(occupant?.idNumber),
+      relationshipToOwner: fromNAv(occupant?.relationshipToOwner),
+
+      contact: {
+        phone: fromNAv(occupant?.contact?.phone),
+        whatsapp: fromNAv(occupant?.contact?.whatsapp),
+        email: fromNAv(occupant?.contact?.email),
+      },
+    },
+
+    accounts: [
+      {
+        accountNo: fromNAv(getAccountMasterAccountNo(accountMaster)),
+      },
+    ],
+
+    media: Array.isArray(media) ? media : [],
+  };
+}
+
+function buildOwnerValuesFromAccountMaster(accountMaster = {}) {
+  const owner = accountMaster?.owner || {};
+  const ownerType =
+    owner?.ownerType === "JURISTIC_PERSON" ? "JURISTIC_PERSON" : "NATURAL_PERSON";
+
+  return {
+    ownerType,
+
+    naturalPerson: {
+      name: fromNAv(owner?.naturalPerson?.name),
+      surname: fromNAv(owner?.naturalPerson?.surname),
+      idNumber: fromNAv(owner?.naturalPerson?.idNumber),
+    },
+
+    juristicPerson: {
+      registeredName: fromNAv(owner?.juristicPerson?.registeredName),
+      registrationNumber: fromNAv(owner?.juristicPerson?.registrationNumber),
+      tradingName: fromNAv(owner?.juristicPerson?.tradingName),
+    },
+
+    contact: {
+      phone: fromNAv(owner?.contact?.phone),
+      whatsapp: fromNAv(owner?.contact?.whatsapp),
+      email: fromNAv(owner?.contact?.email),
+    },
+  };
+}
+
 function cleanOwner(owner = {}) {
   const ownerType =
     owner?.ownerType === "JURISTIC_PERSON" ? "JURISTIC_PERSON" : "NATURAL_PERSON";
@@ -201,6 +342,105 @@ function buildCleanPayload({ premiseId, values }) {
     media: Array.isArray(values?.media) ? values.media : [],
   };
 }
+
+function hasAtLeastOneAccountNo(values = {}) {
+  return cleanAccounts(values?.accounts).length > 0;
+}
+
+function isAccountDataFormEmpty(values = {}) {
+  const owner = values?.owner || {};
+  const occupant = values?.occupant || {};
+
+  const textValues = [
+    owner?.naturalPerson?.name,
+    owner?.naturalPerson?.surname,
+    owner?.naturalPerson?.idNumber,
+    owner?.juristicPerson?.registeredName,
+    owner?.juristicPerson?.registrationNumber,
+    owner?.juristicPerson?.tradingName,
+    owner?.contact?.phone,
+    owner?.contact?.whatsapp,
+    owner?.contact?.email,
+    occupant?.name,
+    occupant?.surname,
+    occupant?.idNumber,
+    occupant?.relationshipToOwner,
+    occupant?.contact?.phone,
+    occupant?.contact?.whatsapp,
+    occupant?.contact?.email,
+    ...(Array.isArray(values?.accounts)
+      ? values.accounts.map((account) => account?.accountNo)
+      : []),
+  ];
+
+  const hasText = textValues.some((value) => String(value || "").trim());
+  const hasMedia = Array.isArray(values?.media) && values.media.length > 0;
+
+  return !hasText && !hasMedia;
+}
+
+function sanitizeStorageSegment(value, fallback = "NAv") {
+  const clean = String(value || "")
+    .trim()
+    .replace(/[^A-Za-z0-9_\-]/g, "_")
+    .slice(0, 160);
+
+  return clean || fallback;
+}
+
+async function uploadAccountDataMedia({ premiseId, media = [] }) {
+  const mediaList = Array.isArray(media) ? media : [];
+
+  if (mediaList.length === 0) {
+    return [];
+  }
+
+  const storage = getStorage();
+  const safePremiseId = sanitizeStorageSegment(premiseId);
+
+  const uploadedMedia = await Promise.all(
+    mediaList.map(async (mediaItem, index) => {
+      if (!mediaItem?.uri || mediaItem?.url) {
+        return mediaItem;
+      }
+
+      const tag = sanitizeStorageSegment(mediaItem?.tag || `media_${index}`);
+      const fileName = `${Date.now()}_${index}_${tag}.jpg`;
+      const storagePath = `data-cleansing/account-data/${safePremiseId}/${fileName}`;
+      const storageRef = ref(storage, storagePath);
+
+      const response = await fetch(mediaItem.uri);
+      const blob = await response.blob();
+
+      await uploadBytes(storageRef, blob);
+
+      const downloadUrl = await getDownloadURL(storageRef);
+      const { uri, ...cleanMediaItem } = mediaItem;
+
+      return {
+        ...cleanMediaItem,
+        url: downloadUrl,
+      };
+    }),
+  );
+
+  return uploadedMedia;
+}
+
+function isOfflineOrNetworkError(error = {}) {
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+
+  return (
+    code.includes("unavailable") ||
+    code.includes("deadline") ||
+    code.includes("network") ||
+    message.includes("network") ||
+    message.includes("offline") ||
+    message.includes("failed to fetch")
+  );
+}
+
 
 const AccountDataSchema = object().shape({
   owner: object().shape({
@@ -266,38 +506,55 @@ const AccountDataSchema = object().shape({
   media: array().of(object()).nullable(),
 });
 
-function SectionCard({ icon, title, children, tone = "default" }) {
+function SectionCard({ icon, title, children, tone = "default", rightAction = null }) {
   return (
     <Surface style={styles.sectionCard} elevation={1}>
       <View style={styles.sectionHeader}>
-        <MaterialCommunityIcons
-          name={icon}
-          size={18}
-          color={tone === "warning" ? "#b45309" : "#0f172a"}
-        />
-        <Text style={styles.sectionTitle}>{title}</Text>
+        <View style={styles.sectionHeaderLeft}>
+          <MaterialCommunityIcons
+            name={icon}
+            size={18}
+            color={tone === "warning" ? "#b45309" : "#0f172a"}
+          />
+          <Text style={styles.sectionTitle}>{title}</Text>
+        </View>
+
+        {rightAction ? <View style={styles.sectionHeaderAction}>{rightAction}</View> : null}
       </View>
       <View style={styles.sectionBody}>{children}</View>
     </Surface>
   );
 }
 
-function TextField({ label, value, onChangeText, keyboardType = "default" }) {
+function TextField({
+  label,
+  value,
+  onChangeText,
+  keyboardType = "default",
+  error = null,
+}) {
+  const hasError = !!error;
+
   return (
     <View style={styles.fieldWrap}>
-      <Text style={styles.fieldLabel}>{label}</Text>
+      <Text style={[styles.fieldLabel, hasError && styles.fieldLabelError]}>
+        {label}
+      </Text>
       <View style={styles.textInputShell}>
         <TextInputProxy
           value={value}
           onChangeText={onChangeText}
           keyboardType={keyboardType}
+          hasError={hasError}
         />
       </View>
+
+      {hasError && <Text style={styles.formErrorText}>{error}</Text>}
     </View>
   );
 }
 
-function TextInputProxy({ value, onChangeText, keyboardType }) {
+function TextInputProxy({ value, onChangeText, keyboardType, hasError = false }) {
   return (
     <TextInput
       value={value || ""}
@@ -305,10 +562,118 @@ function TextInputProxy({ value, onChangeText, keyboardType }) {
       keyboardType={keyboardType}
       placeholder="NAv"
       placeholderTextColor="#94a3b8"
-      style={styles.textInput}
+      style={[styles.textInput, hasError && styles.textInputError]}
     />
   );
 }
+
+
+function ExistingAccountCard({ accountMaster, busy = false, onEdit }) {
+  const accountNo = getAccountMasterAccountNo(accountMaster);
+  const ownerLabel = getAccountMasterOwnerLabel(accountMaster);
+  const updatedAt = accountMaster?.metadata?.updatedAt || "NAv";
+
+  return (
+    <View style={styles.existingAccountCard}>
+      <View style={styles.existingAccountHeader}>
+        <View style={{ flex: 1, paddingRight: 8 }}>
+          <Text style={styles.existingAccountNo}>{accountNo}</Text>
+          <Text style={styles.existingAccountOwner} numberOfLines={1}>
+            {ownerLabel}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.openEditBtn, busy && styles.disabledBtn]}
+          disabled={busy}
+          activeOpacity={0.85}
+          onPress={() => onEdit?.(accountMaster)}
+        >
+          <MaterialCommunityIcons
+            name="pencil-outline"
+            size={16}
+            color="#ffffff"
+          />
+          <Text style={styles.openEditText}>OPEN / EDIT</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.existingAccountUpdated}>
+        Last updated: {formatDateLabel(updatedAt)}
+      </Text>
+    </View>
+  );
+}
+
+function AccountDataFooter({ loading, isValid, dirty, onSubmit, onReset }) {
+  const isFormReady = isValid && dirty;
+
+  const config = loading
+    ? {
+        text: "IS SUBMITTING...",
+        color: "#22C55E",
+        bg: "#FEF08A",
+        icon: "loading",
+      }
+    : isFormReady
+      ? {
+          text: "SUBMIT",
+          color: "#22C55E",
+          bg: "transparent",
+          icon: "check-bold",
+        }
+      : {
+          text: "SUBMIT",
+          color: "#DC2626",
+          bg: "transparent",
+          icon: "close-thick",
+        };
+
+  return (
+    <View style={styles.footerContainer}>
+      <Button
+        mode="outlined"
+        onPress={onReset}
+        style={styles.resetBtn}
+        disabled={loading}
+        textColor="#64748B"
+      >
+        RESET
+      </Button>
+
+      <Button
+        mode="contained"
+        onPress={onSubmit}
+        disabled={loading}
+        icon={({ size, color }) =>
+          loading ? (
+            <ActivityIndicator size={size} color={config.color} />
+          ) : (
+            <MaterialCommunityIcons
+              name={config.icon}
+              size={size}
+              color={color || config.color}
+            />
+          )
+        }
+        buttonColor={config.bg}
+        textColor={config.color}
+        contentStyle={{ height: 48 }}
+        style={[
+          styles.submitBtn,
+          {
+            borderColor: config.color,
+            borderWidth: config.bg === "transparent" ? 1.5 : 0,
+          },
+        ]}
+        labelStyle={{ fontWeight: "bold" }}
+      >
+        {config.text}
+      </Button>
+    </View>
+  );
+}
+
 
 export default function FormAccountData() {
   const router = useRouter();
@@ -318,10 +683,25 @@ export default function FormAccountData() {
   const { all } = useWarehouse();
   const { user, profile } = useAuth();
 
+  const {
+    data: accountMasters = [],
+    isLoading: accountMastersLoading,
+    isError: accountMastersHasError,
+  } = useGetAccountMastersByPremiseIdQuery(premiseId, {
+    skip: !premiseId,
+  });
+
+
   const [draftValues, setDraftValues] = useState(null);
+  const [editAccountMasterId, setEditAccountMasterId] = useState("");
+  const [formMode, setFormMode] = useState("CLOSED");
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [successTitle, setSuccessTitle] = useState("SAVED LOCALLY");
+  const [successSub, setSuccessSub] = useState(
+    "Account data was saved to the Data Cleansing local queue for syncing later.",
+  );
   const [busyMessage, setBusyMessage] = useState("");
 
   const agentUid = user?.uid || "unknown_uid";
@@ -335,7 +715,32 @@ export default function FormAccountData() {
   const premiseAddress = useMemo(() => formatPremiseAddress(premise), [premise]);
   const propertyType = useMemo(() => formatPropertyType(premise), [premise]);
   const accountRefs = Array.isArray(premise?.accountRefs) ? premise.accountRefs : [];
-  const accountCount = accountRefs.length;
+  const accountMastersList = Array.isArray(accountMasters) ? accountMasters : [];
+  const accountCount =
+    accountMastersList.length > 0 ? accountMastersList.length : accountRefs.length;
+  const isEditingExistingAccount = formMode === "EDIT" && !!editAccountMasterId;
+  const isFormOpen = formMode === "CREATE" || formMode === "EDIT";
+  const latestOwnerAccountMaster = useMemo(() => {
+    const list = Array.isArray(accountMasters) ? accountMasters : [];
+
+    return (
+      [...list]
+        .filter((item) => !!item?.owner)
+        .sort((a, b) => {
+          const bTime = new Date(
+            b?.metadata?.updatedAt || b?.metadata?.createdAt || 0,
+          ).getTime();
+          const aTime = new Date(
+            a?.metadata?.updatedAt || a?.metadata?.createdAt || 0,
+          ).getTime();
+
+          return (Number.isFinite(bTime) ? bTime : 0) -
+            (Number.isFinite(aTime) ? aTime : 0);
+        })?.[0] || null
+    );
+  }, [accountMasters]);
+  const canUseExistingOwner =
+    formMode === "CREATE" && !isEditingExistingAccount && !!latestOwnerAccountMaster;
   const parents = premise?.parents || {};
   const fallbackGps = premise?.geometry?.centroid || null;
 
@@ -364,6 +769,10 @@ export default function FormAccountData() {
 
       if (mounted) {
         setDraftValues(draft?.values || null);
+        if (draft?.values) {
+          setFormMode("CREATE");
+          setEditAccountMasterId("");
+        }
         setDraftLoaded(true);
       }
     };
@@ -392,6 +801,22 @@ export default function FormAccountData() {
       return;
     }
 
+    if (isAccountDataFormEmpty(values)) {
+      Alert.alert(
+        "Nothing to Save",
+        "The form is still empty. Capture account data before saving a local draft.",
+      );
+      return;
+    }
+
+    if (!hasAtLeastOneAccountNo(values)) {
+      Alert.alert(
+        "Missing Account Number",
+        "Capture at least one municipal account number before saving a local draft.",
+      );
+      return;
+    }
+
     setBusyMessage("Saving local draft...");
 
     const result = await saveAccountDataDraft({
@@ -404,13 +829,171 @@ export default function FormAccountData() {
 
     setBusyMessage("");
 
+    if (result?.success) {
+      Alert.alert(
+        "Draft Saved",
+        result?.message || "Account data draft saved locally.",
+        [
+          {
+            text: "OK",
+            onPress: () => router.replace("/(tabs)/premises"),
+          },
+        ],
+      );
+      return;
+    }
+
     Alert.alert(
-      result?.success ? "Draft Saved" : "Draft Save Failed",
-      result?.message || "Draft operation completed.",
+      "Draft Save Failed",
+      result?.message || "Failed to save account data draft.",
     );
   };
 
-  const handleSubmitLocalQueue = async (values, actions) => {
+  const handleAddAccountFromHeader = ({
+    values,
+    touched,
+    setFieldValue,
+    setTouched,
+    resetForm,
+    validateForm,
+  }) => {
+    if (isEditingExistingAccount) {
+      Alert.alert(
+        "Start New Account Capture?",
+        "This will clear the current edit form and open a clean account capture form.",
+        [
+          { text: "CANCEL", style: "cancel" },
+          {
+            text: "CONTINUE",
+            onPress: () => {
+              const blankValues = buildInitialValues();
+              setEditAccountMasterId("");
+              setFormMode("CREATE");
+              setDraftValues(blankValues);
+              resetForm({
+                values: blankValues,
+                touched: { accounts: [{ accountNo: true }] },
+              });
+              setTimeout(() => validateForm?.(blankValues), 0);
+            },
+          },
+        ],
+      );
+      return;
+    }
+
+    if (!isFormOpen) {
+      const blankValues = buildInitialValues();
+      setEditAccountMasterId("");
+      setFormMode("CREATE");
+      setDraftValues(blankValues);
+      resetForm({
+        values: blankValues,
+        touched: { accounts: [{ accountNo: true }] },
+      });
+      setTimeout(() => validateForm?.(blankValues), 0);
+      return;
+    }
+
+    const currentAccounts = Array.isArray(values?.accounts) ? values.accounts : [];
+    const nextAccounts = [...currentAccounts, { accountNo: "" }];
+    const nextValues = {
+      ...values,
+      accounts: nextAccounts,
+    };
+
+    setFieldValue("accounts", nextAccounts, true);
+    setTouched(
+      {
+        ...(touched || {}),
+        accounts: nextAccounts.map(() => ({ accountNo: true })),
+      },
+      false,
+    );
+    setTimeout(() => validateForm?.(nextValues), 0);
+  };
+
+  const handleResetAccountDataForm = async (resetForm) => {
+    Alert.alert(
+      "Reset Form?",
+      "This will clear all captured account data, media, draft values, and edit mode for this premise.",
+      [
+        { text: "CANCEL", style: "cancel" },
+        {
+          text: "YES, RESET",
+          style: "destructive",
+          onPress: async () => {
+            const blankValues = buildInitialValues();
+            setEditAccountMasterId("");
+            setFormMode("CLOSED");
+            setDraftValues(blankValues);
+            await removeAccountDataDraftByPremiseId(premiseId);
+            resetForm({ values: blankValues });
+          },
+        },
+      ],
+      { cancelable: true },
+    );
+  };
+
+  const handleUseExistingOwner = ({ setFieldValue }) => {
+    if (!latestOwnerAccountMaster) {
+      Alert.alert(
+        "No Existing Owner",
+        "No existing owner data is available for this premise yet.",
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Use Existing Owner?",
+      "This will copy the existing owner details into the owner fields. You can still edit the fields after copying.",
+      [
+        { text: "CANCEL", style: "cancel" },
+        {
+          text: "COPY",
+          onPress: () => {
+            const ownerValues = buildOwnerValuesFromAccountMaster(
+              latestOwnerAccountMaster,
+            );
+
+            setFieldValue("owner", ownerValues);
+          },
+        },
+      ],
+    );
+  };
+
+  const saveSubmissionToLocalQueue = async ({
+    cleanPayload,
+    title = "SAVED LOCALLY",
+    message = "Account data was saved to the Data Cleansing local queue for syncing later.",
+  }) => {
+    const result = await addAccountDataQueueItem({
+      premiseId,
+      payload: cleanPayload,
+      context,
+      createdByUid: agentUid,
+      createdByUser: agentName,
+    });
+
+    if (result?.success) {
+      await removeAccountDataDraftByPremiseId(premiseId);
+      setSuccessTitle(title);
+      setSuccessSub(message);
+      setShowSuccess(true);
+      return true;
+    }
+
+    Alert.alert(
+      "Submit Failed",
+      result?.message || "Failed to save account data to local queue.",
+    );
+
+    return false;
+  };
+
+  const handleSubmitAccountData = async (values, actions) => {
     if (!premiseId) {
       Alert.alert("Missing Premise", "Premise id is required to submit this form.");
       actions?.setSubmitting?.(false);
@@ -426,30 +1009,113 @@ export default function FormAccountData() {
       return;
     }
 
-    setBusyMessage("Saving to local account data queue...");
-
     const cleanPayload = buildCleanPayload({ premiseId, values });
 
-    const result = await addAccountDataQueueItem({
-      premiseId,
-      payload: cleanPayload,
-      context,
-      createdByUid: agentUid,
-      createdByUser: agentName,
-    });
+    try {
+      const netState = await NetInfo.fetch();
+      const deviceOnline = Boolean(
+        netState.isConnected && netState.isInternetReachable,
+      );
 
-    if (result?.success) {
+      if (!deviceOnline) {
+        setBusyMessage("Device offline. Saving to local account data queue...");
+
+        await saveSubmissionToLocalQueue({
+          cleanPayload,
+          title: "SAVED LOCALLY",
+          message:
+            "Device is offline. Account data was saved to the Data Cleansing local queue for syncing later.",
+        });
+
+        return;
+      }
+
+      setBusyMessage("Uploading account data media...");
+
+      const syncedMedia = await uploadAccountDataMedia({
+        premiseId,
+        media: cleanPayload.media,
+      });
+
+      const callablePayload = {
+        ...cleanPayload,
+        media: syncedMedia,
+      };
+
+      setBusyMessage("Submitting account data...");
+
+      const callable = httpsCallable(functions, "onCreateAccountDataCallable");
+      const response = await callable(callablePayload);
+      const result = response?.data || {};
+
+      if (!result?.success) {
+        Alert.alert(
+          "Account Data Not Submitted",
+          result?.message ||
+            "The backend did not accept this account data. Please correct the form and try again.",
+        );
+        return;
+      }
+
       await removeAccountDataDraftByPremiseId(premiseId);
+
+      setSuccessTitle("SUBMITTED");
+      setSuccessSub(
+        result?.fieldAccountDataId
+          ? `Account data was submitted successfully. Field account data id: ${result.fieldAccountDataId}`
+          : result?.message || "Account data was submitted successfully.",
+      );
       setShowSuccess(true);
-    } else {
+    } catch (error) {
+      console.log("FormAccountData -- submit error", {
+        code: error?.code,
+        message: error?.message,
+      });
+
+      if (isOfflineOrNetworkError(error)) {
+        setBusyMessage("Network unavailable. Saving to local account data queue...");
+
+        await saveSubmissionToLocalQueue({
+          cleanPayload,
+          title: "SAVED LOCALLY",
+          message:
+            "Network was unavailable during submit. Account data was saved to the local queue for syncing later.",
+        });
+
+        return;
+      }
+
       Alert.alert(
         "Submit Failed",
-        result?.message || "Failed to save account data to local queue.",
+        error?.message ||
+          "Account data could not be submitted. Please review the form and try again.",
       );
+    } finally {
+      setBusyMessage("");
+      actions?.setSubmitting?.(false);
     }
+  };
 
-    setBusyMessage("");
-    actions?.setSubmitting?.(false);
+
+  const handleOpenExistingAccount = (accountMaster) => {
+    if (!accountMaster?.id) return;
+
+    const latestMedia = Array.isArray(accountMaster?.media)
+      ? accountMaster.media
+      : [];
+
+    setEditAccountMasterId(accountMaster.id);
+    setFormMode("EDIT");
+    setDraftValues(buildValuesFromAccountMaster(accountMaster, latestMedia));
+  };
+
+  const handleCloseAccountCapture = (resetForm) => {
+    const blankValues = buildInitialValues();
+
+    setEditAccountMasterId("");
+    setFormMode("CLOSED");
+    setDraftValues(blankValues);
+    resetForm?.({ values: blankValues });
   };
 
   const copyOwnerToOccupant = ({ values, setFieldValue }) => {
@@ -514,12 +1180,24 @@ export default function FormAccountData() {
       <Formik
         initialValues={initialValues}
         validationSchema={AccountDataSchema}
-        onSubmit={handleSubmitLocalQueue}
+        onSubmit={handleSubmitAccountData}
         enableReinitialize={true}
         validateOnMount={true}
         validateOnChange={true}
       >
-        {({ values, setFieldValue, errors }) => (
+        {({
+          values,
+          touched,
+          setFieldValue,
+          setTouched,
+          errors,
+          handleSubmit,
+          isValid,
+          dirty,
+          isSubmitting,
+          resetForm,
+          validateForm,
+        }) => (
           <View style={styles.screen}>
             <Stack.Screen
               options={{
@@ -566,68 +1244,212 @@ export default function FormAccountData() {
                 </View>
               </SectionCard>
 
-              <SectionCard icon="account-cash-outline" title="Existing Accounts">
-                {accountCount > 0 ? (
+              <SectionCard
+                icon="account-cash-outline"
+                title="Existing Accounts"
+                rightAction={
+                  <TouchableOpacity
+                    style={[styles.headerAddAccountBtn, !!busyMessage && styles.disabledBtn]}
+                    activeOpacity={0.85}
+                    disabled={!!busyMessage}
+                    onPress={() =>
+                      handleAddAccountFromHeader({
+                        values,
+                        touched,
+                        setFieldValue,
+                        setTouched,
+                        resetForm,
+                        validateForm,
+                      })
+                    }
+                  >
+                    <MaterialCommunityIcons
+                      name="plus-circle-outline"
+                      size={16}
+                      color="#ffffff"
+                    />
+                    <Text style={styles.headerAddAccountText}>ADD ACCOUNT</Text>
+                  </TouchableOpacity>
+                }
+              >
+                {accountMastersLoading ? (
+                  <Text style={styles.infoText}>Loading existing account details...</Text>
+                ) : accountMastersList.length > 0 ? (
+                  <>
+                    <Text style={styles.infoText}>
+                      {accountMastersList.length} account
+                      {accountMastersList.length === 1 ? "" : "s"} linked to
+                      this premise.
+                    </Text>
+
+                    {accountMastersList.map((accountMaster) => (
+                      <ExistingAccountCard
+                        key={accountMaster.id}
+                        accountMaster={accountMaster}
+                        busy={!!busyMessage}
+                        onEdit={handleOpenExistingAccount}
+                      />
+                    ))}
+                  </>
+                ) : accountCount > 0 ? (
                   <>
                     <Text style={styles.infoText}>
                       {accountCount} account{accountCount === 1 ? "" : "s"} linked to this premise.
                     </Text>
-                    {!isOnline && (
-                      <Text style={styles.warningText}>
-                        Existing account details are unavailable offline. You can still capture new account data.
-                      </Text>
-                    )}
+                    <Text style={styles.warningText}>
+                      Account references exist, but account master details are
+                      not available on this device yet. You can still capture
+                      new account data.
+                    </Text>
                   </>
                 ) : (
                   <Text style={styles.infoText}>No accounts currently linked to this premise.</Text>
                 )}
-                <Text style={styles.mutedText}>You can capture another account below.</Text>
+
+                {accountMastersHasError && (
+                  <Text style={styles.warningText}>
+                    Existing account details could not be loaded. You can still
+                    capture new account data.
+                  </Text>
+                )}
+
+                {!isOnline && (
+                  <Text style={styles.warningText}>
+                    Existing account details may be unavailable offline. You
+                    can still capture new account data.
+                  </Text>
+                )}
+
+                <Text style={styles.mutedText}>
+                  {isFormOpen
+                    ? "The account form is open below."
+                    : "Tap ADD ACCOUNT to capture a new account, or OPEN / EDIT on an existing account."}
+                </Text>
               </SectionCard>
 
-              <SectionCard icon="barcode-scan" title="Capture Account Numbers">
-                <FieldArray name="accounts">
-                  {({ push, remove }) => (
-                    <View>
-                      {(values?.accounts || []).map((account, index) => (
-                        <Surface key={index} style={styles.accountRowCard} elevation={0}>
-                          <View style={styles.accountRowHeader}>
-                            <Text style={styles.accountRowTitle}>Account {index + 1}</Text>
-                            {values.accounts.length > 1 && (
-                              <TouchableOpacity
-                                onPress={() => remove(index)}
-                                style={styles.removeAccountBtn}
-                              >
-                                <MaterialCommunityIcons name="delete-outline" size={18} color="#dc2626" />
-                                <Text style={styles.removeAccountText}>Remove</Text>
-                              </TouchableOpacity>
-                            )}
-                          </View>
-
-                          <FormInputAccountNo
-                            label="Municipal Account Number"
-                            name={`accounts.${index}.accountNo`}
-                          />
-                        </Surface>
-                      ))}
-
-                      {typeof errors?.accounts === "string" && (
-                        <Text style={styles.formErrorText}>{errors.accounts}</Text>
-                      )}
-
-                      <TouchableOpacity
-                        style={styles.addAccountBtn}
-                        onPress={() => push({ accountNo: "" })}
-                        activeOpacity={0.85}
-                      >
-                        <MaterialCommunityIcons name="plus-circle-outline" size={20} color="#0f172a" />
-                        <Text style={styles.addAccountText}>ADD ACCOUNT</Text>
-                      </TouchableOpacity>
+              {isFormOpen && (
+                <>
+              <SectionCard
+                icon="barcode-scan"
+                title="Capture Account Numbers"
+                rightAction={
+                  <TouchableOpacity
+                    onPress={() => handleCloseAccountCapture(resetForm)}
+                    style={styles.cancelEditBtn}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialCommunityIcons
+                      name="close-circle-outline"
+                      size={18}
+                      color="#dc2626"
+                    />
+                    <Text style={styles.cancelEditText}>
+                      {isEditingExistingAccount ? "Cancel Edit" : "Cancel Capture"}
+                    </Text>
+                  </TouchableOpacity>
+                }
+              >
+                {isEditingExistingAccount ? (
+                  <View>
+                    <View style={styles.editModeBanner}>
+                      <MaterialCommunityIcons
+                        name="history"
+                        size={18}
+                        color="#0f172a"
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.editModeTitle}>
+                          Editing Existing Account
+                        </Text>
+                        <Text style={styles.editModeSub}>
+                          Submitting will create a new field_account_data
+                          history record and update the current account master.
+                        </Text>
+                      </View>
                     </View>
-                  )}
-                </FieldArray>
+
+                    <Surface style={styles.accountRowCard} elevation={0}>
+                      <View style={styles.accountRowHeader}>
+                        <Text style={styles.accountRowTitle}>
+                          Account Number Locked
+                        </Text>
+
+                      </View>
+
+                      <View style={styles.lockedAccountBox}>
+                        <Text style={styles.lockedAccountNo}>
+                          {values?.accounts?.[0]?.accountNo || "NAv"}
+                        </Text>
+                      </View>
+
+                      <Text style={styles.mutedText}>
+                        Account number changes are not allowed in edit mode.
+                        Capture account-number corrections as a separate
+                        future workflow.
+                      </Text>
+                    </Surface>
+                  </View>
+                ) : (
+                  <FieldArray name="accounts">
+                    {({ remove }) => (
+                      <View>
+                        {(values?.accounts || []).map((account, index) => (
+                          <Surface key={index} style={styles.accountRowCard} elevation={0}>
+                            <View style={styles.accountRowHeader}>
+                              <Text style={styles.accountRowTitle}>Account {index + 1}</Text>
+                              {values.accounts.length > 1 && (
+                                <TouchableOpacity
+                                  onPress={() => remove(index)}
+                                  style={styles.removeAccountBtn}
+                                >
+                                  <MaterialCommunityIcons name="delete-outline" size={18} color="#dc2626" />
+                                  <Text style={styles.removeAccountText}>Remove</Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
+
+                            <FormInputAccountNo
+                              label="Municipal Account Number"
+                              name={`accounts.${index}.accountNo`}
+                            />
+                          </Surface>
+                        ))}
+
+                        {typeof errors?.accounts === "string" && (
+                          <Text style={styles.formErrorText}>{errors.accounts}</Text>
+                        )}
+                      </View>
+                    )}
+                  </FieldArray>
+                )}
               </SectionCard>
 
-              <SectionCard icon="account-tie-outline" title="Owner">
+              <SectionCard
+                icon="account-tie-outline"
+                title="Owner"
+                rightAction={
+                  canUseExistingOwner ? (
+                    <TouchableOpacity
+                      style={[
+                        styles.addExistingOwnerBtn,
+                        !!busyMessage && styles.disabledBtn,
+                      ]}
+                      activeOpacity={0.85}
+                      disabled={!!busyMessage}
+                      onPress={() => handleUseExistingOwner({ setFieldValue })}
+                    >
+                      <MaterialCommunityIcons
+                        name="account-arrow-left-outline"
+                        size={15}
+                        color="#ffffff"
+                      />
+                      <Text style={styles.addExistingOwnerText}>
+                        ADD EXISTING OWNER
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null
+                }
+              >
                 <View style={styles.toggleRow}>
                   <TouchableOpacity
                     style={[
@@ -670,6 +1492,7 @@ export default function FormAccountData() {
                       label="Registered Name"
                       value={values.owner.juristicPerson.registeredName}
                       onChangeText={(value) => setFieldValue("owner.juristicPerson.registeredName", value)}
+                      error={getIn(errors, "owner.juristicPerson.registeredName")}
                     />
                     <TextField
                       label="Registration Number"
@@ -688,11 +1511,13 @@ export default function FormAccountData() {
                       label="Name"
                       value={values.owner.naturalPerson.name}
                       onChangeText={(value) => setFieldValue("owner.naturalPerson.name", value)}
+                      error={getIn(errors, "owner.naturalPerson.name")}
                     />
                     <TextField
                       label="Surname"
                       value={values.owner.naturalPerson.surname}
                       onChangeText={(value) => setFieldValue("owner.naturalPerson.surname", value)}
+                      error={getIn(errors, "owner.naturalPerson.surname")}
                     />
                     <TextField
                       label="ID Number"
@@ -720,6 +1545,7 @@ export default function FormAccountData() {
                   value={values.owner.contact.email}
                   onChangeText={(value) => setFieldValue("owner.contact.email", value)}
                   keyboardType="email-address"
+                  error={getIn(errors, "owner.contact.email")}
                 />
               </SectionCard>
 
@@ -801,6 +1627,7 @@ export default function FormAccountData() {
                   value={values.occupant.contact.email}
                   onChangeText={(value) => setFieldValue("occupant.contact.email", value)}
                   keyboardType="email-address"
+                  error={getIn(errors, "occupant.contact.email")}
                 />
               </SectionCard>
 
@@ -831,9 +1658,19 @@ export default function FormAccountData() {
                 <MaterialCommunityIcons name="content-save-outline" size={20} color="#0f172a" />
                 <Text style={styles.saveDraftText}>SAVE DRAFT LOCALLY</Text>
               </TouchableOpacity>
+                </>
+              )}
             </ScrollView>
 
-            <ForensicFooter isTrnLoading={!!busyMessage} />
+            {isFormOpen && (
+              <AccountDataFooter
+                loading={isSubmitting || !!busyMessage}
+                isValid={isValid}
+                dirty={dirty}
+                onSubmit={handleSubmit}
+                onReset={() => handleResetAccountDataForm(resetForm)}
+              />
+            )}
           </View>
         )}
       </Formik>
@@ -849,10 +1686,8 @@ export default function FormAccountData() {
             <View style={styles.successIconCircle}>
               <Feather name="check" size={50} color="#fff" />
             </View>
-            <Text style={styles.successTitle}>SAVED LOCALLY</Text>
-            <Text style={styles.successSub}>
-              Account data was saved to the Data Cleansing local queue for testing.
-            </Text>
+            <Text style={styles.successTitle}>{successTitle}</Text>
+            <Text style={styles.successSub}>{successSub}</Text>
 
             <TouchableOpacity
               style={styles.continueBtn}
@@ -874,6 +1709,31 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F1F5F9" },
   container: { flex: 1, backgroundColor: "#F1F5F9" },
   contentContainer: { padding: 12, paddingBottom: 24 },
+  footerContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#ffffff",
+    borderTopWidth: 1,
+    borderTopColor: "#e2e8f0",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 12,
+  },
+  submitBtn: {
+    flex: 1,
+    borderRadius: 8,
+    height: 48,
+    justifyContent: "center",
+    marginLeft: 10,
+  },
+  resetBtn: {
+    flex: 0.35,
+    borderRadius: 8,
+    height: 48,
+    justifyContent: "center",
+    borderColor: "#e2e8f0",
+  },
   loaderWrap: {
     flex: 1,
     justifyContent: "center",
@@ -906,10 +1766,21 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: 8,
     paddingHorizontal: 14,
     paddingVertical: 12,
     backgroundColor: "#E2E8F0",
+  },
+  sectionHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flex: 1,
+    paddingRight: 8,
+  },
+  sectionHeaderAction: {
+    flexShrink: 0,
   },
   sectionTitle: { fontSize: 14, fontWeight: "900", color: "#0f172a" },
   sectionBody: { padding: 14 },
@@ -956,6 +1827,132 @@ const styles = StyleSheet.create({
     padding: 10,
     marginTop: 10,
     fontWeight: "700",
+  },
+  headerAddAccountBtn: {
+    minHeight: 34,
+    borderRadius: 10,
+    backgroundColor: "#0f172a",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  headerAddAccountText: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  addExistingOwnerBtn: {
+    minHeight: 34,
+    borderRadius: 10,
+    backgroundColor: "#2563eb",
+    paddingHorizontal: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  addExistingOwnerText: {
+    color: "#ffffff",
+    fontSize: 9,
+    fontWeight: "900",
+  },
+  existingAccountCard: {
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+  },
+  existingAccountHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  existingAccountNo: {
+    fontSize: 14,
+    color: "#0f172a",
+    fontWeight: "900",
+  },
+  existingAccountOwner: {
+    marginTop: 3,
+    fontSize: 12,
+    color: "#334155",
+    fontWeight: "700",
+  },
+  existingAccountUpdated: {
+    marginTop: 8,
+    fontSize: 11,
+    color: "#64748b",
+    fontWeight: "700",
+  },
+  openEditBtn: {
+    minHeight: 36,
+    borderRadius: 10,
+    backgroundColor: "#2563eb",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  openEditText: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  disabledBtn: {
+    opacity: 0.55,
+  },
+  editModeBanner: {
+    backgroundColor: "#e0f2fe",
+    borderWidth: 1,
+    borderColor: "#7dd3fc",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    flexDirection: "row",
+    gap: 10,
+  },
+  editModeTitle: {
+    color: "#0f172a",
+    fontWeight: "900",
+    fontSize: 13,
+  },
+  editModeSub: {
+    color: "#334155",
+    fontWeight: "700",
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+  cancelEditBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#fef2f2",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  cancelEditText: {
+    color: "#dc2626",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  lockedAccountBox: {
+    minHeight: 48,
+    borderRadius: 10,
+    backgroundColor: "#e2e8f0",
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  lockedAccountNo: {
+    color: "#0f172a",
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 0.3,
   },
   accountRowCard: {
     backgroundColor: "#f8fafc",
@@ -1021,6 +2018,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textTransform: "uppercase",
   },
+  fieldLabelError: { color: "#dc2626" },
   textInputShell: {},
   textInput: {
     backgroundColor: "#f8fafc",
@@ -1032,6 +2030,11 @@ const styles = StyleSheet.create({
     color: "#0f172a",
     fontSize: 14,
     fontWeight: "600",
+  },
+  textInputError: {
+    borderLeftWidth: 5,
+    borderLeftColor: "#dc2626",
+    backgroundColor: "#fff1f2",
   },
   subSectionTitle: {
     marginTop: 8,

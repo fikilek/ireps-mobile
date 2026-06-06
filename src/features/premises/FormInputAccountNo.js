@@ -61,7 +61,7 @@ const FormInputAccountNo = ({ label, name, disabled }) => {
       return;
     }
 
-    setFieldValue(name, cleanedValue);
+    setFieldValue(name, cleanedValue, true);
   };
 
   const handleOpenScanner = async () => {
@@ -104,7 +104,7 @@ const FormInputAccountNo = ({ label, name, disabled }) => {
 
           <View style={styles.iconOverlay}>
             <TouchableOpacity
-              onPress={currentValue ? () => setFieldValue(name, "") : handleOpenScanner}
+              onPress={currentValue ? () => setFieldValue(name, "", true) : handleOpenScanner}
               disabled={disabled || isSubmitting}
               activeOpacity={0.75}
             >

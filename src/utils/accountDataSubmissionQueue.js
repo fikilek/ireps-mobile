@@ -279,6 +279,99 @@ export const updateAccountDataQueueItem = async (
   }
 };
 
+export const markAccountDataQueueItemSyncing = async (
+  queueItemId,
+  updatedByUid = "SYSTEM",
+  updatedByUser = "SYSTEM",
+) => {
+  const item = await getAccountDataQueueItemById(queueItemId);
+  const previousAttempts = Number(item?.sync?.attempts || 0);
+  const timestamp = nowIso();
+
+  return updateAccountDataQueueItem(
+    queueItemId,
+    {
+      status: "SYNCING",
+      result: {
+        ...(item?.result || {}),
+        success: false,
+        code: "SYNCING",
+        message: "Syncing account data with backend.",
+        fieldAccountDataId: item?.result?.fieldAccountDataId || "NAv",
+      },
+      sync: {
+        ...(item?.sync || {}),
+        attempts: previousAttempts + 1,
+        lastAttemptAt: timestamp,
+        nextRetryAt: "NAv",
+      },
+    },
+    updatedByUid,
+    updatedByUser,
+  );
+};
+
+export const markAccountDataQueueItemSuccess = async (
+  queueItemId,
+  result = {},
+  updatedByUid = "SYSTEM",
+  updatedByUser = "SYSTEM",
+) => {
+  const item = await getAccountDataQueueItemById(queueItemId);
+  const timestamp = nowIso();
+
+  return updateAccountDataQueueItem(
+    queueItemId,
+    {
+      status: "SUCCESS",
+      result: {
+        success: true,
+        code: result?.code || "SUCCESS",
+        message: result?.message || "Account data synced successfully.",
+        fieldAccountDataId: result?.fieldAccountDataId || "NAv",
+      },
+      sync: {
+        ...(item?.sync || {}),
+        lastAttemptAt: timestamp,
+        nextRetryAt: "NAv",
+      },
+    },
+    updatedByUid,
+    updatedByUser,
+  );
+};
+
+export const markAccountDataQueueItemFailed = async (
+  queueItemId,
+  result = {},
+  updatedByUid = "SYSTEM",
+  updatedByUser = "SYSTEM",
+) => {
+  const item = await getAccountDataQueueItemById(queueItemId);
+  const timestamp = nowIso();
+
+  return updateAccountDataQueueItem(
+    queueItemId,
+    {
+      status: "FAILED",
+      result: {
+        success: false,
+        code: result?.code || "SYNC_FAILED",
+        message: result?.message || "Account data sync failed.",
+        fieldAccountDataId: result?.fieldAccountDataId || "NAv",
+      },
+      sync: {
+        ...(item?.sync || {}),
+        lastAttemptAt: timestamp,
+        nextRetryAt: "NAv",
+      },
+    },
+    updatedByUid,
+    updatedByUser,
+  );
+};
+
+
 export const removeAccountDataQueueItem = async (queueItemId) => {
   try {
     const queue = await getAccountDataSubmissionQueue();

@@ -1,5 +1,8 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import NetInfo from "@react-native-community/netinfo";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
+import { httpsCallable } from "firebase/functions";
+import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { useCallback, useMemo, useState } from "react";
 import {
   Alert,
@@ -12,11 +15,15 @@ import {
 } from "react-native";
 import { Text } from "react-native-paper";
 
+import { functions } from "../../../../src/firebase";
 import { useAuth } from "../../../../src/hooks/useAuth";
 import {
   clearAccountDataSubmissionQueue,
   getAccountDataDrafts,
   getAccountDataSubmissionQueue,
+  markAccountDataQueueItemFailed,
+  markAccountDataQueueItemSuccess,
+  markAccountDataQueueItemSyncing,
   removeAccountDataDraftByPremiseId,
   removeAccountDataQueueItem,
 } from "../../../../src/utils/accountDataSubmissionQueue";
@@ -66,6 +73,58 @@ function readOwnerLabel(payload = {}) {
   return fullName || "NAv";
 }
 
+function sanitizeStorageSegment(value, fallback = "NAv") {
+  const clean = String(value || "")
+    .trim()
+    .replace(/[^A-Za-z0-9_\-]/g, "_")
+    .slice(0, 160);
+
+  return clean || fallback;
+}
+
+async function uploadAccountDataQueueMedia({ premiseId, media = [] }) {
+  const mediaList = Array.isArray(media) ? media : [];
+
+  if (mediaList.length === 0) {
+    return [];
+  }
+
+  const storage = getStorage();
+  const safePremiseId = sanitizeStorageSegment(premiseId);
+
+  return Promise.all(
+    mediaList.map(async (mediaItem, index) => {
+      if (!mediaItem?.uri || mediaItem?.url) {
+        return mediaItem;
+      }
+
+      const tag = sanitizeStorageSegment(mediaItem?.tag || `media_${index}`);
+      const fileName = `${Date.now()}_${index}_${tag}.jpg`;
+      const storagePath = `data-cleansing/account-data/${safePremiseId}/${fileName}`;
+      const storageRef = ref(storage, storagePath);
+
+      const response = await fetch(mediaItem.uri);
+      const blob = await response.blob();
+
+      await uploadBytes(storageRef, blob);
+
+      const downloadUrl = await getDownloadURL(storageRef);
+      const { uri, ...cleanMediaItem } = mediaItem;
+
+      return {
+        ...cleanMediaItem,
+        url: downloadUrl,
+      };
+    }),
+  );
+}
+
+async function isDeviceOnline() {
+  const netState = await NetInfo.fetch();
+  return Boolean(netState.isConnected && netState.isInternetReachable);
+}
+
+
 function StatusBadge({ label, color }) {
   return (
     <View style={[styles.statusBadge, { backgroundColor: color || "#0f172a" }]}>
@@ -94,7 +153,7 @@ function SmallActionButton({ icon, label, color, disabled, onPress }) {
   );
 }
 
-function AccountDataQueueCard({ item, busy, onOpen, onRemove }) {
+function AccountDataQueueCard({ item, busy, onOpen, onRemove, onSync }) {
   const payload = item?.payload || {};
   const context = item?.context || {};
   const metadata = item?.metadata || {};
@@ -164,10 +223,11 @@ function AccountDataQueueCard({ item, busy, onOpen, onRemove }) {
           onPress={() => onOpen?.(context?.premiseId || payload?.premiseId)}
         />
         <SmallActionButton
-          icon="cloud-sync-outline"
-          label="Backend Later"
-          color="#94a3b8"
-          disabled={true}
+          icon={status === "SUCCESS" ? "cloud-check-outline" : "cloud-sync-outline"}
+          label={status === "SUCCESS" ? "Synced" : "Sync Item"}
+          color={status === "SUCCESS" ? "#16a34a" : "#0f172a"}
+          disabled={busy || !["PENDING", "FAILED"].includes(status)}
+          onPress={() => onSync?.(item)}
         />
         <SmallActionButton
           icon="delete-outline"
@@ -379,6 +439,171 @@ export default function AccountDataSubmissionQueueScreen() {
     );
   }, [loadStorage]);
 
+  const processSingleAccountDataQueueItem = useCallback(
+    async (item) => {
+      if (!item?.id) {
+        return { success: false, message: "Queue item id is missing." };
+      }
+
+      const online = await isDeviceOnline();
+
+      if (!online) {
+        ToastAndroid.show("You are offline. Sync is unavailable.", ToastAndroid.SHORT);
+        return { success: false, message: "Device offline." };
+      }
+
+      await markAccountDataQueueItemSyncing(item.id, agentUid, agentName);
+      await loadStorage();
+
+      try {
+        const payload = item?.payload || {};
+        const premiseId =
+          payload?.premiseId || item?.context?.premiseId || "NAv";
+
+        const syncedMedia = await uploadAccountDataQueueMedia({
+          premiseId,
+          media: payload?.media || [],
+        });
+
+        const callablePayload = {
+          ...payload,
+          media: syncedMedia,
+        };
+
+        const callable = httpsCallable(functions, "onCreateAccountDataCallable");
+        const response = await callable(callablePayload);
+        const result = response?.data || {};
+
+        if (!result?.success) {
+          await markAccountDataQueueItemFailed(
+            item.id,
+            {
+              code: result?.code || "BACKEND_REJECTED",
+              message:
+                result?.message ||
+                "The backend did not accept this account data.",
+              fieldAccountDataId: result?.fieldAccountDataId || "NAv",
+            },
+            agentUid,
+            agentName,
+          );
+
+          return {
+            success: false,
+            message:
+              result?.message ||
+              "The backend did not accept this account data.",
+          };
+        }
+
+        await markAccountDataQueueItemSuccess(
+          item.id,
+          {
+            code: result?.code || "SUCCESS",
+            message: result?.message || "Account data synced successfully.",
+            fieldAccountDataId: result?.fieldAccountDataId || "NAv",
+          },
+          agentUid,
+          agentName,
+        );
+
+        return {
+          success: true,
+          message: result?.message || "Account data synced successfully.",
+        };
+      } catch (error) {
+        console.log("AccountDataSubmissionQueueScreen -- sync item error", {
+          queueItemId: item?.id,
+          code: error?.code,
+          message: error?.message,
+        });
+
+        await markAccountDataQueueItemFailed(
+          item.id,
+          {
+            code: error?.code || "SYNC_FAILED",
+            message: error?.message || "Account data sync failed.",
+            fieldAccountDataId: "NAv",
+          },
+          agentUid,
+          agentName,
+        );
+
+        return {
+          success: false,
+          message: error?.message || "Account data sync failed.",
+        };
+      }
+    },
+    [agentName, agentUid, loadStorage],
+  );
+
+  const handleSyncItem = useCallback(
+    async (item) => {
+      if (!item?.id) return;
+
+      const status = String(item?.status || "PENDING").toUpperCase();
+
+      if (!["PENDING", "FAILED"].includes(status)) {
+        ToastAndroid.show("Only pending or failed items can be synced.", ToastAndroid.SHORT);
+        return;
+      }
+
+      try {
+        setBusy(true);
+
+        const result = await processSingleAccountDataQueueItem(item);
+        await loadStorage();
+
+        ToastAndroid.show(
+          result?.message || (result?.success ? "Synced" : "Sync failed"),
+          result?.success ? ToastAndroid.SHORT : ToastAndroid.LONG,
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [loadStorage, processSingleAccountDataQueueItem],
+  );
+
+  const handleSyncQueue = useCallback(async () => {
+    const candidates = queueItems.filter((item) => {
+      const status = String(item?.status || "PENDING").toUpperCase();
+      return ["PENDING", "FAILED"].includes(status);
+    });
+
+    if (candidates.length === 0) {
+      ToastAndroid.show("No pending account data items to sync.", ToastAndroid.SHORT);
+      return;
+    }
+
+    try {
+      setBusy(true);
+
+      let successCount = 0;
+      let failedCount = 0;
+
+      for (const item of candidates) {
+        const result = await processSingleAccountDataQueueItem(item);
+
+        if (result?.success) {
+          successCount += 1;
+        } else {
+          failedCount += 1;
+        }
+      }
+
+      await loadStorage();
+
+      ToastAndroid.show(
+        `Account data sync complete. Success: ${successCount}, Failed: ${failedCount}`,
+        failedCount > 0 ? ToastAndroid.LONG : ToastAndroid.SHORT,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [loadStorage, processSingleAccountDataQueueItem, queueItems]);
+
   return (
     <>
       <Stack.Screen
@@ -438,6 +663,20 @@ export default function AccountDataSubmissionQueueScreen() {
               onPress={handleRefresh}
             />
             <SmallActionButton
+              icon="cloud-sync-outline"
+              label="Sync All"
+              color="#2563eb"
+              disabled={
+                busy ||
+                !queueItems.some((item) =>
+                  ["PENDING", "FAILED"].includes(
+                    String(item?.status || "PENDING").toUpperCase(),
+                  ),
+                )
+              }
+              onPress={handleSyncQueue}
+            />
+            <SmallActionButton
               icon="delete-sweep-outline"
               label="Clear Queue"
               color="#dc2626"
@@ -465,6 +704,7 @@ export default function AccountDataSubmissionQueueScreen() {
               busy={busy}
               onOpen={handleOpenForm}
               onRemove={handleRemoveQueueItem}
+              onSync={handleSyncItem}
             />
           ))
         )}
