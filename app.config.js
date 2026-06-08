@@ -85,6 +85,8 @@ export default {
 
     plugins: [
       "expo-router",
+      "expo-font",
+      "expo-audio",
       "expo-camera",
       "expo-web-browser",
       [
