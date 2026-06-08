@@ -1,6 +1,6 @@
 import { FlashList } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSelector } from "react-redux";
 
@@ -61,9 +61,10 @@ export default function ErfsScreen() {
   const router = useRouter();
 
   const { geoState, updateGeo } = useGeo();
-  const { all, filtered, sync } = useWarehouse();
+  const { all, filtered, sync, loading } = useWarehouse();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const lastWardSyncRouteRef = useRef(null);
 
   const scopeSync = sync?.scope ?? { status: "idle" };
 
@@ -72,6 +73,12 @@ export default function ErfsScreen() {
 
   const hasLm = !!geoState?.selectedLm?.id;
   const hasWard = !!geoState?.selectedWard?.id;
+
+  const erfsSync = sync?.erfs ?? { status: "idle" };
+  const isWardScopeHydrating =
+    hasLm &&
+    hasWard &&
+    (loading || erfsSync?.status === "syncing");
 
   const wardsCount = all?.wards?.length ?? 0;
   const erfsCount = all?.erfs?.length ?? 0;
@@ -134,18 +141,36 @@ export default function ErfsScreen() {
       return;
     }
 
-    router.replace("/(tabs)/admin/storage/ward-erfs-sync");
+    router.push("/(tabs)/admin/storage/ward-erfs-sync");
   };
 
   /* ================= REDIRECT ================= */
 
   useEffect(() => {
-    if (!hasLm || !hasWard) return;
-
-    if (wardStatus === "MISSING") {
-      router.replace("/(tabs)/admin/storage/ward-erfs-sync");
+    if (!hasLm || !hasWard) {
+      lastWardSyncRouteRef.current = null;
+      return;
     }
-  }, [hasLm, hasWard, wardStatus, router]);
+
+    if (isWardScopeHydrating) return;
+
+    if (wardStatus !== "MISSING") {
+      lastWardSyncRouteRef.current = null;
+      return;
+    }
+
+    if (lastWardSyncRouteRef.current === wardCacheKey) return;
+
+    lastWardSyncRouteRef.current = wardCacheKey;
+    router.push("/(tabs)/admin/storage/ward-erfs-sync");
+  }, [
+    hasLm,
+    hasWard,
+    isWardScopeHydrating,
+    wardCacheKey,
+    wardStatus,
+    router,
+  ]);
 
   /* ================= FILTER ================= */
 
