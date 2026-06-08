@@ -13,8 +13,8 @@ import {
   removeScopeDataset,
 } from "@/src/storage/wardScopeStorage";
 import { useGetWardsByLocalMunicipalityQuery } from "@/src/redux/geoApi";
-import WardErfSyncLock from "../../../../components/WardErfSyncLock";
-import WardErfsSyncDoneModal from "../../../../components/WardErfsSyncDoneModal";
+import WardErfSyncLock from "../../../components/WardErfSyncLock";
+import WardErfsSyncDoneModal from "../../../components/WardErfsSyncDoneModal";
 
 /* =====================================================
    PER-WARD LIVE SUBSCRIPTION REGISTRY

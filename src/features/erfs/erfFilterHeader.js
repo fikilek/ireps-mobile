@@ -1,16 +1,47 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { FlashList } from "@shopify/flash-list";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Button, Dialog, Portal, Surface } from "react-native-paper";
+import { useSelector } from "react-redux";
+
+import { useGeo } from "../../context/GeoContext";
 import { useWarehouse } from "../../context/WarehouseContext";
+
+function getWardQueryCacheKey(lmPcode, wardPcode) {
+  return `getErfsByLmPcodeWardPcode(${lmPcode}__${wardPcode})`;
+}
 
 const ErfFilterHeader = ({ selectedWard, setSelectedWard, filteredCount }) => {
   const [visible, setVisible] = useState(false);
   const showDialog = () => setVisible(true);
   const hideDialog = () => setVisible(false);
 
+  const { geoState } = useGeo();
   const { available } = useWarehouse();
+  const erfsQueries = useSelector((state) => state.erfsApi?.queries || {});
+
+  const lmPcode = geoState?.selectedLm?.pcode || geoState?.selectedLm?.id || null;
+
+  const wardSyncedCountsByPcode = useMemo(() => {
+    if (!lmPcode) return new Map();
+
+    const counts = new Map();
+
+    (available?.wards || []).forEach((ward) => {
+      const wardPcode = ward?.pcode || ward?.id || null;
+      if (!wardPcode) return;
+
+      const queryKey = getWardQueryCacheKey(lmPcode, wardPcode);
+      const queryState = erfsQueries?.[queryKey];
+      const sync = queryState?.data?.sync;
+
+      counts.set(wardPcode, Number(sync?.size || 0));
+    });
+
+    return counts;
+  }, [available?.wards, erfsQueries, lmPcode]);
+
   const displayWardName =
     selectedWard === "ALL" || !selectedWard
       ? "All Wards"
@@ -64,6 +95,11 @@ const ErfFilterHeader = ({ selectedWard, setSelectedWard, filteredCount }) => {
                   ? selectedWard === "ALL" || !selectedWard
                   : selectedWard?.id === item?.id;
 
+                const wardPcode = isAll ? null : item?.pcode || item?.id || null;
+                const syncedErfCount = wardPcode
+                  ? wardSyncedCountsByPcode.get(wardPcode) || 0
+                  : 0;
+
                 const label = isAll
                   ? "All Wards (Reset)"
                   : `${item?.name || item?.code || "Ward"}`;
@@ -91,13 +127,23 @@ const ErfFilterHeader = ({ selectedWard, setSelectedWard, filteredCount }) => {
                         {label}
                       </Text>
 
-                      {isSelected && (
-                        <MaterialCommunityIcons
-                          name="check-circle"
-                          size={20}
-                          color={isAll ? "#6366f1" : "#2563eb"}
-                        />
-                      )}
+                      <View style={styles.wardMetaWrap}>
+                        {!isAll && (
+                          <View style={styles.wardCountPill}>
+                            <Text style={styles.wardCountText}>
+                              {syncedErfCount} ERFs
+                            </Text>
+                          </View>
+                        )}
+
+                        {isSelected && (
+                          <MaterialCommunityIcons
+                            name="check-circle"
+                            size={20}
+                            color={isAll ? "#6366f1" : "#2563eb"}
+                          />
+                        )}
+                      </View>
                     </View>
                   </TouchableOpacity>
                 );
@@ -231,9 +277,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   wardText: {
+    flex: 1,
     fontSize: 15,
     color: "#334155",
     fontWeight: "500",
+    paddingRight: 12,
+  },
+  wardMetaWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  wardCountPill: {
+    minWidth: 72,
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "#eff6ff",
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+  },
+  wardCountText: {
+    fontSize: 11,
+    color: "#1d4ed8",
+    fontWeight: "900",
   },
   sortText: {
     fontSize: 6,

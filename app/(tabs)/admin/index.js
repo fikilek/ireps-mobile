@@ -124,15 +124,6 @@ export default function AdminDashboard() {
       {(isSPU || isADM || isMNG || isSPV || isFWR) && (
         <Section title="Local Storage">
           <Card
-            title="Ward ERFs Storage"
-            subtitle="Ward ERFs sync & management"
-            disabled={isNavigating}
-            onPress={() =>
-              handleNavigate("/(tabs)/admin/storage/ward-erfs-sync")
-            }
-          />
-
-          <Card
             title="Meter Discovery Forms Storage"
             subtitle="Offline Meter Audit forms queue"
             disabled={isNavigating}
