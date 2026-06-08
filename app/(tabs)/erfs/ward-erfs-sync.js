@@ -10,6 +10,7 @@ import { erfsApi } from "@/src/redux/erfsApi";
 import { useGetAuthStateQuery } from "@/src/redux/authApi";
 import {
   clearLastActiveScopeIfMatches,
+  getScopeDatasetSyncMeta,
   removeScopeDataset,
 } from "@/src/storage/wardScopeStorage";
 import { useGetWardsByLocalMunicipalityQuery } from "@/src/redux/geoApi";
@@ -27,7 +28,12 @@ function getWardQueryCacheKey(lmPcode, wardPcode) {
   return `getErfsByLmPcodeWardPcode(${lmPcode}__${wardPcode})`;
 }
 
-function startWardErfSubscription(dispatch, lmPcode, wardPcode, scopeIdentity = {}) {
+function startWardErfSubscription(
+  dispatch,
+  lmPcode,
+  wardPcode,
+  scopeIdentity = {},
+) {
   const wardKey = `${lmPcode}__${wardPcode}`;
 
   // already live -> do nothing
@@ -119,23 +125,32 @@ export default function WardErfsSync() {
     if (!lmPcode) return [];
 
     return (wards || []).map((w) => {
-      const wardKey = `${lmPcode}__${w.id}`;
-      const isActive = activeWard?.id === w.id;
+      const wardPcode = w?.pcode || w?.id || null;
+      const wardKey = `${lmPcode}__${wardPcode}`;
+      const isActive = activeWard?.id === wardPcode || activeWard?.pcode === wardPcode;
 
-      const queryKey = getWardQueryCacheKey(lmPcode, w.id);
+      const queryKey = getWardQueryCacheKey(lmPcode, wardPcode);
       const queryState = erfsQueries?.[queryKey];
+      const localSync = getScopeDatasetSyncMeta({
+        lmPcode,
+        wardPcode,
+        dataset: "erfs",
+      });
 
-      let status = "NOT SYNCED";
-      let count = 0;
+      let status = localSync?.status === "ready" ? "READY" : "NOT SYNCED";
+      let count = Number(localSync?.size || 0);
 
       if (queryState) {
         const sync = queryState?.data?.sync;
+        const querySize = Number(sync?.size || 0);
 
         if (sync?.status === "syncing") status = "SYNCING";
         else if (sync?.status === "ready") status = "READY";
-        else if (sync?.status === "error") status = "ERROR";
+        else if (sync?.status === "error") {
+          status = localSync?.status === "ready" ? "READY" : "ERROR";
+        }
 
-        count = sync?.size || 0;
+        count = querySize || Number(localSync?.size || 0);
       }
 
       const canOpen = status === "READY";
@@ -171,7 +186,9 @@ export default function WardErfsSync() {
 
     const sync = trackedWardQuery?.data?.sync;
 
-    if (sync?.status === "ready" && !syncStory?.finished) {
+    const isFreshFirestoreResult = sync?.source !== "mmkv";
+
+    if (sync?.status === "ready" && isFreshFirestoreResult && !syncStory?.finished) {
       const durationMs = syncStory?.startedAt
         ? Date.now() - syncStory.startedAt
         : 0;
@@ -332,7 +349,10 @@ export default function WardErfsSync() {
                         ratePerSecond: 0,
                       });
 
-                      startWardErfSubscription(dispatch, lmPcode, item.id, { uid, activeWorkbaseId });
+                      startWardErfSubscription(dispatch, lmPcode, item.id, {
+                        uid,
+                        activeWorkbaseId,
+                      });
                     }}
                   >
                     <Text style={styles.btnText}>

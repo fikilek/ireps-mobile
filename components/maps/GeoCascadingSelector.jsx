@@ -15,6 +15,7 @@ import { useGeo } from "../../src/context/GeoContext";
 import { useMap } from "../../src/context/MapContext";
 import { useWarehouse } from "../../src/context/WarehouseContext";
 import { useGetGeoFencesByLmPcodeWardPcodeQuery } from "../../src/redux/geofenceApi";
+import { getScopeDatasetSyncMetaByWard } from "../../src/storage/wardScopeStorage";
 
 export default function GeoCascadingSelector({
   onModalStateChange,
@@ -211,14 +212,25 @@ export default function GeoCascadingSelector({
   const wardSyncedCountsByPcode = useMemo(() => {
     if (!lmPcode) return new Map();
 
+    const localMetaByPcode = getScopeDatasetSyncMetaByWard({
+      lmPcode,
+      dataset: "erfs",
+    });
     const counts = new Map();
 
     (availableWards || []).forEach((ward) => {
-      const queryKey = getWardQueryCacheKey(lmPcode, ward?.id);
+      const wardPcode = ward?.pcode || ward?.id || null;
+      if (!wardPcode) return;
+
+      const queryKey = getWardQueryCacheKey(lmPcode, wardPcode);
       const queryState = erfsQueries?.[queryKey];
       const sync = queryState?.data?.sync;
+      const localMeta = localMetaByPcode.get(wardPcode);
 
-      counts.set(ward?.id, sync?.size || 0);
+      counts.set(
+        wardPcode,
+        Number(sync?.size || 0) || Number(localMeta?.size || 0),
+      );
     });
 
     return counts;

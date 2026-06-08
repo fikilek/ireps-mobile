@@ -118,6 +118,66 @@ export function loadScopeIndex(params) {
   return safeJsonParse(raw, null);
 }
 
+
+export function getScopeDatasetSyncMeta(params = {}) {
+  const lmPcode = params?.lmPcode || null;
+  const wardPcode = params?.wardPcode || null;
+  const dataset = params?.dataset || LAST_ACTIVE_DATASET;
+
+  if (!lmPcode || !wardPcode || !dataset) return null;
+
+  const wardCacheKey =
+    params?.wardCacheKey || `${lmPcode}__${wardPcode}`;
+  const index = loadScopeIndex({ lmPcode });
+  const wardMeta = index?.wards?.[wardCacheKey] || null;
+  const datasetMeta = wardMeta?.datasets?.[dataset] || null;
+
+  if (!datasetMeta) return null;
+
+  return {
+    lmPcode,
+    wardPcode,
+    wardCacheKey,
+    dataset,
+    key: datasetMeta?.key || null,
+    status: datasetMeta?.status || "ready",
+    size: Number(datasetMeta?.size || 0),
+    persistedAt: datasetMeta?.persistedAt || wardMeta?.updatedAt || 0,
+  };
+}
+
+export function getScopeDatasetSyncMetaByWard(params = {}) {
+  const lmPcode = params?.lmPcode || null;
+  const dataset = params?.dataset || LAST_ACTIVE_DATASET;
+  const result = new Map();
+
+  if (!lmPcode || !dataset) return result;
+
+  const index = loadScopeIndex({ lmPcode });
+  const wards = index?.wards || {};
+
+  Object.values(wards).forEach((wardMeta) => {
+    const wardPcode = wardMeta?.wardPcode || null;
+    const wardCacheKey = wardMeta?.wardCacheKey || null;
+    const datasetMeta = wardMeta?.datasets?.[dataset] || null;
+
+    if (!wardPcode || !datasetMeta) return;
+
+    result.set(wardPcode, {
+      lmPcode,
+      wardPcode,
+      wardCacheKey,
+      dataset,
+      key: datasetMeta?.key || null,
+      status: datasetMeta?.status || "ready",
+      size: Number(datasetMeta?.size || 0),
+      persistedAt: datasetMeta?.persistedAt || wardMeta?.updatedAt || 0,
+    });
+  });
+
+  return result;
+}
+
 export function saveScopeIndex(params, index) {
   const key = makeScopeIndexKey(params || {});
   if (!key || !index) return null;
