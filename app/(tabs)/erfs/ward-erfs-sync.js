@@ -2,7 +2,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { FlashList } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useDispatch, useSelector } from "react-redux";
 
 import { useGeo } from "@/src/context/GeoContext";
@@ -10,7 +10,6 @@ import { erfsApi } from "@/src/redux/erfsApi";
 import { useGetAuthStateQuery } from "@/src/redux/authApi";
 import {
   clearLastActiveScopeIfMatches,
-  getScopeDatasetSyncMeta,
   removeScopeDataset,
 } from "@/src/storage/wardScopeStorage";
 import { useGetWardsByLocalMunicipalityQuery } from "@/src/redux/geoApi";
@@ -28,12 +27,7 @@ function getWardQueryCacheKey(lmPcode, wardPcode) {
   return `getErfsByLmPcodeWardPcode(${lmPcode}__${wardPcode})`;
 }
 
-function startWardErfSubscription(
-  dispatch,
-  lmPcode,
-  wardPcode,
-  scopeIdentity = {},
-) {
+function startWardErfSubscription(dispatch, lmPcode, wardPcode, scopeIdentity = {}) {
   const wardKey = `${lmPcode}__${wardPcode}`;
 
   // already live -> do nothing
@@ -94,6 +88,9 @@ export default function WardErfsSync() {
 
   const [syncStory, setSyncStory] = useState(null);
   const [doneModalVisible, setDoneModalVisible] = useState(false);
+  const [rowAction, setRowAction] = useState(null);
+
+  const isRowActionBusy = Boolean(rowAction?.wardId);
 
   useEffect(() => {
     const unsub = NetInfo.addEventListener((state) => {
@@ -125,32 +122,23 @@ export default function WardErfsSync() {
     if (!lmPcode) return [];
 
     return (wards || []).map((w) => {
-      const wardPcode = w?.pcode || w?.id || null;
-      const wardKey = `${lmPcode}__${wardPcode}`;
-      const isActive = activeWard?.id === wardPcode || activeWard?.pcode === wardPcode;
+      const wardKey = `${lmPcode}__${w.id}`;
+      const isActive = activeWard?.id === w.id;
 
-      const queryKey = getWardQueryCacheKey(lmPcode, wardPcode);
+      const queryKey = getWardQueryCacheKey(lmPcode, w.id);
       const queryState = erfsQueries?.[queryKey];
-      const localSync = getScopeDatasetSyncMeta({
-        lmPcode,
-        wardPcode,
-        dataset: "erfs",
-      });
 
-      let status = localSync?.status === "ready" ? "READY" : "NOT SYNCED";
-      let count = Number(localSync?.size || 0);
+      let status = "NOT SYNCED";
+      let count = 0;
 
       if (queryState) {
         const sync = queryState?.data?.sync;
-        const querySize = Number(sync?.size || 0);
 
         if (sync?.status === "syncing") status = "SYNCING";
         else if (sync?.status === "ready") status = "READY";
-        else if (sync?.status === "error") {
-          status = localSync?.status === "ready" ? "READY" : "ERROR";
-        }
+        else if (sync?.status === "error") status = "ERROR";
 
-        count = querySize || Number(localSync?.size || 0);
+        count = sync?.size || 0;
       }
 
       const canOpen = status === "READY";
@@ -186,9 +174,7 @@ export default function WardErfsSync() {
 
     const sync = trackedWardQuery?.data?.sync;
 
-    const isFreshFirestoreResult = sync?.source !== "mmkv";
-
-    if (sync?.status === "ready" && isFreshFirestoreResult && !syncStory?.finished) {
+    if (sync?.status === "ready" && !syncStory?.finished) {
       const durationMs = syncStory?.startedAt
         ? Date.now() - syncStory.startedAt
         : 0;
@@ -239,6 +225,63 @@ export default function WardErfsSync() {
     0,
   );
   const currentTotalCount = wardRows.length;
+
+  const handleOpenWard = (item) => {
+    if (!item?.id || isRowActionBusy) return;
+
+    setRowAction({ wardId: item.id, type: "open" });
+
+    requestAnimationFrame(() => {
+      updateGeo({
+        selectedWard: {
+          id: item.id,
+          name: item.name,
+        },
+        lastSelectionType: "WARD",
+      });
+
+      router.replace("/(tabs)/erfs");
+    });
+  };
+
+  const handleDropWard = (item) => {
+    if (!item?.id || isRowActionBusy) return;
+
+    setRowAction({ wardId: item.id, type: "drop" });
+
+    requestAnimationFrame(() => {
+      try {
+        stopWardErfSubscription(dispatch, lmPcode, item.id);
+
+        if (uid && activeWorkbaseId && lmPcode && item.id) {
+          removeScopeDataset({
+            uid,
+            activeWorkbaseId,
+            lmPcode,
+            wardPcode: item.id,
+            dataset: "erfs",
+          });
+
+          clearLastActiveScopeIfMatches({
+            uid,
+            activeWorkbaseId,
+            lmPcode,
+            wardPcode: item.id,
+          });
+        }
+
+        if (activeWard?.id === item.id) {
+          updateGeo({
+            selectedWard: null,
+            selectedErf: null,
+            lastSelectionType: null,
+          });
+        }
+      } finally {
+        setRowAction(null);
+      }
+    });
+  };
 
   return (
     <View style={styles.container}>
@@ -314,6 +357,10 @@ export default function WardErfsSync() {
           </View>
         }
         renderItem={({ item }) => {
+          const isCurrentRowBusy = rowAction?.wardId === item.id;
+          const isOpening = isCurrentRowBusy && rowAction?.type === "open";
+          const isDropping = isCurrentRowBusy && rowAction?.type === "drop";
+
           return (
             <View style={[styles.row, item.isActive && styles.rowActive]}>
               <View style={styles.rowLeft}>
@@ -333,9 +380,9 @@ export default function WardErfsSync() {
                   <TouchableOpacity
                     style={[
                       styles.syncBtn,
-                      !item.canSync && styles.syncBtnDisabled,
+                      (!item.canSync || isRowActionBusy) && styles.syncBtnDisabled,
                     ]}
-                    disabled={!item.canSync}
+                    disabled={!item.canSync || isRowActionBusy}
                     onPress={() => {
                       setDoneModalVisible(false);
                       setSyncStory({
@@ -349,10 +396,7 @@ export default function WardErfsSync() {
                         ratePerSecond: 0,
                       });
 
-                      startWardErfSubscription(dispatch, lmPcode, item.id, {
-                        uid,
-                        activeWorkbaseId,
-                      });
+                      startWardErfSubscription(dispatch, lmPcode, item.id, { uid, activeWorkbaseId });
                     }}
                   >
                     <Text style={styles.btnText}>
@@ -363,56 +407,35 @@ export default function WardErfsSync() {
 
                 {item.canOpen && (
                   <TouchableOpacity
-                    style={styles.openBtn}
-                    onPress={() => {
-                      updateGeo({
-                        selectedWard: {
-                          id: item.id,
-                          name: item.name,
-                        },
-                        lastSelectionType: "WARD",
-                      });
-
-                      router.replace("/(tabs)/erfs");
-                    }}
+                    style={[
+                      styles.openBtn,
+                      isRowActionBusy && styles.actionBtnDisabled,
+                    ]}
+                    disabled={isRowActionBusy}
+                    onPress={() => handleOpenWard(item)}
                   >
-                    <Text style={styles.btnText}>OPEN</Text>
+                    {isOpening ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.btnText}>OPEN</Text>
+                    )}
                   </TouchableOpacity>
                 )}
 
                 {item.canDrop && (
                   <TouchableOpacity
-                    style={styles.dropBtn}
-                    onPress={() => {
-                      stopWardErfSubscription(dispatch, lmPcode, item.id);
-
-                      if (uid && activeWorkbaseId && lmPcode && item.id) {
-                        removeScopeDataset({
-                          uid,
-                          activeWorkbaseId,
-                          lmPcode,
-                          wardPcode: item.id,
-                          dataset: "erfs",
-                        });
-
-                        clearLastActiveScopeIfMatches({
-                          uid,
-                          activeWorkbaseId,
-                          lmPcode,
-                          wardPcode: item.id,
-                        });
-                      }
-
-                      if (activeWard?.id === item.id) {
-                        updateGeo({
-                          selectedWard: null,
-                          selectedErf: null,
-                          lastSelectionType: null,
-                        });
-                      }
-                    }}
+                    style={[
+                      styles.dropBtn,
+                      isRowActionBusy && styles.actionBtnDisabled,
+                    ]}
+                    disabled={isRowActionBusy}
+                    onPress={() => handleDropWard(item)}
                   >
-                    <Text style={styles.btnText}>DROP</Text>
+                    {isDropping ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.btnText}>DROP</Text>
+                    )}
                   </TouchableOpacity>
                 )}
               </View>
@@ -498,6 +521,10 @@ const styles = StyleSheet.create({
 
   syncBtnDisabled: {
     opacity: 0.45,
+  },
+
+  actionBtnDisabled: {
+    opacity: 0.65,
   },
 
   openBtn: {
