@@ -750,29 +750,29 @@ export default function FormMeterInstallation() {
         },
         ast: {
           astData: {
-            astNo: "04085348",
-            astManufacturer: "Conlog",
-            astName: "BEC66",
+            astNo: "",
+            astManufacturer: "Colog",
+            astName: "",
             meter: {
-              phase: "Single",
-              type: "Pre-paid",
-              category: "Normal",
-              seal: { sealNo: "Seal No", comment: "" }, // 🎯 Initialized
-              keypad: { serialNo: "Keypad Serial No", comment: "" }, // 🎯 Initialized
+              phase: "",
+              type: "",
+              category: "",
+              seal: { sealNo: "", comment: "" }, // 🎯 Initialized
+              keypad: { serialNo: "", comment: "" }, // 🎯 Initialized
               cb: { size: "60", comment: "" }, // 🎯 Initialized
             },
           },
           anomalies: {
-            anomaly: "Meter Ok",
-            anomalyDetail: "Operationally Ok",
+            anomaly: "",
+            anomalyDetail: "",
           },
           location: {
             gps: null, // 🛰️ Will be an Object {lat, lng} via the Picker
-            placement: "Top Pole",
+            placement: "",
           },
           ogs: { hasOffGridSupply: "no" },
         },
-        meterType: "electricity",
+        meterType: "",
         media: [],
         status: {
           state: null,
