@@ -7,13 +7,12 @@ import { useSelector } from "react-redux";
 
 import { useGeo } from "../../context/GeoContext";
 import { useWarehouse } from "../../context/WarehouseContext";
-import { getScopeDatasetSyncMetaByWard } from "../../storage/wardScopeStorage";
-
-
-function getWardQueryCacheKey(lmPcode, wardPcode) {
-  return `getErfsByLmPcodeWardPcode(${lmPcode}__${wardPcode})`;
-}
-
+import {
+  getWardErfLocalMetaByWard,
+  getWardErfQueriesRevision,
+  getWardErfSyncInfo,
+  getWardPcode,
+} from "./wardErfSyncStatus";
 
 const ErfFilterHeader = ({ selectedWard, setSelectedWard, filteredCount }) => {
   const [visible, setVisible] = useState(false);
@@ -23,35 +22,42 @@ const ErfFilterHeader = ({ selectedWard, setSelectedWard, filteredCount }) => {
   const { geoState } = useGeo();
   const { available } = useWarehouse();
   const erfsQueries = useSelector((state) => state.erfsApi?.queries || {});
+  const erfsQueriesRevision = useMemo(
+    () => getWardErfQueriesRevision(erfsQueries),
+    [erfsQueries],
+  );
 
   const lmPcode = geoState?.selectedLm?.pcode || geoState?.selectedLm?.id || null;
+
+  const localWardErfMetaByPcode = useMemo(
+    () => {
+      void erfsQueriesRevision;
+      return getWardErfLocalMetaByWard(lmPcode);
+    },
+    [lmPcode, erfsQueriesRevision],
+  );
 
   const wardSyncedCountsByPcode = useMemo(() => {
     if (!lmPcode) return new Map();
 
-    const localMetaByPcode = getScopeDatasetSyncMetaByWard({
-      lmPcode,
-      dataset: "erfs",
-    });
     const counts = new Map();
 
     (available?.wards || []).forEach((ward) => {
-      const wardPcode = ward?.pcode || ward?.id || null;
+      const wardPcode = getWardPcode(ward);
       if (!wardPcode) return;
 
-      const queryKey = getWardQueryCacheKey(lmPcode, wardPcode);
-      const queryState = erfsQueries?.[queryKey];
-      const sync = queryState?.data?.sync;
-      const localMeta = localMetaByPcode.get(wardPcode);
-
-      counts.set(
+      const syncInfo = getWardErfSyncInfo({
+        erfsQueries,
+        localMetaByPcode: localWardErfMetaByPcode,
+        lmPcode,
         wardPcode,
-        Number(sync?.size || 0) || Number(localMeta?.size || 0),
-      );
+      });
+
+      counts.set(wardPcode, syncInfo.size);
     });
 
     return counts;
-  }, [available?.wards, erfsQueries, lmPcode]);
+  }, [available?.wards, erfsQueries, localWardErfMetaByPcode, lmPcode]);
 
   const displayWardName =
     selectedWard === "ALL" || !selectedWard
@@ -109,7 +115,7 @@ const ErfFilterHeader = ({ selectedWard, setSelectedWard, filteredCount }) => {
                 const label = isAll
                   ? "All Wards (Reset)"
                   : `${item?.name || item?.code || "Ward"}`;
-                const wardPcode = item?.pcode || item?.id || null;
+                const wardPcode = getWardPcode(item);
                 const syncedErfCount = isAll
                   ? 0
                   : wardSyncedCountsByPcode.get(wardPcode) || 0;

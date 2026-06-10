@@ -9,6 +9,13 @@ import { useWarehouse } from "../../context/WarehouseContext";
 import ErfFilterHeader from "./erfFilterHeader";
 import { ErfItem } from "./erfItem";
 import ErfsBottomSearch from "./ErfsBottomSearch";
+import {
+  getWardErfLocalMetaByWard,
+  getWardErfQueriesRevision,
+  getWardErfSyncInfo,
+  getWardPcode,
+  WARD_ERF_SYNC_STATUS,
+} from "./wardErfSyncStatus";
 
 /* ================= STATES ================= */
 
@@ -72,65 +79,70 @@ export default function ErfsScreen() {
 
   const hasLm = !!geoState?.selectedLm?.id;
   const hasWard = !!geoState?.selectedWard?.id;
+  const lmPcode = geoState?.selectedLm?.pcode || geoState?.selectedLm?.id || null;
+  const wardPcode = getWardPcode(geoState?.selectedWard);
 
   const wardsCount = all?.wards?.length ?? 0;
-  const erfsCount = all?.erfs?.length ?? 0;
 
   /* ================= RTK CACHE ================= */
 
   const erfsQueries = useSelector((state) => state.erfsApi?.queries || {});
+  const erfsQueriesRevision = useMemo(
+    () => getWardErfQueriesRevision(erfsQueries),
+    [erfsQueries],
+  );
 
-  const wardCacheKey =
-    hasLm && hasWard
-      ? `${geoState.selectedLm.id}__${geoState.selectedWard.id}`
-      : null;
+  const localWardErfMetaByPcode = useMemo(
+    () => {
+      void erfsQueriesRevision;
+      return getWardErfLocalMetaByWard(lmPcode);
+    },
+    [lmPcode, erfsQueriesRevision],
+  );
 
-  const wardQuery = wardCacheKey
-    ? erfsQueries[`getErfsByLmPcodeWardPcode(${wardCacheKey})`]
-    : null;
+  const activeWardErfInfo = useMemo(
+    () =>
+      getWardErfSyncInfo({
+        erfsQueries,
+        localMetaByPcode: localWardErfMetaByPcode,
+        lmPcode,
+        wardPcode,
+      }),
+    [erfsQueries, localWardErfMetaByPcode, lmPcode, wardPcode],
+  );
 
-  const rawWardStatus = wardQuery?.data?.sync?.status || null;
-  const wardSize = wardQuery?.data?.sync?.size ?? null;
-
-  const wardStatus =
-    rawWardStatus === "syncing"
-      ? "SYNCING"
-      : rawWardStatus === "ready"
-        ? "READY"
-        : rawWardStatus === "error"
-          ? "ERROR"
-          : "MISSING";
+  const wardStatus = activeWardErfInfo.status;
+  const wardSize = activeWardErfInfo.size;
 
   /* ================= HEADER WARD SELECT ================= */
 
   const handleWardSelectionFromHeader = (ward) => {
     if (!ward?.id) {
-      updateGeo({ selectedWard: null, lastSelectionType: "WARD" });
+      updateGeo({
+        selectedWard: null,
+        selectedErf: null,
+        selectedPremise: null,
+        selectedMeter: null,
+        lastSelectionType: "WARD",
+      });
       return;
     }
 
-    const nextWardCacheKey =
-      geoState?.selectedLm?.id && ward?.id
-        ? `${geoState.selectedLm.id}__${ward.id}`
-        : null;
+    const nextWardStatus = getWardErfSyncInfo({
+      erfsQueries,
+      localMetaByPcode: localWardErfMetaByPcode,
+      lmPcode,
+      wardPcode: getWardPcode(ward),
+    }).status;
 
-    const nextWardQuery = nextWardCacheKey
-      ? erfsQueries[`getErfsByLmPcodeWardPcode(${nextWardCacheKey})`]
-      : null;
-
-    const rawNextWardStatus = nextWardQuery?.data?.sync?.status || null;
-
-    const nextWardStatus =
-      rawNextWardStatus === "syncing"
-        ? "SYNCING"
-        : rawNextWardStatus === "ready"
-          ? "READY"
-          : rawNextWardStatus === "error"
-            ? "ERROR"
-            : "MISSING";
-
-    if (nextWardStatus === "READY") {
-      updateGeo({ selectedWard: ward, lastSelectionType: "WARD" });
+    if (nextWardStatus === WARD_ERF_SYNC_STATUS.READY) {
+      updateGeo({
+        selectedWard: ward,
+        selectedErf: null,
+        selectedPremise: null,
+        selectedMeter: null,
+        lastSelectionType: "WARD",
+      });
       return;
     }
 
@@ -142,8 +154,8 @@ export default function ErfsScreen() {
   useEffect(() => {
     if (!hasLm || !hasWard) return;
 
-    if (wardStatus === "MISSING") {
-      router.push("/(tabs)/erfs/ward-erfs-sync");
+    if (wardStatus !== WARD_ERF_SYNC_STATUS.READY) {
+      router.replace("/(tabs)/erfs/ward-erfs-sync");
     }
   }, [hasLm, hasWard, wardStatus, router]);
 
@@ -198,10 +210,10 @@ export default function ErfsScreen() {
 
   /* 🚨 NOT LOADED → SAFE FALLBACK */
 
-  if (wardStatus === "MISSING") {
+  if (hasWard && wardStatus !== WARD_ERF_SYNC_STATUS.READY) {
     return (
       <EmptyScopeState
-        title="WARD NOT LOADED"
+        title="WARD NOT READY"
         message={`Please sync ERFs for ${lmName} • ${wardName}`}
       />
     );
@@ -209,7 +221,7 @@ export default function ErfsScreen() {
 
   /* 🚨 NO ERFs */
 
-  if (wardStatus === "READY" && wardSize === 0) {
+  if (wardStatus === WARD_ERF_SYNC_STATUS.READY && wardSize === 0) {
     return <NoErfsState lmName={lmName} wardName={wardName} />;
   }
 
@@ -217,7 +229,7 @@ export default function ErfsScreen() {
 
   return (
     <View style={styles.container}>
-      {wardStatus === "SYNCING" && (
+      {wardStatus === WARD_ERF_SYNC_STATUS.SYNCING && (
         <View style={styles.syncingBanner}>
           <ActivityIndicator size="small" />
           <Text style={styles.syncingText}>SYNCING WARD ERFs...</Text>

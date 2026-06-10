@@ -75,10 +75,15 @@ export const GeoProvider = ({ children }) => {
   const { profile } = authCtx || {};
 
   const uid = readUidFromAuth(authCtx, profile);
-  const workbaseId = profile?.access?.activeWorkbase?.id;
+  const activeWorkbase = profile?.access?.activeWorkbase || null;
+  const workbaseId = getGeoPcode(activeWorkbase);
   const restoreAttemptRef = useRef(null);
 
   const [geoState, setGeoState] = useState(INITIAL_GEO);
+  const selectedLm = geoState?.selectedLm || null;
+  const selectedWard = geoState?.selectedWard || null;
+  const selectedLmPcode = getGeoPcode(selectedLm);
+  const selectedWardPcode = getGeoPcode(selectedWard);
 
   useEffect(() => {
     if (!profile) {
@@ -87,20 +92,31 @@ export const GeoProvider = ({ children }) => {
       return;
     }
 
-    if (!workbaseId) return;
+    if (!workbaseId) {
+      restoreAttemptRef.current = null;
+      setGeoState((prev) => {
+        if (!prev.selectedLm && !prev.selectedWard) return prev;
+
+        return {
+          ...INITIAL_GEO,
+          flightSignal: prev.flightSignal + 1,
+        };
+      });
+      return;
+    }
 
     setGeoState((prev) => {
-      // if a selection already exists, don't overwrite it here
-      if (prev.selectedLm) return prev;
+      const prevLmId = getGeoPcode(prev.selectedLm);
+      if (prevLmId === workbaseId) return prev;
 
       return {
         ...INITIAL_GEO,
-        selectedLm: { id: workbaseId },
+        selectedLm: activeWorkbase || { id: workbaseId },
         lastSelectionType: "LM",
         flightSignal: prev.flightSignal + 1,
       };
     });
-  }, [profile, workbaseId]);
+  }, [profile, workbaseId, activeWorkbase]);
 
   // 2) HYDRATE: fetch full LM doc
   const { data: remoteLmDoc } = useGetLocalMunicipalityByIdQuery(workbaseId, {
@@ -111,14 +127,21 @@ export const GeoProvider = ({ children }) => {
     if (!profile || !remoteLmDoc) return;
 
     // ignore late docs that don't match profile workbase
-    if (remoteLmDoc.id !== workbaseId) return;
+    const remoteLmPcode = getGeoPcode(remoteLmDoc);
+    if (remoteLmPcode !== workbaseId) return;
 
     setGeoState((prev) => {
       // only hydrate the current LM if it matches and is still placeholder
-      if (prev.selectedLm?.id !== remoteLmDoc.id) return prev;
+      if (getGeoPcode(prev.selectedLm) !== remoteLmPcode) return prev;
 
-      const prevHasName = !!prev.selectedLm?.name;
-      if (prevHasName) return prev;
+      const prevHasFullGeo =
+        !!prev.selectedLm?.bbox ||
+        !!prev.selectedLm?.geometry ||
+        !!prev.selectedLm?.parents;
+
+      if (prevHasFullGeo && prev.selectedLm?.name === remoteLmDoc?.name) {
+        return prev;
+      }
 
       return {
         ...prev,
@@ -138,8 +161,8 @@ export const GeoProvider = ({ children }) => {
     const restoreKey = `${uid}__${workbaseId}__${lmPcode}`;
     if (restoreAttemptRef.current === restoreKey) return;
 
-    // Do not override a ward the user already selected in this session.
-    if (geoState?.selectedWard?.id || geoState?.selectedWard?.pcode) {
+    // Do not override a ward the user already selected under this LM.
+    if (selectedWardPcode && selectedLmPcode === lmPcode) {
       restoreAttemptRef.current = restoreKey;
       return;
     }
@@ -172,17 +195,23 @@ export const GeoProvider = ({ children }) => {
         flightSignal: prev.flightSignal + 1,
       };
     });
-  }, [profile, uid, workbaseId, remoteLmDoc, geoState?.selectedWard?.id, geoState?.selectedWard?.pcode]);
+  }, [
+    profile,
+    uid,
+    workbaseId,
+    remoteLmDoc,
+    selectedLmPcode,
+    selectedWardPcode,
+  ]);
 
   // 4) RECORD: whenever a valid LM + Ward scope is active, save the pointer to MMKV.
   useEffect(() => {
     if (!profile || !uid || !workbaseId) return;
 
-    const lm = geoState?.selectedLm || null;
-    const ward = geoState?.selectedWard || null;
-
-    const lmPcode = getGeoPcode(lm);
-    const wardPcode = getGeoPcode(ward);
+    const lm = selectedLm;
+    const ward = selectedWard;
+    const lmPcode = selectedLmPcode;
+    const wardPcode = selectedWardPcode;
 
     if (!lmPcode || !wardPcode) return;
 
@@ -198,13 +227,10 @@ export const GeoProvider = ({ children }) => {
     profile,
     uid,
     workbaseId,
-    geoState?.selectedLm?.id,
-    geoState?.selectedLm?.pcode,
-    geoState?.selectedLm?.name,
-    geoState?.selectedWard?.id,
-    geoState?.selectedWard?.pcode,
-    geoState?.selectedWard?.name,
-    geoState?.selectedWard?.code,
+    selectedLm,
+    selectedWard,
+    selectedLmPcode,
+    selectedWardPcode,
   ]);
 
   /**
@@ -215,31 +241,33 @@ export const GeoProvider = ({ children }) => {
   const updateGeo = useCallback((updates, options = {}) => {
     setGeoState((prev) => {
       const silent = !!options.silent;
+      const hasUpdate = (key) =>
+        Object.prototype.hasOwnProperty.call(updates, key);
 
       let next = { ...prev, ...updates };
 
       // cascade clears
-      if ("selectedLm" in updates) {
-        const prevLmId = prev?.selectedLm?.id || null;
-        const nextLmId = updates?.selectedLm?.id || null;
+      if (hasUpdate("selectedLm")) {
+        const prevLmId = getGeoPcode(prev?.selectedLm);
+        const nextLmId = getGeoPcode(updates?.selectedLm);
         const lmChanged = prevLmId !== nextLmId;
 
-        if (lmChanged) {
+        if (lmChanged && !hasUpdate("selectedWard")) {
           next.selectedWard = null;
         }
 
-        next.selectedErf = null;
-        next.selectedPremise = null;
-        next.selectedMeter = null;
-      } else if ("selectedWard" in updates) {
-        next.selectedErf = null;
-        next.selectedPremise = null;
-        next.selectedMeter = null;
-      } else if ("selectedErf" in updates) {
-        next.selectedPremise = null;
-        next.selectedMeter = null;
-      } else if ("selectedPremise" in updates) {
-        next.selectedMeter = null;
+        if (!hasUpdate("selectedErf")) next.selectedErf = null;
+        if (!hasUpdate("selectedPremise")) next.selectedPremise = null;
+        if (!hasUpdate("selectedMeter")) next.selectedMeter = null;
+      } else if (hasUpdate("selectedWard")) {
+        if (!hasUpdate("selectedErf")) next.selectedErf = null;
+        if (!hasUpdate("selectedPremise")) next.selectedPremise = null;
+        if (!hasUpdate("selectedMeter")) next.selectedMeter = null;
+      } else if (hasUpdate("selectedErf")) {
+        if (!hasUpdate("selectedPremise")) next.selectedPremise = null;
+        if (!hasUpdate("selectedMeter")) next.selectedMeter = null;
+      } else if (hasUpdate("selectedPremise")) {
+        if (!hasUpdate("selectedMeter")) next.selectedMeter = null;
       }
 
       if (!silent) {
@@ -248,23 +276,6 @@ export const GeoProvider = ({ children }) => {
 
       return next;
     });
-  }, []);
-
-  /**
-   * setActiveWorkbaseWard({ lm, ward })
-   * Atomic LM + Ward switch.
-   * This is the new AppHeader switch path.
-   */
-  const setActiveWorkbaseWard = useCallback(({ lm, ward }) => {
-    if (!lm?.id || !ward?.id) return;
-
-    setGeoState((prev) => ({
-      ...INITIAL_GEO,
-      selectedLm: lm,
-      selectedWard: ward,
-      lastSelectionType: "WARD",
-      flightSignal: prev.flightSignal + 1,
-    }));
   }, []);
 
   /**
@@ -287,9 +298,8 @@ export const GeoProvider = ({ children }) => {
       updateGeo,
       resetGeo,
       setGeoState,
-      setActiveWorkbaseWard,
     }),
-    [geoState, updateGeo, resetGeo, setActiveWorkbaseWard],
+    [geoState, updateGeo, resetGeo],
   );
 
   return <GeoContext.Provider value={value}>{children}</GeoContext.Provider>;

@@ -2,11 +2,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import AppHeader from "../../components/AppHeader";
 import MissionDiscoveryModal from "../../components/MissionDiscoveryModal";
-import { useAuth } from "../../src/hooks/useAuth";
 
 export default function TabsLayout() {
-  const { profile } = useAuth();
-
   const titles = {
     maps: "Maps",
     erfs: "ERFs",
@@ -23,15 +20,7 @@ export default function TabsLayout() {
       <Tabs
         screenOptions={({ route }) => ({
           header: () => (
-            <AppHeader
-              title={titles[route.name]}
-              onConfirmScope={({ lm, ward }) => {
-                console.log("FINAL HEADER SCOPE", {
-                  lm,
-                  ward,
-                });
-              }}
-            />
+            <AppHeader title={titles[route.name]} />
           ),
           tabBarActiveTintColor: "#4CAF50",
           tabBarInactiveTintColor: "#888",

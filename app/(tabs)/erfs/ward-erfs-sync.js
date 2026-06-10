@@ -9,6 +9,13 @@ import { useGeo } from "@/src/context/GeoContext";
 import { erfsApi } from "@/src/redux/erfsApi";
 import { useGetAuthStateQuery } from "@/src/redux/authApi";
 import {
+  getWardErfLocalMetaByWard,
+  getWardErfQueryCacheKey,
+  getWardErfSyncInfo,
+  getWardPcode,
+  WARD_ERF_SYNC_STATUS,
+} from "@/src/features/erfs/wardErfSyncStatus";
+import {
   clearLastActiveScopeIfMatches,
   removeScopeDataset,
 } from "@/src/storage/wardScopeStorage";
@@ -22,10 +29,6 @@ import WardErfsSyncDoneModal from "../../../components/WardErfsSyncDoneModal";
    only the specific ward on DROP.
 ===================================================== */
 const wardErfSubscriptions = new Map();
-
-function getWardQueryCacheKey(lmPcode, wardPcode) {
-  return `getErfsByLmPcodeWardPcode(${lmPcode}__${wardPcode})`;
-}
 
 function startWardErfSubscription(dispatch, lmPcode, wardPcode, scopeIdentity = {}) {
   const wardKey = `${lmPcode}__${wardPcode}`;
@@ -60,7 +63,7 @@ function stopWardErfSubscription(dispatch, lmPcode, wardPcode) {
   wardErfSubscriptions.delete(wardKey);
 
   // 2. remove only this ward's cached query result
-  const queryCacheKey = getWardQueryCacheKey(lmPcode, wardPcode);
+  const queryCacheKey = getWardErfQueryCacheKey(lmPcode, wardPcode);
 
   dispatch(
     erfsApi.internalActions.removeQueryResult({
@@ -80,6 +83,7 @@ export default function WardErfsSync() {
   const activeWard = geoState?.selectedWard;
 
   const lmPcode = activeLm?.pcode || activeLm?.id || null;
+  const activeWardPcode = getWardPcode(activeWard);
   const uid = authState?.auth?.uid || null;
   const activeWorkbaseId =
     authState?.profile?.access?.activeWorkbase?.id || lmPcode || null;
@@ -89,6 +93,7 @@ export default function WardErfsSync() {
   const [syncStory, setSyncStory] = useState(null);
   const [doneModalVisible, setDoneModalVisible] = useState(false);
   const [rowAction, setRowAction] = useState(null);
+  const [storageRevision, setStorageRevision] = useState(0);
 
   const isRowActionBusy = Boolean(rowAction?.wardId);
 
@@ -108,6 +113,14 @@ export default function WardErfsSync() {
 
   const erfsQueries = useSelector((state) => state.erfsApi?.queries || {});
 
+  const localWardErfMetaByPcode = useMemo(
+    () => {
+      void storageRevision;
+      return getWardErfLocalMetaByWard(lmPcode);
+    },
+    [lmPcode, storageRevision],
+  );
+
   /* ================= GLOBAL SYNC LOCK ================= */
 
   const isAnySyncing = useMemo(() => {
@@ -122,50 +135,54 @@ export default function WardErfsSync() {
     if (!lmPcode) return [];
 
     return (wards || []).map((w) => {
-      const wardKey = `${lmPcode}__${w.id}`;
-      const isActive = activeWard?.id === w.id;
+      const wardPcode = getWardPcode(w);
+      const wardKey = `${lmPcode}__${wardPcode}`;
+      const isActive = activeWardPcode === wardPcode;
+      const syncInfo = getWardErfSyncInfo({
+        erfsQueries,
+        localMetaByPcode: localWardErfMetaByPcode,
+        lmPcode,
+        wardPcode,
+      });
 
-      const queryKey = getWardQueryCacheKey(lmPcode, w.id);
-      const queryState = erfsQueries?.[queryKey];
-
-      let status = "NOT SYNCED";
-      let count = 0;
-
-      if (queryState) {
-        const sync = queryState?.data?.sync;
-
-        if (sync?.status === "syncing") status = "SYNCING";
-        else if (sync?.status === "ready") status = "READY";
-        else if (sync?.status === "error") status = "ERROR";
-
-        count = sync?.size || 0;
-      }
-
-      const canOpen = status === "READY";
-      const canDrop = status !== "NOT SYNCED";
-      const canSync = !canOpen && isOnline && status !== "SYNCING";
+      const status = syncInfo.status;
+      const statusLabel =
+        status === WARD_ERF_SYNC_STATUS.MISSING ? "NOT SYNCED" : status;
+      const canOpen = status === WARD_ERF_SYNC_STATUS.READY;
+      const canDrop = status !== WARD_ERF_SYNC_STATUS.MISSING;
+      const canSync =
+        !canOpen && isOnline && status !== WARD_ERF_SYNC_STATUS.SYNCING;
 
       return {
-        id: w.id,
+        id: wardPcode,
+        pcode: wardPcode,
         name: w.name,
         code: w.code,
         wardKey,
         isActive,
         status,
-        count,
+        statusLabel,
+        count: syncInfo.size,
         canOpen,
         canDrop,
         canSync,
       };
     });
-  }, [wards, lmPcode, erfsQueries, activeWard?.id, isOnline]);
+  }, [
+    wards,
+    lmPcode,
+    erfsQueries,
+    localWardErfMetaByPcode,
+    activeWardPcode,
+    isOnline,
+  ]);
 
   /* ================= TRACK CURRENT SYNC STORY ================= */
 
   const trackedWardQuery = useMemo(() => {
     if (!lmPcode || !syncStory?.wardId) return null;
 
-    const queryKey = getWardQueryCacheKey(lmPcode, syncStory.wardId);
+    const queryKey = getWardErfQueryCacheKey(lmPcode, syncStory.wardId);
     return erfsQueries?.[queryKey] || null;
   }, [lmPcode, syncStory?.wardId, erfsQueries]);
 
@@ -235,6 +252,7 @@ export default function WardErfsSync() {
       updateGeo({
         selectedWard: {
           id: item.id,
+          pcode: item.pcode || item.id,
           name: item.name,
         },
         lastSelectionType: "WARD",
@@ -247,18 +265,20 @@ export default function WardErfsSync() {
   const handleDropWard = (item) => {
     if (!item?.id || isRowActionBusy) return;
 
+    const wardPcode = item.pcode || item.id;
+
     setRowAction({ wardId: item.id, type: "drop" });
 
     requestAnimationFrame(() => {
       try {
-        stopWardErfSubscription(dispatch, lmPcode, item.id);
+        stopWardErfSubscription(dispatch, lmPcode, wardPcode);
 
-        if (uid && activeWorkbaseId && lmPcode && item.id) {
+        if (uid && activeWorkbaseId && lmPcode && wardPcode) {
           removeScopeDataset({
             uid,
             activeWorkbaseId,
             lmPcode,
-            wardPcode: item.id,
+            wardPcode,
             dataset: "erfs",
           });
 
@@ -266,17 +286,19 @@ export default function WardErfsSync() {
             uid,
             activeWorkbaseId,
             lmPcode,
-            wardPcode: item.id,
+            wardPcode,
           });
         }
 
-        if (activeWard?.id === item.id) {
+        if (activeWardPcode === wardPcode) {
           updateGeo({
             selectedWard: null,
             selectedErf: null,
             lastSelectionType: null,
           });
         }
+
+        setStorageRevision((value) => value + 1);
       } finally {
         setRowAction(null);
       }
@@ -319,6 +341,7 @@ export default function WardErfsSync() {
           updateGeo({
             selectedWard: {
               id: syncStory.wardId,
+              pcode: syncStory.wardId,
               name: syncStory.wardName,
             },
             lastSelectionType: "WARD",
@@ -370,7 +393,7 @@ export default function WardErfsSync() {
                 </Text>
 
                 <Text style={styles.status}>
-                  {item.status} •{" "}
+                  {item.statusLabel} •{" "}
                   <Text style={styles.countHighlight}>{item.count}</Text> ERFs
                 </Text>
               </View>
@@ -400,7 +423,9 @@ export default function WardErfsSync() {
                     }}
                   >
                     <Text style={styles.btnText}>
-                      {item.status === "SYNCING" ? "SYNCING..." : "SYNC"}
+                      {item.status === WARD_ERF_SYNC_STATUS.SYNCING
+                        ? "SYNCING..."
+                        : "SYNC"}
                     </Text>
                   </TouchableOpacity>
                 )}

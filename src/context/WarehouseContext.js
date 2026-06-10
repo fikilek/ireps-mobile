@@ -117,7 +117,7 @@ export const WarehouseProvider = ({ children }) => {
   }, [lmPcode, wards]);
 
   const all = useMemo(() => {
-    const allWards = scopeReady ? wards : [];
+    const allWards = lmPcode ? wards : [];
     const allErfs =
       scopeReady && packKeyMatches ? wardErfs?.metaEntries || [] : [];
     const allPrems = scopeReady ? wardPrems || [] : [];
@@ -138,6 +138,7 @@ export const WarehouseProvider = ({ children }) => {
       geoLibrary,
     };
   }, [
+    lmPcode,
     scopeReady,
     wards,
     wardErfs,

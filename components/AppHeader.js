@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -12,33 +13,54 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
+import { useDispatch } from "react-redux";
 import { useGeo } from "../src/context/GeoContext";
 import { useAuth } from "../src/hooks/useAuth";
 import {
+  authApi,
   useSignoutMutation,
   useUpdateProfileMutation,
 } from "../src/redux/authApi";
-import {
-  useGetLmsByCountryQuery,
-  useGetWardsByLocalMunicipalityQuery,
-} from "../src/redux/geoApi";
 import ConnectionStatusLine from "./ConnectionStatusLine";
+
+function formatCompactWardLabel(ward) {
+  if (!ward) return "W-";
+
+  const directCode =
+    ward?.code ?? ward?.wardCode ?? ward?.wardNo ?? ward?.number ?? null;
+
+  if (directCode !== null && directCode !== undefined && directCode !== "") {
+    const numericCode = Number(directCode);
+    return Number.isFinite(numericCode) ? `W${numericCode}` : `W${directCode}`;
+  }
+
+  const pcode = ward?.pcode || ward?.id || ward?.wardPcode || null;
+  const pcodeMatch = String(pcode || "").match(/(\d{1,3})$/);
+  if (pcodeMatch) return `W${Number(pcodeMatch[1])}`;
+
+  const nameMatch = String(ward?.name || ward?.label || "").match(
+    /ward\s*0*(\d+)/i,
+  );
+  if (nameMatch) return `W${Number(nameMatch[1])}`;
+
+  return "W-";
+}
 
 export default function AppHeader({ title }) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [wbModalVisible, setWbModalVisible] = useState(false);
 
   const [draftLm, setDraftLm] = useState(null);
-  const [draftWard, setDraftWard] = useState(null);
   const [switchingScope, setSwitchingScope] = useState(false);
 
   const [isConnected, setIsConnected] = useState(true);
 
-  const { geoState, setActiveWorkbaseWard } = useGeo();
   const { activeWorkbase, profile, user, isSPU } = useAuth();
+  const { geoState } = useGeo();
 
   const [signout] = useSignoutMutation();
   const [updateProfile] = useUpdateProfileMutation();
+  const dispatch = useDispatch();
   const router = useRouter();
 
   useEffect(() => {
@@ -50,12 +72,6 @@ export default function AppHeader({ title }) {
     return unsubscribe;
   }, []);
 
-  const countryId = "ZA";
-
-  const { data: allLms = [] } = useGetLmsByCountryQuery(countryId, {
-    skip: !isSPU,
-  });
-
   const name = profile?.profile?.name || "";
   const surname = profile?.profile?.surname || "";
   const role = profile?.employment?.role || "USER";
@@ -63,9 +79,8 @@ export default function AppHeader({ title }) {
     `${name.charAt(0)}${surname.charAt(0)}`.toUpperCase() || "??";
 
   const availableJurisdictions = useMemo(() => {
-    if (isSPU) return allLms || [];
     return profile?.access?.workbases || [];
-  }, [isSPU, allLms, profile?.access?.workbases]);
+  }, [profile?.access?.workbases]);
 
   const closeMenu = () => setMenuVisible(false);
 
@@ -84,22 +99,6 @@ export default function AppHeader({ title }) {
     };
   }
 
-  function normalizeWard(ward) {
-    if (!ward) return null;
-
-    return {
-      id: ward?.id || ward?.pcode || null,
-      pcode: ward?.pcode || ward?.id || null,
-      name:
-        ward?.name ||
-        ward?.label ||
-        ward?.description ||
-        ward?.id ||
-        "Unknown Ward",
-      raw: ward,
-    };
-  }
-
   const normalizedJurisdictions = useMemo(() => {
     return (availableJurisdictions || [])
       .map(normalizeLm)
@@ -107,87 +106,105 @@ export default function AppHeader({ title }) {
   }, [availableJurisdictions]);
 
   const currentLm = useMemo(() => {
-    return normalizeLm(geoState?.selectedLm || activeWorkbase || null);
-  }, [geoState?.selectedLm, activeWorkbase]);
+    return normalizeLm(activeWorkbase || null);
+  }, [activeWorkbase]);
 
-  const currentWard = useMemo(() => {
-    return normalizeWard(geoState?.selectedWard || null);
-  }, [geoState?.selectedWard]);
+  const resolvedCurrentLm = useMemo(() => {
+    if (!currentLm?.id) return null;
+    return (
+      normalizedJurisdictions.find((lm) => lm.id === currentLm.id) || null
+    );
+  }, [currentLm?.id, normalizedJurisdictions]);
 
-  const selectedLmForModal = draftLm?.id || currentLm?.id || null;
-
-  const { data: wardsList = [], isLoading: wardsLoading } =
-    useGetWardsByLocalMunicipalityQuery(selectedLmForModal, {
-      skip: !selectedLmForModal,
-    });
-
-  const wardOptions = useMemo(() => {
-    const getWardNo = (ward) => {
-      const text = String(ward?.name || "");
-      const match = text.match(/\d+/);
-      return match ? Number(match[0]) : Number.MAX_SAFE_INTEGER;
-    };
-
-    return (wardsList || [])
-      .map(normalizeWard)
-      .filter((x) => !!x?.id)
-      .sort((a, b) => getWardNo(a) - getWardNo(b));
-  }, [wardsList]);
+  const resolvedDraftLm = useMemo(() => {
+    if (!draftLm?.id) return null;
+    return normalizedJurisdictions.find((lm) => lm.id === draftLm.id) || null;
+  }, [draftLm?.id, normalizedJurisdictions]);
 
   useEffect(() => {
     if (!wbModalVisible) return;
 
-    setDraftLm(currentLm || null);
-    setDraftWard(currentWard || null);
-  }, [wbModalVisible, currentLm?.id, currentWard?.id]);
+    setDraftLm(resolvedCurrentLm || null);
+  }, [wbModalVisible, resolvedCurrentLm]);
 
   const scopeLabel = useMemo(() => {
-    const lmName = currentLm?.name || "Global";
-    const wardName = currentWard?.name || "No ward";
-    return `${lmName} / ${wardName}`;
-  }, [currentLm?.name, currentWard?.name]);
+    return currentLm?.name || "No workbase";
+  }, [currentLm?.name]);
+
+  const wardLabel = useMemo(
+    () => formatCompactWardLabel(geoState?.selectedWard),
+    [geoState?.selectedWard],
+  );
 
   const canConfirmScope =
-    !!draftLm?.id && !!draftWard?.id && !wardsLoading && !switchingScope;
+    isConnected &&
+    !!resolvedDraftLm?.id &&
+    resolvedDraftLm.id !== currentLm?.id &&
+    !switchingScope;
 
   const handleSelectLm = (lm) => {
     if (!lm?.id) return;
     if (draftLm?.id === lm.id) return;
 
     setDraftLm(lm);
-    setDraftWard(null);
   };
 
-  const handleSelectWard = (ward) => {
-    setDraftWard(ward);
-  };
+  const handleWorkbaseChange = async () => {
+    if (switchingScope) return;
 
-  const handleWorkbaseWardChange = async () => {
-    if (!canConfirmScope) return;
+    const nextLm = resolvedDraftLm;
+    if (!nextLm?.id) {
+      Alert.alert(
+        "Workbase unavailable",
+        "This workbase is not available on your user profile.",
+      );
+      return;
+    }
+
+    if (nextLm.id === currentLm?.id) {
+      closeWbModal();
+      return;
+    }
+
+    if (!user?.uid) {
+      Alert.alert(
+        "Cannot switch workbase",
+        "No signed-in user was found for this session.",
+      );
+      return;
+    }
+
+    const wbPointer = {
+      id: nextLm.id,
+      name: nextLm.name,
+    };
+
+    setSwitchingScope(true);
+
+    const patchResult = dispatch(
+      authApi.util.updateQueryData("getAuthState", undefined, (draft) => {
+        if (!draft?.profile) return;
+
+        draft.profile.access = draft.profile.access || {};
+        draft.profile.access.activeWorkbase = wbPointer;
+      }),
+    );
+
+    closeWbModal();
+    router.replace("/(tabs)/erfs");
 
     try {
-      setSwitchingScope(true);
-
-      const wbPointer = {
-        id: draftLm.id,
-        name: draftLm.name,
-      };
-
-      closeWbModal();
-
-      setActiveWorkbaseWard({
-        lm: draftLm.raw || draftLm,
-        ward: draftWard.raw || draftWard,
-      });
-
-      router.replace("/(tabs)/erfs");
-
       await updateProfile({
         uid: user.uid,
         updates: { "access.activeWorkbase": wbPointer },
       }).unwrap();
     } catch (err) {
-      console.error("Workbase/Ward scope switch failed:", err);
+      patchResult.undo();
+      console.error("Workbase profile update failed:", err);
+      Alert.alert(
+        "Workbase switch failed",
+        err?.message || "Could not update your active workbase.",
+      );
     } finally {
       setSwitchingScope(false);
     }
@@ -199,27 +216,35 @@ export default function AppHeader({ title }) {
         <Text style={styles.tabTitle}>{title}</Text>
       </View>
 
-      <TouchableOpacity
-        style={styles.centerCol}
-        onPress={() => setWbModalVisible(true)}
-        activeOpacity={0.6}
-      >
-        <View style={styles.wbBadge}>
-          <MaterialCommunityIcons
-            name="map-marker-radius"
-            size={14}
-            color="#2563eb"
-          />
-          <Text style={styles.wbText} numberOfLines={1}>
-            {scopeLabel}
-          </Text>
-          <MaterialCommunityIcons
-            name="chevron-down"
-            size={12}
-            color="#2563eb"
-          />
+      <View style={styles.centerCol}>
+        <View style={styles.scopeInlineRow}>
+          <TouchableOpacity
+            onPress={() => setWbModalVisible(true)}
+            activeOpacity={0.6}
+            style={styles.wbTouchTarget}
+          >
+            <View style={styles.wbBadge}>
+              <MaterialCommunityIcons
+                name="map-marker-radius"
+                size={14}
+                color="#2563eb"
+              />
+              <Text style={styles.wbText} numberOfLines={1}>
+                {scopeLabel}
+              </Text>
+              <MaterialCommunityIcons
+                name="chevron-down"
+                size={12}
+                color="#2563eb"
+              />
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.wardBadge} pointerEvents="none">
+            <Text style={styles.wardBadgeText}>{wardLabel}</Text>
+          </View>
         </View>
-      </TouchableOpacity>
+      </View>
 
       <View style={styles.rightCol}>
         <View style={styles.roleBadge}>
@@ -279,85 +304,32 @@ export default function AppHeader({ title }) {
             <TouchableWithoutFeedback>
               <View style={styles.scopeModalBox}>
                 <Text style={styles.modalHeader}>
-                  {isSPU
-                    ? "iREPS Jurisdiction / Ward Select"
-                    : "Assigned Workbase / Ward"}
+                  {isSPU ? "iREPS Workbase Select" : "Assigned Workbase"}
                 </Text>
 
                 <View style={styles.scopeColumns}>
                   <View style={styles.scopeColLeft}>
                     <Text style={styles.scopeColHeader}>WORKBASES</Text>
 
-                    <ScrollView bounces={false}>
-                      {normalizedJurisdictions.map((wb) => {
-                        const active = draftLm?.id === wb.id;
-
-                        return (
-                          <TouchableOpacity
-                            key={wb.id}
-                            style={[
-                              styles.scopeOption,
-                              active && styles.scopeOptionActive,
-                            ]}
-                            onPress={() => handleSelectLm(wb)}
-                          >
-                            <MaterialCommunityIcons
-                              name={
-                                active ? "radiobox-marked" : "radiobox-blank"
-                              }
-                              size={20}
-                              color={active ? "#2563eb" : "#94a3b8"}
-                            />
-                            <Text
-                              style={[
-                                styles.scopeOptionText,
-                                active && styles.scopeOptionTextActive,
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {wb.name}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
-                  </View>
-
-                  <View style={styles.scopeColRight}>
-                    <Text style={styles.scopeColHeader}>WARDS</Text>
-
-                    {!draftLm ? (
+                    {normalizedJurisdictions.length === 0 ? (
                       <View style={styles.scopeEmptyBox}>
                         <Text style={styles.scopeEmptyText}>
-                          Select a workbase first
-                        </Text>
-                      </View>
-                    ) : wardsLoading ? (
-                      <View style={styles.scopeLoadingBox}>
-                        <ActivityIndicator size="small" color="#2563eb" />
-                        <Text style={styles.scopeEmptyText}>
-                          Loading wards...
-                        </Text>
-                      </View>
-                    ) : wardOptions.length === 0 ? (
-                      <View style={styles.scopeEmptyBox}>
-                        <Text style={styles.scopeEmptyText}>
-                          No wards found for this workbase
+                          No workbases available
                         </Text>
                       </View>
                     ) : (
                       <ScrollView bounces={false}>
-                        {wardOptions.map((ward) => {
-                          const active = draftWard?.id === ward.id;
+                        {normalizedJurisdictions.map((wb) => {
+                          const active = draftLm?.id === wb.id;
 
                           return (
                             <TouchableOpacity
-                              key={ward.id}
+                              key={wb.id}
                               style={[
                                 styles.scopeOption,
                                 active && styles.scopeOptionActive,
                               ]}
-                              onPress={() => handleSelectWard(ward)}
+                              onPress={() => handleSelectLm(wb)}
                             >
                               <MaterialCommunityIcons
                                 name={
@@ -373,7 +345,7 @@ export default function AppHeader({ title }) {
                                 ]}
                                 numberOfLines={1}
                               >
-                                {ward.name}
+                                {wb.name}
                               </Text>
                             </TouchableOpacity>
                           );
@@ -385,9 +357,14 @@ export default function AppHeader({ title }) {
 
                 <View style={styles.scopeFooter}>
                   <Text style={styles.scopeSelectedText} numberOfLines={1}>
-                    {draftLm?.name || "No workbase"} /{" "}
-                    {draftWard?.name || "No ward"}
+                    {draftLm?.name || "No workbase"}
                   </Text>
+
+                  {!isConnected && (
+                    <Text style={styles.scopeOfflineText}>
+                      You are offline. Workbase switching requires connection.
+                    </Text>
+                  )}
 
                   <View style={styles.scopeBtnRow}>
                     <TouchableOpacity
@@ -402,13 +379,13 @@ export default function AppHeader({ title }) {
                         styles.scopeConfirmBtn,
                         !canConfirmScope && styles.scopeConfirmBtnDisabled,
                       ]}
-                      onPress={handleWorkbaseWardChange}
+                      onPress={handleWorkbaseChange}
                       disabled={!canConfirmScope}
                     >
                       {switchingScope ? (
                         <ActivityIndicator size="small" color="#fff" />
                       ) : (
-                        <Text style={styles.scopeConfirmBtnText}>Confirm</Text>
+                        <Text style={styles.scopeConfirmBtnText}>Switch</Text>
                       )}
                     </TouchableOpacity>
                   </View>
@@ -458,6 +435,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
+  scopeInlineRow: {
+    maxWidth: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+
+  wbTouchTarget: {
+    flexShrink: 1,
+  },
+
   wbBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -474,6 +463,22 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#2563eb",
     maxWidth: 170,
+  },
+
+  wardBadge: {
+    flexShrink: 0,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+
+  wardBadgeText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#475569",
   },
 
   rightCol: {
@@ -591,15 +596,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
 
-  scopeColRight: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
-    overflow: "hidden",
-    backgroundColor: "#fff",
-  },
-
   scopeColHeader: {
     fontSize: 10,
     fontWeight: "900",
@@ -645,16 +641,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#f8fafc",
   },
 
-  scopeLoadingBox: {
-    padding: 16,
-    margin: 10,
-    borderRadius: 10,
-    backgroundColor: "#f8fafc",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-
   scopeEmptyText: {
     fontSize: 13,
     fontWeight: "600",
@@ -672,6 +658,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
     color: "#334155",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+
+  scopeOfflineText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#b91c1c",
     textAlign: "center",
     marginBottom: 12,
   },

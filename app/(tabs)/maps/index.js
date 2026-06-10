@@ -55,6 +55,7 @@ export default function MapsScreen() {
   const [updatePremise] = useUpdatePremiseMutation();
 
   const lastSignalRef = useRef(null);
+  const geoLibraryRef = useRef({});
 
   const [region, setRegion] = useState(null);
   const [zoom, setZoom] = useState(10);
@@ -69,6 +70,18 @@ export default function MapsScreen() {
     asts: true,
     sc: true,
   });
+
+  const selectedLm = geoState?.selectedLm || null;
+  const selectedWard = geoState?.selectedWard || null;
+  const selectedErf = geoState?.selectedErf || null;
+  const selectedPremise = geoState?.selectedPremise || null;
+  const selectedMeter = geoState?.selectedMeter || null;
+  const lastSelectionType = geoState?.lastSelectionType || null;
+  const flightSignal = geoState?.flightSignal || 0;
+
+  useEffect(() => {
+    geoLibraryRef.current = all?.geoLibrary || {};
+  }, [all?.geoLibrary]);
 
   /*
   START - Marker Drag Mode
@@ -206,7 +219,24 @@ export default function MapsScreen() {
     (gf) => {
       setSelectedGeofence(gf || null);
 
-      if (!gf) return;
+      if (!gf) {
+        if (selectedWard?.bbox) {
+          flyTo(selectedWard.bbox);
+          return;
+        }
+
+        const wardCoords = getSafeCoords(selectedWard?.geometry);
+        if (wardCoords.length > 0) {
+          flyTo(wardCoords);
+          return;
+        }
+
+        if (selectedLm?.bbox) {
+          flyTo(selectedLm.bbox);
+        }
+
+        return;
+      }
 
       if (gf?.geometry?.bbox) {
         const bbox = gf.geometry.bbox;
@@ -242,7 +272,7 @@ export default function MapsScreen() {
         });
       }
     },
-    [flyTo, mapRef],
+    [flyTo, mapRef, selectedLm, selectedWard],
   );
 
   // const handleSelectGeofence = useCallback(
@@ -341,14 +371,13 @@ export default function MapsScreen() {
 
   const scopeSync = sync?.scope ?? { status: "idle" };
 
-  const hasLm = !!geoState?.selectedLm?.id;
+  const hasLm = !!selectedLm?.id;
   // const hasWard = !!geoState?.selectedWard?.id;
   const scopeReady = scopeSync?.status === "ready";
   const isLmOnly = scopeSync?.status === "lm-only";
 
   const initialRegion = useMemo(() => {
-    const targetBBox =
-      geoState?.selectedWard?.bbox || geoState?.selectedLm?.bbox || null;
+    const targetBBox = selectedWard?.bbox || selectedLm?.bbox || null;
 
     return targetBBox
       ? bboxToRegion(targetBBox)
@@ -358,9 +387,34 @@ export default function MapsScreen() {
           latitudeDelta: 0.1,
           longitudeDelta: 0.1,
         };
-  }, [geoState?.selectedLm?.bbox, geoState?.selectedWard?.bbox]);
+  }, [selectedLm?.bbox, selectedWard?.bbox]);
 
-  const wardsList = all?.wards || [];
+  const wardsList = useMemo(() => all?.wards || [], [all?.wards]);
+
+  const wardPolygonModels = useMemo(() => {
+    return wardsList
+      .map((ward, index) => {
+        if (!ward?.geometry) return null;
+
+        const coordinates = getSafeCoords(ward.geometry);
+        if (coordinates?.length < 3) return null;
+
+        const id = ward?.id || null;
+        const pcode = ward?.pcode || id;
+
+        return {
+          key: `ward-poly-${id || pcode || index}`,
+          id,
+          pcode,
+          coordinates,
+        };
+      })
+      .filter(Boolean);
+  }, [wardsList]);
+
+  const premiseById = useMemo(() => {
+    return new Map((all?.prems || []).map((prem) => [prem.id, prem]));
+  }, [all?.prems]);
 
   const handleRegionChange = (newRegion) => {
     const currentZoom = Math.round(Math.log2(360 / newRegion?.longitudeDelta));
@@ -369,22 +423,15 @@ export default function MapsScreen() {
   };
 
   useEffect(() => {
-    const signal = geoState?.flightSignal;
+    const signal = flightSignal;
     if (!signal || signal === lastSignalRef.current) return;
-
-    const {
-      lastSelectionType,
-      selectedLm,
-      selectedWard,
-      selectedErf,
-      selectedPremise,
-      selectedMeter,
-    } = geoState;
 
     if (!lastSelectionType) {
       lastSignalRef.current = signal;
       return;
     }
+
+    const geoLibrary = geoLibraryRef.current || {};
 
     switch (lastSelectionType) {
       case "LM": {
@@ -398,14 +445,14 @@ export default function MapsScreen() {
       }
 
       case "ERF": {
-        const erfGeo = all?.geoLibrary?.[selectedErf?.id];
+        const erfGeo = geoLibrary?.[selectedErf?.id];
         if (erfGeo?.bbox) flyTo(erfGeo.bbox, 90);
         break;
       }
 
       case "PREMISE": {
         const premisePoint = selectedPremise?.geometry?.centroid;
-        const pErfEntry = all?.geoLibrary?.[selectedErf?.id];
+        const pErfEntry = geoLibrary?.[selectedErf?.id];
         const pErfCoords = getSafeCoords(pErfEntry?.geometry);
         const pBundle = [];
 
@@ -438,7 +485,7 @@ export default function MapsScreen() {
 
         const pCentroid = selectedPremise?.geometry?.centroid;
 
-        const erfEntry = all?.geoLibrary?.[selectedErf?.id];
+        const erfEntry = geoLibrary?.[selectedErf?.id];
 
         const erfCoords = getSafeCoords(erfEntry?.geometry);
 
@@ -480,7 +527,17 @@ export default function MapsScreen() {
     }
 
     lastSignalRef.current = signal;
-  }, [geoState?.flightSignal, geoState, all?.geoLibrary, flyTo, mapRef]);
+  }, [
+    flightSignal,
+    lastSelectionType,
+    selectedLm,
+    selectedWard,
+    selectedErf,
+    selectedPremise,
+    selectedMeter,
+    flyTo,
+    mapRef,
+  ]);
 
   const renderLM = () => {
     const lmId = geoState?.selectedLm?.id || null;
@@ -524,12 +581,12 @@ export default function MapsScreen() {
   };
 
   const renderWards = () => {
-    return wardsList.map((ward, index) => {
-      if (!ward?.geometry) return null;
-      const wardCoords = getSafeCoords(ward?.geometry);
-      if (wardCoords?.length < 3) return null;
+    const selectedWardKey = selectedWard?.pcode || selectedWard?.id || null;
 
-      const isSelected = geoState?.selectedWard?.id === ward?.id;
+    return wardPolygonModels.map((ward) => {
+      const isSelected =
+        !!selectedWardKey &&
+        (selectedWardKey === ward.id || selectedWardKey === ward.pcode);
       const wardInteractive =
         !gcsModalOpen &&
         !premiseActionPrem &&
@@ -538,8 +595,8 @@ export default function MapsScreen() {
 
       return (
         <Polygon
-          key={`ward-poly-${ward?.id || index}`}
-          coordinates={wardCoords}
+          key={ward.key}
+          coordinates={ward.coordinates}
           strokeColor={isSelected ? "#2563eb" : "#475569"}
           fillColor={
             isSelected
@@ -838,9 +895,7 @@ export default function MapsScreen() {
         return inView && hasPremiseLink;
       })
       .map((m) => {
-        const parentPrem = all?.prems?.find(
-          (p) => p.id === m.accessData.premise.id,
-        );
+        const parentPrem = premiseById.get(m.accessData.premise.id);
         const pCentroid = parentPrem?.geometry?.centroid;
 
         if (
