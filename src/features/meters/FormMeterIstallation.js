@@ -75,6 +75,16 @@ function buildMeterInstallationTrnId({ wardPcode, erfNo, meterType }) {
   return `TRN_MINST_${ts}_${typeCode}_${safeWardPcode}_${safeErfNo}`;
 }
 
+function normalizeInstallMeterType(value) {
+  const meterType = String(value || "").trim().toLowerCase();
+
+  if (meterType === "water" || meterType === "electricity") {
+    return meterType;
+  }
+
+  throw new Error("Invalid meter installation type.");
+}
+
 function toLatLng(value) {
   if (!value) return null;
 
@@ -659,7 +669,9 @@ export default function FormMeterInstallation() {
         editPayload?.accessData?.access?.hasAccess === "no" ? "no" : "yes";
 
       const editMeterType =
-        editHasAccess === "no" ? "NA" : editPayload?.meterType || "electricity";
+        editHasAccess === "no"
+          ? "NA"
+          : normalizeInstallMeterType(editPayload?.meterType);
 
       if (editHasAccess === "no") {
         return {
@@ -675,10 +687,14 @@ export default function FormMeterInstallation() {
         };
       }
 
-      return {
-        initValues: editPayload,
-        schema: ElecInstallationSchema,
-      };
+      if (editMeterType === "electricity") {
+        return {
+          initValues: editPayload,
+          schema: ElecInstallationSchema,
+        };
+      }
+
+      throw new Error("Invalid meter installation type.");
     }
 
     // 🎯 Standardize access to the string "yes" or "no"
@@ -703,8 +719,10 @@ export default function FormMeterInstallation() {
       };
     }
 
+    const actionMeterType = normalizeInstallMeterType(action?.meterType);
+
     // --- STEP 2: WATER Installation ---
-    if (action?.meterType === "water") {
+    if (actionMeterType === "water") {
       return {
         initValues: {
           id: trnId,
@@ -740,7 +758,7 @@ export default function FormMeterInstallation() {
       };
     }
 
-    // --- STEP 3: ELECTRICITY Installation (The Default) ---
+    // --- STEP 3: ELECTRICITY Installation ---
     return {
       initValues: {
         id: trnId,
@@ -772,7 +790,7 @@ export default function FormMeterInstallation() {
           },
           ogs: { hasOffGridSupply: "no" },
         },
-        meterType: "",
+        meterType: "electricity",
         media: [],
         status: {
           state: null,
@@ -1132,10 +1150,27 @@ export default function FormMeterInstallation() {
     }
   };
 
-  const actionInit = useMemo(
-    () => getInitialValues(),
-    [premiseId, actionRaw, trnId, editQueueItem],
-  );
+  const actionInit = useMemo(() => {
+    try {
+      return { ...getInitialValues(), error: null };
+    } catch (error) {
+      return {
+        initValues: null,
+        schema: null,
+        error,
+      };
+    }
+  }, [premiseId, actionRaw, trnId, editQueueItem]);
+
+  useEffect(() => {
+    if (!actionInit.error) return;
+
+    Alert.alert(
+      "Invalid Meter Type",
+      actionInit.error?.message ||
+        "Choose either a water or electricity meter installation.",
+    );
+  }, [actionInit.error]);
 
   // 2. Setup the Watcher in a useEffect
   useEffect(() => {
@@ -1296,6 +1331,28 @@ export default function FormMeterInstallation() {
     );
   }
 
+  if (actionInit.error) {
+    return (
+      <View style={styles.loaderWrap}>
+        <MaterialCommunityIcons
+          name="alert-circle-outline"
+          size={48}
+          color="#dc2626"
+        />
+        <Text style={styles.loaderText}>Invalid meter installation type.</Text>
+        <Text style={styles.loaderSubText}>
+          Choose either a water or electricity meter installation.
+        </Text>
+        <TouchableOpacity
+          style={styles.returnButton}
+          onPress={() => router.replace("/(tabs)/premises")}
+        >
+          <Text style={styles.returnButtonText}>Return to premises</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   if (!premise) {
     return (
       <View style={styles.loaderWrap}>
@@ -1410,7 +1467,7 @@ export default function FormMeterInstallation() {
                       nearbyPremises={nearbyPremises}
                       nearbyMeters={nearbyMeters}
                     />
-                  ) : (
+                  ) : values?.meterType === "water" ? (
                     <WaterSections
                       values={values}
                       setFieldValue={setFieldValue}
@@ -1427,6 +1484,12 @@ export default function FormMeterInstallation() {
                       nearbyPremises={nearbyPremises}
                       nearbyMeters={nearbyMeters}
                     />
+                  ) : (
+                    <Surface style={styles.card}>
+                      <Text style={styles.sectionTitle}>
+                        Invalid meter installation type.
+                      </Text>
+                    </Surface>
                   )}
                 </View>
               ) : (
@@ -1901,5 +1964,24 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: "#64748b",
+  },
+  loaderSubText: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#64748b",
+    textAlign: "center",
+  },
+  returnButton: {
+    marginTop: 18,
+    backgroundColor: "#2563eb",
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  returnButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "800",
   },
 });
