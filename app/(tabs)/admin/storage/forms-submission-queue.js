@@ -591,10 +591,12 @@ export default function SubmissionQueueScreen() {
           astId: sourceAstId || "NAv",
 
           premiseId,
+          returnTo: "/(tabs)/admin/storage/forms-submission-queue",
 
           action: JSON.stringify({
             source: "MMKV_QUEUE",
             trnType,
+            returnTo: "/(tabs)/admin/storage/forms-submission-queue",
             instructionTrnId: instructionTrnId || "NAv",
             trnId: instructionTrnId || "NAv",
             sourceAstId: sourceAstId || "NAv",

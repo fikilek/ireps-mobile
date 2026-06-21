@@ -13,6 +13,7 @@ import {
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from "react-native-maps";
 import { ActivityIndicator } from "react-native-paper";
 import { useGeo } from "../../../../src/context/GeoContext";
+import { useAuth } from "../../../../src/hooks/useAuth";
 import { useGetWardsByLocalMunicipalityQuery } from "../../../../src/redux/geoApi";
 import {
   useCreateGeoFenceMutation,
@@ -21,6 +22,7 @@ import {
 
 export default function GeoFencesScreen() {
   const router = useRouter();
+  const { isSPV, isFWR } = useAuth();
   const { geoState } = useGeo();
 
   const mapRef = useRef(null);
@@ -49,7 +51,11 @@ export default function GeoFencesScreen() {
 
   /* ================= DATA ================= */
 
-  const { data: geofences = [] } = useGetGeoFencesByLmPcodeWardPcodeQuery(
+  const {
+    data: geofences = [],
+    isLoading: geofencesLoading,
+    isError: geofencesError,
+  } = useGetGeoFencesByLmPcodeWardPcodeQuery(
     { lmPcode, wardPcode },
     { skip: !lmPcode || !wardPcode },
   );
@@ -81,22 +87,33 @@ export default function GeoFencesScreen() {
     return inside;
   };
 
+  const isPointInsideAnyPolygon = (point, polygons) => {
+    if (!point || !Array.isArray(polygons) || polygons.length === 0)
+      return false;
+
+    return polygons.some((polygon) => isPointInsidePolygon(point, polygon));
+  };
+
   const buildGeoFenceRegion = (geoFence) => {
     const bbox = geoFence?.geometry?.bbox;
     const centroid = geoFence?.geometry?.centroid;
 
     if (!bbox || !centroid) return null;
 
-    const latitude = Number(centroid?.latitude);
-    const longitude = Number(centroid?.longitude);
+    // geofence centroid uses { lat, lng } pattern
+    const latitude = Number(centroid?.lat ?? centroid?.latitude);
+    const longitude = Number(centroid?.lng ?? centroid?.longitude);
 
+    // geofence bbox uses { minLatitude, maxLatitude, minLongitude, maxLongitude } pattern
     const latitudeDelta = Math.max(
-      Number(bbox?.maxLatitude) - Number(bbox?.minLatitude),
+      Number(bbox?.maxLatitude ?? bbox?.maxLat) -
+        Number(bbox?.minLatitude ?? bbox?.minLat),
       0.005,
     );
 
     const longitudeDelta = Math.max(
-      Number(bbox?.maxLongitude) - Number(bbox?.minLongitude),
+      Number(bbox?.maxLongitude ?? bbox?.maxLng) -
+        Number(bbox?.minLongitude ?? bbox?.minLng),
       0.005,
     );
 
@@ -135,10 +152,14 @@ export default function GeoFencesScreen() {
   });
 
   const selectedWardDoc = useMemo(() => {
-    return wards.find((w) => w?.id === wardPcode) || null;
+    return (
+      wards.find((w) => w?.id === wardPcode) ||
+      wards.find((w) => w?.pcode === wardPcode) ||
+      null
+    );
   }, [wards, wardPcode]);
 
-  const wardBoundaryCoordinates = useMemo(() => {
+  const wardBoundaryPolygons = useMemo(() => {
     const geometry = selectedWardDoc?.geometry;
 
     if (!geometry) return [];
@@ -146,23 +167,39 @@ export default function GeoFencesScreen() {
     if (geometry.type === "Polygon") {
       const ring = geometry?.coordinates?.[0] || [];
 
-      return ring.map(([lng, lat]) => ({
+      const coords = ring.map(([lng, lat]) => ({
         latitude: lat,
         longitude: lng,
       }));
+
+      return coords.length >= 3 ? [coords] : [];
     }
 
     if (geometry.type === "MultiPolygon") {
-      const ring = geometry?.coordinates?.[0]?.[0] || [];
+      const allPolygons = [];
 
-      return ring.map(([lng, lat]) => ({
-        latitude: lat,
-        longitude: lng,
-      }));
+      for (const polygonCoords of geometry?.coordinates || []) {
+        const ring = polygonCoords?.[0] || [];
+
+        const coords = ring.map(([lng, lat]) => ({
+          latitude: lat,
+          longitude: lng,
+        }));
+
+        if (coords.length >= 3) {
+          allPolygons.push(coords);
+        }
+      }
+
+      return allPolygons;
     }
 
     return [];
   }, [selectedWardDoc]);
+
+  const wardBoundaryCoordinates = useMemo(() => {
+    return wardBoundaryPolygons.flat();
+  }, [wardBoundaryPolygons]);
 
   const wardRegion = useMemo(() => {
     const bbox = selectedWardDoc?.bbox;
@@ -222,20 +259,6 @@ export default function GeoFencesScreen() {
     selectedGeoFence?.id,
   ]);
 
-  // useEffect(() => {
-  //   if (selectedView !== "MAP") return;
-  //   if (!wardPcode) return;
-  //   if (!isMapReady) return;
-  //   if (!mapRef.current) return;
-  //   if (!wardRegion) return;
-
-  //   const timer = setTimeout(() => {
-  //     mapRef.current?.animateToRegion(wardRegion, 500);
-  //   }, 400);
-
-  //   return () => clearTimeout(timer);
-  // }, [selectedView, wardPcode, selectedWardDoc?.id, isMapReady, wardRegion]);
-
   /* ================= HANDLERS ================= */
 
   const handleToggleView = () => {
@@ -249,27 +272,12 @@ export default function GeoFencesScreen() {
   const handleEnterCreateMode = () => {
     setSelectedView("MAP");
 
-    if (!isCreateMode) {
-      setDraftName("");
-      setDraftDescription("");
-      setDraftPoints([]);
-    }
-
+    setDraftName("");
+    setDraftDescription("");
+    setDraftPoints([]);
     setShowDraftInputs(true);
     setIsCreateMode(true);
   };
-
-  // const handleEnterCreateMode = () => {
-  //   setSelectedView("MAP");
-
-  //   if (!isCreateMode) {
-  //     setDraftName("");
-  //     setDraftDescription("");
-  //     setDraftPoints([]);
-  //   }
-
-  //   setIsCreateMode(true);
-  // };
 
   const handleMapPress = (e) => {
     if (!isCreateMode) return;
@@ -277,8 +285,8 @@ export default function GeoFencesScreen() {
     const coord = e?.nativeEvent?.coordinate;
     if (!coord) return;
 
-    if (wardBoundaryCoordinates.length >= 3) {
-      const insideWard = isPointInsidePolygon(coord, wardBoundaryCoordinates);
+    if (wardBoundaryPolygons.length > 0) {
+      const insideWard = isPointInsideAnyPolygon(coord, wardBoundaryPolygons);
 
       if (!insideWard) {
         Alert.alert(
@@ -303,7 +311,7 @@ export default function GeoFencesScreen() {
     if (!isDraftValid || creating) return;
 
     try {
-      const result = await createGeoFence({
+      await createGeoFence({
         name: draftName,
         description: draftDescription,
         points: draftPoints,
@@ -316,7 +324,9 @@ export default function GeoFencesScreen() {
         },
       }).unwrap();
 
-      Alert.alert("Success", `ERFs: ${result?.counts?.erfs || 0}`);
+      const fenceName = draftName.trim();
+
+      Alert.alert("Success", `Geofence "${fenceName}" created successfully.`);
 
       setIsCreateMode(false);
       setDraftName("");
@@ -335,13 +345,6 @@ export default function GeoFencesScreen() {
     setDraftPoints([]);
   };
 
-  // const handleCancelCreateMode = () => {
-  //   setIsCreateMode(false);
-  //   setDraftName("");
-  //   setDraftDescription("");
-  //   setDraftPoints([]);
-  // };
-
   const handleToggleMapType = () => {
     setMapType((prev) => (prev === "standard" ? "satellite" : "standard"));
   };
@@ -355,7 +358,13 @@ export default function GeoFencesScreen() {
 
     const region = buildGeoFenceRegion(geoFence);
 
-    if (!region) return;
+    if (!region) {
+      Alert.alert(
+        "Cannot Zoom",
+        `The geofence "${geoFence?.name || "Unknown"}" has no location data to zoom to.`,
+      );
+      return;
+    }
 
     setTimeout(() => {
       mapRef.current?.animateToRegion(region, 500);
@@ -411,9 +420,17 @@ export default function GeoFencesScreen() {
                 <MaterialCommunityIcons name="filter-variant" size={22} />
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={handleEnterCreateMode}>
-                <MaterialCommunityIcons name="plus" size={24} />
-              </TouchableOpacity>
+              {!isSPV && !isFWR && (
+                <TouchableOpacity
+                  onPress={handleEnterCreateMode}
+                  style={{
+                    opacity: hasScope ? 1 : 0.4,
+                  }}
+                  disabled={!hasScope}
+                >
+                  <MaterialCommunityIcons name="plus" size={24} />
+                </TouchableOpacity>
+              )}
 
               {isCreateMode && (
                 <TouchableOpacity
@@ -450,14 +467,15 @@ export default function GeoFencesScreen() {
             setIsMapReady(true);
           }}
         >
-          {wardBoundaryCoordinates.length >= 3 && (
+          {wardBoundaryPolygons.map((polygonCoords, index) => (
             <Polygon
-              coordinates={wardBoundaryCoordinates}
+              key={`ward-boundary-${index}`}
+              coordinates={polygonCoords}
               strokeColor="#f59e0b"
               fillColor="rgba(245,158,11,0.08)"
               strokeWidth={2}
             />
-          )}
+          ))}
 
           {draftPoints.map((p, i) => (
             <Marker key={i} coordinate={p} />
@@ -472,7 +490,21 @@ export default function GeoFencesScreen() {
           )}
 
           {geofences.map((geoFence) => {
-            const poly = geoFence?.geometry?.points || [];
+            const rawPoints = geoFence?.geometry?.points || [];
+            if (rawPoints.length < 3) return null;
+
+            const poly = [...rawPoints]
+              .sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0))
+              .map((pt) => ({
+                latitude: pt?.latitude ?? pt?.lat,
+                longitude: pt?.longitude ?? pt?.lng,
+              }))
+              .filter(
+                (pt) =>
+                  typeof pt.latitude === "number" &&
+                  typeof pt.longitude === "number",
+              );
+
             if (poly.length < 3) return null;
 
             const isSelected = selectedGeoFence?.id === geoFence?.id;
@@ -495,9 +527,24 @@ export default function GeoFencesScreen() {
       {/* LIST VIEW */}
       {selectedView === "LIST" && (
         <View style={styles.listContainer}>
-          {geofenceCount === 0 ? (
+          {geofencesLoading && geofenceCount === 0 && (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color="#2563eb" />
+              <Text style={styles.loadingText}>Loading geofences...</Text>
+            </View>
+          )}
+
+          {!geofencesLoading && geofencesError && (
+            <Text style={styles.errorText}>
+              Failed to load geofences. Please try again.
+            </Text>
+          )}
+
+          {!geofencesLoading && !geofencesError && geofenceCount === 0 ? (
             <Text style={styles.emptyText}>
-              No geofences yet. Tap + to create one.
+              {isSPV || isFWR
+                ? "No geofences available."
+                : "No geofences yet. Tap + to create one."}
             </Text>
           ) : (
             <FlatList
@@ -545,7 +592,6 @@ export default function GeoFencesScreen() {
         </View>
       )}
 
-      {/* CREATE PANEL */}
       {/* CREATE PANEL */}
       {isCreateMode && (
         <View style={styles.panelKeyboardWrap}>
@@ -703,11 +749,26 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
 
-  emptyWrap: {
-    flex: 1,
-    justifyContent: "center",
+  loadingRow: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 24,
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 16,
+  },
+
+  loadingText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#2563eb",
+  },
+
+  errorText: {
+    textAlign: "center",
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#dc2626",
+    marginBottom: 12,
   },
 
   emptyText: {
@@ -715,13 +776,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: "#334155",
-  },
-
-  emptySubText: {
-    marginTop: 6,
-    textAlign: "center",
-    fontSize: 12,
-    color: "#64748b",
   },
 
   card: {
@@ -747,26 +801,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  cardMetaRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 6,
-  },
-
-  cardMetaPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: "#eff6ff",
-  },
-
-  cardMetaText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#1d4ed8",
-  },
-
   cardCountsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -787,19 +821,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e2e8f0",
   },
-
-  // panel: {
-  //   position: "absolute",
-  //   left: 12,
-  //   right: 12,
-  //   bottom: 14,
-  //   backgroundColor: "#ffffff",
-  //   borderRadius: 14,
-  //   padding: 12,
-  //   elevation: 12,
-  //   borderWidth: 1,
-  //   borderColor: "#e2e8f0",
-  // },
 
   panelTitle: {
     fontSize: 13,
@@ -823,12 +844,6 @@ const styles = StyleSheet.create({
   descriptionInput: {
     minHeight: 56,
     textAlignVertical: "top",
-  },
-
-  infoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 10,
   },
 
   infoText: {

@@ -168,28 +168,21 @@ export const ElectricitySections = ({
 
         {/* KEYPAD */}
 
-        <Surface style={styles.section} elevation={2}>
-          <FormInput
-            label="KEYPAD SERIAL NO"
-            name="ast.astData.meter.keypad.serialNo"
-            disabled={disabled}
-          />
-          {/* 🛡️ Reactive Logic: Required if Serial is missing */}
-          {!values?.ast?.astData?.meter?.keypad?.serialNo && (
+        {values?.ast?.astData?.meter?.type === "prepaid" && (
+          <Surface style={styles.section} elevation={2}>
             <FormInput
-              label="KEYPAD COMMENT (REQUIRED)"
-              name="ast.astData.meter.keypad.comment"
-              placeholder="Why is there no serial?"
+              label="KEYPAD SERIAL NO"
+              name="ast.astData.meter.keypad.serialNo"
               disabled={disabled}
             />
-          )}
-          <IrepsMedia
-            tag={"keypadPhoto"}
-            agentName={agentName}
-            agentUid={agentUid}
-            fallbackGps={values?.geometry?.centroid}
-          />
-        </Surface>
+            <IrepsMedia
+              tag={"keypadPhoto"}
+              agentName={agentName}
+              agentUid={agentUid}
+              fallbackGps={values?.geometry?.centroid}
+            />
+          </Surface>
+        )}
 
         <Surface style={styles.section} elevation={2}>
           {/* CB */}
