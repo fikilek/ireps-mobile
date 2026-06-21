@@ -117,6 +117,23 @@ function getDistanceMeters(pointA, pointB) {
   return R * y;
 }
 
+function isValidMeterGps(value) {
+  const lat = Number(value?.lat);
+  const lng = Number(value?.lng);
+
+  return (
+    value?.lat != null &&
+    value?.lng != null &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180 &&
+    !(lat === 0 && lng === 0)
+  );
+}
+
 // --- MAIN FORM COMPONENT ---
 export default function FormMeterDiscovery() {
   const {
@@ -434,7 +451,12 @@ export default function FormMeterDiscovery() {
         astManufacturer: string().required("Manufacturer is required"),
         astName: string().required("Model is required"),
         meter: object().shape({
-          category: string().required(),
+          category: string()
+            .oneOf(["Normal", "Bulk"])
+            .required("Meter category is required"),
+          type: string()
+            .oneOf(["prepaid", "conventional"])
+            .required("Meter type is required"),
         }),
       }),
       anomalies: object().shape({
@@ -452,11 +474,18 @@ export default function FormMeterDiscovery() {
         gps: object()
           .nullable()
           .required("GPS location is required")
-          .test("is-valid-gps", "Invalid GPS coordinates", (value) => {
-            return value && value.lat !== 0 && value.lng !== 0;
-          }),
+          .test("is-valid-gps", "Invalid GPS coordinates", isValidMeterGps),
       }),
-      meterReading: string().required("Required"),
+      meterReading: string().when("astData.meter.type", {
+        is: "conventional",
+        then: (schema) => schema.required("Meter reading is required"),
+        otherwise: (schema) => schema.notRequired().nullable(),
+      }),
+      tokenReading: string().when("astData.meter.type", {
+        is: "prepaid",
+        then: (schema) => schema.required("Token reading is required"),
+        otherwise: (schema) => schema.notRequired().nullable(),
+      }),
     }),
 
     // --- SECTION 3: MISSION TYPE ---
@@ -471,6 +500,8 @@ export default function FormMeterDiscovery() {
         const meterNo = ast?.astData?.astNo;
         const anomaly = ast?.anomalies?.anomaly;
         const meterReading = ast?.meterReading;
+        const tokenReading = ast?.tokenReading;
+        const meterSubtype = ast?.astData?.meter?.type;
 
         // 🚩 Rule 1: No Access (Only trigger if a reason is selected)
         if (hasAccess === "no" && accessData?.access?.reason) {
@@ -486,10 +517,19 @@ export default function FormMeterDiscovery() {
 
         // 🚩 Rule 2: Meter Reading Photo (Only trigger if there is a reading
         if (
+          meterSubtype === "conventional" &&
           meterReading?.trim() &&
           !value?.some((m) => m.tag === "meterReadingPhoto")
         ) {
           return this.createError({ message: "Meter reading photo required" });
+        }
+
+        if (
+          meterSubtype === "prepaid" &&
+          tokenReading?.trim() &&
+          !value?.some((m) => m.tag === "tokenReadingPhoto")
+        ) {
+          return this.createError({ message: "Token reading photo required" });
         }
 
         // 🚩 Rule 3: Anomaly Photo (Only trigger if an actual anomaly is selected)
@@ -547,15 +587,19 @@ export default function FormMeterDiscovery() {
             }),
           }),
 
-          keypad: object().shape({
-            serialNo: string().required("Required"),
-
-            comment: string().when("serialNo", {
-              is: (val) => !val || val.trim().length === 0,
-              then: (s) => s.required("Comment required if no keypad serial"),
-              otherwise: (s) => s.notRequired(),
-            }),
-          }),
+          keypad: object()
+            .shape({
+              serialNo: string().nullable(),
+              comment: string().nullable(),
+            })
+            .test(
+              "prepaid-keypad",
+              "Keypad serial number is required for prepaid meters",
+              function (value) {
+                if (this.parent?.type !== "prepaid") return true;
+                return !!String(value?.serialNo || "").trim();
+              },
+            ),
 
           cb: object().shape({
             size: string().required("Required"),
@@ -589,7 +633,10 @@ export default function FormMeterDiscovery() {
 
       location: object().shape({
         placement: string().required("Placement Required"),
-        gps: object().nullable().required("GPS pin required on map"),
+        gps: object()
+          .nullable()
+          .required("GPS location is required")
+          .test("is-valid-gps", "Invalid GPS coordinates", isValidMeterGps),
       }),
     }),
 
@@ -607,6 +654,7 @@ export default function FormMeterDiscovery() {
           const meterNo = ast?.astData?.astNo;
           const sealNo = ast?.astData?.meter?.seal?.sealNo;
           const keypadSerial = ast?.astData?.meter?.keypad?.serialNo;
+          const meterSubtype = ast?.astData?.meter?.type;
           const cbSize = ast?.astData?.meter?.cb?.size;
           const hasOffGrid = ast?.ogs?.hasOffGridSupply;
           const anomaly = ast?.anomalies?.anomaly;
@@ -627,8 +675,9 @@ export default function FormMeterDiscovery() {
           }
 
           if (
-            keypadSerial?.trim() &&
-            !value?.some((m) => m.tag === "keypadPhoto")
+            meterSubtype === "prepaid" &&
+            (!keypadSerial?.trim() ||
+              !value?.some((m) => m.tag === "keypadPhoto"))
           ) {
             return this.createError({
               message: "Keypad Serial photo required",
@@ -748,7 +797,7 @@ export default function FormMeterDiscovery() {
               astNo: "", // Empty for real field use
               astManufacturer: "",
               astName: "",
-              meter: { category: "Normal" },
+              meter: { category: "Normal", type: "conventional" },
             },
             anomalies: {
               anomaly: "",
@@ -758,6 +807,7 @@ export default function FormMeterDiscovery() {
               gps: null, // Placeholder for the final liveLocation capture
             },
             meterReading: "",
+            tokenReading: "",
           },
           meterType: "water",
           media: [],
@@ -890,13 +940,44 @@ export default function FormMeterDiscovery() {
           serviceProvider,
         };
       } else if (values?.meterType === "water") {
+        const meterSubtype = values?.ast?.astData?.meter?.type;
+        const creationReading = String(values?.ast?.meterReading || "").trim();
+        const creationTokenReading = String(
+          values?.ast?.tokenReading || "",
+        ).trim();
+        const cleanAst = { ...(values.ast || {}) };
+        delete cleanAst.meterReading;
+        delete cleanAst.tokenReading;
+
         cleanPayload = {
           id: values.id,
           accessData: {
             ...baseSystemFields,
             access: values.accessData.access,
           },
-          ast: values.ast,
+          ast: cleanAst,
+          mreadings:
+            meterSubtype === "conventional" && creationReading
+              ? [
+                {
+                  reading: creationReading,
+                  readingAt: timestamp,
+                  trnId: values.id,
+                  source: "AST_CREATION",
+                },
+                ]
+              : [],
+          treadings:
+            meterSubtype === "prepaid" && creationTokenReading
+              ? [
+                  {
+                    tokenReading: creationTokenReading,
+                    readingAt: timestamp,
+                    trnId: values.id,
+                    source: "AST_CREATION",
+                  },
+                ]
+              : [],
           meterType: "water",
           media: values?.media || [],
           status: {

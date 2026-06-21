@@ -65,6 +65,25 @@ const EXECUTION_MEDIA_TAGS = [
   "noReadingEvidence",
 ];
 
+const LOWER_READING_REASON_OPTIONS = [
+  {
+    code: "PREVIOUS_READING_INCORRECT",
+    label: "Previous reading incorrect",
+  },
+  {
+    code: "WRONG_METER_READ_PREVIOUSLY",
+    label: "Wrong meter read previously",
+  },
+  {
+    code: "DISPLAY_FAULTY",
+    label: "Display faulty",
+  },
+  {
+    code: "POSSIBLE_TAMPER_REVERSE_RUN",
+    label: "Possible tamper/reverse run",
+  },
+];
+
 function makeEmptySelectWithOther() {
   return { ...EMPTY_SELECT_WITH_OTHER };
 }
@@ -226,6 +245,55 @@ function getLatestSuccessfulMeterReading(mreadings = []) {
   return normalizeMreadingsForHistory(mreadings)[0] || null;
 }
 
+function isReadingLowerThanPrevious(reading, previousReading) {
+  const currentReadingNumber = parseReadingNumber(reading);
+
+  return (
+    currentReadingNumber !== null &&
+    previousReading &&
+    previousReading.readingNumber !== null &&
+    currentReadingNumber < previousReading.readingNumber
+  );
+}
+
+function buildReadingVariancePayload(
+  meterReading = {},
+  previousReading = null,
+) {
+  const reasonSelect = normalizeReadingVarianceReasonValue(
+    meterReading?.readingVarianceReasonSelect ||
+      meterReading?.readingVariance?.reasonSelect ||
+      meterReading?.readingVarianceReason ||
+      meterReading?.readingVariance?.reason,
+  );
+  const reason =
+    selectWithOtherToText(reasonSelect) ||
+    String(meterReading?.readingVarianceReason || "").trim();
+
+  if (
+    !reason ||
+    !isReadingLowerThanPrevious(meterReading?.reading, previousReading)
+  ) {
+    return null;
+  }
+
+  return {
+    type: "LOWER_THAN_PREVIOUS",
+    reason,
+    reasonSelect,
+    reasonCode: reasonSelect?.code || "",
+    reasonLabel: reasonSelect?.label || "",
+    reasonOtherText: reasonSelect?.otherText || "",
+    previousReading: previousReading?.reading || "",
+    previousReadingNumber: previousReading?.readingNumber ?? null,
+    previousReadingAt: previousReading?.readingAt || "",
+    previousTrnId: previousReading?.trnId || "NAv",
+    currentReading: String(meterReading?.reading || "").trim(),
+    currentReadingNumber: parseReadingNumber(meterReading?.reading),
+    currentReadingAt: String(meterReading?.readingAt || "").trim(),
+  };
+}
+
 function getPremiseAddress(premise, astDoc) {
   const premiseAddress =
     `${premise?.address?.strNo || ""} ${premise?.address?.strName || ""} ${
@@ -334,6 +402,41 @@ function normalizeNoAccessReasonValue(value, reasonText = "") {
   return makeEmptySelectWithOther();
 }
 
+function normalizeReadingVarianceReasonValue(value) {
+  if (!value) return makeEmptySelectWithOther();
+
+  if (value?.code !== undefined || value?.otherText !== undefined) {
+    return normalizeSelectWithOtherValue(value);
+  }
+
+  const clean = String(value || "").trim();
+  if (!clean || clean === "NAv") return makeEmptySelectWithOther();
+
+  const matchedOption = LOWER_READING_REASON_OPTIONS.find((option) => {
+    return (
+      option.code.toLowerCase() === clean.toLowerCase() ||
+      option.label.toLowerCase() === clean.toLowerCase()
+    );
+  });
+
+  if (matchedOption) {
+    return {
+      code: matchedOption.code,
+      label: matchedOption.label,
+      otherText: "",
+    };
+  }
+
+  return textToOtherSelectValue(clean);
+}
+
+function isReadingVarianceReasonFilled(meterReading = {}) {
+  return (
+    isSelectWithOtherFilled(meterReading?.readingVarianceReasonSelect) ||
+    Boolean(String(meterReading?.readingVarianceReason || "").trim())
+  );
+}
+
 function normalizeMeterKindForReading(value) {
   return String(value || "")
     .trim()
@@ -365,7 +468,7 @@ function filterExecutionMedia(media = []) {
 
 function buildBackendMeterReadingPayload(
   meterReading = {},
-  { isPrepaid = false, noAccess = false } = {},
+  { isPrepaid = false, noAccess = false, readingVariance = null } = {},
 ) {
   if (noAccess) {
     return {
@@ -378,7 +481,7 @@ function buildBackendMeterReadingPayload(
     };
   }
 
-  return {
+  const payload = {
     reading: isPrepaid ? "" : String(meterReading?.reading || ""),
     tokenReading: isPrepaid ? String(meterReading?.tokenReading || "") : "",
     readingAt: String(meterReading?.readingAt || ""),
@@ -386,6 +489,14 @@ function buildBackendMeterReadingPayload(
     readingGps: meterReading?.readingGps || null,
     executorNotes: String(meterReading?.executorNotes || ""),
   };
+
+  if (readingVariance) {
+    payload.readingVariance = readingVariance;
+    payload.readingVarianceReason = readingVariance.reason;
+    payload.readingVarianceReasonSelect = readingVariance.reasonSelect;
+  }
+
+  return payload;
 }
 
 function buildAssignmentPayload({
@@ -511,6 +622,12 @@ const MeterReadingSchema = object()
         label: string().notRequired(),
         otherText: string().notRequired(),
       }),
+      readingVarianceReasonSelect: object().shape({
+        code: string().notRequired(),
+        label: string().notRequired(),
+        otherText: string().notRequired(),
+      }),
+      readingVarianceReason: string().notRequired(),
       readingGps: object().nullable(),
       executorNotes: string().notRequired(),
     }),
@@ -944,6 +1061,7 @@ export default function FormMeterReading() {
     trnId: trnIdRaw,
     action: actionRaw,
     queueItemId: queueItemIdRaw,
+    returnTo: returnToRaw,
   } = useLocalSearchParams();
 
   const routeAstId = Array.isArray(astIdRaw) ? astIdRaw[0] : astIdRaw;
@@ -960,6 +1078,9 @@ export default function FormMeterReading() {
   const queueItemId = Array.isArray(queueItemIdRaw)
     ? queueItemIdRaw[0]
     : queueItemIdRaw;
+  const routeReturnTo = Array.isArray(returnToRaw)
+    ? returnToRaw[0]
+    : returnToRaw;
 
   const action = useMemo(() => {
     try {
@@ -985,6 +1106,8 @@ export default function FormMeterReading() {
     action?.astId,
     action?.ast?.astData?.astId,
   );
+
+  const returnTo = readFirstString(routeReturnTo, action?.returnTo);
 
   const officeInstruction = useMemo(() => {
     return action?.officeInstruction || action?.assignment?.instruction || {};
@@ -1030,6 +1153,19 @@ export default function FormMeterReading() {
 
   const agentUid = user?.uid || "unknown_uid";
   const agentName = profile?.profile?.displayName || "Field Agent";
+
+  function getMreadReturnRoute() {
+    return readFirstString(
+      returnTo,
+      queueItemId ? "/(tabs)/admin/storage/forms-submission-queue" : "",
+      instructionTrnId ? "/(tabs)/admin/operations/my-workorders" : "",
+      "/(tabs)/asts",
+    );
+  }
+
+  function navigateAfterMread() {
+    router.replace(getMreadReturnRoute());
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -1354,6 +1490,10 @@ export default function FormMeterReading() {
     const hasNoReadingReason =
       values?.meterReading?.noReadingMode === true &&
       isSelectWithOtherFilled(values?.meterReading?.noReadingReason);
+    const readingVariance = buildReadingVariancePayload(
+      values?.meterReading,
+      latestSuccessfulReading,
+    );
 
     const executionOutcome = noAccess
       ? {
@@ -1397,6 +1537,7 @@ export default function FormMeterReading() {
       meterReading: buildBackendMeterReadingPayload(values.meterReading, {
         isPrepaid: isPrepaidReading,
         noAccess,
+        readingVariance,
       }),
 
       executionOutcome,
@@ -1571,6 +1712,16 @@ export default function FormMeterReading() {
           noReadingReason: normalizeNoReadingReasonValue(
             editMeterReading?.noReadingReason,
           ),
+          readingVarianceReasonSelect: normalizeReadingVarianceReasonValue(
+            editMeterReading?.readingVarianceReasonSelect ||
+              editMeterReading?.readingVariance?.reasonSelect ||
+              editMeterReading?.readingVarianceReason ||
+              editMeterReading?.readingVariance?.reason,
+          ),
+          readingVarianceReason:
+            editMeterReading?.readingVarianceReason ||
+            editMeterReading?.readingVariance?.reason ||
+            "",
           noReadingMode:
             editMeterReading?.noReadingMode === true ||
             isSelectWithOtherFilled(editMeterReading?.noReadingReason),
@@ -1615,6 +1766,8 @@ export default function FormMeterReading() {
         tokenReading: "",
         readingAt: "",
         noReadingReason: makeEmptySelectWithOther(),
+        readingVarianceReasonSelect: makeEmptySelectWithOther(),
+        readingVarianceReason: "",
         noReadingMode: false,
         readingGps: null,
         executorNotes: "",
@@ -1754,29 +1907,20 @@ export default function FormMeterReading() {
       }
     }
 
-    if (!isNoAccess(values) && !isPrepaidReading) {
-      const currentReadingNumber = parseReadingNumber(
+    if (
+      !isNoAccess(values) &&
+      !isPrepaidReading &&
+      isReadingLowerThanPrevious(
         values?.meterReading?.reading,
+        latestSuccessfulReading,
+      ) &&
+      !isReadingVarianceReasonFilled(values?.meterReading)
+    ) {
+      Alert.alert(
+        "Lower Reading Reason Required",
+        "The captured reading is lower than the last recorded reading. Capture the reason before submitting.",
       );
-      const previousReading = latestSuccessfulReading;
-
-      if (
-        currentReadingNumber !== null &&
-        previousReading &&
-        previousReading.readingNumber !== null &&
-        currentReadingNumber < previousReading.readingNumber
-      ) {
-        Alert.alert(
-          "Reading Lower Than Previous",
-          `The captured reading is lower than the last recorded reading.
-
-Previous reading: ${previousReading.reading}
-Current reading: ${values?.meterReading?.reading}
-
-Please re-check the meter reading before submitting.`,
-        );
-        return;
-      }
+      return;
     }
 
     try {
@@ -1887,7 +2031,7 @@ Please re-check the meter reading before submitting.`,
 
       setInProgress(false);
 
-      router.replace("/admin/operations/my-workorders");
+      navigateAfterMread();
       return;
     } catch (error) {
       console.error("MeterReadingSubmission Error:", error);
@@ -1905,12 +2049,7 @@ Please re-check the meter reading before submitting.`,
       goBackOnContinue: true,
     });
 
-    if (outcomeType === "savedLocally") {
-      router.replace("/(tabs)/admin/operations/my-workorders");
-      return;
-    }
-
-    router.replace("/(tabs)/admin/operations/my-workorders");
+    navigateAfterMread();
   }
 
   const confirmCancel = () => {
@@ -2083,19 +2222,30 @@ Please re-check the meter reading before submitting.`,
             values?.accessData?.access?.reasonSelect,
           );
           const hasNoAccessPhoto = hasMediaTag(values?.media, "noAccessPhoto");
+          const lowerReadingRequiresReason =
+            !noAccess &&
+            !isPrepaidReading &&
+            isReadingLowerThanPrevious(
+              values?.meterReading?.reading,
+              latestSuccessfulReading,
+            );
+          const hasLowerReadingReason =
+            !lowerReadingRequiresReason ||
+            isReadingVarianceReasonFilled(values?.meterReading);
 
           const noAccessSubmitReady =
             noAccess && hasNoAccessReason && hasNoAccessPhoto;
 
           const readingSubmitReady =
             !noAccess &&
-            hasReadingTimestamp &&
-            hasReadingGps &&
-            (isPrepaidReading
-              ? (hasTokenReadingValue && hasTokenReadingPhoto) ||
-                hasNoReadingReason
-              : (hasMeterReadingValue && hasMeterReadingEvidence) ||
-                hasNoReadingReason);
+            (hasNoReadingReason ||
+              (hasReadingTimestamp &&
+                hasReadingGps &&
+                (isPrepaidReading
+                  ? hasTokenReadingValue && hasTokenReadingPhoto
+                  : hasMeterReadingValue &&
+                    hasMeterReadingEvidence &&
+                    hasLowerReadingReason)));
 
           const canSubmitMread =
             isValid &&
@@ -2482,6 +2632,14 @@ Please re-check the meter reading before submitting.`,
                                 }
                               } else {
                                 setFieldValue("meterReading.readingGps", null);
+                                setFieldValue(
+                                  "meterReading.readingVarianceReasonSelect",
+                                  makeEmptySelectWithOther(),
+                                );
+                                setFieldValue(
+                                  "meterReading.readingVarianceReason",
+                                  "",
+                                );
                                 setCurrentGps(null);
                               }
                             }}
@@ -2525,6 +2683,22 @@ Please re-check the meter reading before submitting.`,
                               setFieldValue("meterReading.reading", cleanText);
 
                               if (cleanText) {
+                                if (
+                                  !isReadingLowerThanPrevious(
+                                    cleanText,
+                                    latestSuccessfulReading,
+                                  )
+                                ) {
+                                  setFieldValue(
+                                    "meterReading.readingVarianceReasonSelect",
+                                    makeEmptySelectWithOther(),
+                                  );
+                                  setFieldValue(
+                                    "meterReading.readingVarianceReason",
+                                    "",
+                                  );
+                                }
+
                                 setFieldValue(
                                   "meterReading.noReadingReason",
                                   makeEmptySelectWithOther(),
@@ -2540,6 +2714,14 @@ Please re-check the meter reading before submitting.`,
                                 }
                               } else {
                                 setFieldValue("meterReading.readingGps", null);
+                                setFieldValue(
+                                  "meterReading.readingVarianceReasonSelect",
+                                  makeEmptySelectWithOther(),
+                                );
+                                setFieldValue(
+                                  "meterReading.readingVarianceReason",
+                                  "",
+                                );
                                 setCurrentGps(null);
                               }
                             }}
@@ -2557,6 +2739,60 @@ Please re-check the meter reading before submitting.`,
                             <Text style={styles.errorText}>
                               {meterReadingErrors.reading}
                             </Text>
+                          )}
+
+                          {lowerReadingRequiresReason && (
+                            <View style={styles.lowerReadingWarningBox}>
+                              <View style={styles.lowerReadingWarningHeader}>
+                                <MaterialCommunityIcons
+                                  name="alert-circle-outline"
+                                  size={18}
+                                  color="#B45309"
+                                />
+                                <Text style={styles.lowerReadingWarningTitle}>
+                                  Reading Lower Than Last Reading
+                                </Text>
+                              </View>
+
+                              <Text style={styles.lowerReadingWarningText}>
+                                Last reading:{" "}
+                                {latestSuccessfulReading?.reading || "NAv"}.
+                                Current reading:{" "}
+                                {values?.meterReading?.reading || "NAv"}.
+                              </Text>
+
+                              <IrepsSelectWithOther
+                                label="Reason for lower reading"
+                                placeholder="Select reason"
+                                options={LOWER_READING_REASON_OPTIONS}
+                                includeOther={true}
+                                otherCode="OTHER"
+                                otherLabel="Other"
+                                value={
+                                  values?.meterReading
+                                    ?.readingVarianceReasonSelect
+                                }
+                                onChange={(nextValue) => {
+                                  const normalized =
+                                    normalizeSelectWithOtherValue(nextValue);
+
+                                  setFieldValue(
+                                    "meterReading.readingVarianceReasonSelect",
+                                    normalized,
+                                  );
+                                  setFieldValue(
+                                    "meterReading.readingVarianceReason",
+                                    selectWithOtherToText(normalized),
+                                  );
+                                }}
+                                errorText={
+                                  !hasLowerReadingReason
+                                    ? "Reason is required before submitting this lower reading."
+                                    : ""
+                                }
+                                required={true}
+                              />
+                            </View>
                           )}
 
                           <View style={styles.questionEvidenceSlot}>
@@ -2588,6 +2824,17 @@ Please re-check the meter reading before submitting.`,
                               setFieldValue("meterReading.noReadingMode", true);
                               setFieldValue("meterReading.reading", "");
                               setFieldValue("meterReading.tokenReading", "");
+                              setFieldValue("meterReading.readingAt", "");
+                              setFieldValue("meterReading.readingGps", null);
+                              setCurrentGps(null);
+                              setFieldValue(
+                                "meterReading.readingVarianceReasonSelect",
+                                makeEmptySelectWithOther(),
+                              );
+                              setFieldValue(
+                                "meterReading.readingVarianceReason",
+                                "",
+                              );
                               captureReadingGpsIfNeeded();
                             }}
                           >
@@ -3023,6 +3270,37 @@ const styles = StyleSheet.create({
   readingInput: {
     marginBottom: 10,
     backgroundColor: "#FFFFFF",
+  },
+
+  lowerReadingWarningBox: {
+    marginTop: 2,
+    marginBottom: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    backgroundColor: "#FFFBEB",
+    padding: 10,
+  },
+
+  lowerReadingWarningHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 6,
+  },
+
+  lowerReadingWarningTitle: {
+    color: "#92400E",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  lowerReadingWarningText: {
+    color: "#92400E",
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 16,
+    marginBottom: 8,
   },
 
   questionEvidenceSlot: {

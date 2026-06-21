@@ -1,5 +1,10 @@
+import { useEffect, useRef } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 import { Portal, Surface, Text } from "react-native-paper";
+import * as Haptics from "expo-haptics";
+import { useAudioPlayer } from "expo-audio";
+
+const SUCCESS_CHIME = require("../assets/audio/ward-erf-sync-success.wav");
 
 function formatMs(ms) {
   if (!ms || ms < 0) return "0s";
@@ -31,6 +36,30 @@ export default function WardErfsSyncDoneModal({
   onClose,
   onOpenWard,
 }) {
+  const playedRef = useRef(false);
+  const successPlayer = useAudioPlayer(SUCCESS_CHIME);
+
+  useEffect(() => {
+    if (!visible) {
+      playedRef.current = false;
+      return;
+    }
+
+    if (playedRef.current) return;
+    playedRef.current = true;
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+      () => {},
+    );
+
+    try {
+      successPlayer.seekTo(0);
+      successPlayer.play();
+    } catch (error) {
+      console.log("WardErfsSyncDoneModal success chime failed", error);
+    }
+  }, [successPlayer, visible]);
+
   if (!visible) return null;
 
   return (

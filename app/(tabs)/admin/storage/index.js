@@ -2,7 +2,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Text } from "react-native-paper";
-import { useAuth } from "../../../../src/hooks/useAuth";
+import { useAuth } from "@/src/hooks/useAuth";
 
 function StorageCard({ title, subtitle, icon, onPress }) {
   return (
@@ -59,22 +59,13 @@ export default function LocalStorageScreen() {
           </View>
 
           <Text style={styles.heroSubtitle}>
-            Manage offline ward ERFs availability, prepaid sales sync, queued
-            meter forms, and data cleansing account data.
+            Manage prepaid sales sync, queued meter forms, and data cleansing
+            account data. Ward ERFs are managed from the ERFs ward selector.
           </Text>
         </View>
 
         {canViewStorage ? (
           <View style={styles.cardsWrap}>
-            <StorageCard
-              title="Manage Ward ERFs"
-              subtitle="Ward ERFs sync & control"
-              icon="map-search-outline"
-              onPress={() =>
-                router.push("/(tabs)/admin/storage/ward-erfs-sync")
-              }
-            />
-
             <StorageCard
               title="Sales Sync"
               subtitle="Download monthly prepaid sales to this device"

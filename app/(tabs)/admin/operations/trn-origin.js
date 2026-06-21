@@ -27,7 +27,6 @@ import { useAuth } from "../../../../src/hooks/useAuth";
 import { useIrepsLookupOptions } from "../../../../src/hooks/useIrepsLookupOptions";
 import { useCreateLifecycleInstructionMutation } from "../../../../src/redux/lifecycleInstructionApi";
 import { useGetServiceProvidersQuery } from "../../../../src/redux/spApi";
-import { useGetTeamsQuery } from "../../../../src/redux/teamsApi";
 import { useGetUsersQuery } from "../../../../src/redux/usersApi";
 import { addSubmissionQueueItem } from "../../../../src/utils/submissionQueue";
 
@@ -134,31 +133,6 @@ function serviceProviderLooksMnc(sp = {}) {
       normalizeUpper(client?.clientType) === "LM" &&
       normalizeUpper(client?.relationshipType) === "MNC",
   );
-}
-
-function getServiceProviderName(sp = {}) {
-  return (
-    sp?.profile?.tradingName ||
-    sp?.profile?.registeredName ||
-    sp?.profile?.name ||
-    sp?.name ||
-    sp?.id ||
-    "NAv"
-  );
-}
-
-function getServiceProviderStatus(sp = {}) {
-  return typeof sp?.status === "string"
-    ? normalizeUpper(sp.status)
-    : normalizeUpper(sp?.status?.state || sp?.status?.lifecycle || "NAv");
-}
-
-function getTeamName(team = {}) {
-  return team?.team?.name || team?.name || team?.id || "NAv";
-}
-
-function getTeamStatus(team = {}) {
-  return normalizeUpper(team?.team?.status || team?.status || "NAv");
 }
 
 function getParentMncId(sp = {}) {
@@ -488,7 +462,6 @@ export default function TrnOriginScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const { data: users = [], isLoading: usersLoading } = useGetUsersQuery();
-  const { data: teams = [], isLoading: teamsLoading } = useGetTeamsQuery();
   const { data: serviceProviders = [], isLoading: spsLoading } =
     useGetServiceProvidersQuery();
 
@@ -542,52 +515,12 @@ export default function TrnOriginScreen() {
       .sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b)));
   }, [users, allowedSpIds]);
 
-  const visibleTeams = useMemo(() => {
-    return teams
-      .filter((team) => {
-        if (getTeamStatus(team) !== "ACTIVE") return false;
-
-        const teamSpIds = Array.isArray(team?.scope?.serviceProviderIds)
-          ? team.scope.serviceProviderIds
-          : [];
-
-        const teamMncId = team?.ownership?.mncServiceProviderId || null;
-
-        return (
-          teamSpIds.some((spId) => allowedSpIds.includes(spId)) ||
-          (!!teamMncId && allowedSpIds.includes(teamMncId))
-        );
-      })
-      .sort((a, b) => getTeamName(a).localeCompare(getTeamName(b)));
-  }, [teams, allowedSpIds]);
-
-  const visibleServiceProviders = useMemo(() => {
-    return serviceProviders
-      .filter((sp) => {
-        if (!sp?.id) return false;
-        if (!allowedSpIds.includes(sp.id)) return false;
-
-        return getServiceProviderStatus(sp) === "ACTIVE";
-      })
-      .sort((a, b) =>
-        getServiceProviderName(a).localeCompare(getServiceProviderName(b)),
-      );
-  }, [serviceProviders, allowedSpIds]);
-
   const selectedTargetKeySet = useMemo(() => {
     return new Set(selectedTargets.map((item) => `${item.type}_${item.id}`));
   }, [selectedTargets]);
 
   const selectedUserTargets = useMemo(() => {
     return selectedTargets.filter((item) => item.type === "USER");
-  }, [selectedTargets]);
-
-  const selectedTeamTargets = useMemo(() => {
-    return selectedTargets.filter((item) => item.type === "TEAM");
-  }, [selectedTargets]);
-
-  const selectedSpTargets = useMemo(() => {
-    return selectedTargets.filter((item) => item.type === "SP");
   }, [selectedTargets]);
 
   const userOptions = useMemo(() => {
@@ -602,36 +535,6 @@ export default function TrnOriginScreen() {
       }))
       .filter((item) => !selectedTargetKeySet.has(`USER_${item.id}`));
   }, [visibleUsers, selectedTargetKeySet]);
-
-  const teamOptions = useMemo(() => {
-    return visibleTeams
-      .map((team) => ({
-        id: team.id,
-        title: getTeamName(team),
-        subtitle: `Members: ${
-          Array.isArray(team?.scope?.memberUserIds)
-            ? team.scope.memberUserIds.length
-            : 0
-        }`,
-        type: "TEAM",
-        icon: "account-group-outline",
-        raw: team,
-      }))
-      .filter((item) => !selectedTargetKeySet.has(`TEAM_${item.id}`));
-  }, [visibleTeams, selectedTargetKeySet]);
-
-  const spOptions = useMemo(() => {
-    return visibleServiceProviders
-      .map((sp) => ({
-        id: sp.id,
-        title: getServiceProviderName(sp),
-        subtitle: `${serviceProviderLooksMnc(sp) ? "MNC" : "SUBC"} • ${getServiceProviderStatus(sp)}`,
-        type: "SP",
-        icon: "domain",
-        raw: sp,
-      }))
-      .filter((item) => !selectedTargetKeySet.has(`SP_${item.id}`));
-  }, [visibleServiceProviders, selectedTargetKeySet]);
 
   useEffect(() => {
     setInstructionSelect(makeSelectWithOtherValue());
@@ -660,28 +563,20 @@ export default function TrnOriginScreen() {
     premiseId !== "NAv" &&
     isSelectWithOtherFilled(instructionSelect, instructionOtherCode) &&
     instructionText.trim().length > 0 &&
-    selectedTargets.length > 0;
+    selectedTargets.length === 1 &&
+    selectedTargets[0]?.type === "USER";
   console.log(`TrnOriginScreen --canSubmit`, canSubmit);
 
   const isLoading =
     usersLoading ||
-    teamsLoading ||
     spsLoading ||
     instructionLookupLoading ||
     instructionLookupFetching;
 
   function addTarget(target) {
-    if (!target?.type || !target?.id) return;
+    if (target?.type !== "USER" || !target?.id) return;
 
-    setSelectedTargets((prev) => {
-      const exists = prev.some(
-        (item) => item.type === target.type && item.id === target.id,
-      );
-
-      if (exists) return prev;
-
-      return [...prev, target];
-    });
+    setSelectedTargets([target]);
   }
 
   function removeTarget(target) {
@@ -700,30 +595,6 @@ export default function TrnOriginScreen() {
       type: "USER",
       id: selectedUser.uid,
       name: getDisplayName(selectedUser),
-    });
-  }
-
-  function handleSelectTeamTarget(option) {
-    const selectedTeam = visibleTeams.find((item) => item.id === option.id);
-    if (!selectedTeam) return;
-
-    addTarget({
-      type: "TEAM",
-      id: selectedTeam.id,
-      name: getTeamName(selectedTeam),
-    });
-  }
-
-  function handleSelectSpTarget(option) {
-    const selectedSp = visibleServiceProviders.find(
-      (item) => item.id === option.id,
-    );
-    if (!selectedSp) return;
-
-    addTarget({
-      type: "SP",
-      id: selectedSp.id,
-      name: getServiceProviderName(selectedSp),
     });
   }
 
@@ -1024,11 +895,14 @@ export default function TrnOriginScreen() {
           />
         </Section>
 
-        <Section title="Assign To" icon="account-hard-hat-outline">
+        <Section
+          title="Assign To Individual User"
+          icon="account-hard-hat-outline"
+        >
           <DynamicTargetPicker
-            title="Add Users"
-            buttonLabel="ADD USER"
-            modalTitle="Select User"
+            title="Select User"
+            buttonLabel="SELECT USER"
+            modalTitle="Select Individual User"
             options={userOptions}
             selectedTargets={selectedUserTargets}
             onSelect={handleSelectUserTarget}
@@ -1036,35 +910,7 @@ export default function TrnOriginScreen() {
             disabled={busy}
             loading={isLoading}
             emptyText="No assignable users found under this MNC scope."
-            selectedEmptyText="No users added yet."
-          />
-
-          <DynamicTargetPicker
-            title="Add Teams"
-            buttonLabel="ADD TEAM"
-            modalTitle="Select Team"
-            options={teamOptions}
-            selectedTargets={selectedTeamTargets}
-            onSelect={handleSelectTeamTarget}
-            onRemoveTarget={removeTarget}
-            disabled={busy}
-            loading={isLoading}
-            emptyText="No assignable teams found."
-            selectedEmptyText="No teams added yet."
-          />
-
-          <DynamicTargetPicker
-            title="Add Service Providers"
-            buttonLabel="ADD SP"
-            modalTitle="Select Service Provider"
-            options={spOptions}
-            selectedTargets={selectedSpTargets}
-            onSelect={handleSelectSpTarget}
-            onRemoveTarget={removeTarget}
-            disabled={busy}
-            loading={isLoading}
-            emptyText="No assignable service providers found."
-            selectedEmptyText="No service providers added yet."
+            selectedEmptyText="No user selected yet."
           />
         </Section>
 
@@ -1228,13 +1074,7 @@ function DynamicTargetPicker({
               >
                 <View style={styles.targetIcon}>
                   <MaterialCommunityIcons
-                    name={
-                      target.type === "TEAM"
-                        ? "account-group-outline"
-                        : target.type === "SP"
-                          ? "domain"
-                          : "account-outline"
-                    }
+                    name="account-outline"
                     size={17}
                     color="#2563eb"
                   />

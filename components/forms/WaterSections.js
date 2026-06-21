@@ -47,6 +47,12 @@ export const WaterSections = ({
           disabled={disabled}
         />
         <FormSelect
+          label="TYPE"
+          options={["prepaid", "conventional"]}
+          name="ast.astData.meter.type"
+          disabled={disabled}
+        />
+        <FormSelect
           label="Manufacture"
           options={getOptions("water_manufacturers")}
           name="ast.astData.astManufacturer"
@@ -60,21 +66,42 @@ export const WaterSections = ({
       </FormSection>
 
       <FormSection title="Meter Reading">
-        <FormInput
-          label="Meter Reading"
-          name="ast.meterReading"
-          disabled={disabled}
-          keyboardType="numeric"
-          numbersOnly={true}
-        />
-
-        {values?.ast?.meterReading?.trim() && (
-          <IrepsMedia
-            tag={"meterReadingPhoto"}
-            agentName={agentName}
-            agentUid={agentUid}
-            fallbackGps={landingPoint}
-          />
+        {values?.ast?.astData?.meter?.type === "prepaid" ? (
+          <>
+            <FormInput
+              label="Token Reading"
+              name="ast.tokenReading"
+              disabled={disabled}
+              keyboardType="numeric"
+              numbersOnly={true}
+            />
+            {values?.ast?.tokenReading?.trim() && (
+              <IrepsMedia
+                tag={"tokenReadingPhoto"}
+                agentName={agentName}
+                agentUid={agentUid}
+                fallbackGps={landingPoint}
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <FormInput
+              label="Meter Reading"
+              name="ast.meterReading"
+              disabled={disabled}
+              keyboardType="numeric"
+              numbersOnly={true}
+            />
+            {values?.ast?.meterReading?.trim() && (
+              <IrepsMedia
+                tag={"meterReadingPhoto"}
+                agentName={agentName}
+                agentUid={agentUid}
+                fallbackGps={landingPoint}
+              />
+            )}
+          </>
         )}
       </FormSection>
 

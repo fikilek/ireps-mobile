@@ -353,7 +353,11 @@ function getMeterNo(item = {}) {
     item?.ast?.astData?.astNo,
     item?.inspection?.captured?.ast?.astData?.astNo,
     item?.inspection?.lastKnown?.ast?.astData?.astNo,
+    item?.accessData?.astData?.astNo,
+    item?.accessData?.meterNo,
+    item?.accessData?.astNo,
     item?.meterNo,
+    item?.derived?.meterNo,
     "NAv",
   );
 }
@@ -784,9 +788,9 @@ const TrnItem = ({ item }) => {
 
   const workflowStateConfig = getWorkflowStateConfig(workflowState);
 
-  const meterNo = hasAccess
-    ? getMeterNo(item) || "NO METER"
-    : "NO METER NUMBER";
+  const resolvedMeterNo = getMeterNo(item);
+  const suppressMeterNo = !hasAccess && trnType === "METER_DISCOVERY";
+  const meterNo = suppressMeterNo ? "NO METER NUMBER" : resolvedMeterNo;
 
   const dateAt = item.metadata?.updatedAt;
 

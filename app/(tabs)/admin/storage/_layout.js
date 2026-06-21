@@ -44,13 +44,6 @@ export default function StorageLayout() {
       />
 
       <Stack.Screen
-        name="ward-erfs-sync"
-        options={{
-          title: "Ward ERF Sync",
-        }}
-      />
-
-      <Stack.Screen
         name="sales-sync"
         options={{
           title: "Sales Sync",

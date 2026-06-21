@@ -915,10 +915,12 @@ const AstItem = ({ item }) => {
         params: {
           astId: item.id,
           premiseId: item?.accessData?.premise?.id || "NAv",
+          returnTo: "/(tabs)/asts",
           asset: encodeURIComponent(JSON.stringify(item)),
           action: JSON.stringify({
             source: "FIELD",
             trnType: "METER_READING",
+            returnTo: "/(tabs)/asts",
             astId: item.id,
             sourceAstId: item.id,
             premiseId: item?.accessData?.premise?.id || "NAv",

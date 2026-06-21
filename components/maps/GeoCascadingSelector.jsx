@@ -1,19 +1,26 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import * as Location from "expo-location";
 import { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { Button, Modal, Portal, Searchbar, Surface } from "react-native-paper";
-import { useSelector } from "react-redux";
+import { shallowEqual, useSelector } from "react-redux";
 import { useGeo } from "../../src/context/GeoContext";
 import { useMap } from "../../src/context/MapContext";
 import { useWarehouse } from "../../src/context/WarehouseContext";
+import {
+  getWardErfLocalMetaByWard,
+  getWardErfQueryCacheKey,
+  getWardErfSyncInfo,
+  getWardPcode,
+  WARD_ERF_SYNC_STATUS,
+} from "../../src/features/erfs/wardErfSyncStatus";
 import { useGetGeoFencesByLmPcodeWardPcodeQuery } from "../../src/redux/geofenceApi";
 
 export default function GeoCascadingSelector({
@@ -23,7 +30,7 @@ export default function GeoCascadingSelector({
 }) {
   // console.log(`GeoCascadingSelector mounting`);
   const { geoState, updateGeo } = useGeo();
-  const { all } = useWarehouse();
+  const { all, available } = useWarehouse();
   // console.log(
   //   `GeoCascadingSelector all?.meters.slice(0,2)`,
   //   all?.meters.slice(0, 2),
@@ -31,13 +38,8 @@ export default function GeoCascadingSelector({
   // const { profile } = useAuth();
   // console.log(`profile`, profile);
 
-  const erfById = useMemo(() => {
-    return new Map((all?.erfs || []).map((e) => [e.id, e]));
-  }, [all?.erfs]);
-
-  // console.log(`GeoCascadingSelector erfById?.`, erfById?.);
-
   const { flyTo } = useMap();
+  const router = useRouter();
 
   const [showWards, setShowWards] = useState(false);
   const [showErfs, setShowErfs] = useState(false);
@@ -51,6 +53,7 @@ export default function GeoCascadingSelector({
   const [erfSearchQuery, setErfSearchQuery] = useState("");
   const [premSearchQuery, setPremSearchQuery] = useState("");
   const [meterSearchQuery, setMeterSearchQuery] = useState("");
+  const [storageRevision, setStorageRevision] = useState(0);
 
   const {
     selectedLm,
@@ -60,19 +63,25 @@ export default function GeoCascadingSelector({
     selectedMeter,
   } = geoState;
 
-  const lmPcode = selectedLm?.id || null;
-  const wardPcode = selectedWard?.id || null;
+  const lmPcode = selectedLm?.pcode || selectedLm?.id || null;
+  const wardPcode = getWardPcode(selectedWard);
 
   const { data: wardGeofences = [] } = useGetGeoFencesByLmPcodeWardPcodeQuery(
     { lmPcode, wardPcode },
-    { skip: !lmPcode || !wardPcode },
+    { skip: !showGeofences || !lmPcode || !wardPcode },
   );
 
-  const canOpenWardSelector = !!selectedLm?.id;
+  const canOpenWardSelector = !!lmPcode;
+  const canOpenGeofenceSelector = !!lmPcode && !!wardPcode;
 
   useEffect(() => {
     onModalStateChange?.(anyModalOpen);
   }, [anyModalOpen, onModalStateChange]);
+
+  useEffect(() => {
+    if (!showWards) return;
+    setStorageRevision((value) => value + 1);
+  }, [showWards, lmPcode]);
 
   // -----------------------------
   // OPTION POOLS FOR MODALS
@@ -81,7 +90,7 @@ export default function GeoCascadingSelector({
   // -----------------------------
 
   const availableWards = useMemo(() => {
-    return [...(all?.wards || [])].sort((a, b) => {
+    return [...(available?.wards || all?.wards || [])].sort((a, b) => {
       const aCode = Number(a?.code ?? 9999);
       const bCode = Number(b?.code ?? 9999);
 
@@ -91,9 +100,11 @@ export default function GeoCascadingSelector({
         String(b?.name || b?.id || ""),
       );
     });
-  }, [all?.wards]);
+  }, [available?.wards, all?.wards]);
 
   const geofenceOptions = useMemo(() => {
+    if (!showGeofences) return [];
+
     return [...wardGeofences]
       .filter((gf) => gf?.status === "ACTIVE")
       .sort((a, b) =>
@@ -101,9 +112,11 @@ export default function GeoCascadingSelector({
           String(b?.description || b?.name || b?.id || ""),
         ),
       );
-  }, [wardGeofences]);
+  }, [showGeofences, wardGeofences]);
 
   const erfOptions = useMemo(() => {
+    if (!showErfs) return [];
+
     let base = [...(all?.erfs || [])];
 
     if (selectedWard?.id) {
@@ -122,9 +135,11 @@ export default function GeoCascadingSelector({
     }
 
     return base;
-  }, [all?.erfs, selectedWard?.id, erfSearchQuery]);
+  }, [showErfs, all?.erfs, selectedWard?.id, erfSearchQuery]);
 
   const premiseOptions = useMemo(() => {
+    if (!showPrems) return [];
+
     let base = [...(all?.prems || [])];
 
     if (selectedErf?.id) {
@@ -156,15 +171,24 @@ export default function GeoCascadingSelector({
 
     return base;
   }, [
+    showPrems,
     all?.prems,
     all?.erfs,
     selectedErf?.id,
     selectedWard?.id,
     premSearchQuery,
   ]);
+
+  const meterErfById = useMemo(() => {
+    if (!showMeters) return new Map();
+
+    return new Map((all?.erfs || []).map((e) => [e.id, e]));
+  }, [showMeters, all?.erfs]);
+
   const meterOptions = useMemo(() => {
+    if (!showMeters) return [];
+
     let base = [...(all?.meters || [])];
-    const erfById = new Map((all?.erfs || []).map((e) => [e.id, e]));
 
     if (selectedPremise?.id) {
       base = base.filter(
@@ -175,7 +199,7 @@ export default function GeoCascadingSelector({
     } else if (selectedWard?.id) {
       const wardId = selectedWard.id;
       base = base.filter((m) => {
-        const parentErf = erfById.get(m?.accessData?.erfId);
+        const parentErf = meterErfById.get(m?.accessData?.erfId);
         return (
           parentErf?.admin?.ward?.id === wardId ||
           parentErf?.admin?.ward?.pcode === wardId
@@ -192,37 +216,75 @@ export default function GeoCascadingSelector({
 
     return base;
   }, [
+    showMeters,
     all?.meters,
-    all?.erfs,
+    meterErfById,
     selectedPremise?.id,
     selectedErf?.id,
     selectedWard?.id,
     meterSearchQuery,
   ]);
 
-  // Get ward erfs count from storrage
+  const availableWardPcodes = useMemo(
+    () => availableWards.map((ward) => getWardPcode(ward)).filter(Boolean),
+    [availableWards],
+  );
 
-  function getWardQueryCacheKey(lmPcode, wardPcode) {
-    return `getErfsByLmPcodeWardPcode(${lmPcode}__${wardPcode})`;
-  }
+  const erfsQueries = useSelector((state) => {
+    if (!showWards || !lmPcode || availableWardPcodes.length === 0) {
+      return {};
+    }
 
-  const erfsQueries = useSelector((state) => state.erfsApi?.queries || {});
+    const queries = state.erfsApi?.queries || {};
+    const relevantQueries = {};
+
+    availableWardPcodes.forEach((pcode) => {
+      const queryKey = getWardErfQueryCacheKey(lmPcode, pcode);
+      const query = queries?.[queryKey];
+
+      if (query) {
+        relevantQueries[queryKey] = query;
+      }
+    });
+
+    return relevantQueries;
+  }, shallowEqual);
+
+  const localWardErfMetaByPcode = useMemo(
+    () => {
+      void storageRevision;
+      return getWardErfLocalMetaByWard(lmPcode);
+    },
+    [lmPcode, storageRevision],
+  );
 
   const wardSyncedCountsByPcode = useMemo(() => {
-    if (!lmPcode) return new Map();
+    if (!showWards || !lmPcode) return new Map();
 
     const counts = new Map();
 
     (availableWards || []).forEach((ward) => {
-      const queryKey = getWardQueryCacheKey(lmPcode, ward?.id);
-      const queryState = erfsQueries?.[queryKey];
-      const sync = queryState?.data?.sync;
+      const wardPcode = getWardPcode(ward);
+      if (!wardPcode) return;
 
-      counts.set(ward?.id, sync?.size || 0);
+      const syncInfo = getWardErfSyncInfo({
+        erfsQueries,
+        localMetaByPcode: localWardErfMetaByPcode,
+        lmPcode,
+        wardPcode,
+      });
+
+      counts.set(wardPcode, syncInfo.size);
     });
 
     return counts;
-  }, [availableWards, erfsQueries, lmPcode]);
+  }, [
+    showWards,
+    availableWards,
+    erfsQueries,
+    localWardErfMetaByPcode,
+    lmPcode,
+  ]);
 
   // -----------------------------
   // HIERARCHY ACTIONS
@@ -235,6 +297,10 @@ export default function GeoCascadingSelector({
 
     updateGeo({
       selectedLm,
+      selectedWard: null,
+      selectedErf: null,
+      selectedPremise: null,
+      selectedMeter: null,
       lastSelectionType: "LM",
     });
 
@@ -245,11 +311,30 @@ export default function GeoCascadingSelector({
   };
 
   const selectWard = (ward) => {
-    updateGeo({
-      selectedWard: ward,
-      lastSelectionType: "WARD",
+    const syncInfo = getWardErfSyncInfo({
+      erfsQueries,
+      localMetaByPcode: localWardErfMetaByPcode,
+      lmPcode,
+      wardPcode: getWardPcode(ward),
     });
+
+    if (syncInfo.status !== WARD_ERF_SYNC_STATUS.READY) {
+      setShowWards(false);
+      router.push("/(tabs)/erfs/ward-erfs-sync");
+      return;
+    }
+
     setShowWards(false);
+
+    requestAnimationFrame(() => {
+      updateGeo({
+        selectedWard: ward,
+        selectedErf: null,
+        selectedPremise: null,
+        selectedMeter: null,
+        lastSelectionType: "WARD",
+      });
+    });
   };
 
   const selectGeofence = (gf) => {
@@ -270,11 +355,8 @@ export default function GeoCascadingSelector({
 
     updateGeo({
       selectedErf: parentErf || null,
-      lastSelectionType: "ERF",
-    });
-
-    updateGeo({
       selectedPremise: prem,
+      selectedMeter: null,
       lastSelectionType: "PREMISE",
     });
 
@@ -288,15 +370,7 @@ export default function GeoCascadingSelector({
 
     updateGeo({
       selectedErf: parentErf || null,
-      lastSelectionType: "ERF",
-    });
-
-    updateGeo({
       selectedPremise: parentPremise || null,
-      lastSelectionType: "PREMISE",
-    });
-
-    updateGeo({
       selectedMeter: meter,
       lastSelectionType: "METER",
     });
@@ -366,35 +440,48 @@ export default function GeoCascadingSelector({
               style={styles.modalTitle}
             >{`${lmNameStr} : Select Ward`}</Text>
 
-            <ScrollView style={{ maxHeight: 400 }}>
-              <TouchableOpacity
-                style={[
-                  styles.wardItem,
-                  !selectedWard && { backgroundColor: "#f1f5f9" },
-                ]}
-                onPress={() => {
-                  updateGeo({
-                    selectedWard: null,
-                    lastSelectionType: "WARD",
-                  });
-                  setShowWards(false);
-                }}
-              >
-                <Text
+            <FlatList
+              data={availableWards}
+              keyExtractor={(item, index) =>
+                getWardPcode(item) || item?.id || String(index)
+              }
+              style={{ maxHeight: 400 }}
+              ListHeaderComponent={
+                <TouchableOpacity
                   style={[
-                    styles.wardText,
-                    { fontWeight: "800", color: "#6366f1" },
+                    styles.wardItem,
+                    !selectedWard && { backgroundColor: "#f1f5f9" },
                   ]}
-                >
-                  All Wards (Ward Reset)
-                </Text>
-              </TouchableOpacity>
+                  onPress={() => {
+                    setShowWards(false);
 
-              {availableWards.map((ward, index) => {
-                // console.log(` `);
-                // console.log(`ward`, ward);
-                const syncedErfCount =
-                  wardSyncedCountsByPcode.get(ward?.id) || 0;
+                    requestAnimationFrame(() => {
+                      updateGeo({
+                        selectedWard: null,
+                        selectedErf: null,
+                        selectedPremise: null,
+                        selectedMeter: null,
+                        lastSelectionType: "WARD",
+                      });
+                    });
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.wardText,
+                      { fontWeight: "800", color: "#6366f1" },
+                    ]}
+                  >
+                    All Wards (Ward Reset)
+                  </Text>
+                </TouchableOpacity>
+              }
+              renderItem={({ item: ward, index }) => {
+                const wardPcodeForCount = getWardPcode(ward);
+                const syncedErfCount = wardPcodeForCount
+                  ? wardSyncedCountsByPcode.get(wardPcodeForCount) || 0
+                  : 0;
+
                 return (
                   <TouchableOpacity
                     key={ward?.id || index}
@@ -431,8 +518,8 @@ export default function GeoCascadingSelector({
                     </View>
                   </TouchableOpacity>
                 );
-              })}
-            </ScrollView>
+              }}
+            />
           </Surface>
         </Modal>
 
@@ -710,7 +797,7 @@ export default function GeoCascadingSelector({
                 const addr = m?.accessData?.premise?.address || "No Address";
                 const erfNo = m?.accessData?.erfNo || "N/A";
                 const erfId = m?.accessData?.erfId || "";
-                const erf = erfById.get(erfId);
+                const erf = meterErfById.get(erfId);
                 const wardName = erf?.admin?.ward?.name;
                 const ward = wardName?.split(" ").pop() || "?";
 
@@ -799,11 +886,11 @@ export default function GeoCascadingSelector({
           <Button
             mode="contained"
             icon="vector-polygon"
-            onPress={() => canOpenWardSelector && setShowGeofences(true)}
+            onPress={() => canOpenGeofenceSelector && setShowGeofences(true)}
             style={styles.pill}
             labelStyle={styles.labelText}
             contentStyle={styles.buttonContent}
-            disabled={!canOpenWardSelector}
+            disabled={!canOpenGeofenceSelector}
           >
             {geofenceLabelStr}
           </Button>

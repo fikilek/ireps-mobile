@@ -1,16 +1,64 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { FlashList } from "@shopify/flash-list";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Button, Dialog, Portal, Surface } from "react-native-paper";
+import { useSelector } from "react-redux";
+
+import { useGeo } from "../../context/GeoContext";
 import { useWarehouse } from "../../context/WarehouseContext";
+import {
+  getWardErfLocalMetaByWard,
+  getWardErfQueriesRevision,
+  getWardErfSyncInfo,
+  getWardPcode,
+} from "./wardErfSyncStatus";
 
 const ErfFilterHeader = ({ selectedWard, setSelectedWard, filteredCount }) => {
   const [visible, setVisible] = useState(false);
   const showDialog = () => setVisible(true);
   const hideDialog = () => setVisible(false);
 
+  const { geoState } = useGeo();
   const { available } = useWarehouse();
+  const erfsQueries = useSelector((state) => state.erfsApi?.queries || {});
+  const erfsQueriesRevision = useMemo(
+    () => getWardErfQueriesRevision(erfsQueries),
+    [erfsQueries],
+  );
+
+  const lmPcode = geoState?.selectedLm?.pcode || geoState?.selectedLm?.id || null;
+
+  const localWardErfMetaByPcode = useMemo(
+    () => {
+      void erfsQueriesRevision;
+      return getWardErfLocalMetaByWard(lmPcode);
+    },
+    [lmPcode, erfsQueriesRevision],
+  );
+
+  const wardSyncedCountsByPcode = useMemo(() => {
+    if (!lmPcode) return new Map();
+
+    const counts = new Map();
+
+    (available?.wards || []).forEach((ward) => {
+      const wardPcode = getWardPcode(ward);
+      if (!wardPcode) return;
+
+      const syncInfo = getWardErfSyncInfo({
+        erfsQueries,
+        localMetaByPcode: localWardErfMetaByPcode,
+        lmPcode,
+        wardPcode,
+      });
+
+      counts.set(wardPcode, syncInfo.size);
+    });
+
+    return counts;
+  }, [available?.wards, erfsQueries, localWardErfMetaByPcode, lmPcode]);
+
   const displayWardName =
     selectedWard === "ALL" || !selectedWard
       ? "All Wards"
@@ -67,12 +115,16 @@ const ErfFilterHeader = ({ selectedWard, setSelectedWard, filteredCount }) => {
                 const label = isAll
                   ? "All Wards (Reset)"
                   : `${item?.name || item?.code || "Ward"}`;
+                const wardPcode = getWardPcode(item);
+                const syncedErfCount = isAll
+                  ? 0
+                  : wardSyncedCountsByPcode.get(wardPcode) || 0;
 
                 return (
                   <TouchableOpacity
                     style={[
                       styles.wardItem,
-                      isSelected && { backgroundColor: "#eff6ff" }, // Light blue highlight
+                      isSelected && { backgroundColor: "#eff6ff" },
                     ]}
                     onPress={() => {
                       setSelectedWard(isAll ? null : item);
@@ -80,16 +132,30 @@ const ErfFilterHeader = ({ selectedWard, setSelectedWard, filteredCount }) => {
                     }}
                   >
                     <View style={styles.itemInner}>
-                      <Text
-                        style={[
-                          styles.wardText,
-                          isAll && { color: "#6366f1", fontWeight: "900" }, // Indigo for "ALL"
-                          isSelected &&
-                            !isAll && { color: "#2563eb", fontWeight: "bold" },
-                        ]}
-                      >
-                        {label}
-                      </Text>
+                      <View style={styles.wardLabelRow}>
+                        <Text
+                          style={[
+                            styles.wardText,
+                            isAll && { color: "#6366f1", fontWeight: "900" },
+                            isSelected &&
+                              !isAll && {
+                                color: "#2563eb",
+                                fontWeight: "bold",
+                              },
+                          ]}
+                        >
+                          {label}
+                        </Text>
+
+                        {!isAll && (
+                          <>
+                            <Text style={styles.wardMetaDot}>•</Text>
+                            <Text style={styles.wardCountText}>
+                              {syncedErfCount}
+                            </Text>
+                          </>
+                        )}
+                      </View>
 
                       {isSelected && (
                         <MaterialCommunityIcons
@@ -220,20 +286,35 @@ const styles = StyleSheet.create({
     borderColor: "#f1f5f9",
   },
   wardItem: {
-    paddingVertical: 16,
+    paddingVertical: 12,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: "#f8fafc",
+    borderBottomColor: "#f1f5f9",
   },
   itemInner: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
+  wardLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flex: 1,
+  },
   wardText: {
     fontSize: 15,
     color: "#334155",
-    fontWeight: "500",
+  },
+  wardMetaDot: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#94a3b8",
+  },
+  wardCountText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#106ae9",
   },
   sortText: {
     fontSize: 6,

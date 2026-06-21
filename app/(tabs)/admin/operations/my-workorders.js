@@ -1466,6 +1466,7 @@ export default function WorkorderManagementSystem() {
         sourceAstId: sourceAstId || "",
 
         premiseId: premiseId || "",
+        returnTo: "/(tabs)/admin/operations/my-workorders",
         action: JSON.stringify(action),
         source: "WMS",
       },
