@@ -1,8 +1,10 @@
 import { Stack } from "expo-router";
 import { IconButton } from "react-native-paper";
-import { auth } from "../../src/firebase";
+import { useSignoutMutation } from "../../src/redux/authApi";
 
 export default function OnboardingLayout() {
+  const [signout, { isLoading }] = useSignoutMutation();
+
   return (
     <Stack
       screenOptions={{
@@ -13,7 +15,11 @@ export default function OnboardingLayout() {
         },
         // 🎯 THE FIX: Manually provide an escape route
         headerLeft: () => (
-          <IconButton icon="arrow-left" onPress={() => auth.signOut()} />
+          <IconButton
+            icon="arrow-left"
+            disabled={isLoading}
+            onPress={() => signout()}
+          />
         ),
       }}
     >

@@ -34,7 +34,7 @@ import { getSafeCoords } from "../../context/MapContext";
 import { useWarehouse } from "../../context/WarehouseContext";
 import { functions } from "../../firebase";
 import { useAuth } from "../../hooks/useAuth";
-import { useGetSettingsQuery } from "../../redux/settingsApi";
+import { useMeterFormLookupOptions } from "../../hooks/useMeterFormLookupOptions";
 import { useGetServiceProvidersQuery } from "../../redux/spApi";
 import { useAddTrnMutation } from "../../redux/trnsApi";
 import { getPremiseQueueItemByPremiseId } from "../../utils/premiseSubmissionQueue";
@@ -45,18 +45,6 @@ import {
   updateSubmissionQueueItem,
 } from "../../utils/submissionQueue";
 import { ForensicFooter } from "./ForensicFooter";
-
-const NA_REASONS = [
-  "Locked Gate / No Key",
-  "Vicious Dogs",
-  "Refused Entry by Occupant",
-  "Dangerous Environment / Safety Risk",
-  "Meter Box Vandalized / Unreadable",
-  "Obstructed (Overgrown/Debris)",
-  "House Demolished",
-  "Meter Buried/Obscured",
-  "Property Vacant",
-];
 
 function buildMeterDiscoveryTrnId({ wardPcode, erfNo, meterType }) {
   const ts = Date.now();
@@ -162,7 +150,6 @@ export default function FormMeterDiscovery() {
 
   const router = useRouter();
   const { all } = useWarehouse();
-  const { data: settings } = useGetSettingsQuery();
   const [addTrn, { isLoading: isTrnLoading }] = useAddTrnMutation();
   const [liveLocation, setLiveLocation] = useState(null);
   const { geoState, updateGeo } = useGeo();
@@ -257,6 +244,9 @@ export default function FormMeterDiscovery() {
   const currentMissionType =
     action?.access === "no" ? "NA" : action?.meterType || "NA";
 
+  const { getOptions, noAccessReasons } =
+    useMeterFormLookupOptions(currentMissionType);
+
   const premiseAddress =
     `${premise?.address?.strNo || ""} ${premise?.address?.strName || ""} ${premise?.address?.strType || ""}`.trim();
 
@@ -272,9 +262,6 @@ export default function FormMeterDiscovery() {
 
   const finalErfNo = premise?.erfNo || "NAv";
   // console.log(`FormMeterDiscovery ----finalErfNo`, finalErfNo);
-
-  const getOptions = (name) =>
-    settings?.find((s) => s.name === name)?.options || [];
 
   const accessInitValues = {
     access: {
@@ -959,12 +946,12 @@ export default function FormMeterDiscovery() {
           mreadings:
             meterSubtype === "conventional" && creationReading
               ? [
-                {
-                  reading: creationReading,
-                  readingAt: timestamp,
-                  trnId: values.id,
-                  source: "AST_CREATION",
-                },
+                  {
+                    reading: creationReading,
+                    readingAt: timestamp,
+                    trnId: values.id,
+                    source: "AST_CREATION",
+                  },
                 ]
               : [],
           treadings:
@@ -1160,7 +1147,7 @@ export default function FormMeterDiscovery() {
       // if (test) {
       //   return;
       // }
-      console.log(`handleSubmitDiscovery --cleanPayload`, cleanPayload);
+      // console.log(`handleSubmitDiscovery --cleanPayload`, cleanPayload);
 
       /*  
         START TIMEOUT WINDOW
@@ -1609,7 +1596,7 @@ export default function FormMeterDiscovery() {
                     }}
                     value={values?.accessData?.access?.reason}
                   >
-                    {NA_REASONS.map((r) => (
+                    {noAccessReasons.map((r) => (
                       <RadioButton.Item key={r} label={r} value={r} />
                     ))}
                   </RadioButton.Group>

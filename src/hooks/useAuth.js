@@ -35,6 +35,7 @@ export const useAuth = () => {
     status: profile?.onboarding?.status || "IDLE",
     ready: data?.ready || false,
     isAuthenticated: !!data?.auth,
+    logoutInProgress: data?.logoutInProgress === true,
 
     isLoading,
     isError,

@@ -1,16 +1,37 @@
 import { useFormikContext } from "formik";
-import FormSelect from "./FormSelect"; // Import the generic base
+import FormSelect from "./FormSelect";
 
 export const AnomalySelect = ({ anomalies, disabled }) => {
-  const { setFieldValue } = useFormikContext();
+  const { values, setValues } = useFormikContext();
 
-  const handleAnomalyChange = (val) => {
-    // 1. Set the Parent value
-    setFieldValue("ast.anomalies.anomaly", val);
+  const getDetailsForAnomaly = (selectedAnomaly) => {
+    const selectedAnomalyData = anomalies.find(
+      (anomaly) => anomaly.anomaly === selectedAnomaly,
+    );
 
-    // 2. 🧹 THE SURGICAL RESET (The reason this component exists)
-    console.log("🧹 [ANOMALY SYSTEM]: Resetting detail dependency.");
-    setFieldValue("ast.anomalies.anomalyDetail", "");
+    return selectedAnomalyData?.anomalyDetails || [];
+  };
+
+  const handleAnomalyChange = (selectedAnomaly) => {
+    const details = getDetailsForAnomaly(selectedAnomaly);
+    const isMeterOk = selectedAnomaly === "Meter Ok";
+
+    const nextAnomalyDetail = isMeterOk ? details[0] || "" : "";
+
+    setValues(
+      {
+        ...values,
+        ast: {
+          ...(values?.ast || {}),
+          anomalies: {
+            ...(values?.ast?.anomalies || {}),
+            anomaly: selectedAnomaly,
+            anomalyDetail: nextAnomalyDetail,
+          },
+        },
+      },
+      true,
+    );
   };
 
   return (
@@ -19,7 +40,7 @@ export const AnomalySelect = ({ anomalies, disabled }) => {
       name="ast.anomalies.anomaly"
       options={anomalies.map((a) => a.anomaly)}
       disabled={disabled}
-      onValueChange={handleAnomalyChange} // 🎯 This is the new bridge
+      onValueChange={handleAnomalyChange}
     />
   );
 };

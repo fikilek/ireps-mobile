@@ -25,12 +25,13 @@ const AuthGate = memo(function AuthGate() {
     isADM,
     isMNG,
     isSPU,
+    logoutInProgress,
   } = useAuth();
 
   const segments = useSegments();
   const router = useRouter();
 
-  const user = reduxUser || auth.currentUser;
+  const user = logoutInProgress ? null : reduxUser || auth.currentUser;
   const isLoading = reduxLoading && !user;
 
   const [isLayoutReady, setIsLayoutReady] = useState(false);
@@ -118,9 +119,18 @@ const AuthGate = memo(function AuthGate() {
       default:
         return;
     }
-  }, [user, profile, status, isLoading, segments, isLayoutReady]);
+  }, [
+    user,
+    profile,
+    status,
+    isLoading,
+    segments,
+    isLayoutReady,
+    logoutInProgress,
+  ]);
 
-  const showOverlay = !isLayoutReady || isLoading || (user && !status);
+  const showOverlay =
+    logoutInProgress || !isLayoutReady || isLoading || (user && !status);
 
   if (!showOverlay) return null;
 
@@ -131,6 +141,14 @@ const AuthGate = memo(function AuthGate() {
       <Text style={styles.subLoadingText}>Verifying Garrison Credentials</Text>
     </View>
   );
+});
+
+const SessionSlot = memo(function SessionSlot() {
+  const { logoutInProgress } = useAuth();
+
+  if (logoutInProgress) return null;
+
+  return <Slot />;
 });
 
 export default function RootLayout() {
@@ -151,7 +169,7 @@ export default function RootLayout() {
                       <AuthGate />
 
                       {/* 3. Render the Screens */}
-                      <Slot />
+                      <SessionSlot />
                     </InstallationProvider>
                   </DiscoveryProvider>
                 </SafeAreaProvider>

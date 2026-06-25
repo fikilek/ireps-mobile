@@ -49,8 +49,20 @@ function normalizeOptions(options) {
     .map((item) => ({
       code: String(item?.code || "").trim(),
       label: String(item?.label || "").trim(),
+      value: String(item?.value || item?.code || "").trim(),
+      name: String(item?.name || item?.label || "").trim(),
       description: String(item?.description || "").trim(),
       sortOrder: Number(item?.sortOrder ?? 9999),
+      status: String(item?.status || "").trim().toUpperCase(),
+      enabled: item?.enabled !== false,
+      parentCode: String(item?.parentCode || "")
+        .trim()
+        .toUpperCase(),
+      appliesTo: Array.isArray(item?.appliesTo)
+        ? item.appliesTo
+            .map((value) => String(value || "").trim().toLowerCase())
+            .filter(Boolean)
+        : [],
     }))
     .filter((item) => item.code && item.label)
     .sort((a, b) => {

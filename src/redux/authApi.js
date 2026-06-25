@@ -25,6 +25,7 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { auth, db, functions } from "../firebase";
 import { clearAuthState } from "./authStorage";
+import { resetAuthenticatedApiStates } from "./logoutCleanup";
 // import { geoApi } from "./geoApi";
 
 function tsToMs(ts) {
@@ -65,6 +66,28 @@ function normalizeUserProfile(raw) {
   };
 }
 
+function signedOutAuthState({ logoutInProgress = false } = {}) {
+  return {
+    ready: true,
+    isAuthenticated: false,
+    auth: null,
+    profile: null,
+    claims: null,
+    logoutInProgress,
+  };
+}
+
+function waitForLogoutCleanupFrame() {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => setTimeout(resolve, 0));
+      return;
+    }
+
+    setTimeout(resolve, 0);
+  });
+}
+
 export const authApi = createApi({
   reducerPath: "authApi",
   baseQuery: fakeBaseQuery(),
@@ -82,6 +105,7 @@ export const authApi = createApi({
           auth: null,
           profile: null,
           claims: null,
+          logoutInProgress: false,
         },
       }),
 
@@ -96,13 +120,11 @@ export const authApi = createApi({
           if (profileUnsubscribe) profileUnsubscribe();
 
           if (!user) {
-            updateCachedData(() => ({
-              ready: true,
-              isAuthenticated: false,
-              auth: null,
-              profile: null,
-              claims: null,
-            }));
+            updateCachedData((draft) =>
+              signedOutAuthState({
+                logoutInProgress: draft?.logoutInProgress === true,
+              }),
+            );
             return;
           }
 
@@ -113,6 +135,8 @@ export const authApi = createApi({
             const tokenResult = await user.getIdTokenResult(true);
 
             updateCachedData((draft) => {
+              if (draft.logoutInProgress) return;
+
               draft.ready = true;
               draft.isAuthenticated = true;
               draft.auth = { uid: user.uid, email: user.email };
@@ -196,14 +220,59 @@ export const authApi = createApi({
        SIGN OUT
        ===================================================== */
     signout: builder.mutation({
-      async queryFn(_, { dispatch }) {
+      async queryFn(_, { dispatch, getState }) {
+        const previousAuthState =
+          authApi.endpoints.getAuthState.select(undefined)(getState())?.data;
+
         try {
+          // 1) Stop protected screens/providers while Firebase Auth is valid.
+          dispatch(
+            authApi.util.updateQueryData(
+              "getAuthState",
+              undefined,
+              () => signedOutAuthState({ logoutInProgress: true }),
+            ),
+          );
+
+          await waitForLogoutCleanupFrame();
+
+          // 2) Clear authenticated query caches and unsubscribe live streams.
+          await resetAuthenticatedApiStates(dispatch);
+
+          await waitForLogoutCleanupFrame();
+
+          // 3) Revoke Firebase Auth only after listeners have stopped.
           await signOut(auth);
 
-          dispatch(clearAuthState());
+          // 4) Clear persisted/local auth storage and finish the transition.
+          clearAuthState();
+
+          await waitForLogoutCleanupFrame();
+
+          dispatch(
+            authApi.util.updateQueryData(
+              "getAuthState",
+              undefined,
+              () => signedOutAuthState(),
+            ),
+          );
 
           return { data: true };
         } catch (error) {
+          dispatch(
+            authApi.util.updateQueryData(
+              "getAuthState",
+              undefined,
+              () =>
+                auth.currentUser && previousAuthState
+                  ? {
+                      ...previousAuthState,
+                      logoutInProgress: false,
+                    }
+                  : signedOutAuthState(),
+            ),
+          );
+
           return { error };
         }
       },

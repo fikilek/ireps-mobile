@@ -34,7 +34,7 @@ import { getSafeCoords } from "../../context/MapContext";
 import { useWarehouse } from "../../context/WarehouseContext";
 import { functions } from "../../firebase";
 import { useAuth } from "../../hooks/useAuth";
-import { useGetSettingsQuery } from "../../redux/settingsApi";
+import { useMeterFormLookupOptions } from "../../hooks/useMeterFormLookupOptions";
 import { useGetServiceProvidersQuery } from "../../redux/spApi";
 import { useAddTrnMutation } from "../../redux/trnsApi";
 import { getPremiseQueueItemByPremiseId } from "../../utils/premiseSubmissionQueue";
@@ -45,18 +45,6 @@ import {
   updateSubmissionQueueItem,
 } from "../../utils/submissionQueue";
 import { ForensicFooter } from "./ForensicFooter";
-
-const NA_REASONS = [
-  "Locked Gate / No Key",
-  "Vicious Dogs",
-  "Refused Entry by Occupant",
-  "Dangerous Environment / Safety Risk",
-  "Meter Box Vandalized / Unreadable",
-  "Obstructed (Overgrown/Debris)",
-  "House Demolished",
-  "Meter Buried/Obscured",
-  "Property Vacant",
-];
 
 function buildMeterInstallationTrnId({ wardPcode, erfNo, meterType }) {
   const ts = Date.now();
@@ -172,7 +160,6 @@ export default function FormMeterInstallation() {
 
   const router = useRouter();
   const { all } = useWarehouse();
-  const { data: settings } = useGetSettingsQuery();
   const [addTrn, { isLoading: isTrnLoading }] = useAddTrnMutation();
   const [liveLocation, setLiveLocation] = useState(null);
   const { geoState, updateGeo } = useGeo();
@@ -268,6 +255,9 @@ export default function FormMeterInstallation() {
   const currentMissionType =
     action?.access === "no" ? "NA" : action?.meterType || "NA";
 
+  const { getOptions, noAccessReasons } =
+    useMeterFormLookupOptions(currentMissionType);
+
   const premiseAddress =
     `${premise?.address?.strNo || ""} ${premise?.address?.strName || ""} ${premise?.address?.strType || ""}`.trim();
 
@@ -283,9 +273,6 @@ export default function FormMeterInstallation() {
 
   const finalErfNo = premise?.erfNo || "NAv";
   // console.log(`FormMeterInstallation ----finalErfNo`, finalErfNo);
-
-  const getOptions = (name) =>
-    settings?.find((s) => s.name === name)?.options || [];
 
   const accessInitValues = {
     access: {
@@ -1642,7 +1629,7 @@ export default function FormMeterInstallation() {
                     }}
                     value={values?.accessData?.access?.reason}
                   >
-                    {NA_REASONS.map((r) => (
+                    {noAccessReasons.map((r) => (
                       <RadioButton.Item key={r} label={r} value={r} />
                     ))}
                   </RadioButton.Group>

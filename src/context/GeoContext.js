@@ -72,7 +72,13 @@ function getGeoPcode(entity) {
 
 export const GeoProvider = ({ children }) => {
   const authCtx = useAuth();
-  const { profile } = authCtx || {};
+  const {
+    profile: authProfile,
+    isAuthenticated,
+    logoutInProgress,
+  } = authCtx || {};
+  const sessionActive = isAuthenticated && !logoutInProgress;
+  const profile = sessionActive ? authProfile : null;
 
   const uid = readUidFromAuth(authCtx, profile);
   const activeWorkbase = profile?.access?.activeWorkbase || null;
@@ -120,7 +126,7 @@ export const GeoProvider = ({ children }) => {
 
   // 2) HYDRATE: fetch full LM doc
   const { data: remoteLmDoc } = useGetLocalMunicipalityByIdQuery(workbaseId, {
-    skip: !workbaseId,
+    skip: !sessionActive || !workbaseId,
   });
 
   useEffect(() => {

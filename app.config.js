@@ -8,7 +8,7 @@ const APP_VARIANTS = {
     scheme: "ireps-dev",
     icon: "./assets/images/ireps-icon-dev.png",
     adaptiveIconForeground: "./assets/images/ireps-icon-dev.png",
-    adaptiveIconBackground: "#062A46",
+    adaptiveIconBackground: "#f6fe00",
   },
   test: {
     name: "iREPS Test",
@@ -17,7 +17,7 @@ const APP_VARIANTS = {
     scheme: "ireps-test",
     icon: "./assets/images/ireps-icon-test.png",
     adaptiveIconForeground: "./assets/images/ireps-icon-test.png",
-    adaptiveIconBackground: "#2A0F3A",
+    adaptiveIconBackground: "#8d2ec4",
   },
   trial: {
     name: "iREPS Trial",
@@ -26,7 +26,7 @@ const APP_VARIANTS = {
     scheme: "ireps-trial",
     icon: "./assets/images/ireps-icon-trial.png",
     adaptiveIconForeground: "./assets/images/ireps-icon-trial.png",
-    adaptiveIconBackground: "#0F3D1E",
+    adaptiveIconBackground: "#3c1fcb",
   },
   live: {
     name: "iREPS",
@@ -35,7 +35,7 @@ const APP_VARIANTS = {
     scheme: "ireps",
     icon: "./assets/images/ireps-icon-live.png",
     adaptiveIconForeground: "./assets/images/ireps-icon-live.png",
-    adaptiveIconBackground: "#06396B",
+    adaptiveIconBackground: "#c02424",
   },
 };
 
@@ -134,6 +134,7 @@ export default {
     extra: {
       appEnv: APP_ENV,
       appEnvLabel: variant.label,
+      appEnvColor: variant.adaptiveIconBackground,
       googleMapsApiKey: "AIzaSyAxgD1BOhVPXgDAYCK_ZG8Gj6CZPRgiHiw",
       eas: {
         projectId: "bf458047-0b33-4123-8a11-eea44fce56c2",

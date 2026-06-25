@@ -9,7 +9,7 @@ import {
   where,
 } from "firebase/firestore";
 import { REHYDRATE } from "redux-persist";
-import { db } from "../firebase";
+import { auth, db } from "../firebase";
 import { transformGeoData } from "../utils/geo/parseGeometry";
 import { authApi } from "./authApi";
 import { fsError, fsLog } from "./firestoreLogger";
@@ -200,8 +200,19 @@ export const geoApi = createApi({
        REQUIRED FOR MAPS + CASCADING SELECTOR
     ========================= */
     getLocalMunicipalityById: builder.query({
-      async queryFn(lmId) {
+      async queryFn(lmId, { getState }) {
         if (!lmId) return { data: null };
+
+        const authState =
+          authApi.endpoints.getAuthState.select(undefined)(getState())?.data;
+
+        if (
+          !auth.currentUser ||
+          !authState?.isAuthenticated ||
+          authState?.logoutInProgress
+        ) {
+          return { data: null };
+        }
 
         try {
           const docRef = doc(db, "lms", lmId);
@@ -214,6 +225,17 @@ export const geoApi = createApi({
           // 🔥 THIS IS THE FIX
           return { data: transformGeoData(snap) };
         } catch (error) {
+          const currentAuthState =
+            authApi.endpoints.getAuthState.select(undefined)(getState())?.data;
+
+          if (
+            !auth.currentUser ||
+            currentAuthState?.logoutInProgress ||
+            !currentAuthState?.isAuthenticated
+          ) {
+            return { data: null };
+          }
+
           console.error("getLocalMunicipalityById error", error);
           return { error };
         }

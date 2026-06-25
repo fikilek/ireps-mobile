@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useMemo } from "react";
 import { useGeo } from "./GeoContext";
+import { useAuth } from "../hooks/useAuth";
 
 import { useGetAstsByLmPcodeWardPcodeQuery } from "../redux/astsApi";
 import { useGetErfsByLmPcodeWardPcodeQuery } from "../redux/erfsApi";
@@ -21,14 +22,18 @@ import {
 export const WarehouseContext = createContext(null);
 
 export const WarehouseProvider = ({ children }) => {
+  const { isAuthenticated, logoutInProgress } = useAuth();
+  const sessionActive = isAuthenticated && !logoutInProgress;
   const { geoState } = useGeo();
   const { selectedLm, selectedWard } = geoState || {};
 
-  const lmPcode = selectedLm?.pcode || selectedLm?.id || null;
+  const lmPcode = sessionActive
+    ? selectedLm?.pcode || selectedLm?.id || null
+    : null;
 
   const { data: wardsList = [], isLoading: wardsLoading } =
     useGetWardsByLocalMunicipalityQuery(lmPcode, {
-      skip: !lmPcode,
+      skip: !sessionActive || !lmPcode,
     });
 
   const wards = useMemo(() => {
@@ -66,25 +71,25 @@ export const WarehouseProvider = ({ children }) => {
   const { data: wardErfs, isLoading: erfsLoading } =
     useGetErfsByLmPcodeWardPcodeQuery(
       { lmPcode, wardPcode },
-      { skip: !lmPcode || !wardPcode },
+      { skip: !sessionActive || !lmPcode || !wardPcode },
     );
 
   const { data: wardPrems = [], isLoading: premsLoading } =
     useGetPremisesByLmPcodeWardPcodeQuery(
       { lmPcode, wardPcode },
-      { skip: !lmPcode || !wardPcode },
+      { skip: !sessionActive || !lmPcode || !wardPcode },
     );
 
   const { data: cloudMeters = [], isLoading: metersLoading } =
     useGetAstsByLmPcodeWardPcodeQuery(
       { lmPcode, wardPcode },
-      { skip: !lmPcode || !wardPcode },
+      { skip: !sessionActive || !lmPcode || !wardPcode },
     );
 
   const { data: cloudTrns = [], isLoading: trnsLoading } =
     useGetTrnsByLmPcodeWardPcodeQuery(
       { lmPcode, wardPcode },
-      { skip: !lmPcode || !wardPcode },
+      { skip: !sessionActive || !lmPcode || !wardPcode },
     );
 
   const expectedPackKey =

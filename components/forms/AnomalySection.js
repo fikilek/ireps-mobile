@@ -1,7 +1,7 @@
 import { IrepsMedia } from "../media/IrepsMedia";
 import { AnomalyDetailSelect } from "./AnomalyDetailSelect";
+import { AnomalySelect } from "./AnomalySelect";
 import { FormSection } from "./FormSection";
-import FormSelect from "./FormSelect";
 
 // 🛑 Stop relying on 'values' from props
 export const AnomalySection = ({ getOptions, disabled, ...props }) => {
@@ -10,12 +10,7 @@ export const AnomalySection = ({ getOptions, disabled, ...props }) => {
 
   return (
     <FormSection title="Anomalies & Actions">
-      <FormSelect
-        label="ANOMALY"
-        name="ast.anomalies.anomaly"
-        options={anomalies.map((a) => a.anomaly)}
-        disabled={disabled}
-      />
+      <AnomalySelect anomalies={anomalies} disabled={disabled} />
 
       {/* 🧠 Now this component sees the update INSTANTLY */}
       <AnomalyDetailSelect anomalies={anomalies} disabled={disabled} />

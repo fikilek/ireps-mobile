@@ -69,7 +69,8 @@ const persistConfig = {
   storage: reduxStorage,
 
   // Keep persisted state small + valuable
-  whitelist: ["offline"],
+  // Persist lookup options so field forms can complete offline after one online load.
+  whitelist: ["offline", irepsLookupOptionsApi.reducerPath],
 
   // Never persist auth + large/sensitive caches
   blacklist: [
@@ -86,7 +87,6 @@ const persistConfig = {
     salesApi.reducerPath,
     geofenceApi.reducerPath,
     irepsSelectLookupsApi.reducerPath,
-    irepsLookupOptionsApi.reducerPath,
     lifecycleInstructionApi.reducerPath,
     bgoApi.reducerPath,
     accountDataApi.reducerPath,

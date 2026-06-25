@@ -122,6 +122,7 @@ export const WaterSections = ({
         agentName={agentName}
         agentUid={agentUid}
         setFieldValue={setFieldValue}
+        disabled={disabled}
       />
 
       <SovereignLocationPicker

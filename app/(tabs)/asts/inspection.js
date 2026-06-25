@@ -57,44 +57,6 @@ const INSP_SUBMIT_TIMEOUT_MS = 15000;
 const GPS_TOLERANCE_METERS = 5;
 const GPS_NEIGHBOURHOOD_RADIUS_METERS = 100;
 
-const METER_CONNECTION_STATUS_FALLBACK_OPTIONS = [
-  {
-    code: "FIELD",
-    label: "Field",
-    description: "Meter is captured in field state.",
-    sortOrder: 10,
-    enabled: true,
-  },
-  {
-    code: "CONNECTED",
-    label: "Connected",
-    description: "Meter is connected.",
-    sortOrder: 20,
-    enabled: true,
-  },
-  {
-    code: "DISCONNECTED",
-    label: "Disconnected",
-    description: "Meter is disconnected.",
-    sortOrder: 30,
-    enabled: true,
-  },
-  {
-    code: "REMOVED",
-    label: "Removed",
-    description: "Meter has been removed from the field.",
-    sortOrder: 40,
-    enabled: true,
-  },
-  {
-    code: "DECOMMISSIONED",
-    label: "Decommissioned",
-    description: "Meter is decommissioned.",
-    sortOrder: 50,
-    enabled: true,
-  },
-];
-
 const OFF_GRID_SUPPLY_OPTIONS = [
   {
     code: "yes",
@@ -1957,9 +1919,6 @@ export default function InspectionScreen() {
     };
   }, [queueItemId]);
 
-  const noAccessLookup = lookupState(
-    useIrepsLookupOptions("METER_NO_ACCESS_REASON"),
-  );
   const noReadingLookup = lookupState(
     useIrepsLookupOptions("METER_NO_READING_REASON"),
   );
@@ -1976,23 +1935,9 @@ export default function InspectionScreen() {
   const manufacturerLookup = lookupState(
     useIrepsLookupOptions("METER_MANUFACTURER"),
   );
-  const connectionStatusLookupRaw = lookupState(
+  const connectionStatusLookup = lookupState(
     useIrepsLookupOptions("METER_CONNECTION_STATUS"),
   );
-
-  const connectionStatusLookup = useMemo(() => {
-    const rawOptions = Array.isArray(connectionStatusLookupRaw.options)
-      ? connectionStatusLookupRaw.options
-      : [];
-
-    return {
-      ...connectionStatusLookupRaw,
-      options: rawOptions.length
-        ? rawOptions
-        : METER_CONNECTION_STATUS_FALLBACK_OPTIONS,
-      loading: connectionStatusLookupRaw.loading && rawOptions.length > 0,
-    };
-  }, [connectionStatusLookupRaw]);
 
   const lastKnown = useMemo(
     () => buildLastKnownSnapshot({ action, astDoc, sourceAstId }),

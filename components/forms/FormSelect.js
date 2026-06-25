@@ -10,11 +10,17 @@ import {
 } from "react-native";
 import { Divider, List, Modal, Portal, Surface } from "react-native-paper";
 
-const FormSelect = ({ label, name, options, icon = "form-select" }) => {
+const FormSelect = ({
+  label,
+  name,
+  options,
+  icon = "form-select",
+  disabled = false,
+  onValueChange,
+}) => {
   const {
     values,
     setFieldValue,
-    validateField,
     setFieldTouched,
     errors,
     isSubmitting,
@@ -24,15 +30,16 @@ const FormSelect = ({ label, name, options, icon = "form-select" }) => {
   const value = getIn(values, name);
   const error = getIn(errors, name);
   const hasError = !!error;
+  const isDisabled = disabled || isSubmitting;
 
   return (
     <>
       <TouchableOpacity
-        disabled={isSubmitting} // 🛡️ Lock during flight
+        disabled={isDisabled}
         style={[
           styles.selector,
-          hasError && styles.selectorError, // 🏛️ Sexy Red Left Border
-          isSubmitting && { opacity: 0.5 },
+          hasError && styles.selectorError,
+          isDisabled && { opacity: 0.5 },
         ]}
         onPress={() => setVisible(true)}
       >
@@ -43,7 +50,7 @@ const FormSelect = ({ label, name, options, icon = "form-select" }) => {
           <Text style={styles.value}>{value || "Select..."}</Text>
         </View>
         <MaterialCommunityIcons
-          name={isSubmitting ? "lock" : "chevron-down"}
+          name={isDisabled ? "lock" : "chevron-down"}
           size={20}
           color={hasError ? "#ef4444" : "#64748b"}
         />
@@ -64,13 +71,9 @@ const FormSelect = ({ label, name, options, icon = "form-select" }) => {
                   key={opt}
                   title={opt}
                   onPress={() => {
-                    // 1. Set value and trigger validation immediately
                     setFieldValue(name, opt, true);
-
-                    // 2. Mark as touched so forensic red disappears/appears
+                    onValueChange?.(opt);
                     setFieldTouched(name, true, false);
-
-                    // 3. Close modal
                     setVisible(false);
                   }}
                   right={(p) =>

@@ -1,41 +1,66 @@
 import { getIn, useFormikContext } from "formik";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo } from "react";
 import FormSelect from "./FormSelect";
 
 export const AnomalyDetailSelect = ({ anomalies, disabled }) => {
   const { values, setFieldValue } = useFormikContext();
 
-  const currentAnomaly = getIn(values, "ast.anomalies.anomaly");
-  const currentDetail = getIn(values, "ast.anomalies.anomalyDetail");
+  const currentAnomaly = getIn(values, "ast.anomalies.anomaly") || "";
+  const currentDetail = getIn(values, "ast.anomalies.anomalyDetail") || "";
 
-  const previousAnomaly = useRef(currentAnomaly);
+  const options = useMemo(() => {
+    const selectedAnomalyData = anomalies.find(
+      (anomaly) => anomaly.anomaly === currentAnomaly,
+    );
+
+    return selectedAnomalyData?.anomalyDetails || [];
+  }, [anomalies, currentAnomaly]);
+
+  const isMeterOk = currentAnomaly === "Meter Ok";
+  const meterOkDetail = isMeterOk ? options[0] || "" : "";
 
   useEffect(() => {
-    if (previousAnomaly.current && currentAnomaly !== previousAnomaly.current) {
-      setTimeout(() => {
-        if (currentAnomaly === "Meter Ok") {
-          setFieldValue("ast.anomalies.anomalyDetail", "Operationally OK");
-        } else {
-          setFieldValue("ast.anomalies.anomalyDetail", "");
-        }
-      }, 0);
+    if (!currentAnomaly) {
+      if (currentDetail) {
+        setFieldValue("ast.anomalies.anomalyDetail", "", true);
+      }
+
+      return;
     }
 
-    previousAnomaly.current = currentAnomaly;
-  }, [currentAnomaly]);
+    // Safety net for edit mode, late lookup hydration, or cached forms:
+    // if Meter Ok is selected, the detail must be system-populated.
+    if (isMeterOk) {
+      if (meterOkDetail && currentDetail !== meterOkDetail) {
+        setFieldValue("ast.anomalies.anomalyDetail", meterOkDetail, true);
+      }
 
-  const selectedAnomalyData = anomalies.find(
-    (a) => a.anomaly === currentAnomaly,
-  );
+      return;
+    }
 
-  const options = selectedAnomalyData?.anomalyDetails || [];
+    // If the selected anomaly changed outside AnomalySelect, avoid keeping
+    // a detail that no longer belongs to the selected parent anomaly.
+    if (currentDetail && options.length > 0 && !options.includes(currentDetail)) {
+      setFieldValue("ast.anomalies.anomalyDetail", "", true);
+    }
+  }, [
+    currentAnomaly,
+    currentDetail,
+    isMeterOk,
+    meterOkDetail,
+    options,
+    setFieldValue,
+  ]);
+
+  const isSystemControlledMeterOkDetail =
+    isMeterOk && !!meterOkDetail && currentDetail === meterOkDetail;
 
   return (
     <FormSelect
       label="ANOMALY DETAIL"
       name="ast.anomalies.anomalyDetail"
       options={options}
-      disabled={disabled || currentAnomaly === "Meter Ok"}
+      disabled={disabled || isSystemControlledMeterOkDetail}
     />
   );
 };

@@ -27,15 +27,13 @@ const ErfFilterHeader = ({ selectedWard, setSelectedWard, filteredCount }) => {
     [erfsQueries],
   );
 
-  const lmPcode = geoState?.selectedLm?.pcode || geoState?.selectedLm?.id || null;
+  const lmPcode =
+    geoState?.selectedLm?.pcode || geoState?.selectedLm?.id || null;
 
-  const localWardErfMetaByPcode = useMemo(
-    () => {
-      void erfsQueriesRevision;
-      return getWardErfLocalMetaByWard(lmPcode);
-    },
-    [lmPcode, erfsQueriesRevision],
-  );
+  const localWardErfMetaByPcode = useMemo(() => {
+    void erfsQueriesRevision;
+    return getWardErfLocalMetaByWard(lmPcode);
+  }, [lmPcode, erfsQueriesRevision]);
 
   const wardSyncedCountsByPcode = useMemo(() => {
     if (!lmPcode) return new Map();
@@ -69,7 +67,6 @@ const ErfFilterHeader = ({ selectedWard, setSelectedWard, filteredCount }) => {
       <View style={styles.row}>
         {/* 🎯 LEFT: WARD SELECTION */}
         <View style={styles.leftCol}>
-          {/* <Text style={styles.label}>Active Ward</Text> */}
           <Button
             mode="outlined"
             onPress={showDialog}
@@ -338,7 +335,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   leftCol: {
-    flex: 0.25,
+    flex: 0.35,
     justifyContent: "center",
   },
   rightCol: {

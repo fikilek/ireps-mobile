@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import NetInfo from "@react-native-community/netinfo";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
@@ -46,6 +47,20 @@ function formatCompactWardLabel(ward) {
   return "W-";
 }
 
+function getAppEnvProfileColors() {
+  const extra = Constants?.expoConfig?.extra || {};
+  const appEnv = String(extra?.appEnv || "dev").trim().toLowerCase();
+  const appEnvColor = extra?.appEnvColor;
+
+  return {
+    backgroundColor:
+      typeof appEnvColor === "string" && appEnvColor.trim()
+        ? appEnvColor.trim()
+        : "#1e293b",
+    textColor: appEnv === "dev" ? "#000" : "#fff",
+  };
+}
+
 export default function AppHeader({ title }) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [wbModalVisible, setWbModalVisible] = useState(false);
@@ -62,6 +77,7 @@ export default function AppHeader({ title }) {
   const [updateProfile] = useUpdateProfileMutation();
   const dispatch = useDispatch();
   const router = useRouter();
+  const appEnvProfileColors = getAppEnvProfileColors();
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
@@ -252,10 +268,20 @@ export default function AppHeader({ title }) {
         </View>
 
         <TouchableOpacity
-          style={styles.profileBtn}
+          style={[
+            styles.profileBtn,
+            { backgroundColor: appEnvProfileColors.backgroundColor },
+          ]}
           onPress={() => setMenuVisible(true)}
         >
-          <Text style={styles.initialsText}>{initials}</Text>
+          <Text
+            style={[
+              styles.initialsText,
+              { color: appEnvProfileColors.textColor },
+            ]}
+          >
+            {initials}
+          </Text>
         </TouchableOpacity>
       </View>
 
