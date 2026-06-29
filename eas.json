@@ -18,10 +18,20 @@
     },
     "test": {
       "distribution": "internal",
+      "channel": "test",
       "autoIncrement": true,
       "android": {
         "buildType": "apk"
       },
+      "env": {
+        "APP_ENV": "test",
+        "EXPO_PUBLIC_APP_ENV": "test"
+      }
+    },
+    "test-store": {
+      "distribution": "store",
+      "channel": "test",
+      "autoIncrement": true,
       "env": {
         "APP_ENV": "test",
         "EXPO_PUBLIC_APP_ENV": "test"

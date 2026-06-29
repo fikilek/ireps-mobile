@@ -1,0 +1,61 @@
+name: Mobile Config Check
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "app.config.js"
+      - "eas.json"
+      - "package.json"
+      - "package-lock.json"
+      - "src/firebase/**"
+      - "scripts/ci/**"
+      - ".github/workflows/mobile-config-check.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "app.config.js"
+      - "eas.json"
+      - "package.json"
+      - "package-lock.json"
+      - "src/firebase/**"
+      - "scripts/ci/**"
+      - ".github/workflows/mobile-config-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  mobile-config-check:
+    name: Verify DEV and TEST mobile config
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint advisory
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Resolve and verify DEV config
+        run: |
+          APP_ENV=dev EXPO_PUBLIC_APP_ENV=dev npx expo config --json > dev-config.json
+          npm run ci:verify-mobile-env -- dev dev-config.json
+
+      - name: Resolve and verify TEST config
+        run: |
+          APP_ENV=test EXPO_PUBLIC_APP_ENV=test npx expo config --json > test-config.json
+          npm run ci:verify-mobile-env -- test test-config.json
