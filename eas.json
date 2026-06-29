@@ -18,6 +18,7 @@
     },
     "test": {
       "distribution": "internal",
+      "channel": "test",
       "autoIncrement": true,
       "android": {
         "buildType": "apk"
@@ -35,6 +36,29 @@
         "APP_ENV": "test",
         "EXPO_PUBLIC_APP_ENV": "test"
       }
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_ENV": "trial",
+        "EXPO_PUBLIC_APP_ENV": "trial"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "channel": "production",
+      "env": {
+        "APP_ENV": "live",
+        "EXPO_PUBLIC_APP_ENV": "live"
+      }
     }
+  },
+  "submit": {
+    "production": {}
   }
 }
