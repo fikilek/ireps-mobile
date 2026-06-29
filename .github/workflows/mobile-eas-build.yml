@@ -1,0 +1,71 @@
+name: Mobile EAS Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_profile:
+        description: "EAS build profile to run"
+        required: true
+        default: "development"
+        type: choice
+        options:
+          - development
+          - test
+          - test-store
+
+permissions:
+  contents: read
+
+jobs:
+  eas-build:
+    name: Trigger Android EAS build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Guard branch
+        run: |
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "Run this workflow from main only."
+            exit 1
+          fi
+
+      - name: Resolve selected environment
+        run: |
+          case "${{ inputs.build_profile }}" in
+            development)
+              echo "APP_ENV_VALUE=dev" >> "$GITHUB_ENV"
+              ;;
+            test|test-store)
+              echo "APP_ENV_VALUE=test" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "Unsupported build profile."
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify selected mobile config
+        run: |
+          APP_ENV="$APP_ENV_VALUE" EXPO_PUBLIC_APP_ENV="$APP_ENV_VALUE" npx expo config --json > selected-config.json
+          npm run ci:verify-mobile-env -- "$APP_ENV_VALUE" selected-config.json
+
+      - name: Trigger Android EAS build
+        run: eas build --platform android --profile "${{ inputs.build_profile }}" --non-interactive --no-wait
