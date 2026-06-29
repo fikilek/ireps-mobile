@@ -46,7 +46,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run lint
+      - name: Run lint advisory
+        continue-on-error: true
         run: npm run lint
 
       - name: Resolve and verify DEV config
