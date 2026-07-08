@@ -2,7 +2,7 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
@@ -585,9 +585,7 @@ function normalizeFirebaseStorageImageUrl(rawUrl) {
     const encodedObjectPath = encodeURIComponent(decodedObjectPath);
 
     return `${prefix}${encodedObjectPath}${query ? `?${query}` : ""}`;
-  } catch (error) {
-    console.log("normalizeFirebaseStorageImageUrl --error", error);
-
+  } catch (_error) {
     return url;
   }
 }
@@ -670,12 +668,6 @@ function isKnownInspectionMeterKind(value) {
   return isConventionalMeterKind(value) || isPrepaidMeterKind(value);
 }
 
-function getInspectionMeterKindLabel(value) {
-  if (isConventionalMeterKind(value)) return "conventional";
-  if (isPrepaidMeterKind(value)) return "prepaid";
-  return "unknown";
-}
-
 function makeEmptyMreadingPayload() {
   return {
     reading: "",
@@ -719,11 +711,6 @@ function shouldRequireInspectionReading(values = {}) {
 function routeBackToMyWorkorders(router) {
   const astsIndexRoute = "/(tabs)/asts";
   const targetRoute = "/(tabs)/admin/operations/my-workorders";
-
-  console.log("routeBackToMyWorkorders -- clear ast stack then route", {
-    astsIndexRoute,
-    targetRoute,
-  });
 
   if (typeof router?.replace === "function") {
     // Important: inspection.js belongs to the AST tab stack. If we only route
@@ -1011,6 +998,35 @@ function buildComparison({ values, actorUid, actorName }) {
           : actorName || "NAv",
     },
   };
+}
+
+function normalizeComparisonSignatureValue(value) {
+  if (value === null || value === undefined) return "";
+
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+
+  return String(value || "").trim();
+}
+
+function buildComparisonSignature(comparison = {}) {
+  const differences = Array.isArray(comparison?.differences)
+    ? comparison.differences
+    : [];
+
+  return JSON.stringify(
+    differences.map((difference) => ({
+      fieldPath: difference?.fieldPath || "",
+      lastKnownValue: normalizeComparisonSignatureValue(
+        difference?.lastKnownValue,
+      ),
+      capturedValue: normalizeComparisonSignatureValue(
+        difference?.capturedValue,
+      ),
+      distanceMeters: difference?.distanceMeters ?? null,
+    })),
+  );
 }
 
 function buildAssignmentPayload({ assignment = {}, officeInstruction = {} }) {
@@ -1440,12 +1456,7 @@ function OfficeInstructionSection({
 
     try {
       await Linking.openURL(activeUrl);
-    } catch (error) {
-      console.log(
-        "OfficeInstructionSection openActiveMediaExternal --error",
-        error,
-      );
-
+    } catch (_error) {
       Alert.alert(
         "Open Media Failed",
         "Could not open this instruction media item.",
@@ -1753,7 +1764,13 @@ function SameDeleteSelectField({
   );
 }
 
-function ComparisonModal({ visible, comparison, onClose, onConfirm }) {
+function ComparisonModal({
+  visible,
+  comparison,
+  onClose,
+  onConfirm,
+  submitting = false,
+}) {
   const differences = comparison?.differences || [];
 
   return (
@@ -1819,12 +1836,22 @@ function ComparisonModal({ visible, comparison, onClose, onConfirm }) {
         </Text>
 
         <View style={styles.modalActions}>
-          <TouchableOpacity style={styles.correctButton} onPress={onClose}>
+          <TouchableOpacity
+            style={styles.correctButton}
+            onPress={onClose}
+            disabled={submitting}
+          >
             <Text style={styles.correctButtonText}>GO BACK AND CORRECT</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.confirmButton} onPress={onConfirm}>
-            <Text style={styles.confirmButtonText}>CONFIRM DIFFERENCES</Text>
+          <TouchableOpacity
+            style={styles.confirmButton}
+            onPress={onConfirm}
+            disabled={submitting}
+          >
+            <Text style={styles.confirmButtonText}>
+              {submitting ? "SUBMITTING" : "CONFIRM AND SUBMIT"}
+            </Text>
           </TouchableOpacity>
         </View>
       </Modal>
@@ -1891,7 +1918,10 @@ export default function InspectionScreen() {
   const [comparisonReview, setComparisonReview] = useState({
     visible: false,
     comparison: null,
+    submitting: false,
   });
+  const confirmedComparisonSignatureRef = useRef("");
+  const pendingComparisonSubmitValuesRef = useRef(null);
   const [submitOutcome, setSubmitOutcome] = useState({
     visible: false,
     type: null,
@@ -1954,8 +1984,6 @@ export default function InspectionScreen() {
   const isConventional = isConventionalMeterKind(lastKnownMeterKind);
   const isPrepaid = isPrepaidMeterKind(lastKnownMeterKind);
   const isKnownMeterKind = isKnownInspectionMeterKind(lastKnownMeterKind);
-  const inspectionMeterKindLabel =
-    getInspectionMeterKindLabel(lastKnownMeterKind);
 
   const manufacturerOptions = useMemo(() => {
     return (manufacturerLookup.options || []).filter((option) => {
@@ -2379,43 +2407,19 @@ export default function InspectionScreen() {
         formType: "METER_INSPECTION",
         payload: cleanPayload,
         context: nextContext,
-        status: "IN_PROGRESS",
+        status: queueStatus,
         createdByUid: agentUid,
         createdByUser: agentName,
       });
     }
 
     if (!queueResult?.success) {
-      console.log("saveDraftToQueue -- local queue save failed", {
-        queueItemId,
-        queueStatus,
-        instructionTrnId,
-        sourceAstId,
-        queueResult,
-      });
-
       Alert.alert(
         "Draft Save Failed",
         "Failed to save inspection draft locally.",
       );
       return false;
     }
-
-    console.log("saveDraftToQueue -- local queue save success", {
-      queueItemId: queueResult?.queueItem?.id || queueItemId || "NAv",
-      queueStatus,
-      instructionTrnId,
-      sourceAstId,
-    });
-
-    console.log("saveDraftToQueue -- routing back to my workorders", {
-      queueItemId: queueResult?.queueItem?.id || queueItemId || "NAv",
-      queueStatus,
-      instructionTrnId,
-      sourceAstId,
-      messageTitle,
-      messageBody,
-    });
 
     setSubmitOutcome({
       visible: false,
@@ -2441,7 +2445,6 @@ export default function InspectionScreen() {
 
       setSaveInProgress(false);
     } catch (error) {
-      console.log("handleSaveInspection --error", error);
       setSaveInProgress(false);
 
       Alert.alert(
@@ -2453,6 +2456,7 @@ export default function InspectionScreen() {
 
   async function handleSubmitInspection(values, helpers) {
     if (!instructionTrnId) {
+      setInProgress(false);
       Alert.alert(
         "Missing Instruction",
         "This INSP execution form must be opened from an accepted WMS instruction.",
@@ -2462,50 +2466,146 @@ export default function InspectionScreen() {
     }
 
     if (!astDoc) {
+      setInProgress(false);
       Alert.alert("Error", "AST data not found.");
       helpers?.setSubmitting?.(false);
       return;
     }
 
     if (!isEligible) {
-      console.log("handleSubmitInspection -- blocked by frontend eligibility", {
-        instructionTrnId,
-        sourceAstId,
-        statusIsEligible,
-        isKnownMeterKind,
-        lastKnownMeterKind,
-        inspectionMeterKindLabel,
-      });
-
       Alert.alert(
         "Not Eligible",
         eligibilityBlockMessage || "This meter cannot be inspected.",
       );
+      setInProgress(false);
       helpers?.setSubmitting?.(false);
       return;
     }
 
-    const comparison = buildComparison({
-      values,
-      actorUid: agentUid,
-      actorName: agentName,
-    });
+    const noAccess = isNoAccess(values);
+    const skipComparisonReview = helpers?.skipComparisonReview === true;
+    let comparison = helpers?.confirmedComparison || null;
 
-    helpers?.setFieldValue?.("inspection.comparison", comparison);
+    if (!skipComparisonReview) {
+      comparison = buildComparison({
+        values,
+        actorUid: agentUid,
+        actorName: agentName,
+      });
+    } else if (!comparison) {
+      comparison = values?.inspection?.comparison || {};
+    }
+
+    const comparisonSignature = buildComparisonSignature(comparison);
+
+    if (skipComparisonReview && comparison?.hasDifferences) {
+      comparison = {
+        ...comparison,
+        confirmation: {
+          ...(comparison.confirmation || {}),
+          required: true,
+          confirmed: true,
+          confirmedAt:
+            comparison?.confirmation?.confirmedAt &&
+            comparison.confirmation.confirmedAt !== "NAv"
+              ? comparison.confirmation.confirmedAt
+              : new Date().toISOString(),
+          confirmedByUid:
+            comparison?.confirmation?.confirmedByUid &&
+            comparison.confirmation.confirmedByUid !== "NAv"
+              ? comparison.confirmation.confirmedByUid
+              : agentUid || "NAv",
+          confirmedByUser:
+            comparison?.confirmation?.confirmedByUser &&
+            comparison.confirmation.confirmedByUser !== "NAv"
+              ? comparison.confirmation.confirmedByUser
+              : agentName || "NAv",
+        },
+      };
+      confirmedComparisonSignatureRef.current =
+        buildComparisonSignature(comparison);
+    } else if (comparison?.hasDifferences) {
+      const matchesConfirmedComparison =
+        confirmedComparisonSignatureRef.current &&
+        confirmedComparisonSignatureRef.current === comparisonSignature;
+
+      if (matchesConfirmedComparison) {
+        comparison.confirmation = {
+          ...(comparison.confirmation || {}),
+          required: true,
+          confirmed: true,
+          confirmedAt:
+            comparison?.confirmation?.confirmedAt &&
+            comparison.confirmation.confirmedAt !== "NAv"
+              ? comparison.confirmation.confirmedAt
+              : new Date().toISOString(),
+          confirmedByUid:
+            comparison?.confirmation?.confirmedByUid &&
+            comparison.confirmation.confirmedByUid !== "NAv"
+              ? comparison.confirmation.confirmedByUid
+              : agentUid || "NAv",
+          confirmedByUser:
+            comparison?.confirmation?.confirmedByUser &&
+            comparison.confirmation.confirmedByUser !== "NAv"
+              ? comparison.confirmation.confirmedByUser
+              : agentName || "NAv",
+        };
+      } else {
+        comparison.confirmation = {
+          ...(comparison.confirmation || {}),
+          required: true,
+          confirmed: false,
+          confirmedAt: "NAv",
+          confirmedByUid: "NAv",
+          confirmedByUser: "NAv",
+        };
+      }
+    } else {
+      confirmedComparisonSignatureRef.current = "";
+    }
+
+    const comparisonForSubmit = noAccess
+      ? values?.inspection?.comparison || comparison
+      : comparison;
+
+    const submitValues = {
+      ...values,
+      inspection: {
+        ...(values?.inspection || {}),
+        comparison: comparisonForSubmit,
+      },
+    };
 
     if (
-      !isNoAccess(values) &&
+      !noAccess &&
+      (!comparison?.hasDifferences ||
+        comparison?.confirmation?.confirmed === true)
+    ) {
+      helpers?.setFieldValue?.("inspection.comparison", comparison, false);
+    }
+
+    if (
+      !skipComparisonReview &&
+      !noAccess &&
       comparison?.hasDifferences &&
       comparison?.confirmation?.confirmed !== true
     ) {
+      pendingComparisonSubmitValuesRef.current = submitValues;
       setComparisonReview({
         visible: true,
         comparison,
+        submitting: false,
       });
 
+      setInProgress(false);
       helpers?.setSubmitting?.(false);
       return;
     }
+
+    const hasConfirmedDifferences =
+      !noAccess &&
+      comparison?.hasDifferences &&
+      comparison?.confirmation?.confirmed === true;
 
     try {
       setInProgress(true);
@@ -2514,19 +2614,27 @@ export default function InspectionScreen() {
       const isOnline = netState.isConnected && netState.isInternetReachable;
 
       if (!isOnline) {
+        if (hasConfirmedDifferences) {
+          await saveDraftToQueue(
+            submitValues,
+            "SAVED LOCALLY",
+            "You are offline. The confirmed INSP form was saved locally and marked pending for submission when network connectivity returns.",
+            "PENDING",
+          );
+        } else {
+          Alert.alert(
+            "Offline",
+            "You are offline. Use SAVE to keep this INSP execution form locally, then submit when online.",
+          );
+        }
+
         setInProgress(false);
-
-        Alert.alert(
-          "Offline",
-          "You are offline. Use SAVE to keep this INSP execution form locally, then submit when online.",
-        );
-
         helpers?.setSubmitting?.(false);
         return;
       }
 
-      const syncedMedia = await syncInspectionMedia(values);
-      const cleanPayload = buildExecutionPayload(values, syncedMedia);
+      const syncedMedia = await syncInspectionMedia(submitValues);
+      const cleanPayload = buildExecutionPayload(submitValues, syncedMedia);
 
       const onMeterLifecycleTrnCallable = httpsCallable(
         functions,
@@ -2543,31 +2651,9 @@ export default function InspectionScreen() {
 
         result = callableResult?.data || {};
       } catch (error) {
-        console.log("handleSubmitInspection -- callable error", {
-          code: error?.code,
-          message: error?.message,
-          stack: error?.stack,
-          instructionTrnId,
-          sourceAstId,
-          queueItemId,
-          erfNo: values?.accessData?.erfNo,
-          meterNo: values?.inspection?.captured?.ast?.astData?.astNo,
-          raw: error,
-        });
-
         if (error?.message === "SUBMISSION_TIMEOUT") {
-          console.log(
-            "handleSubmitInspection -- submission timeout saved to MMKV",
-            {
-              instructionTrnId,
-              sourceAstId,
-              queueItemId,
-              timeoutMs: INSP_SUBMIT_TIMEOUT_MS,
-            },
-          );
-
           await saveDraftToQueue(
-            values,
+            submitValues,
             "SAVED LOCALLY",
             "The submission took too long. The INSP form was saved locally only and was not confirmed by the backend.",
             "PENDING",
@@ -2590,16 +2676,6 @@ export default function InspectionScreen() {
       }
 
       if (!result?.success) {
-        console.log("handleSubmitInspection -- backend returned failure", {
-          instructionTrnId,
-          sourceAstId,
-          queueItemId,
-          code: result?.code,
-          message: result?.message,
-          trnId: result?.trnId,
-          result,
-        });
-
         setInProgress(false);
         helpers?.setSubmitting?.(false);
 
@@ -2610,15 +2686,6 @@ export default function InspectionScreen() {
 
         return;
       }
-
-      console.log("handleSubmitInspection -- backend success", {
-        instructionTrnId,
-        sourceAstId,
-        queueItemId,
-        code: result?.code,
-        message: result?.message,
-        trnId: result?.trnId,
-      });
 
       if (queueItemId) {
         await updateSubmissionQueueItem(
@@ -2641,12 +2708,6 @@ export default function InspectionScreen() {
           agentName,
         );
 
-        console.log("handleSubmitInspection -- queue item kept as SUCCESS", {
-          queueItemId,
-          instructionTrnId,
-          sourceAstId,
-          trnId: result?.trnId || instructionTrnId || "NAv",
-        });
       }
 
       setInProgress(false);
@@ -2654,16 +2715,6 @@ export default function InspectionScreen() {
 
       routeBackToMyWorkorders(router);
     } catch (error) {
-      console.log("handleSubmitInspection -- outer error", {
-        code: error?.code,
-        message: error?.message,
-        stack: error?.stack,
-        instructionTrnId,
-        sourceAstId,
-        queueItemId,
-        raw: error,
-      });
-
       Alert.alert("Error", error?.message || "Submission failed");
       setInProgress(false);
       helpers?.setSubmitting?.(false);
@@ -2835,13 +2886,14 @@ export default function InspectionScreen() {
         validateOnBlur={true}
       >
         {({
-          values,
-          errors,
-          isValid,
-          handleSubmit,
-          resetForm,
-          validateForm,
-          setFieldValue,
+            values,
+            errors,
+            isValid,
+            handleSubmit,
+            resetForm,
+            validateForm,
+            setFieldValue,
+            setSubmitting,
         }) => {
           const noAccess = isNoAccess(values);
           const capturedAst = values?.inspection?.captured?.ast || {};
@@ -3972,27 +4024,84 @@ export default function InspectionScreen() {
               <ComparisonModal
                 visible={comparisonReview.visible}
                 comparison={comparisonReview.comparison}
-                onClose={() =>
-                  setComparisonReview({ visible: false, comparison: null })
-                }
+                submitting={comparisonReview.submitting}
+                onClose={() => {
+                  if (comparisonReview.submitting) return;
+
+                  confirmedComparisonSignatureRef.current = "";
+                  pendingComparisonSubmitValuesRef.current = null;
+                  setComparisonReview({
+                    visible: false,
+                    comparison: null,
+                    submitting: false,
+                  });
+                }}
                 onConfirm={() => {
+                  if (comparisonReview.submitting) return;
+
+                  if (!comparisonReview?.comparison) {
+                    setComparisonReview({
+                      visible: false,
+                      comparison: null,
+                      submitting: false,
+                    });
+                    return;
+                  }
+
+                  const confirmedComparison = {
+                    ...comparisonReview.comparison,
+                    confirmation: {
+                      ...(comparisonReview.comparison?.confirmation || {}),
+                      required: true,
+                      confirmed: true,
+                      confirmedAt: new Date().toISOString(),
+                      confirmedByUid: agentUid || "NAv",
+                      confirmedByUser: agentName || "NAv",
+                    },
+                  };
+
+                  confirmedComparisonSignatureRef.current =
+                    buildComparisonSignature(confirmedComparison);
+
+                  const pendingValues =
+                    pendingComparisonSubmitValuesRef.current || values;
+
+                  const confirmedValues = {
+                    ...pendingValues,
+                    inspection: {
+                      ...(pendingValues?.inspection || {}),
+                      comparison: confirmedComparison,
+                    },
+                  };
+
                   setFieldValue(
-                    "inspection.comparison.confirmation.confirmed",
-                    true,
+                    "inspection.comparison",
+                    confirmedComparison,
+                    false,
                   );
-                  setFieldValue(
-                    "inspection.comparison.confirmation.confirmedAt",
-                    new Date().toISOString(),
-                  );
-                  setFieldValue(
-                    "inspection.comparison.confirmation.confirmedByUid",
-                    agentUid,
-                  );
-                  setFieldValue(
-                    "inspection.comparison.confirmation.confirmedByUser",
-                    agentName,
-                  );
-                  setComparisonReview({ visible: false, comparison: null });
+                  pendingComparisonSubmitValuesRef.current = null;
+                  setInProgress(true);
+                  setComparisonReview({
+                    visible: true,
+                    comparison: confirmedComparison,
+                    submitting: true,
+                  });
+                  setSubmitting(true);
+
+                  setTimeout(() => {
+                    setComparisonReview({
+                      visible: false,
+                      comparison: null,
+                      submitting: false,
+                    });
+
+                    handleSubmitInspection(confirmedValues, {
+                      setFieldValue,
+                      setSubmitting,
+                      skipComparisonReview: true,
+                      confirmedComparison,
+                    });
+                  }, 80);
                 }}
               />
 
