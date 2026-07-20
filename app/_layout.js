@@ -14,6 +14,7 @@ import { WarehouseProvider } from "../src/context/WarehouseContext";
 import { auth } from "../src/firebase";
 import { useAuth } from "../src/hooks/useAuth";
 import AuthBootstrap from "../src/navigation/AuthBootstrap";
+import FwrMonitoringCoordinator from "../src/services/fwr-monitoring/FwrMonitoringCoordinator";
 import { persistor, store } from "../src/redux/store";
 
 const AuthGate = memo(function AuthGate() {
@@ -165,10 +166,13 @@ export default function RootLayout() {
                       {/* 1. Bootstrap the Firebase Listeners */}
                       <AuthBootstrap />
 
-                      {/* 2. Place the Guard below the listeners */}
+                      {/* 2. Start FWR/SPV monitoring after auth is ready */}
+                      <FwrMonitoringCoordinator />
+
+                      {/* 3. Place the Guard below the listeners */}
                       <AuthGate />
 
-                      {/* 3. Render the Screens */}
+                      {/* 4. Render the Screens */}
                       <SessionSlot />
                     </InstallationProvider>
                   </DiscoveryProvider>
