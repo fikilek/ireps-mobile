@@ -25,6 +25,9 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { auth, db, functions } from "../firebase";
 import { clearAuthState } from "./authStorage";
+import {
+  stopFwrLocationMonitoringAndMarkSignedOut,
+} from "../services/fwr-monitoring/fwrLocationService";
 import { resetAuthenticatedApiStates } from "./logoutCleanup";
 // import { geoApi } from "./geoApi";
 
@@ -225,7 +228,26 @@ export const authApi = createApi({
           authApi.endpoints.getAuthState.select(undefined)(getState())?.data;
 
         try {
-          // 1) Stop protected screens/providers while Firebase Auth is valid.
+          const previousRole = String(
+            previousAuthState?.profile?.employment?.role || "",
+          )
+            .trim()
+            .toUpperCase();
+
+          // 1) Stop FWR/SPV monitoring while Firebase Auth is still valid.
+          if (["FWR", "SPV"].includes(previousRole)) {
+            const monitoringStopResult =
+              await stopFwrLocationMonitoringAndMarkSignedOut();
+
+            console.log("[FWR MONITORING] Sign-out cleanup result.", {
+              role: previousRole,
+              stopped: monitoringStopResult?.stopped === true,
+              statusUpdated: monitoringStopResult?.statusUpdated === true,
+              errorCount: monitoringStopResult?.errors?.length || 0,
+            });
+          }
+
+          // 2) Stop protected screens/providers while Firebase Auth is valid.
           dispatch(
             authApi.util.updateQueryData(
               "getAuthState",
@@ -236,15 +258,15 @@ export const authApi = createApi({
 
           await waitForLogoutCleanupFrame();
 
-          // 2) Clear authenticated query caches and unsubscribe live streams.
+          // 3) Clear authenticated query caches and unsubscribe live streams.
           await resetAuthenticatedApiStates(dispatch);
 
           await waitForLogoutCleanupFrame();
 
-          // 3) Revoke Firebase Auth only after listeners have stopped.
+          // 4) Revoke Firebase Auth only after listeners have stopped.
           await signOut(auth);
 
-          // 4) Clear persisted/local auth storage and finish the transition.
+          // 5) Clear persisted/local auth storage and finish the transition.
           clearAuthState();
 
           await waitForLogoutCleanupFrame();

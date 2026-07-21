@@ -6,6 +6,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Provider } from "react-redux";
 
 import { PersistGate } from "redux-persist/integration/react";
+import "../src/services/fwr-monitoring/fwrLocationTask";
 import { DiscoveryProvider } from "../src/context/DiscoveryContext";
 import { GeoProvider } from "../src/context/GeoContext";
 import { InstallationProvider } from "../src/context/InstallationContext";

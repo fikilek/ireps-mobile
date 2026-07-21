@@ -8,14 +8,14 @@ import { buildFwrLocationPayload } from "./fwrLocationPayload";
 
 export async function captureAndSubmitForegroundFwrLocation() {
   console.log(
-    `${FWR_MONITORING_LOG_PREFIX} Phase 1: checking foreground permission.`,
+    `${FWR_MONITORING_LOG_PREFIX} Immediate GPS: checking foreground permission.`,
   );
 
   let permission = await Location.getForegroundPermissionsAsync();
 
   if (permission.status !== Location.PermissionStatus.GRANTED) {
     console.log(
-      `${FWR_MONITORING_LOG_PREFIX} Phase 1: requesting foreground permission.`,
+      `${FWR_MONITORING_LOG_PREFIX} Immediate GPS: requesting foreground permission.`,
     );
     permission = await Location.requestForegroundPermissionsAsync();
   }
@@ -29,7 +29,7 @@ export async function captureAndSubmitForegroundFwrLocation() {
   }
 
   console.log(
-    `${FWR_MONITORING_LOG_PREFIX} Phase 1: capturing one GPS position.`,
+    `${FWR_MONITORING_LOG_PREFIX} Immediate GPS: capturing one GPS position.`,
   );
 
   const locationResult = await Location.getCurrentPositionAsync({
@@ -40,7 +40,7 @@ export async function captureAndSubmitForegroundFwrLocation() {
   const payload = buildFwrLocationPayload(locationResult);
 
   console.log(
-    `${FWR_MONITORING_LOG_PREFIX} Phase 1: sending GPS to callable.`,
+    `${FWR_MONITORING_LOG_PREFIX} Immediate GPS: sending GPS to callable.`,
     {
       capturedAtMs: payload.capturedAtMs,
       accuracyM: payload.location.accuracyM,
@@ -50,7 +50,7 @@ export async function captureAndSubmitForegroundFwrLocation() {
   const response = await submitFwrLocation(payload);
 
   console.log(
-    `${FWR_MONITORING_LOG_PREFIX} Phase 1: callable completed.`,
+    `${FWR_MONITORING_LOG_PREFIX} Immediate GPS: callable completed.`,
     response,
   );
 
