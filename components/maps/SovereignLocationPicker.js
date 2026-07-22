@@ -50,6 +50,9 @@ const SovereignLocationPicker = ({
     useState(true);
 
   const rawValue = getIn(values, name);
+  console.log(" ---  ----");
+  console.log(" ---  ----");
+  console.log("(rawValue)", rawValue);
   const error = getIn(errors, name);
   const isTouched = getIn(touched, name);
   const hasError = !!error && (isTouched || submitCount > 0);
@@ -346,72 +349,111 @@ const SovereignLocationPicker = ({
     return () => clearTimeout(timeout);
   }, [modalVisible, erfNo, erfCentroid]);
 
+  console.log("hasError ------------------------------");
+  console.log("hasError ------------------------------");
+  console.log("hasError", hasError);
+
   return (
     <FormSection title={label}>
       <View style={[styles.container, disabled && { opacity: 0.6 }]}>
         <TouchableOpacity
           disabled={disabled}
           activeOpacity={0.8}
-          style={[
-            styles.locationStatusCard,
-            rawValue
-              ? styles.locationStatusCardLocked
-              : styles.locationStatusCardRequired,
-            hasError && styles.previewError,
-          ]}
           onPress={() => setModalVisible(true)}
         >
           <View
             style={[
-              styles.locationStatusIcon,
-              rawValue
-                ? styles.locationStatusIconLocked
-                : styles.locationStatusIconRequired,
+              styles.previewMapShell,
+              hasError && styles.previewMapShellError,
             ]}
           >
-            <MaterialCommunityIcons
-              name={rawValue ? "crosshairs-gps" : icon}
-              size={30}
-              color={rawValue ? "#166534" : hasError ? "#b91c1c" : "#475569"}
-            />
+            {!modalVisible && (
+              <MapView
+                key={`slp-preview-${currentCoords.latitude}-${currentCoords.longitude}`}
+                provider={PROVIDER_GOOGLE}
+                style={styles.previewMap}
+                mapType="standard"
+                scrollEnabled={false}
+                zoomEnabled={false}
+                rotateEnabled={false}
+                pitchEnabled={false}
+                initialRegion={{
+                  ...currentCoords,
+                  latitudeDelta: 0.001,
+                  longitudeDelta: 0.001,
+                }}
+              >
+                {referenceBoundary.length > 0 && (
+                  <Polygon
+                    coordinates={referenceBoundary}
+                    strokeColor="#FFD700"
+                    fillColor="rgba(255, 215, 0, 0.1)"
+                    strokeWidth={2}
+                  />
+                )}
+              </MapView>
+            )}
+
+            <View pointerEvents="none" style={styles.previewOverlay}>
+              <View
+                style={[
+                  styles.locationStatusIcon,
+                  rawValue
+                    ? styles.locationStatusIconLocked
+                    : styles.locationStatusIconRequired,
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name={rawValue ? "crosshairs-gps" : icon}
+                  size={30}
+                  color={
+                    rawValue
+                      ? "#166534"
+                      : hasError
+                        ? "#b91c1c"
+                        : "#475569"
+                  }
+                />
+              </View>
+
+              <Text
+                style={[
+                  styles.locationStatusTitle,
+                  rawValue
+                    ? styles.locationStatusTitleLocked
+                    : styles.locationStatusTitleRequired,
+                ]}
+              >
+                {rawValue ? "POSITION LOCKED" : "GPS POSITION REQUIRED"}
+              </Text>
+
+              {rawValue ? (
+                <>
+                  <Text style={styles.locationStatusCoordinates}>
+                    Latitude: {currentCoords.latitude.toFixed(6)}
+                  </Text>
+
+                  <Text style={styles.locationStatusCoordinates}>
+                    Longitude: {currentCoords.longitude.toFixed(6)}
+                  </Text>
+
+                  <Text style={styles.locationStatusAction}>
+                    TAP TO RE-ADJUST POSITION
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.locationStatusMessage}>
+                    Open the locator and position the proposed Informal ERF.
+                  </Text>
+
+                  <Text style={styles.locationStatusAction}>
+                    TAP TO OPEN GPS LOCATOR
+                  </Text>
+                </>
+              )}
+            </View>
           </View>
-
-          <Text
-            style={[
-              styles.locationStatusTitle,
-              rawValue
-                ? styles.locationStatusTitleLocked
-                : styles.locationStatusTitleRequired,
-            ]}
-          >
-            {rawValue ? "POSITION LOCKED" : "GPS POSITION REQUIRED"}
-          </Text>
-
-          {rawValue ? (
-            <>
-              <Text style={styles.locationStatusCoordinates}>
-                Latitude: {currentCoords.latitude.toFixed(6)}
-              </Text>
-
-              <Text style={styles.locationStatusCoordinates}>
-                Longitude: {currentCoords.longitude.toFixed(6)}
-              </Text>
-
-              <Text style={styles.locationStatusAction}>
-                TAP TO RE-ADJUST POSITION
-              </Text>
-            </>
-          ) : (
-            <>
-              <Text style={styles.locationStatusMessage}>
-                Open the locator and position the proposed Informal ERF.
-              </Text>
-
-              <Text style={styles.locationStatusAction}>
-                TAP TO OPEN GPS LOCATOR
-              </Text>
-            </>
-          )}
         </TouchableOpacity>
 
         <Portal>
@@ -657,26 +699,33 @@ const SovereignLocationPicker = ({
 const styles = StyleSheet.create({
   container: { marginBottom: 10 },
 
-  previewError: {
+  previewMapShell: {
+    height: 170,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+    position: "relative",
+  },
+
+  previewMapShellError: {
     borderColor: "#ef4444",
     borderLeftWidth: 8,
   },
 
-  locationStatusCard: {
+  previewMap: {
+    ...StyleSheet.absoluteFillObject,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
+  },
+
+  previewOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: 18,
     paddingVertical: 14,
-    backgroundColor: "#ffffff",
-  },
-
-  locationStatusCardRequired: {
-    backgroundColor: "#f8fafc",
-  },
-
-  locationStatusCardLocked: {
-    backgroundColor: "#f0fdf4",
+    backgroundColor: "rgba(255, 255, 255, 0.56)",
+    borderRadius: 12,
   },
 
   locationStatusIcon: {
