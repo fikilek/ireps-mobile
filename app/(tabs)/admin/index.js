@@ -158,6 +158,17 @@ export default function AdminDashboard() {
               )
             }
           />
+
+          <Card
+            title="Informal ERF Storage"
+            subtitle="Offline Informal ERF submission queue"
+            disabled={isNavigating}
+            onPress={() =>
+              handleNavigate(
+                "/(tabs)/admin/storage/informal-erf-submission-queue",
+              )
+            }
+          />
         </Section>
       )}
     </ScrollView>

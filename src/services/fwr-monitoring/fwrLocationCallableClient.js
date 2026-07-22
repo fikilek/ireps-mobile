@@ -7,6 +7,8 @@ import { auth, functions } from "../../firebase";
 
 const AUTH_READY_TIMEOUT_MS = 10_000;
 
+export const FWR_AUTH_UNAVAILABLE_CODE = "FWR_AUTH_UNAVAILABLE";
+
 const submitLocationCallable = httpsCallable(
   functions,
   "submitFwrLocationCallable",
@@ -17,16 +19,49 @@ const updateStatusCallable = httpsCallable(
   "updateFwrMonitoringStatusCallable",
 );
 
+function createAuthUnavailableError(message) {
+  const error = new Error(message);
+  error.code = FWR_AUTH_UNAVAILABLE_CODE;
+  return error;
+}
+
+export function isFwrAuthUnavailableError(error) {
+  return error?.code === FWR_AUTH_UNAVAILABLE_CODE;
+}
+
 async function waitForAuthenticatedUser() {
   if (auth.currentUser) return auth.currentUser;
 
   return new Promise((resolve, reject) => {
+    let settled = false;
     let unsubscribe = null;
 
+    const cleanup = () => {
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
+      }
+    };
+
+    const resolveOnce = (user) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      cleanup();
+      resolve(user);
+    };
+
+    const rejectOnce = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      cleanup();
+      reject(error);
+    };
+
     const timeoutId = setTimeout(() => {
-      if (unsubscribe) unsubscribe();
-      reject(
-        new Error(
+      rejectOnce(
+        createAuthUnavailableError(
           "Firebase authentication was not restored before the location timeout.",
         ),
       );
@@ -35,20 +70,15 @@ async function waitForAuthenticatedUser() {
     unsubscribe = onAuthStateChanged(
       auth,
       (user) => {
-        clearTimeout(timeoutId);
-        if (unsubscribe) unsubscribe();
+        // Firebase can briefly emit null while persisted authentication is
+        // still being restored during an app/Metro reload. Do not reject on
+        // that temporary state; keep waiting until the timeout expires.
+        if (!user) return;
 
-        if (!user) {
-          reject(new Error("No authenticated user is available for GPS upload."));
-          return;
-        }
-
-        resolve(user);
+        resolveOnce(user);
       },
       (error) => {
-        clearTimeout(timeoutId);
-        if (unsubscribe) unsubscribe();
-        reject(error);
+        rejectOnce(error);
       },
     );
   });

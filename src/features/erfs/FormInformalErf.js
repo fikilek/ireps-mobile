@@ -120,8 +120,7 @@ const validateInformalErf = (values) => {
     values.media.some((item) => {
       const isCorrectTag = item?.tag === "informalErfSitePhoto";
       const hasMediaLocation =
-        !!String(item?.uri || "").trim() ||
-        !!String(item?.url || "").trim();
+        !!String(item?.uri || "").trim() || !!String(item?.url || "").trim();
 
       return isCorrectTag && hasMediaLocation;
     });
@@ -204,16 +203,10 @@ export default function FormInformalErf({ initialDeviceLocation }) {
   const selectedWard = geoState?.selectedWard || null;
 
   const lmPcode =
-    selectedLm?.pcode ||
-    selectedLm?.lmPcode ||
-    selectedLm?.id ||
-    "NAv";
+    selectedLm?.pcode || selectedLm?.lmPcode || selectedLm?.id || "NAv";
 
   const wardPcode =
-    selectedWard?.pcode ||
-    selectedWard?.wardPcode ||
-    selectedWard?.id ||
-    "NAv";
+    selectedWard?.pcode || selectedWard?.wardPcode || selectedWard?.id || "NAv";
 
   const devicePoint = useMemo(() => {
     if (!initialDeviceLocation) return null;
@@ -351,6 +344,9 @@ export default function FormInformalErf({ initialDeviceLocation }) {
       validateOnChange={true}
       validateOnBlur={false}
       onSubmit={async (values) => {
+        console.log(" ---    ");
+        console.log(" ---    ");
+        console.log("onSubmit values", values);
         const saveResult = await addInformalErfQueueItem({
           payloadInput: {
             lmPcode,
@@ -382,10 +378,7 @@ export default function FormInformalErf({ initialDeviceLocation }) {
           },
 
           context: {
-            lmName:
-              selectedLm?.name ||
-              selectedLm?.id ||
-              "NAv",
+            lmName: selectedLm?.name || selectedLm?.id || "NAv",
 
             wardName:
               selectedWard?.name ||
@@ -397,12 +390,12 @@ export default function FormInformalErf({ initialDeviceLocation }) {
           createdByUid: agentUid,
           createdByUser: agentName,
         });
+        console.log(" ---    ");
+        console.log(" ---    ");
+        console.log("onSubmit saveResult", saveResult);
 
         if (!saveResult?.success) {
-          console.error(
-            "❌ [INFORMAL_ERF_QUEUE_SAVE_FAILED]",
-            saveResult,
-          );
+          console.error("❌ [INFORMAL_ERF_QUEUE_SAVE_FAILED]", saveResult);
 
           Alert.alert(
             "Local Save Failed",
@@ -431,23 +424,18 @@ export default function FormInformalErf({ initialDeviceLocation }) {
         );
       }}
     >
-      {({
-        errors,
-        setFieldValue,
-        setValues,
-        values,
-      }) => {
-        const showGpsError =
-          !!errors?.proposedErfLocation;
+      {({ errors, setFieldValue, setValues, values }) => {
+        console.log(" ---    ");
+        console.log(" ---    ");
+        console.log("Formik vallues", values);
 
-        const showReasonError =
-          !!errors?.reasonCode;
+        const showGpsError = !!errors?.proposedErfLocation;
 
-        const showReasonOtherError =
-          !!errors?.reasonOther;
+        const showReasonError = !!errors?.reasonCode;
 
-        const showMediaError =
-          !!errors?.media;
+        const showReasonOtherError = !!errors?.reasonOther;
+
+        const showMediaError = !!errors?.media;
 
         return (
           <View style={styles.screen}>
@@ -491,7 +479,6 @@ export default function FormInformalErf({ initialDeviceLocation }) {
               ) : null}
 
               <FormSection title="REASON FOR INFORMAL ERF">
-
                 <TouchableOpacity
                   activeOpacity={0.8}
                   style={[
@@ -546,7 +533,6 @@ export default function FormInformalErf({ initialDeviceLocation }) {
               </FormSection>
 
               <FormSection title="INFORMAL ERF SITE PHOTOGRAPH">
-
                 <Text style={styles.mediaHint}>
                   Capture one clear photograph showing the physical site.
                 </Text>
@@ -561,12 +547,9 @@ export default function FormInformalErf({ initialDeviceLocation }) {
                 />
 
                 {showMediaError ? (
-                  <Text style={styles.fieldErrorText}>
-                    {errors.media}
-                  </Text>
+                  <Text style={styles.fieldErrorText}>{errors.media}</Text>
                 ) : null}
               </FormSection>
-
             </ScrollView>
 
             <ForensicFooter
@@ -601,9 +584,7 @@ export default function FormInformalErf({ initialDeviceLocation }) {
                             ...values,
                             reasonCode,
                             reasonOther:
-                              reasonCode === "OTHER"
-                                ? values.reasonOther
-                                : "",
+                              reasonCode === "OTHER" ? values.reasonOther : "",
                           },
                           true,
                         );

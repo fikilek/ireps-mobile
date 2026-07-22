@@ -6,6 +6,7 @@ import React, {
   useState,
 } from "react";
 import {
+  Alert,
   Platform,
   StyleSheet,
   Text,
@@ -60,6 +61,7 @@ export default function MapsScreen() {
   const [region, setRegion] = useState(null);
   const [zoom, setZoom] = useState(10);
   const [mapType, setMapType] = useState("standard");
+  const [userLocation, setUserLocation] = useState(null);
 
   const [gcsModalOpen, setGcsModalOpen] = useState(false);
   const [selectedGeofence, setSelectedGeofence] = useState(null);
@@ -368,6 +370,49 @@ export default function MapsScreen() {
       },
     });
   }, [geoState?.selectedErf, router]);
+
+  const handleOpenInformalErfForm = useCallback(() => {
+    if (!userLocation) return;
+
+    router.push({
+      pathname: "/(tabs)/maps/formInformalErf",
+      params: {
+        latitude: String(userLocation.latitude),
+        longitude: String(userLocation.longitude),
+        accuracyM:
+          userLocation.accuracyM != null
+            ? String(userLocation.accuracyM)
+            : "",
+        capturedAtMs: String(userLocation.capturedAtMs || Date.now()),
+      },
+    });
+  }, [router, userLocation]);
+
+  const handleInformalErfLongPress = useCallback(() => {
+    if (!userLocation) {
+      Alert.alert(
+        "Location Required",
+        "Tap the red Center Me button before creating an Informal ERF.",
+        [{ text: "OK" }],
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Create Informal ERF?",
+      "You are about to create an Informal ERF at your current location.\n\nAn Informal ERF may only be created where no formal ERF exists.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Continue",
+          onPress: handleOpenInformalErfForm,
+        },
+      ],
+    );
+  }, [handleOpenInformalErfForm, userLocation]);
 
   const scopeSync = sync?.scope ?? { status: "idle" };
 
@@ -1021,6 +1066,7 @@ export default function MapsScreen() {
         onModalStateChange={setGcsModalOpen}
         onSelectGeofence={handleSelectGeofence}
         selectedGeofence={selectedGeofence}
+        onUserLocationChange={setUserLocation}
       />
 
       <View style={styles.layerControl}>
@@ -1095,6 +1141,22 @@ export default function MapsScreen() {
           <Text style={styles.zoomText}>{zoom}</Text>
           <Text style={styles.zoomLabel}>ZOOM</Text>
         </View>
+        {/* Informal ERF create button */}
+        <TouchableOpacity
+          style={[
+            styles.informalErfBtn,
+            !userLocation && styles.informalErfBtnWaiting,
+          ]}
+          onLongPress={handleInformalErfLongPress}
+          delayLongPress={800}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Create Informal ERF"
+          accessibilityHint="Long press to open the Informal ERF form"
+        >
+          <Text style={styles.informalErfIcon}>+</Text>
+          <Text style={styles.informalErfLabel}>ERF</Text>
+        </TouchableOpacity>
       </View>
 
       {mapMode === "edit-premise-marker" && activeDragPremise ? (
@@ -1248,6 +1310,39 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginTop: -2,
   },
+
+  informalErfBtn: {
+    width: 40,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    borderWidth: 1,
+    borderColor: "#4CD964",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+  },
+
+  informalErfBtnWaiting: {
+    borderColor: "#94a3b8",
+    opacity: 0.72,
+  },
+
+  informalErfIcon: {
+    color: "#4CD964",
+    fontSize: 18,
+    lineHeight: 18,
+    fontWeight: "900",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+
+  informalErfLabel: {
+    color: "#94A3B8",
+    fontSize: 7,
+    fontWeight: "800",
+    marginTop: 1,
+  },
+
   distanceBadge: {
     backgroundColor: "#3b82f6",
     paddingHorizontal: 6,

@@ -44,6 +44,13 @@ export default function StorageLayout() {
       />
 
       <Stack.Screen
+        name="informal-erf-submission-queue"
+        options={{
+          title: "Informal ERF Queue",
+        }}
+      />
+
+      <Stack.Screen
         name="sales-sync"
         options={{
           title: "Sales Sync",

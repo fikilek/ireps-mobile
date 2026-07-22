@@ -27,6 +27,7 @@ export default function GeoCascadingSelector({
   onModalStateChange,
   onSelectGeofence,
   selectedGeofence,
+  onUserLocationChange,
 }) {
   // console.log(`GeoCascadingSelector mounting`);
   const { geoState, updateGeo } = useGeo();
@@ -383,23 +384,49 @@ export default function GeoCascadingSelector({
   const handleCenterOnMe = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
+
+      if (status !== "granted") {
+        console.warn("⚠️ [CENTER_ME]: Location permission was not granted");
+        return;
+      }
 
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
 
+      const userLocation = {
+        latitude: location?.coords?.latitude,
+        longitude: location?.coords?.longitude,
+        accuracyM: location?.coords?.accuracy ?? null,
+        altitudeM: location?.coords?.altitude ?? null,
+        headingDegrees: location?.coords?.heading ?? null,
+        speedMps: location?.coords?.speed ?? null,
+        capturedAtMs: location?.timestamp ?? Date.now(),
+      };
+
+      if (
+        !Number.isFinite(userLocation.latitude) ||
+        !Number.isFinite(userLocation.longitude)
+      ) {
+        console.warn("⚠️ [CENTER_ME]: GPS returned invalid coordinates");
+        return;
+      }
+
+      onUserLocationChange?.(userLocation);
+
       flyTo(
         [
           {
-            latitude: location?.coords?.latitude,
-            longitude: location?.coords?.longitude,
+            latitude: userLocation.latitude,
+            longitude: userLocation.longitude,
           },
         ],
         100,
       );
+
+      console.log("✅ [CENTER_ME_LOCATION]", userLocation);
     } catch (error) {
-      console.error("❌ Pilot: GPS acquisition failed", error);
+      console.error("❌ [CENTER_ME_GPS_FAIL]", error);
     }
   };
 

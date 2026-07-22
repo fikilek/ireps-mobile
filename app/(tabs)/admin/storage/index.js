@@ -59,8 +59,8 @@ export default function LocalStorageScreen() {
           </View>
 
           <Text style={styles.heroSubtitle}>
-            Manage prepaid sales sync, queued meter forms, and data cleansing
-            account data. Ward ERFs are managed from the ERFs ward selector.
+            Manage prepaid sales, queued field forms, data cleansing
+            records, and Informal ERFs saved on this device.
           </Text>
         </View>
 
@@ -89,6 +89,17 @@ export default function LocalStorageScreen() {
               onPress={() =>
                 router.push(
                   "/(tabs)/admin/storage/account-data-submission-queue",
+                )
+              }
+            />
+
+            <StorageCard
+              title="Informal ERF Queue"
+              subtitle="Informal ERF requests saved locally before submission"
+              icon="map-marker-plus-outline"
+              onPress={() =>
+                router.push(
+                  "/(tabs)/admin/storage/informal-erf-submission-queue",
                 )
               }
             />
