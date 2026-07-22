@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { getIn, useFormikContext } from "formik";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from "react-native-maps";
 import {
@@ -33,12 +33,6 @@ const SovereignLocationPicker = ({
   const { values, setFieldValue, errors, touched, submitCount } =
     useFormikContext();
 
-  const diagnosticIdRef = useRef(
-    `SLP_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-  );
-  const renderCountRef = useRef(0);
-  renderCountRef.current += 1;
-
   const [modalVisible, setModalVisible] = useState(false);
   const [modalStartCoords, setModalStartCoords] = useState(null);
   const [hasMarkerMoved, setHasMarkerMoved] = useState(false);
@@ -50,40 +44,9 @@ const SovereignLocationPicker = ({
     useState(true);
 
   const rawValue = getIn(values, name);
-  console.log(" ---  ----");
-  console.log(" ---  ----");
-  console.log("(rawValue)", rawValue);
   const error = getIn(errors, name);
   const isTouched = getIn(touched, name);
   const hasError = !!error && (isTouched || submitCount > 0);
-
-  useEffect(() => {
-    console.log("🧪 [SLP_MOUNT]", {
-      id: diagnosticIdRef.current,
-      name,
-      initialGps,
-    });
-
-    return () => {
-      console.log("🧪 [SLP_UNMOUNT]", {
-        id: diagnosticIdRef.current,
-        name,
-      });
-    };
-  }, [initialGps, name]);
-
-  useEffect(() => {
-    console.log("🧪 [SLP_RAW_VALUE_CHANGED]", {
-      id: diagnosticIdRef.current,
-      render: renderCountRef.current,
-      name,
-      rawValue,
-      error,
-      isTouched,
-      submitCount,
-      modalVisible,
-    });
-  }, [error, isTouched, modalVisible, name, rawValue, submitCount]);
 
   const getCoords = (val) => {
     if (Array.isArray(val) && val.length === 2) {
@@ -163,22 +126,8 @@ const SovereignLocationPicker = ({
   const [tempCoords, setTempCoords] = useState(getCoords(rawValue));
 
   useEffect(() => {
-    console.log("🧪 [SLP_MODAL_CHANGED]", {
-      id: diagnosticIdRef.current,
-      render: renderCountRef.current,
-      modalVisible,
-      rawValue,
-      tempCoords,
-    });
-
     if (modalVisible) {
       const nextTempCoords = getCoords(rawValue);
-
-      console.log("🧪 [SLP_MODAL_OPEN_COORDS]", {
-        id: diagnosticIdRef.current,
-        rawValue,
-        nextTempCoords,
-      });
 
       setTempCoords(nextTempCoords);
       setModalStartCoords(nextTempCoords);
@@ -189,58 +138,21 @@ const SovereignLocationPicker = ({
   }, [modalVisible, rawValue]);
 
   const handleConfirm = async () => {
-    if (!hasMarkerMoved) {
-      console.warn("🧪 [SLP_CONFIRM_BLOCKED_PIN_NOT_MOVED]", {
-        id: diagnosticIdRef.current,
-        name,
-        modalStartCoords,
-        tempCoords,
-      });
-
-      return;
-    }
+    if (!hasMarkerMoved) return;
 
     const finalValue = {
       lat: Number(tempCoords.latitude),
       lng: Number(tempCoords.longitude),
     };
 
-    console.log("🧪 [SLP_CONFIRM_START]", {
-      id: diagnosticIdRef.current,
-      render: renderCountRef.current,
-      name,
-      tempCoords,
-      rawValueBefore: rawValue,
-      finalValue,
-    });
-
     try {
       await setFieldValue(name, finalValue, true);
 
-      console.log("🧪 [SLP_CONFIRM_FORMIK_DONE]", {
-        id: diagnosticIdRef.current,
-        name,
-        finalValue,
-        rawValueImmediatelyAfter: getIn(values, name),
-      });
-
       requestAnimationFrame(() => {
-        console.log("🧪 [SLP_CONFIRM_CLOSE_MODAL]", {
-          id: diagnosticIdRef.current,
-          name,
-          finalValue,
-        });
-
         setModalVisible(false);
       });
-    } catch (confirmError) {
-      console.error("🧪 [SLP_CONFIRM_ERROR]", {
-        id: diagnosticIdRef.current,
-        name,
-        finalValue,
-        message: confirmError?.message,
-        stack: confirmError?.stack,
-      });
+    } catch {
+      return;
     }
   };
 
@@ -262,15 +174,6 @@ const SovereignLocationPicker = ({
     setTempCoords(normalizedCoords);
     setHasMarkerMoved(movedDistanceM >= MIN_REQUIRED_MARKER_MOVE_M);
 
-    console.log("🧪 [SLP_MARKER_MOVED]", {
-      id: diagnosticIdRef.current,
-      name,
-      modalStartCoords,
-      nextCoords: normalizedCoords,
-      movedDistanceM,
-      moveRequiredM: MIN_REQUIRED_MARKER_MOVE_M,
-      accepted: movedDistanceM >= MIN_REQUIRED_MARKER_MOVE_M,
-    });
   };
 
   const currentCoordsRaw = getCoords(rawValue);
@@ -348,10 +251,6 @@ const SovereignLocationPicker = ({
 
     return () => clearTimeout(timeout);
   }, [modalVisible, erfNo, erfCentroid]);
-
-  console.log("hasError ------------------------------");
-  console.log("hasError ------------------------------");
-  console.log("hasError", hasError);
 
   return (
     <FormSection title={label}>

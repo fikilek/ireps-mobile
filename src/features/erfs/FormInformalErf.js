@@ -344,9 +344,6 @@ export default function FormInformalErf({ initialDeviceLocation }) {
       validateOnChange={true}
       validateOnBlur={false}
       onSubmit={async (values) => {
-        console.log(" ---    ");
-        console.log(" ---    ");
-        console.log("onSubmit values", values);
         const saveResult = await addInformalErfQueueItem({
           payloadInput: {
             lmPcode,
@@ -390,13 +387,7 @@ export default function FormInformalErf({ initialDeviceLocation }) {
           createdByUid: agentUid,
           createdByUser: agentName,
         });
-        console.log(" ---    ");
-        console.log(" ---    ");
-        console.log("onSubmit saveResult", saveResult);
-
         if (!saveResult?.success) {
-          console.error("❌ [INFORMAL_ERF_QUEUE_SAVE_FAILED]", saveResult);
-
           Alert.alert(
             "Local Save Failed",
             saveResult?.message ||
@@ -405,12 +396,6 @@ export default function FormInformalErf({ initialDeviceLocation }) {
 
           return;
         }
-
-        console.log("✅ [INFORMAL_ERF_QUEUE_SAVED]", {
-          queueItemId: saveResult?.queueItem?.id,
-          status: saveResult?.queueItem?.status,
-          payload: saveResult?.queueItem?.payload,
-        });
 
         Alert.alert(
           "Saved Locally",
@@ -425,10 +410,6 @@ export default function FormInformalErf({ initialDeviceLocation }) {
       }}
     >
       {({ errors, setFieldValue, setValues, values }) => {
-        console.log(" ---    ");
-        console.log(" ---    ");
-        console.log("Formik vallues", values);
-
         const showGpsError = !!errors?.proposedErfLocation;
 
         const showReasonError = !!errors?.reasonCode;
