@@ -13,6 +13,8 @@ import {
 } from "react-native-paper";
 import { FormSection } from "../forms/FormSection";
 
+const MIN_REQUIRED_MARKER_MOVE_M = 1;
+
 const SovereignLocationPicker = ({
   label = "SITUATIONAL POSITIONING",
   name,
@@ -38,7 +40,8 @@ const SovereignLocationPicker = ({
   renderCountRef.current += 1;
 
   const [modalVisible, setModalVisible] = useState(false);
-  const miniMapRef = useRef(null);
+  const [modalStartCoords, setModalStartCoords] = useState(null);
+  const [hasMarkerMoved, setHasMarkerMoved] = useState(false);
   const [mapType, setMapType] = useState("standard");
   const [mapTypeMenuVisible, setMapTypeMenuVisible] = useState(false);
 
@@ -111,6 +114,37 @@ const SovereignLocationPicker = ({
     return { latitude: -33.9249, longitude: 18.4241 };
   };
 
+  const distanceBetweenCoordsM = (from, to) => {
+    if (!from || !to) return 0;
+
+    const fromLat = Number(from.latitude);
+    const fromLng = Number(from.longitude);
+    const toLat = Number(to.latitude);
+    const toLng = Number(to.longitude);
+
+    if (
+      !Number.isFinite(fromLat) ||
+      !Number.isFinite(fromLng) ||
+      !Number.isFinite(toLat) ||
+      !Number.isFinite(toLng)
+    ) {
+      return 0;
+    }
+
+    const earthRadiusM = 6371000;
+    const toRadians = (degrees) => (degrees * Math.PI) / 180;
+    const deltaLat = toRadians(toLat - fromLat);
+    const deltaLng = toRadians(toLng - fromLng);
+    const lat1 = toRadians(fromLat);
+    const lat2 = toRadians(toLat);
+
+    const haversine =
+      Math.sin(deltaLat / 2) ** 2 +
+      Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+
+    return 2 * earthRadiusM * Math.asin(Math.sqrt(haversine));
+  };
+
   const getMapTypeLabel = (type) => {
     if (type === "satellite") return "SATELLITE";
     if (type === "hybrid") return "HYBRID";
@@ -144,12 +178,25 @@ const SovereignLocationPicker = ({
       });
 
       setTempCoords(nextTempCoords);
+      setModalStartCoords(nextTempCoords);
+      setHasMarkerMoved(false);
       setMapType("standard");
       setMapTypeMenuVisible(false);
     }
   }, [modalVisible, rawValue]);
 
   const handleConfirm = async () => {
+    if (!hasMarkerMoved) {
+      console.warn("🧪 [SLP_CONFIRM_BLOCKED_PIN_NOT_MOVED]", {
+        id: diagnosticIdRef.current,
+        name,
+        modalStartCoords,
+        tempCoords,
+      });
+
+      return;
+    }
+
     const finalValue = {
       lat: Number(tempCoords.latitude),
       lng: Number(tempCoords.longitude),
@@ -194,31 +241,40 @@ const SovereignLocationPicker = ({
     }
   };
 
+  const handleMarkerDragEnd = (event) => {
+    const nextCoords = event?.nativeEvent?.coordinate;
+
+    if (!nextCoords) return;
+
+    const normalizedCoords = {
+      latitude: Number(nextCoords.latitude),
+      longitude: Number(nextCoords.longitude),
+    };
+
+    const movedDistanceM = distanceBetweenCoordsM(
+      modalStartCoords,
+      normalizedCoords,
+    );
+
+    setTempCoords(normalizedCoords);
+    setHasMarkerMoved(movedDistanceM >= MIN_REQUIRED_MARKER_MOVE_M);
+
+    console.log("🧪 [SLP_MARKER_MOVED]", {
+      id: diagnosticIdRef.current,
+      name,
+      modalStartCoords,
+      nextCoords: normalizedCoords,
+      movedDistanceM,
+      moveRequiredM: MIN_REQUIRED_MARKER_MOVE_M,
+      accepted: movedDistanceM >= MIN_REQUIRED_MARKER_MOVE_M,
+    });
+  };
+
   const currentCoordsRaw = getCoords(rawValue);
   const currentCoords = {
     latitude: Number(currentCoordsRaw.latitude),
     longitude: Number(currentCoordsRaw.longitude),
   };
-
-  const previewRegion = {
-    ...currentCoords,
-    latitudeDelta: 0.001,
-    longitudeDelta: 0.001,
-  };
-
-  useEffect(() => {
-    if (modalVisible) return;
-
-    const timeout = setTimeout(() => {
-      miniMapRef.current?.animateToRegion(previewRegion, 200);
-    }, 250);
-
-    return () => clearTimeout(timeout);
-  }, [
-    modalVisible,
-    currentCoords.latitude,
-    currentCoords.longitude,
-  ]);
 
   const selectedErfCoords = getCoords(erfCentroid);
 
@@ -296,66 +352,66 @@ const SovereignLocationPicker = ({
         <TouchableOpacity
           disabled={disabled}
           activeOpacity={0.8}
-          style={[styles.previewWrapper, hasError && styles.previewError]}
+          style={[
+            styles.locationStatusCard,
+            rawValue
+              ? styles.locationStatusCardLocked
+              : styles.locationStatusCardRequired,
+            hasError && styles.previewError,
+          ]}
           onPress={() => setModalVisible(true)}
         >
-          <MapView
-            ref={miniMapRef}
-            provider={PROVIDER_GOOGLE}
-            style={styles.miniMap}
-            mapType="standard"
-            scrollEnabled={false}
-            zoomEnabled={false}
-            rotateEnabled={false}
-            pitchEnabled={false}
-            initialRegion={previewRegion}
-          >
-            {referenceBoundary.length > 0 && (
-              <Polygon
-                coordinates={referenceBoundary}
-                strokeColor="#FFD700"
-                fillColor="rgba(255, 215, 0, 0.1)"
-                strokeWidth={2}
-              />
-            )}
-
-            <Marker coordinate={currentCoords}>
-              <MaterialCommunityIcons
-                name={icon}
-                size={28}
-                color={hasError ? "#ef4444" : "#0f172a"}
-              />
-            </Marker>
-          </MapView>
-
           <View
-            pointerEvents="none"
             style={[
-              styles.overlay,
-              rawValue && styles.overlayLocked,
+              styles.locationStatusIcon,
+              rawValue
+                ? styles.locationStatusIconLocked
+                : styles.locationStatusIconRequired,
             ]}
           >
             <MaterialCommunityIcons
-              name={rawValue ? "crosshairs-gps" : "arrow-expand-all"}
-              size={20}
-              color={rawValue ? "#4ade80" : "#fff"}
+              name={rawValue ? "crosshairs-gps" : icon}
+              size={30}
+              color={rawValue ? "#166534" : hasError ? "#b91c1c" : "#475569"}
             />
-
-            <Text
-              style={[
-                styles.overlayText,
-                rawValue && styles.overlayTextLocked,
-              ]}
-            >
-              {rawValue
-                ? `POSITION LOCKED: ${currentCoords.latitude.toFixed(5)}, ${currentCoords.longitude.toFixed(5)}`
-                : "TAP TO POSITION PIN"}
-            </Text>
-
-            {rawValue && (
-              <Text style={styles.overlaySubText}>TAP TO RE-ADJUST</Text>
-            )}
           </View>
+
+          <Text
+            style={[
+              styles.locationStatusTitle,
+              rawValue
+                ? styles.locationStatusTitleLocked
+                : styles.locationStatusTitleRequired,
+            ]}
+          >
+            {rawValue ? "POSITION LOCKED" : "GPS POSITION REQUIRED"}
+          </Text>
+
+          {rawValue ? (
+            <>
+              <Text style={styles.locationStatusCoordinates}>
+                Latitude: {currentCoords.latitude.toFixed(6)}
+              </Text>
+
+              <Text style={styles.locationStatusCoordinates}>
+                Longitude: {currentCoords.longitude.toFixed(6)}
+              </Text>
+
+              <Text style={styles.locationStatusAction}>
+                TAP TO RE-ADJUST POSITION
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.locationStatusMessage}>
+                Open the locator and position the proposed Informal ERF.
+              </Text>
+
+              <Text style={styles.locationStatusAction}>
+                TAP TO OPEN GPS LOCATOR
+              </Text>
+            </>
+          )}
         </TouchableOpacity>
 
         <Portal>
@@ -445,127 +501,147 @@ const SovereignLocationPicker = ({
                 </TouchableOpacity>
               </View>
 
-              <MapView
-                provider={PROVIDER_GOOGLE}
-                style={styles.fullMap}
-                mapType={mapType}
-                showsUserLocation
-                showsMyLocationButton
-                initialRegion={{
-                  ...tempCoords,
-                  latitudeDelta: 0.0008,
-                  longitudeDelta: 0.0008,
-                }}
-              >
-                {referenceBoundary.length > 0 && (
-                  <Polygon
-                    coordinates={referenceBoundary}
-                    strokeColor="#FFD700"
-                    fillColor="rgba(255, 215, 0, 0.2)"
-                    strokeWidth={4}
-                  />
-                )}
+              {modalVisible && (
+                <MapView
+                  provider={PROVIDER_GOOGLE}
+                  style={styles.fullMap}
+                  mapType={mapType}
+                  showsUserLocation
+                  showsMyLocationButton
+                  initialRegion={{
+                    ...tempCoords,
+                    latitudeDelta: 0.0008,
+                    longitudeDelta: 0.0008,
+                  }}
+                >
+                  {referenceBoundary.length > 0 && (
+                    <Polygon
+                      coordinates={referenceBoundary}
+                      strokeColor="#FFD700"
+                      fillColor="rgba(255, 215, 0, 0.2)"
+                      strokeWidth={4}
+                    />
+                  )}
 
-                {erfCentroid && (
-                  <Marker
-                    coordinate={selectedErfCoords}
-                    anchor={{ x: 0.5, y: 0.5 }}
-                    tracksViewChanges={selectedErfTracksViewChanges}
-                    zIndex={20}
-                  >
-                    <View style={styles.selectedErfLabel}>
-                      <Text style={styles.selectedErfLabelText}>{erfNo}</Text>
-                    </View>
-                  </Marker>
-                )}
+                  {erfCentroid && (
+                    <Marker
+                      coordinate={selectedErfCoords}
+                      anchor={{ x: 0.5, y: 0.5 }}
+                      tracksViewChanges={selectedErfTracksViewChanges}
+                      zIndex={20}
+                    >
+                      <View style={styles.selectedErfLabel}>
+                        <Text style={styles.selectedErfLabelText}>{erfNo}</Text>
+                      </View>
+                    </Marker>
+                  )}
 
-                {/* 🧭 NEIGHBOURHOODS */}
-                {showNeighbourhoods && (
-                  <>
-                    {/* 🔶 Nearby ERFs */}
-                    {nearbyErfs.map((erf) => {
-                      const labelCoordinate = getErfLabelCoordinate(erf);
+                  {/* 🧭 NEIGHBOURHOODS */}
+                  {showNeighbourhoods && (
+                    <>
+                      {/* 🔶 Nearby ERFs */}
+                      {nearbyErfs.map((erf) => {
+                        const labelCoordinate = getErfLabelCoordinate(erf);
 
-                      return (
-                        <Fragment key={`erf-context-${erf.id}`}>
-                          {Array.isArray(erf.boundary) &&
-                            erf.boundary.length > 0 && (
-                              <Polygon
-                                coordinates={erf.boundary}
-                                strokeColor="#64748b"
-                                fillColor="rgba(100,116,139,0.1)"
-                                strokeWidth={1}
-                              />
+                        return (
+                          <Fragment key={`erf-context-${erf.id}`}>
+                            {Array.isArray(erf.boundary) &&
+                              erf.boundary.length > 0 && (
+                                <Polygon
+                                  coordinates={erf.boundary}
+                                  strokeColor="#64748b"
+                                  fillColor="rgba(100,116,139,0.1)"
+                                  strokeWidth={1}
+                                />
+                              )}
+
+                            {labelCoordinate && (
+                              <Marker
+                                coordinate={labelCoordinate}
+                                anchor={{ x: 0.5, y: 0.5 }}
+                                tracksViewChanges={false}
+                                zIndex={10}
+                              >
+                                <View style={styles.neighbourErfLabel}>
+                                  <Text style={styles.neighbourErfLabelText}>
+                                    {getErfLabel(erf)}
+                                  </Text>
+                                </View>
+                              </Marker>
                             )}
+                          </Fragment>
+                        );
+                      })}
 
-                          {labelCoordinate && (
-                            <Marker
-                              coordinate={labelCoordinate}
-                              anchor={{ x: 0.5, y: 0.5 }}
-                              tracksViewChanges={false}
-                              zIndex={10}
-                            >
-                              <View style={styles.neighbourErfLabel}>
-                                <Text style={styles.neighbourErfLabelText}>
-                                  {getErfLabel(erf)}
-                                </Text>
-                              </View>
-                            </Marker>
-                          )}
-                        </Fragment>
-                      );
-                    })}
+                      {/* 🔷 Nearby Premises */}
+                      {nearbyPremises.map((prem) => (
+                        <Marker
+                          key={`prem-${prem.id}`}
+                          coordinate={{
+                            latitude: prem.coordinate?.lat,
+                            longitude: prem.coordinate?.lng,
+                          }}
+                          title={`${prem?.address?.strNo || ""} ${prem?.address?.strName || ""}`}
+                          description={`${prem?.propertyType?.type || "NAv"} • ${prem?.propertyType?.name || "NAv"} • ${prem?.propertyType?.unitNo || "NAv"}`}
+                          pinColor="#1bbe57"
+                        />
+                      ))}
 
-                    {/* 🔷 Nearby Premises */}
-                    {nearbyPremises.map((prem) => (
-                      <Marker
-                        key={`prem-${prem.id}`}
-                        coordinate={{
-                          latitude: prem.coordinate?.lat,
-                          longitude: prem.coordinate?.lng,
-                        }}
-                        title={`${prem?.address?.strNo || ""} ${prem?.address?.strName || ""}`}
-                        description={`${prem?.propertyType?.type || "NAv"} • ${prem?.propertyType?.name || "NAv"} • ${prem?.propertyType?.unitNo || "NAv"}`}
-                        pinColor="#1bbe57"
-                      />
-                    ))}
+                      {/* ⚡ Nearby Meters */}
+                      {nearbyMeters.map((meter) => (
+                        <Marker
+                          key={`meter-${meter.id}`}
+                          coordinate={{
+                            latitude: meter.coordinate?.lat,
+                            longitude: meter.coordinate?.lng,
+                          }}
+                          pinColor={
+                            meter.meterType === "water"
+                              ? "#0ea5e9"
+                              : meter.meterType === "electricity"
+                                ? "#f59e0b"
+                                : "#94a3b8"
+                          }
+                        />
+                      ))}
+                    </>
+                  )}
 
-                    {/* ⚡ Nearby Meters */}
-                    {nearbyMeters.map((meter) => (
-                      <Marker
-                        key={`meter-${meter.id}`}
-                        coordinate={{
-                          latitude: meter.coordinate?.lat,
-                          longitude: meter.coordinate?.lng,
-                        }}
-                        pinColor={
-                          meter.meterType === "water"
-                            ? "#0ea5e9"
-                            : meter.meterType === "electricity"
-                              ? "#f59e0b"
-                              : "#94a3b8"
-                        }
-                      />
-                    ))}
-                  </>
-                )}
-
-                <Marker
-                  draggable
-                  coordinate={tempCoords}
-                  onDragEnd={(e) => setTempCoords(e.nativeEvent.coordinate)}
-                  zIndex={40}
-                  pinColor="#ce6b6b"
-                  tracksViewChanges={true}
-                />
-              </MapView>
+                  <Marker
+                    draggable
+                    coordinate={tempCoords}
+                    onDragEnd={handleMarkerDragEnd}
+                    zIndex={40}
+                    pinColor="#ce6b6b"
+                    tracksViewChanges={true}
+                  />
+                </MapView>
+              )}
 
               <View style={styles.modalFooter}>
+                <Text
+                  style={[
+                    styles.markerMoveInstruction,
+                    hasMarkerMoved && styles.markerMoveInstructionReady,
+                  ]}
+                >
+                  {hasMarkerMoved
+                    ? "PIN MOVED — POSITION READY TO CONFIRM"
+                    : "MOVE THE RED PIN TO A NEW POSITION"}
+                </Text>
+
                 <Button
                   mode="contained"
                   onPress={handleConfirm}
-                  style={styles.confirmBtn}
-                  labelStyle={styles.confirmBtnLabel}
+                  disabled={!hasMarkerMoved}
+                  style={[
+                    styles.confirmBtn,
+                    !hasMarkerMoved && styles.confirmBtnDisabled,
+                  ]}
+                  labelStyle={[
+                    styles.confirmBtnLabel,
+                    !hasMarkerMoved && styles.confirmBtnLabelDisabled,
+                  ]}
                 >
                   CONFIRM POSITION
                 </Button>
@@ -581,50 +657,81 @@ const SovereignLocationPicker = ({
 const styles = StyleSheet.create({
   container: { marginBottom: 10 },
 
-  previewWrapper: {
-    height: 140,
-    borderRadius: 12,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-  },
-
   previewError: {
     borderColor: "#ef4444",
     borderLeftWidth: 8,
   },
 
-  miniMap: {
-    flex: 1,
+  locationStatusCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    backgroundColor: "#ffffff",
   },
 
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(15, 23, 42, 0.4)",
-    justifyContent: "center",
+  locationStatusCardRequired: {
+    backgroundColor: "#f8fafc",
+  },
+
+  locationStatusCardLocked: {
+    backgroundColor: "#f0fdf4",
+  },
+
+  locationStatusIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
+    justifyContent: "center",
   },
 
-  overlayLocked: {
-    backgroundColor: "rgba(15, 23, 42, 0.7)",
+  locationStatusIconRequired: {
+    backgroundColor: "#e2e8f0",
   },
 
-  overlayText: {
-    color: "#fff",
+  locationStatusIconLocked: {
+    backgroundColor: "#dcfce7",
+  },
+
+  locationStatusTitle: {
+    marginTop: 8,
+    fontSize: 12,
     fontWeight: "900",
+    textAlign: "center",
+  },
+
+  locationStatusTitleRequired: {
+    color: "#334155",
+  },
+
+  locationStatusTitleLocked: {
+    color: "#166534",
+  },
+
+  locationStatusCoordinates: {
+    marginTop: 3,
     fontSize: 11,
-    marginTop: 4,
+    fontWeight: "800",
+    color: "#0f172a",
+    textAlign: "center",
   },
 
-  overlayTextLocked: {
-    color: "#4ade80",
+  locationStatusMessage: {
+    marginTop: 5,
+    fontSize: 10,
+    lineHeight: 15,
+    color: "#64748b",
+    textAlign: "center",
   },
 
-  overlaySubText: {
-    fontSize: 8,
-    color: "rgba(255,255,255,0.6)",
-    fontWeight: "bold",
-    marginTop: 2,
+  locationStatusAction: {
+    marginTop: 7,
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#475569",
+    textAlign: "center",
   },
 
   modalContainer: {
@@ -707,14 +814,34 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
 
+  markerMoveInstruction: {
+    marginBottom: 10,
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#b91c1c",
+    textAlign: "center",
+  },
+
+  markerMoveInstructionReady: {
+    color: "#166534",
+  },
+
   confirmBtn: {
     backgroundColor: "#e2e8f0",
     borderRadius: 12,
   },
 
+  confirmBtnDisabled: {
+    backgroundColor: "#e5e7eb",
+  },
+
   confirmBtnLabel: {
     color: "#000",
     fontWeight: "900",
+  },
+
+  confirmBtnLabelDisabled: {
+    color: "#9ca3af",
   },
 
   activeMarker: {
