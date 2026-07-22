@@ -25,7 +25,7 @@ import { useGeo } from "../../context/GeoContext";
 import { getSafeCoords } from "../../context/MapContext";
 import { useWarehouse } from "../../context/WarehouseContext";
 import { useAuth } from "../../hooks/useAuth";
-import { addInformalErfQueueItem } from "../../utils/informalErfSubmissionQueue";
+import { submitInformalErfWithFallback } from "../../services/informalErfSubmissionController";
 import { ForensicFooter } from "../meters/ForensicFooter";
 
 const NEARBY_RADIUS_M = 350;
@@ -202,6 +202,16 @@ export default function FormInformalErf({ initialDeviceLocation }) {
   const selectedLm = geoState?.selectedLm || null;
   const selectedWard = geoState?.selectedWard || null;
 
+  const initialValues = useMemo(
+    () => ({
+      proposedErfLocation: null,
+      reasonCode: "",
+      reasonOther: "",
+      media: [],
+    }),
+    [],
+  );
+
   const lmPcode =
     selectedLm?.pcode || selectedLm?.lmPcode || selectedLm?.id || "NAv";
 
@@ -323,16 +333,6 @@ export default function FormInformalErf({ initialDeviceLocation }) {
     );
   }
 
-  const initialValues = useMemo(
-    () => ({
-      proposedErfLocation: null,
-      reasonCode: "",
-      reasonOther: "",
-      media: [],
-    }),
-    [],
-  );
-
   return (
     <Formik
       initialValues={initialValues}
@@ -344,7 +344,7 @@ export default function FormInformalErf({ initialDeviceLocation }) {
       validateOnChange={true}
       validateOnBlur={false}
       onSubmit={async (values) => {
-        const saveResult = await addInformalErfQueueItem({
+        const submissionResult = await submitInformalErfWithFallback({
           payloadInput: {
             lmPcode,
             wardPcode,
@@ -375,8 +375,9 @@ export default function FormInformalErf({ initialDeviceLocation }) {
           },
 
           context: {
+            lmPcode,
             lmName: selectedLm?.name || selectedLm?.id || "NAv",
-
+            wardPcode,
             wardName:
               selectedWard?.name ||
               selectedWard?.pcode ||
@@ -387,29 +388,59 @@ export default function FormInformalErf({ initialDeviceLocation }) {
           createdByUid: agentUid,
           createdByUser: agentName,
         });
-        if (!saveResult?.success) {
+
+        if (submissionResult?.mode === "ONLINE") {
           Alert.alert(
-            "Local Save Failed",
-            saveResult?.message ||
-              "The Informal ERF could not be saved locally.",
+            "Informal ERF Created",
+            submissionResult?.duplicate
+              ? "This Informal ERF was already created. No duplicate was added."
+              : `The Informal ERF was created successfully.\n\n${submissionResult?.erfId || ""}`,
+            [
+              {
+                text: "OK",
+                onPress: () => router.back(),
+              },
+            ],
+          );
+
+          return;
+        }
+
+        if (submissionResult?.mode === "QUEUED") {
+          Alert.alert(
+            "Saved Locally",
+            submissionResult?.message ||
+              "The Informal ERF is saved on this device and will submit automatically when the network is available.",
+            [
+              {
+                text: "OK",
+                onPress: () => router.back(),
+              },
+            ],
+          );
+
+          return;
+        }
+
+        if (submissionResult?.mode === "REJECTED") {
+          Alert.alert(
+            "Informal ERF Not Created",
+            submissionResult?.message ||
+              "The server rejected this Informal ERF.",
           );
 
           return;
         }
 
         Alert.alert(
-          "Saved Locally",
-          "The Informal ERF is saved on this device and is waiting for submission.",
-          [
-            {
-              text: "OK",
-              onPress: () => router.back(),
-            },
-          ],
+          "Submission Failed",
+          submissionResult?.message ||
+            "The Informal ERF could not be submitted or saved locally.",
         );
       }}
     >
-      {({ errors, setFieldValue, setValues, values }) => {
+      {({ errors, isSubmitting, setFieldValue, setValues, values }) => {
+
         const showGpsError = !!errors?.proposedErfLocation;
 
         const showReasonError = !!errors?.reasonCode;
@@ -534,7 +565,7 @@ export default function FormInformalErf({ initialDeviceLocation }) {
             </ScrollView>
 
             <ForensicFooter
-              isTrnLoading={false}
+              isTrnLoading={isSubmitting}
               disableSubmitWhenInvalid
               leftButtonLabel="CANCEL"
               onLeftButtonPress={() => router.back()}

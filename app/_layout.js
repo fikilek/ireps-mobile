@@ -6,7 +6,6 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Provider } from "react-redux";
 
 import { PersistGate } from "redux-persist/integration/react";
-import "../src/services/fwr-monitoring/fwrLocationTask";
 import { DiscoveryProvider } from "../src/context/DiscoveryContext";
 import { GeoProvider } from "../src/context/GeoContext";
 import { InstallationProvider } from "../src/context/InstallationContext";
@@ -15,8 +14,8 @@ import { WarehouseProvider } from "../src/context/WarehouseContext";
 import { auth } from "../src/firebase";
 import { useAuth } from "../src/hooks/useAuth";
 import AuthBootstrap from "../src/navigation/AuthBootstrap";
-import FwrMonitoringCoordinator from "../src/services/fwr-monitoring/FwrMonitoringCoordinator";
 import { persistor, store } from "../src/redux/store";
+import { startInformalErfQueueSyncService } from "../src/services/startInformalErfQueueSyncService";
 
 const AuthGate = memo(function AuthGate() {
   const {
@@ -53,7 +52,6 @@ const AuthGate = memo(function AuthGate() {
     const mustChangePassword = profile?.onboarding?.mustChangePassword === true;
     const activeWorkbase = profile?.access?.activeWorkbase || null;
 
-    // 1. GUEST GATE
     if (!user) {
       if (!inAuthGroup && !isAtWelcome) {
         router.replace("/signin");
@@ -61,10 +59,8 @@ const AuthGate = memo(function AuthGate() {
       return;
     }
 
-    // 2. Allow welcome to sit quietly
     if (isAtWelcome) return;
 
-    // 3. FIRST-LOGIN STEP 1: CHANGE PASSWORD
     if (status === "PENDING" && mustChangePassword) {
       if (rootSegment !== "onboarding" || segments[1] !== "change-password") {
         router.replace("/onboarding/change-password");
@@ -72,11 +68,6 @@ const AuthGate = memo(function AuthGate() {
       return;
     }
 
-    // 4. WORKBASE REQUIRED
-    // Applies to:
-    // - first-login onboarding after password change
-    // - completed users whose active workbase was cleared by SP sync
-    // - approved FWR awaiting workbase selection
     if (
       !mustChangePassword &&
       !activeWorkbase &&
@@ -90,7 +81,6 @@ const AuthGate = memo(function AuthGate() {
       return;
     }
 
-    // 5. OLD STATE MACHINE
     switch (status) {
       case "AWAITING-MNG-CONFIRMATION":
       case "AWAITING-ADM-CONFIRMATION":
@@ -145,6 +135,40 @@ const AuthGate = memo(function AuthGate() {
   );
 });
 
+const InformalErfQueueSyncCoordinator = memo(
+  function InformalErfQueueSyncCoordinator() {
+    const { user, profile, status, logoutInProgress } = useAuth();
+
+    const agentUid = user?.uid || null;
+    const agentName =
+      profile?.profile?.displayName ||
+      user?.displayName ||
+      "iREPS User";
+
+    useEffect(() => {
+      if (
+        logoutInProgress ||
+        !agentUid ||
+        !["COMPLETE", "COMPLETED"].includes(String(status || "").toUpperCase())
+      ) {
+        return undefined;
+      }
+
+      return startInformalErfQueueSyncService({
+        agentUid,
+        agentName,
+      });
+    }, [
+      agentUid,
+      agentName,
+      logoutInProgress,
+      status,
+    ]);
+
+    return null;
+  },
+);
+
 const SessionSlot = memo(function SessionSlot() {
   const { logoutInProgress } = useAuth();
 
@@ -164,16 +188,9 @@ export default function RootLayout() {
                 <SafeAreaProvider>
                   <DiscoveryProvider>
                     <InstallationProvider>
-                      {/* 1. Bootstrap the Firebase Listeners */}
                       <AuthBootstrap />
-
-                      {/* 2. Start FWR/SPV monitoring after auth is ready */}
-                      <FwrMonitoringCoordinator />
-
-                      {/* 3. Place the Guard below the listeners */}
+                      <InformalErfQueueSyncCoordinator />
                       <AuthGate />
-
-                      {/* 4. Render the Screens */}
                       <SessionSlot />
                     </InstallationProvider>
                   </DiscoveryProvider>
@@ -189,17 +206,21 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   loadingOverlay: {
-    // 🎯 Use absoluteFill to cover the Signin screen completely
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "white",
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 2000, // Ensure it sits above everything
+    zIndex: 2000,
   },
   loadingText: {
     marginTop: 15,
     fontSize: 14,
     color: "#1e293b",
     fontWeight: "600",
+  },
+  subLoadingText: {
+    marginTop: 4,
+    fontSize: 11,
+    color: "#64748b",
   },
 });
