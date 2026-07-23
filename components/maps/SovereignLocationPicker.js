@@ -6,7 +6,6 @@ import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from "react-native-maps";
 import {
   Button,
   IconButton,
-  Menu,
   Modal,
   Portal,
   Surface,
@@ -25,7 +24,6 @@ const SovereignLocationPicker = ({
   erfCentroid = null,
   disabled = false,
 
-  // 🆕 NEW
   nearbyErfs = [],
   nearbyPremises = [],
   nearbyMeters = [],
@@ -39,7 +37,6 @@ const SovereignLocationPicker = ({
   const [mapType, setMapType] = useState("standard");
   const [mapTypeMenuVisible, setMapTypeMenuVisible] = useState(false);
 
-  const [showNeighbourhoods, setShowNeighbourhoods] = useState(true);
   const [selectedErfTracksViewChanges, setSelectedErfTracksViewChanges] =
     useState(true);
 
@@ -132,7 +129,6 @@ const SovereignLocationPicker = ({
       setTempCoords(nextTempCoords);
       setModalStartCoords(nextTempCoords);
       setHasMarkerMoved(false);
-      setMapType("standard");
       setMapTypeMenuVisible(false);
     }
   }, [modalVisible, rawValue]);
@@ -173,7 +169,6 @@ const SovereignLocationPicker = ({
 
     setTempCoords(normalizedCoords);
     setHasMarkerMoved(movedDistanceM >= MIN_REQUIRED_MARKER_MOVE_M);
-
   };
 
   const currentCoordsRaw = getCoords(rawValue);
@@ -306,11 +301,7 @@ const SovereignLocationPicker = ({
                   name={rawValue ? "crosshairs-gps" : icon}
                   size={30}
                   color={
-                    rawValue
-                      ? "#166534"
-                      : hasError
-                        ? "#b91c1c"
-                        : "#475569"
+                    rawValue ? "#166534" : hasError ? "#b91c1c" : "#475569"
                   }
                 />
               </View>
@@ -328,13 +319,23 @@ const SovereignLocationPicker = ({
 
               {rawValue ? (
                 <>
-                  <Text style={styles.locationStatusCoordinates}>
-                    Latitude: {currentCoords.latitude.toFixed(6)}
-                  </Text>
+                  <View
+                    style={{
+                      marginTop: 4,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <Text style={styles.locationStatusCoordinates}>
+                      Latitude: {currentCoords.latitude.toFixed(6)}
+                    </Text>
 
-                  <Text style={styles.locationStatusCoordinates}>
-                    Longitude: {currentCoords.longitude.toFixed(6)}
-                  </Text>
+                    <Text style={styles.locationStatusCoordinates}>
+                      Longitude: {currentCoords.longitude.toFixed(6)}
+                    </Text>
+                  </View>
 
                   <Text style={styles.locationStatusAction}>
                     TAP TO RE-ADJUST POSITION
@@ -382,65 +383,85 @@ const SovereignLocationPicker = ({
                   <Text style={styles.modalSubTitle}>ERF {erfNo}</Text>
                 </View>
 
-                <Menu
-                  visible={mapTypeMenuVisible}
-                  onDismiss={() => setMapTypeMenuVisible(false)}
-                  anchor={
-                    <TouchableOpacity
-                      style={styles.mapTypeBtn}
-                      onPress={() => setMapTypeMenuVisible(true)}
-                    >
-                      <MaterialCommunityIcons
-                        name={getMapTypeIcon(mapType)}
-                        size={18}
-                        color="#0f172a"
-                      />
-                      <Text style={styles.mapTypeBtnText}>
-                        {getMapTypeLabel(mapType)}
-                      </Text>
-                      <MaterialCommunityIcons
-                        name="chevron-down"
-                        size={18}
-                        color="#0f172a"
-                      />
-                    </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.mapTypeBtn}
+                  onPress={() =>
+                    setMapTypeMenuVisible((current) => !current)
                   }
                 >
-                  <Menu.Item
-                    onPress={() => {
-                      setMapType("standard");
-                      setMapTypeMenuVisible(false);
-                    }}
-                    title="NORMAL"
-                  />
-                  <Menu.Item
-                    onPress={() => {
-                      setMapType("satellite");
-                      setMapTypeMenuVisible(false);
-                    }}
-                    title="SATELLITE"
-                  />
-                  <Menu.Item
-                    onPress={() => {
-                      setMapType("hybrid");
-                      setMapTypeMenuVisible(false);
-                    }}
-                    title="HYBRID"
-                  />
-                </Menu>
-
-                <TouchableOpacity
-                  style={styles.contextBtn}
-                  onPress={() => setShowNeighbourhoods((prev) => !prev)}
-                >
                   <MaterialCommunityIcons
-                    name={showNeighbourhoods ? "eye" : "eye-off"}
+                    name={getMapTypeIcon(mapType)}
                     size={18}
                     color="#0f172a"
                   />
-                  <Text style={styles.contextBtnText}>CONTEXT</Text>
+                  <Text style={styles.mapTypeBtnText}>
+                    {getMapTypeLabel(mapType)}
+                  </Text>
+                  <MaterialCommunityIcons
+                    name={
+                      mapTypeMenuVisible
+                        ? "chevron-up"
+                        : "chevron-down"
+                    }
+                    size={18}
+                    color="#0f172a"
+                  />
                 </TouchableOpacity>
+
               </View>
+
+              {mapTypeMenuVisible && (
+                <View style={styles.mapTypeOptions}>
+                  {[
+                    {
+                      value: "standard",
+                      label: "NORMAL",
+                      icon: "map-outline",
+                    },
+                    {
+                      value: "satellite",
+                      label: "SATELLITE",
+                      icon: "satellite-variant",
+                    },
+                    {
+                      value: "hybrid",
+                      label: "HYBRID",
+                      icon: "layers",
+                    },
+                  ].map((option) => {
+                    const isSelected = mapType === option.value;
+
+                    return (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[
+                          styles.mapTypeOption,
+                          isSelected && styles.mapTypeOptionSelected,
+                        ]}
+                        onPress={() => {
+                          setMapType(option.value);
+                          setMapTypeMenuVisible(false);
+                        }}
+                      >
+                        <MaterialCommunityIcons
+                          name={option.icon}
+                          size={18}
+                          color={isSelected ? "#ffffff" : "#0f172a"}
+                        />
+                        <Text
+                          style={[
+                            styles.mapTypeOptionText,
+                            isSelected &&
+                              styles.mapTypeOptionTextSelected,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
 
               {modalVisible && (
                 <MapView
@@ -477,9 +498,7 @@ const SovereignLocationPicker = ({
                     </Marker>
                   )}
 
-                  {/* 🧭 NEIGHBOURHOODS */}
-                  {showNeighbourhoods && (
-                    <>
+                  {/* Nearby cadastral context remains visible */}
                       {/* 🔶 Nearby ERFs */}
                       {nearbyErfs.map((erf) => {
                         const labelCoordinate = getErfLabelCoordinate(erf);
@@ -545,9 +564,6 @@ const SovereignLocationPicker = ({
                           }
                         />
                       ))}
-                    </>
-                  )}
-
                   <Marker
                     draggable
                     coordinate={tempCoords}
@@ -753,6 +769,44 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
+  mapTypeOptions: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: "row",
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+    backgroundColor: "#ffffff",
+  },
+
+  mapTypeOption: {
+    flex: 1,
+    minHeight: 38,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#f8fafc",
+  },
+
+  mapTypeOptionSelected: {
+    borderColor: "#0f172a",
+    backgroundColor: "#0f172a",
+  },
+
+  mapTypeOptionText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#0f172a",
+  },
+
+  mapTypeOptionTextSelected: {
+    color: "#ffffff",
+  },
+
   fullMap: {
     flex: 1,
   },
@@ -804,23 +858,6 @@ const styles = StyleSheet.create({
     marginTop: -5,
   },
 
-  contextBtn: {
-    height: 34,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#f8fafc",
-  },
-
-  contextBtnText: {
-    fontSize: 10,
-    fontWeight: "900",
-    color: "#0f172a",
-  },
   selectedErfLabel: {
     backgroundColor: "rgba(255, 255, 255, 0.92)",
     paddingHorizontal: 8,
