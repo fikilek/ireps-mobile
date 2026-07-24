@@ -522,12 +522,11 @@ export const submitInformalErfOnline = async (payloadInput = {}) => {
       payload: preparedPayload,
     };
   } catch (error) {
-    console.error("[INFORMAL ERF] Callable request failed.", {
-      erfId: identifiedPayload.erfId,
-      code: error?.code,
-      message: error?.message,
-    });
-
+    // Do not use console.error here. Firebase callable business rejections are
+    // expected workflow outcomes (for example, overlapping ERF boundaries).
+    // The caller classifies the rejection and shows the user-facing Alert.
+    // console.error causes Expo's developer overlay to render a misleading
+    // crash-style stack even though the rejection is fully handled.
     throw toEnrichedSubmissionError(error, preparedPayload);
   } finally {
     if (typeof apiRequest?.reset === "function") {
@@ -733,7 +732,7 @@ export const submitInformalErfWithFallback = async ({
     const errorInfo = getInformalErfErrorDetails(error);
 
     if (isPermanentInformalErfError(error)) {
-      console.warn("[INFORMAL ERF] Permanent rejection; not queued.", {
+      console.log("[INFORMAL ERF] Business rejection received; not queued.", {
         erfId: identifiedPayload.erfId,
         code: errorInfo.code,
         message: errorInfo.message,
