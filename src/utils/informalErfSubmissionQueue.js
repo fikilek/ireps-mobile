@@ -2,6 +2,7 @@ import { createMMKV } from "react-native-mmkv";
 
 const STORAGE_KEY = "informal_erf_submission_queue";
 const QUEUE_FORM_TYPE = "INFORMAL_ERF_CREATE";
+const QUEUE_SCHEMA_VERSION = 2;
 
 const informalErfQueueStorage = createMMKV({
   id: "ireps-informal-erf-submission-queue",
@@ -9,12 +10,94 @@ const informalErfQueueStorage = createMMKV({
 
 const nowIso = () => new Date().toISOString();
 const nowMs = () => Date.now();
-
 const safeArray = (value) => (Array.isArray(value) ? value : []);
+
+const cleanText = (value, fallback = "") => {
+  const clean = String(value ?? "").trim();
+  return clean || fallback;
+};
+
+const toNullableNumber = (value) => {
+  if (value == null || value === "") return null;
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 const generateQueueId = () => {
   const random = Math.random().toString(36).slice(2, 8).toUpperCase();
   return `IERF_QUEUE_${Date.now()}_${random}`;
+};
+
+const normalizeBoundaryPoints = (boundaryPoints = []) =>
+  safeArray(boundaryPoints).map((point) => ({
+    lat: Number(point?.lat ?? point?.latitude),
+    lng: Number(point?.lng ?? point?.longitude),
+  }));
+
+const normalizeDeviceLocation = (deviceLocation = {}) => ({
+  latitude: toNullableNumber(deviceLocation?.latitude),
+  longitude: toNullableNumber(deviceLocation?.longitude),
+  accuracyM: toNullableNumber(deviceLocation?.accuracyM),
+  altitudeM: toNullableNumber(deviceLocation?.altitudeM),
+  headingDegrees: toNullableNumber(deviceLocation?.headingDegrees),
+  speedMps: toNullableNumber(deviceLocation?.speedMps),
+  capturedAtMs: toNullableNumber(deviceLocation?.capturedAtMs),
+});
+
+const normalizeMediaGps = (media = {}) => {
+  const candidate = media?.gps || media?.location?.gps || null;
+  const lat = Number(candidate?.lat);
+  const lng = Number(candidate?.lng);
+
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    lat < -90 ||
+    lat > 90 ||
+    lng < -180 ||
+    lng > 180 ||
+    (lat === 0 && lng === 0)
+  ) {
+    return null;
+  }
+
+  return { lat, lng };
+};
+
+const normalizeMediaItem = (media = {}) => ({
+  tag: cleanText(media?.tag),
+  type: cleanText(media?.type, "image"),
+  uri: cleanText(media?.uri) || null,
+  url: cleanText(media?.url) || null,
+  storagePath: cleanText(media?.storagePath) || null,
+  mimeType: cleanText(media?.mimeType) || null,
+  contentType: cleanText(media?.contentType) || null,
+  capturedAtMs: toNullableNumber(media?.capturedAtMs),
+  gps: normalizeMediaGps(media),
+  created: media?.created || null,
+  updated: media?.updated || null,
+});
+
+export const normalizeInformalErfQueuePayload = (payload = {}) => {
+  const reasonCode = cleanText(payload?.reasonCode).toUpperCase();
+
+  return {
+    schemaVersion: QUEUE_SCHEMA_VERSION,
+    formType: QUEUE_FORM_TYPE,
+    erfId: cleanText(payload?.erfId),
+    lmPcode: cleanText(payload?.lmPcode).toUpperCase(),
+    wardPcode: cleanText(payload?.wardPcode).toUpperCase(),
+    boundaryPoints: normalizeBoundaryPoints(payload?.boundaryPoints),
+    reasonCode,
+    reasonOther:
+      reasonCode === "OTHER"
+        ? cleanText(payload?.reasonOther) || null
+        : null,
+    media: safeArray(payload?.media).map(normalizeMediaItem),
+    deviceLocation: normalizeDeviceLocation(payload?.deviceLocation),
+    clientSubmittedAtMs: toNullableNumber(payload?.clientSubmittedAtMs),
+  };
 };
 
 const readQueue = () => {
@@ -24,7 +107,8 @@ const readQueue = () => {
     if (!raw) return [];
 
     return safeArray(JSON.parse(raw));
-  } catch {
+  } catch (error) {
+    console.error("[INFORMAL ERF QUEUE] Failed to read local queue.", error);
     return [];
   }
 };
@@ -38,6 +122,8 @@ const writeQueue = (queue) => {
 
     return { success: true };
   } catch (error) {
+    console.error("[INFORMAL ERF QUEUE] Failed to write local queue.", error);
+
     return {
       success: false,
       error,
@@ -64,9 +150,81 @@ export const addInformalErfQueueItem = async ({
     const queue = readQueue();
     const timestamp = nowIso();
     const timestampMs = nowMs();
-    const queueItemId = generateQueueId();
-    const resolvedPayload = payloadInput || payload || {};
+    const resolvedPayload = normalizeInformalErfQueuePayload(
+      payloadInput || payload || {},
+    );
 
+    if (!resolvedPayload.erfId) {
+      return {
+        success: false,
+        message: "A final Informal ERF ID is required before local storage.",
+        queueItem: null,
+      };
+    }
+
+    const existingIndex = queue.findIndex(
+      (item) => item?.payload?.erfId === resolvedPayload.erfId,
+    );
+
+    if (existingIndex >= 0) {
+      const existingItem = queue[existingIndex];
+      const updatedItem = {
+        ...existingItem,
+        formType: QUEUE_FORM_TYPE,
+        status:
+          String(existingItem?.status || "").toUpperCase() === "SUCCESS"
+            ? "SUCCESS"
+            : "PENDING",
+        context: {
+          lmPcode:
+            context?.lmPcode ||
+            resolvedPayload.lmPcode ||
+            existingItem?.context?.lmPcode ||
+            "NAv",
+          lmName:
+            context?.lmName ||
+            existingItem?.context?.lmName ||
+            "NAv",
+          wardPcode:
+            context?.wardPcode ||
+            resolvedPayload.wardPcode ||
+            existingItem?.context?.wardPcode ||
+            "NAv",
+          wardName:
+            context?.wardName ||
+            existingItem?.context?.wardName ||
+            "NAv",
+        },
+        payload: resolvedPayload,
+        sync: {
+          ...(existingItem?.sync || {}),
+          nextRetryAt: "NAv",
+          permanentFailure: false,
+        },
+        metadata: {
+          ...(existingItem?.metadata || {}),
+          updatedAt: timestamp,
+          updatedAtMs: timestampMs,
+          updatedByUid: createdByUid,
+          updatedByUser: createdByUser,
+        },
+      };
+
+      const updatedQueue = [...queue];
+      updatedQueue[existingIndex] = updatedItem;
+
+      const saveResult = writeQueue(updatedQueue);
+
+      return {
+        success: saveResult?.success === true,
+        message: saveResult?.success
+          ? "Existing Informal ERF queue item updated without creating a duplicate."
+          : "Failed to update the existing Informal ERF queue item.",
+        queueItem: saveResult?.success ? updatedItem : null,
+      };
+    }
+
+    const queueItemId = generateQueueId();
     const newItem = {
       id: queueItemId,
       formType: QUEUE_FORM_TYPE,
@@ -75,12 +233,12 @@ export const addInformalErfQueueItem = async ({
       context: {
         lmPcode:
           context?.lmPcode ||
-          resolvedPayload?.lmPcode ||
+          resolvedPayload.lmPcode ||
           "NAv",
         lmName: context?.lmName || "NAv",
         wardPcode:
           context?.wardPcode ||
-          resolvedPayload?.wardPcode ||
+          resolvedPayload.wardPcode ||
           "NAv",
         wardName: context?.wardName || "NAv",
       },
@@ -91,8 +249,8 @@ export const addInformalErfQueueItem = async ({
         success: false,
         code: "NAv",
         message: "NAv",
-        erfId: resolvedPayload?.erfId || "NAv",
-        caseId: "NAv",
+        erfId: resolvedPayload.erfId,
+        parcelNo: "NAv",
       },
 
       sync: {
@@ -123,6 +281,12 @@ export const addInformalErfQueueItem = async ({
         queueItem: null,
       };
     }
+
+    console.log("[INFORMAL ERF QUEUE] Item saved.", {
+      queueItemId,
+      erfId: resolvedPayload.erfId,
+      boundaryPointCount: resolvedPayload.boundaryPoints.length,
+    });
 
     return {
       success: true,
@@ -162,11 +326,20 @@ export const updateInformalErfQueueItem = async (
       };
     }
 
+    const normalizedUpdates = {
+      ...updates,
+      ...(updates?.payload
+        ? {
+            payload: normalizeInformalErfQueuePayload(updates.payload),
+          }
+        : {}),
+    };
+
     const updatedQueue = queue.map((item) =>
       item?.id === queueItemId
         ? {
             ...item,
-            ...updates,
+            ...normalizedUpdates,
             metadata: {
               ...(item?.metadata || {}),
               updatedAt: timestamp,
@@ -249,7 +422,7 @@ export const markInformalErfQueueItemSuccess = async (
           result?.message ||
           "Informal ERF created successfully.",
         erfId: result?.erfId || item?.payload?.erfId || "NAv",
-        caseId: result?.caseId || "NAv",
+        parcelNo: result?.parcelNo || "NAv",
         duplicate: result?.duplicate === true,
       },
       sync: {
@@ -283,7 +456,7 @@ export const markInformalErfQueueItemFailed = async (
           result?.message ||
           "Sync failed. The item remains pending for retry.",
         erfId: result?.erfId || item?.payload?.erfId || "NAv",
-        caseId: result?.caseId || "NAv",
+        parcelNo: result?.parcelNo || "NAv",
       },
       sync: {
         ...(item?.sync || {}),
@@ -307,7 +480,7 @@ export const markInformalErfQueueItemPermanentFailure = async (
   return updateInformalErfQueueItem(
     queueItemId,
     {
-      status: "PENDING",
+      status: "REJECTED",
       result: {
         success: false,
         code: result?.code || "PERMANENT_REJECTION",
@@ -315,7 +488,7 @@ export const markInformalErfQueueItemPermanentFailure = async (
           result?.message ||
           "The server permanently rejected this Informal ERF.",
         erfId: result?.erfId || item?.payload?.erfId || "NAv",
-        caseId: result?.caseId || "NAv",
+        parcelNo: "NAv",
         details: result?.details || null,
       },
       sync: {

@@ -371,48 +371,159 @@ export default function MapsScreen() {
     });
   }, [geoState?.selectedErf, router]);
 
-  const handleOpenInformalErfForm = useCallback(() => {
-    if (!userLocation) return;
+  const handleMapUserLocationChange = useCallback((event) => {
+    const coordinate = event?.nativeEvent?.coordinate;
 
-    router.push({
-      pathname: "/(tabs)/maps/formInformalErf",
-      params: {
-        latitude: String(userLocation.latitude),
-        longitude: String(userLocation.longitude),
-        accuracyM:
-          userLocation.accuracyM != null
-            ? String(userLocation.accuracyM)
-            : "",
-        capturedAtMs: String(userLocation.capturedAtMs || Date.now()),
-      },
-    });
-  }, [router, userLocation]);
+    const latitude = Number(coordinate?.latitude);
+    const longitude = Number(coordinate?.longitude);
 
-  const handleInformalErfLongPress = useCallback(() => {
-    if (!userLocation) {
-      Alert.alert(
-        "Location Required",
-        "Tap the red Center Me button before creating an Informal ERF.",
-        [{ text: "OK" }],
-      );
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
       return;
     }
 
-    Alert.alert(
-      "Create Informal ERF?",
-      "You are about to create an Informal ERF at your current location.\n\nAn Informal ERF may only be created where no formal ERF exists.",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
+    const toNullableNumber = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    setUserLocation({
+      latitude,
+      longitude,
+      accuracyM: toNullableNumber(
+        coordinate?.accuracyM ?? coordinate?.accuracy,
+      ),
+      altitudeM: toNullableNumber(
+        coordinate?.altitudeM ?? coordinate?.altitude,
+      ),
+      headingDegrees: toNullableNumber(
+        coordinate?.headingDegrees ?? coordinate?.heading,
+      ),
+      speedMps: toNullableNumber(
+        coordinate?.speedMps ?? coordinate?.speed,
+      ),
+      capturedAtMs:
+        toNullableNumber(
+          coordinate?.capturedAtMs ??
+            coordinate?.timestamp ??
+            event?.nativeEvent?.timestamp,
+        ) ?? Date.now(),
+    });
+  }, []);
+
+  const handleOpenInformalErfForm = useCallback(
+    (selectedCoordinate) => {
+      const selectedLatitude = Number(selectedCoordinate?.latitude);
+      const selectedLongitude = Number(selectedCoordinate?.longitude);
+
+      if (
+        !Number.isFinite(selectedLatitude) ||
+        !Number.isFinite(selectedLongitude)
+      ) {
+        return;
+      }
+
+      const toRouteParam = (value) => {
+        if (value == null || value === "") return "";
+
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? String(parsed) : "";
+      };
+
+      router.push({
+        pathname: "/(tabs)/maps/formInformalErf",
+        params: {
+          selectedLatitude: String(selectedLatitude),
+          selectedLongitude: String(selectedLongitude),
+
+          deviceLatitude: toRouteParam(userLocation?.latitude),
+          deviceLongitude: toRouteParam(userLocation?.longitude),
+          accuracyM: toRouteParam(userLocation?.accuracyM),
+          altitudeM: toRouteParam(userLocation?.altitudeM),
+          headingDegrees: toRouteParam(userLocation?.headingDegrees),
+          speedMps: toRouteParam(userLocation?.speedMps),
+          capturedAtMs: toRouteParam(
+            userLocation?.capturedAtMs || Date.now(),
+          ),
         },
-        {
-          text: "Continue",
-          onPress: handleOpenInformalErfForm,
-        },
-      ],
-    );
-  }, [handleOpenInformalErfForm, userLocation]);
+      });
+    },
+    [router, userLocation],
+  );
+
+  const handleInformalErfMapLongPress = useCallback(
+    (event) => {
+      if (
+        mapMode !== "browse" ||
+        gcsModalOpen ||
+        premiseActionPrem
+      ) {
+        return;
+      }
+
+      const selectedLmId = selectedLm?.id || selectedLm?.pcode;
+      const selectedWardId = selectedWard?.id || selectedWard?.pcode;
+
+      if (!selectedLmId || !selectedWardId) {
+        Alert.alert(
+          "Select a Ward",
+          "Select the active workbase and ward before creating an Informal ERF.",
+          [{ text: "OK" }],
+        );
+        return;
+      }
+
+      if (sync?.scope?.status !== "ready") {
+        Alert.alert(
+          "Ward Data Not Ready",
+          "Wait for the selected ward data to finish loading before creating an Informal ERF.",
+          [{ text: "OK" }],
+        );
+        return;
+      }
+
+      const coordinate = event?.nativeEvent?.coordinate;
+      const latitude = Number(coordinate?.latitude);
+      const longitude = Number(coordinate?.longitude);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return;
+      }
+
+      const selectedCoordinate = {
+        latitude,
+        longitude,
+      };
+
+      Alert.alert(
+        "Create Informal ERF?",
+        `Start the Informal ERF boundary workflow from this map position?\n\nLatitude: ${latitude.toFixed(
+          6,
+        )}\nLongitude: ${longitude.toFixed(
+          6,
+        )}\n\nThe server will validate the completed boundary against the selected ward and every existing ERF.`,
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Continue",
+            onPress: () =>
+              handleOpenInformalErfForm(selectedCoordinate),
+          },
+        ],
+      );
+    },
+    [
+      gcsModalOpen,
+      handleOpenInformalErfForm,
+      mapMode,
+      premiseActionPrem,
+      selectedLm,
+      selectedWard,
+      sync?.scope?.status,
+    ],
+  );
 
   const scopeSync = sync?.scope ?? { status: "idle" };
 
@@ -1030,6 +1141,8 @@ export default function MapsScreen() {
         mapType={mapType}
         initialRegion={initialRegion}
         onRegionChangeComplete={handleRegionChange}
+        onLongPress={handleInformalErfMapLongPress}
+        onUserLocationChange={handleMapUserLocationChange}
         showsUserLocation
       >
         {renderLM()}
@@ -1141,22 +1254,6 @@ export default function MapsScreen() {
           <Text style={styles.zoomText}>{zoom}</Text>
           <Text style={styles.zoomLabel}>ZOOM</Text>
         </View>
-        {/* Informal ERF create button */}
-        <TouchableOpacity
-          style={[
-            styles.informalErfBtn,
-            !userLocation && styles.informalErfBtnWaiting,
-          ]}
-          onLongPress={handleInformalErfLongPress}
-          delayLongPress={800}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Create Informal ERF"
-          accessibilityHint="Long press to open the Informal ERF form"
-        >
-          <Text style={styles.informalErfIcon}>+</Text>
-          <Text style={styles.informalErfLabel}>ERF</Text>
-        </TouchableOpacity>
       </View>
 
       {mapMode === "edit-premise-marker" && activeDragPremise ? (
@@ -1309,38 +1406,6 @@ const styles = StyleSheet.create({
     fontSize: 7,
     fontWeight: "800",
     marginTop: -2,
-  },
-
-  informalErfBtn: {
-    width: 40,
-    height: 44,
-    borderRadius: 8,
-    backgroundColor: "rgba(15, 23, 42, 0.9)",
-    borderWidth: 1,
-    borderColor: "#4CD964",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 4,
-  },
-
-  informalErfBtnWaiting: {
-    borderColor: "#94a3b8",
-    opacity: 0.72,
-  },
-
-  informalErfIcon: {
-    color: "#4CD964",
-    fontSize: 18,
-    lineHeight: 18,
-    fontWeight: "900",
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-  },
-
-  informalErfLabel: {
-    color: "#94A3B8",
-    fontSize: 7,
-    fontWeight: "800",
-    marginTop: 1,
   },
 
   distanceBadge: {

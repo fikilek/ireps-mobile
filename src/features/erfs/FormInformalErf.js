@@ -19,7 +19,7 @@ import {
 } from "react-native-paper";
 
 import { FormSection } from "../../../components/forms/FormSection";
-import SovereignLocationPicker from "../../../components/maps/SovereignLocationPicker";
+import InformalErfLocationPicker from "../../../components/maps/InformalErfLocationPicker";
 import { IrepsMedia } from "../../../components/media/IrepsMedia";
 import { useGeo } from "../../context/GeoContext";
 import { getSafeCoords } from "../../context/MapContext";
@@ -66,21 +66,52 @@ const INFORMAL_ERF_CREATION_REASON_CODES = new Set(
   INFORMAL_ERF_CREATION_REASONS.map((option) => option.value),
 );
 
-const isValidErfGps = (value) => {
-  const lat = Number(value?.lat);
-  const lng = Number(value?.lng);
+const BOUNDARY_COORDINATE_PRECISION = 7;
 
-  return (
-    value?.lat != null &&
-    value?.lng != null &&
-    Number.isFinite(lat) &&
-    Number.isFinite(lng) &&
-    lat >= -90 &&
-    lat <= 90 &&
-    lng >= -180 &&
-    lng <= 180 &&
-    !(lat === 0 && lng === 0)
+const normalizeBoundaryPoint = (value) => {
+  const lat = Number(value?.lat ?? value?.latitude);
+  const lng = Number(value?.lng ?? value?.longitude);
+
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    lat < -90 ||
+    lat > 90 ||
+    lng < -180 ||
+    lng > 180 ||
+    (lat === 0 && lng === 0)
+  ) {
+    return null;
+  }
+
+  return { lat, lng };
+};
+
+const getBoundaryValidationError = (value) => {
+  if (!Array.isArray(value) || value.length < 3) {
+    return "Draw and confirm at least three Informal ERF boundary points.";
+  }
+
+  const normalizedPoints = value.map(normalizeBoundaryPoint);
+
+  if (normalizedPoints.some((point) => !point)) {
+    return "Every Informal ERF boundary point must contain a valid latitude and longitude.";
+  }
+
+  const uniquePointKeys = new Set(
+    normalizedPoints.map(
+      (point) =>
+        `${point.lat.toFixed(BOUNDARY_COORDINATE_PRECISION)}:${point.lng.toFixed(
+          BOUNDARY_COORDINATE_PRECISION,
+        )}`,
+    ),
   );
+
+  if (uniquePointKeys.size !== normalizedPoints.length) {
+    return "Every Informal ERF boundary point must be unique.";
+  }
+
+  return null;
 };
 
 const getCreationReasonLabel = (reasonCode) => {
@@ -93,9 +124,12 @@ const getCreationReasonLabel = (reasonCode) => {
 const validateInformalErf = (values) => {
   const errors = {};
 
-  if (!isValidErfGps(values?.proposedErfLocation)) {
-    errors.proposedErfLocation =
-      "A valid Informal ERF GPS position is required.";
+  const boundaryValidationError = getBoundaryValidationError(
+    values?.boundaryPoints,
+  );
+
+  if (boundaryValidationError) {
+    errors.boundaryPoints = boundaryValidationError;
   }
 
   const reasonCode = String(values?.reasonCode || "").trim();
@@ -157,6 +191,50 @@ const toLatLng = (value) => {
   return null;
 };
 
+const readCoordinateFromAny = (...values) => {
+  for (const value of values) {
+    const coordinate = toLatLng(value);
+
+    if (
+      coordinate &&
+      Number.isFinite(coordinate.lat) &&
+      Number.isFinite(coordinate.lng)
+    ) {
+      return coordinate;
+    }
+  }
+
+  return null;
+};
+
+const getBoundaryCentroid = (boundary = []) => {
+  if (!Array.isArray(boundary) || boundary.length === 0) return null;
+
+  const validPoints = boundary
+    .map((point) => ({
+      lat: Number(point?.latitude ?? point?.lat),
+      lng: Number(point?.longitude ?? point?.lng),
+    }))
+    .filter(
+      (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng),
+    );
+
+  if (!validPoints.length) return null;
+
+  const totals = validPoints.reduce(
+    (accumulator, point) => ({
+      lat: accumulator.lat + point.lat,
+      lng: accumulator.lng + point.lng,
+    }),
+    { lat: 0, lng: 0 },
+  );
+
+  return {
+    lat: totals.lat / validPoints.length,
+    lng: totals.lng / validPoints.length,
+  };
+};
+
 const distanceMeters = (from, to) => {
   const a = toLatLng(from);
   const b = toLatLng(to);
@@ -189,7 +267,10 @@ const distanceMeters = (from, to) => {
 const formatCoordinate = (value) =>
   Number.isFinite(Number(value)) ? Number(value).toFixed(6) : "N/A";
 
-export default function FormInformalErf({ initialDeviceLocation }) {
+export default function FormInformalErf({
+  initialProposedErfLocation,
+  initialDeviceLocation = null,
+}) {
   const router = useRouter();
   const { geoState } = useGeo();
   const { all } = useWarehouse();
@@ -202,9 +283,23 @@ export default function FormInformalErf({ initialDeviceLocation }) {
   const selectedLm = geoState?.selectedLm || null;
   const selectedWard = geoState?.selectedWard || null;
 
+  const selectedMapPoint = useMemo(() => {
+    const coordinate = toLatLng(initialProposedErfLocation);
+
+    if (
+      !coordinate ||
+      !Number.isFinite(coordinate.lat) ||
+      !Number.isFinite(coordinate.lng)
+    ) {
+      return null;
+    }
+
+    return coordinate;
+  }, [initialProposedErfLocation]);
+
   const initialValues = useMemo(
     () => ({
-      proposedErfLocation: null,
+      boundaryPoints: [],
       reasonCode: "",
       reasonOther: "",
       media: [],
@@ -245,85 +340,143 @@ export default function FormInformalErf({ initialDeviceLocation }) {
   }, [all?.geoLibrary, selectedWard]);
 
   const nearbyErfs = useMemo(() => {
-    if (!devicePoint) return [];
+    if (!selectedMapPoint || !Array.isArray(all?.erfs)) return [];
 
-    return (all?.erfs || [])
+    return all.erfs
       .map((erf) => {
-        const erfId = erf?.id || erf?.erfId;
-        const heavy = erfId ? all?.geoLibrary?.[erfId] : null;
-        const centroid =
-          toLatLng(heavy?.centroid) || toLatLng(erf?.centroid) || null;
+        const erfId =
+          erf?.id || erf?.erfId || erf?.pcode || erf?.erfNo || "NAv";
 
-        if (!centroid) return null;
+        const heavyGeometry =
+          all?.geoLibrary?.[erfId] || all?.geoEntries?.[erfId] || null;
 
-        const distanceM = distanceMeters(devicePoint, centroid);
-        if (distanceM > NEARBY_RADIUS_M) return null;
+        const boundary = getSafeCoords(
+          heavyGeometry?.geometry || erf?.geometry || heavyGeometry || null,
+        );
+
+        const centroid = readCoordinateFromAny(
+          erf?.geometry?.centroid,
+          heavyGeometry?.centroid,
+          erf?.centroid,
+          erf?.coordinate,
+          erf?.gps,
+          getBoundaryCentroid(boundary),
+        );
+
+        const distanceM = distanceMeters(selectedMapPoint, centroid);
+
+        if (
+          !centroid ||
+          !Array.isArray(boundary) ||
+          boundary.length === 0 ||
+          distanceM > NEARBY_RADIUS_M
+        ) {
+          return null;
+        }
 
         return {
-          ...erf,
           id: erfId,
+          erfNo:
+            erf?.erfNo ||
+            erf?.erf_no ||
+            erf?.erfNumber ||
+            erf?.sg?.erfNo ||
+            erf?.sg?.parcelNo ||
+            erf?.parcelNo ||
+            erf?.code ||
+            "NAv",
           centroid,
-          boundary: getSafeCoords(heavy?.geometry || erf?.geometry),
+          boundary,
           distanceM,
         };
       })
       .filter(Boolean)
       .sort((a, b) => a.distanceM - b.distanceM)
       .slice(0, MAX_CONTEXT_ITEMS);
-  }, [all?.erfs, all?.geoLibrary, devicePoint]);
+  }, [all?.erfs, all?.geoEntries, all?.geoLibrary, selectedMapPoint]);
 
   const nearbyPremises = useMemo(() => {
-    if (!devicePoint) return [];
+    if (!selectedMapPoint || !Array.isArray(all?.prems)) return [];
 
-    return (all?.prems || [])
+    return all.prems
       .map((premise) => {
-        const coordinate = toLatLng(premise?.geometry?.centroid);
-        if (!coordinate) return null;
+        const coordinate = readCoordinateFromAny(
+          premise?.geometry?.centroid,
+          premise?.coordinate,
+          premise?.gps,
+          premise?.location?.gps,
+          premise?.address?.gps,
+        );
 
-        const distanceM = distanceMeters(devicePoint, coordinate);
-        if (distanceM > NEARBY_RADIUS_M) return null;
+        const distanceM = distanceMeters(selectedMapPoint, coordinate);
+
+        if (!coordinate || distanceM > NEARBY_RADIUS_M) {
+          return null;
+        }
 
         return {
-          ...premise,
+          id: premise?.id || premise?.premiseId || "NAv",
           coordinate,
+          address: premise?.address || {},
+          propertyType: premise?.propertyType || {},
           distanceM,
         };
       })
       .filter(Boolean)
       .sort((a, b) => a.distanceM - b.distanceM)
       .slice(0, MAX_CONTEXT_ITEMS);
-  }, [all?.prems, devicePoint]);
+  }, [all?.prems, selectedMapPoint]);
 
   const nearbyMeters = useMemo(() => {
-    if (!devicePoint) return [];
+    if (!selectedMapPoint || !Array.isArray(all?.meters)) return [];
 
-    return (all?.meters || [])
+    return all.meters
       .map((meter) => {
-        const coordinate = toLatLng(meter?.ast?.location?.gps);
-        if (!coordinate) return null;
+        const coordinate = readCoordinateFromAny(
+          meter?.accessData?.gps,
+          meter?.ast?.location?.gps,
+          meter?.location?.gps,
+          meter?.geometry?.centroid,
+          meter?.coordinate,
+          meter?.gps,
+          meter?.astData?.location?.gps,
+        );
 
-        const distanceM = distanceMeters(devicePoint, coordinate);
-        if (distanceM > NEARBY_RADIUS_M) return null;
+        const distanceM = distanceMeters(selectedMapPoint, coordinate);
+
+        if (!coordinate || distanceM > NEARBY_RADIUS_M) {
+          return null;
+        }
 
         return {
-          ...meter,
+          id:
+            meter?.id ||
+            meter?.ast?.astData?.astId ||
+            meter?.astData?.astId ||
+            "NAv",
           coordinate,
+          meterType:
+            meter?.meterType ||
+            meter?.ast?.meterType ||
+            meter?.ast?.astData?.meter?.type ||
+            meter?.astData?.meter?.type ||
+            "NAv",
           distanceM,
         };
       })
       .filter(Boolean)
       .sort((a, b) => a.distanceM - b.distanceM)
       .slice(0, MAX_CONTEXT_ITEMS);
-  }, [all?.meters, devicePoint]);
+  }, [all?.meters, selectedMapPoint]);
 
-  if (!devicePoint) {
+  if (!selectedMapPoint) {
     return (
       <View style={styles.centeredScreen}>
         <Surface style={styles.messageCard}>
-          <Text style={styles.messageTitle}>GPS LOCATION REQUIRED</Text>
+          <Text style={styles.messageTitle}>MAP POSITION REQUIRED</Text>
           <Text style={styles.messageText}>
-            Return to the map and tap the red Center Me button before opening
-            the Informal ERF Form.
+            Return to the map and long press the exact position where the
+            Informal ERF must be created.
           </Text>
           <Button mode="contained" onPress={() => router.back()}>
             RETURN TO MAP
@@ -337,13 +490,21 @@ export default function FormInformalErf({ initialDeviceLocation }) {
     <Formik
       initialValues={initialValues}
       initialTouched={{
-        proposedErfLocation: true,
+        boundaryPoints: true,
       }}
       validate={validateInformalErf}
       validateOnMount={true}
       validateOnChange={true}
       validateOnBlur={false}
       onSubmit={async (values) => {
+        if (!devicePoint) {
+          Alert.alert(
+            "Device GPS Not Captured",
+            "The Informal ERF boundary is captured, but iREPS has not yet captured the phone GPS required for the forensic submission record. Keep location enabled, return to the map, and try again.",
+          );
+          return;
+        }
+
         const submissionResult = await submitInformalErfWithFallback({
           payloadInput: {
             lmPcode,
@@ -359,10 +520,12 @@ export default function FormInformalErf({ initialDeviceLocation }) {
               capturedAtMs: initialDeviceLocation?.capturedAtMs,
             },
 
-            proposedErfLocation: {
-              lat: values?.proposedErfLocation?.lat,
-              lng: values?.proposedErfLocation?.lng,
-            },
+            boundaryPoints: Array.isArray(values?.boundaryPoints)
+              ? values.boundaryPoints.map((point) => ({
+                  lat: Number(point?.lat ?? point?.latitude),
+                  lng: Number(point?.lng ?? point?.longitude),
+                }))
+              : [],
 
             reasonCode: values?.reasonCode,
 
@@ -440,8 +603,7 @@ export default function FormInformalErf({ initialDeviceLocation }) {
       }}
     >
       {({ errors, isSubmitting, setFieldValue, setValues, values }) => {
-
-        const showGpsError = !!errors?.proposedErfLocation;
+        const showBoundaryError = !!errors?.boundaryPoints;
 
         const showReasonError = !!errors?.reasonCode;
 
@@ -463,18 +625,33 @@ export default function FormInformalErf({ initialDeviceLocation }) {
                   Ward: {selectedWard?.name || selectedWard?.pcode || "N/A"}
                 </Text>
                 <Text style={styles.contextLine}>
-                  Center Me GPS: {formatCoordinate(devicePoint.lat)},{" "}
-                  {formatCoordinate(devicePoint.lng)}
+                  Workflow Start Position:{" "}
+                  {formatCoordinate(selectedMapPoint.lat)},{" "}
+                  {formatCoordinate(selectedMapPoint.lng)}
                 </Text>
                 <Text style={styles.contextLine}>
-                  Accuracy: {initialDeviceLocation?.accuracyM ?? "N/A"} m
+                  Selection Method: Main map long press (map centre only)
                 </Text>
+                <Text style={styles.contextLine}>
+                  Device GPS:{" "}
+                  {devicePoint
+                    ? `${formatCoordinate(devicePoint.lat)}, ${formatCoordinate(
+                        devicePoint.lng,
+                      )}`
+                    : "Not captured"}
+                </Text>
+                {devicePoint ? (
+                  <Text style={styles.contextLine}>
+                    Device Accuracy: {initialDeviceLocation?.accuracyM ?? "N/A"}{" "}
+                    m
+                  </Text>
+                ) : null}
               </FormSection>
 
-              <SovereignLocationPicker
-                label="INFORMAL ERF GPS LOCATION"
-                name="proposedErfLocation"
-                initialGps={devicePoint}
+              <InformalErfLocationPicker
+                label="INFORMAL ERF BOUNDARY"
+                name="boundaryPoints"
+                initialGps={selectedMapPoint}
                 icon="map-marker-plus"
                 referenceBoundary={selectedWardBoundary}
                 erfNo="INFORMAL"
@@ -483,12 +660,6 @@ export default function FormInformalErf({ initialDeviceLocation }) {
                 nearbyPremises={nearbyPremises}
                 nearbyMeters={nearbyMeters}
               />
-
-              {showGpsError ? (
-                <Text style={[styles.fieldErrorText, styles.gpsErrorText]}>
-                  {errors.proposedErfLocation}
-                </Text>
-              ) : null}
 
               <FormSection title="REASON FOR INFORMAL ERF">
                 <TouchableOpacity
@@ -554,7 +725,6 @@ export default function FormInformalErf({ initialDeviceLocation }) {
                   tag="informalErfSitePhoto"
                   agentName={agentName}
                   agentUid={agentUid}
-                  fallbackGps={values?.proposedErfLocation}
                   required
                 />
 
@@ -707,7 +877,7 @@ const styles = StyleSheet.create({
     color: "#ef4444",
   },
 
-  gpsErrorText: {
+  boundaryErrorText: {
     marginTop: 6,
     marginHorizontal: 4,
   },

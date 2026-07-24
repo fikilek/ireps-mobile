@@ -1,5 +1,4 @@
 import NetInfo from "@react-native-community/netinfo";
-import { httpsCallable } from "firebase/functions";
 import {
   getDownloadURL,
   getStorage,
@@ -7,10 +6,21 @@ import {
   uploadBytes,
 } from "firebase/storage";
 
-import { functions } from "../firebase";
+import {
+  INFORMAL_ERF_CALLABLE_TIMEOUT_MS,
+  informalErfsApi,
+} from "../redux/informalErfsApi";
+import { store } from "../redux/store";
 import { addInformalErfQueueItem } from "../utils/informalErfSubmissionQueue";
 
-export const INFORMAL_ERF_SUBMISSION_TIMEOUT_MS = 15000;
+export const INFORMAL_ERF_SUBMISSION_TIMEOUT_MS =
+  INFORMAL_ERF_CALLABLE_TIMEOUT_MS;
+
+const INFORMAL_ERF_ID_PATTERN = /^IE-(ZA\d{7})-\d{8}-\d{6}-\d{4}$/;
+const LEGACY_INFORMAL_ERF_ID_PATTERN = /^IE-\d{8}-\d{6}-\d{4}$/;
+const WARD_PCODE_PATTERN = /^ZA\d{7}$/;
+const INFORMAL_ERF_FORM_TYPE = "INFORMAL_ERF_CREATE";
+const INFORMAL_ERF_SCHEMA_VERSION = 2;
 
 let lastGeneratedTimestampMs = 0;
 
@@ -20,10 +30,17 @@ const cleanText = (value, fallback = "") => {
 };
 
 const normalizeErrorCode = (value) =>
-  cleanText(value)
+  cleanText(value, "UNKNOWN_ERROR")
     .replace(/^functions\//, "")
     .replace(/^storage\//, "")
     .toUpperCase();
+
+const toNullableNumber = (value) => {
+  if (value == null || value === "") return null;
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 const isValidLatLng = (value) => {
   const lat = Number(value?.lat);
@@ -40,6 +57,22 @@ const isValidLatLng = (value) => {
   );
 };
 
+const normalizeBoundaryPoints = (boundaryPoints = []) =>
+  (Array.isArray(boundaryPoints) ? boundaryPoints : []).map((point) => ({
+    lat: Number(point?.lat ?? point?.latitude),
+    lng: Number(point?.lng ?? point?.longitude),
+  }));
+
+const normalizeDeviceLocation = (deviceLocation = {}) => ({
+  latitude: toNullableNumber(deviceLocation?.latitude),
+  longitude: toNullableNumber(deviceLocation?.longitude),
+  accuracyM: toNullableNumber(deviceLocation?.accuracyM),
+  altitudeM: toNullableNumber(deviceLocation?.altitudeM),
+  headingDegrees: toNullableNumber(deviceLocation?.headingDegrees),
+  speedMps: toNullableNumber(deviceLocation?.speedMps),
+  capturedAtMs: toNullableNumber(deviceLocation?.capturedAtMs),
+});
+
 const getJohannesburgTimestampParts = (timestampMs) => {
   const southAfricaDate = new Date(timestampMs + 2 * 60 * 60 * 1000);
 
@@ -49,16 +82,15 @@ const getJohannesburgTimestampParts = (timestampMs) => {
   const hour = String(southAfricaDate.getUTCHours()).padStart(2, "0");
   const minute = String(southAfricaDate.getUTCMinutes()).padStart(2, "0");
   const second = String(southAfricaDate.getUTCSeconds()).padStart(2, "0");
-  const millisecond = String(southAfricaDate.getUTCMilliseconds()).padStart(
-    3,
-    "0",
-  );
 
   return {
     datePart: `${yyyy}${month}${day}`,
-    timePart: `${hour}${minute}${second}${millisecond}`,
+    timePart: `${hour}${minute}${second}`,
   };
 };
+
+const createRandomNumericSuffix = () =>
+  String(Math.floor(Math.random() * 10000)).padStart(4, "0");
 
 const getNextUniqueTimestampMs = (preferredTimestampMs = Date.now()) => {
   const parsed = Number(preferredTimestampMs);
@@ -75,16 +107,17 @@ export const createInformalErfId = (
 ) => {
   const cleanWardPcode = cleanText(wardPcode).toUpperCase();
 
-  if (!cleanWardPcode || cleanWardPcode === "NAV") {
-    throw new Error("A valid wardPcode is required to create an Informal ERF ID.");
+  if (!WARD_PCODE_PATTERN.test(cleanWardPcode)) {
+    throw new Error(
+      "A valid wardPcode such as ZA7423006 is required to create an Informal ERF ID.",
+    );
   }
 
   const timestampMs = getNextUniqueTimestampMs(preferredTimestampMs);
-  const { datePart, timePart } =
-    getJohannesburgTimestampParts(timestampMs);
+  const { datePart, timePart } = getJohannesburgTimestampParts(timestampMs);
 
   return {
-    erfId: `erf_inf__${cleanWardPcode}__${datePart}__${timePart}`,
+    erfId: `IE-${cleanWardPcode}-${datePart}-${timePart}-${createRandomNumericSuffix()}`,
     clientSubmittedAtMs: timestampMs,
   };
 };
@@ -115,29 +148,24 @@ export const ensureInformalErfSubmissionIdentity = (
   payloadInput = {},
   queueItem = null,
 ) => {
-  const payload = {
-    ...(payloadInput || {}),
-  };
-
+  const source = payloadInput || {};
+  const lmPcode = cleanText(
+    source?.lmPcode || queueItem?.context?.lmPcode,
+  ).toUpperCase();
   const wardPcode = cleanText(
-    payload?.wardPcode || queueItem?.context?.wardPcode,
+    source?.wardPcode || queueItem?.context?.wardPcode,
   ).toUpperCase();
 
-  const existingErfId = cleanText(payload?.erfId);
-  const existingClientSubmittedAtMs = Number(payload?.clientSubmittedAtMs);
-
-  if (
-    existingErfId &&
+  const existingErfId = cleanText(source?.erfId);
+  const existingClientSubmittedAtMs = Number(source?.clientSubmittedAtMs);
+  const currentIdMatch = existingErfId.match(INFORMAL_ERF_ID_PATTERN);
+  const isCurrentWardIdentity = currentIdMatch?.[1] === wardPcode;
+  const isLegacyQueuedIdentity =
+    LEGACY_INFORMAL_ERF_ID_PATTERN.test(existingErfId);
+  const hasReusableIdentity =
+    (isCurrentWardIdentity || isLegacyQueuedIdentity) &&
     Number.isFinite(existingClientSubmittedAtMs) &&
-    existingClientSubmittedAtMs > 0
-  ) {
-    return {
-      ...payload,
-      erfId: existingErfId,
-      clientSubmittedAtMs: Math.trunc(existingClientSubmittedAtMs),
-      wardPcode,
-    };
-  }
+    existingClientSubmittedAtMs > 0;
 
   const preferredTimestampMs =
     Number.isFinite(existingClientSubmittedAtMs) &&
@@ -145,15 +173,29 @@ export const ensureInformalErfSubmissionIdentity = (
       ? existingClientSubmittedAtMs
       : getQueueCreatedAtMs(queueItem || {});
 
-  const generated = createInformalErfId(
-    wardPcode,
-    preferredTimestampMs,
-  );
+  const identity = hasReusableIdentity
+    ? {
+        erfId: existingErfId,
+        clientSubmittedAtMs: Math.trunc(existingClientSubmittedAtMs),
+      }
+    : createInformalErfId(wardPcode, preferredTimestampMs);
+
+  const reasonCode = cleanText(source?.reasonCode).toUpperCase();
 
   return {
-    ...payload,
-    ...generated,
+    schemaVersion: INFORMAL_ERF_SCHEMA_VERSION,
+    formType: INFORMAL_ERF_FORM_TYPE,
+    ...identity,
+    lmPcode,
     wardPcode,
+    boundaryPoints: normalizeBoundaryPoints(source?.boundaryPoints),
+    reasonCode,
+    reasonOther:
+      reasonCode === "OTHER"
+        ? cleanText(source?.reasonOther) || null
+        : null,
+    media: Array.isArray(source?.media) ? source.media : [],
+    deviceLocation: normalizeDeviceLocation(source?.deviceLocation),
   };
 };
 
@@ -165,33 +207,10 @@ export const isDeviceOnline = async () => {
       state?.isConnected &&
         state?.isInternetReachable !== false,
     );
-  } catch {
+  } catch (error) {
+    console.warn("[INFORMAL ERF] Network state check failed.", error);
     return false;
   }
-};
-
-export const withInformalErfTimeout = (
-  promise,
-  timeoutMs = INFORMAL_ERF_SUBMISSION_TIMEOUT_MS,
-) => {
-  let timeoutId = null;
-
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => {
-      const timeoutError = new Error("Informal ERF submission timed out.");
-      timeoutError.code = "SUBMISSION_TIMEOUT";
-      timeoutError.details = {
-        retriable: true,
-        errorType: "TEMPORARY",
-      };
-
-      reject(timeoutError);
-    }, timeoutMs);
-  });
-
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timeoutId) clearTimeout(timeoutId);
-  });
 };
 
 const getMediaExtension = (media = {}) => {
@@ -204,9 +223,7 @@ const getMediaExtension = (media = {}) => {
 };
 
 const getMediaContentType = (media = {}, extension = "jpg") => {
-  const explicit = cleanText(
-    media?.mimeType || media?.contentType,
-  );
+  const explicit = cleanText(media?.mimeType || media?.contentType);
 
   if (explicit.startsWith("image/")) return explicit;
   if (extension === "png") return "image/png";
@@ -228,18 +245,52 @@ const getMediaCapturedAtMs = (media = {}) => {
       "",
   );
 
-  return Number.isFinite(parsed) && parsed > 0
-    ? parsed
-    : null;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
 
-const getMediaGps = (media = {}, fallbackGps = null) => {
-  const candidates = [
-    media?.gps,
-    media?.location?.gps,
-    fallbackGps,
-  ];
+const toValidIsoTimestamp = (value, fallbackMs = null) => {
+  const parsed = Date.parse(cleanText(value));
 
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return new Date(parsed).toISOString();
+  }
+
+  const numericFallback = Number(fallbackMs);
+
+  if (Number.isFinite(numericFallback) && numericFallback > 0) {
+    return new Date(numericFallback).toISOString();
+  }
+
+  return null;
+};
+
+const buildUploadedMediaAudit = (media = {}) => {
+  const capturedAtMs = getMediaCapturedAtMs(media);
+  const createdAt = toValidIsoTimestamp(media?.created?.at, capturedAtMs);
+  const updatedAt =
+    toValidIsoTimestamp(media?.updated?.at, capturedAtMs) || createdAt;
+
+  return {
+    capturedAtMs,
+    created: createdAt
+      ? {
+          at: createdAt,
+          byUid: cleanText(media?.created?.byUid) || null,
+          byUser: cleanText(media?.created?.byUser) || null,
+        }
+      : null,
+    updated: updatedAt
+      ? {
+          at: updatedAt,
+          byUid: cleanText(media?.updated?.byUid) || null,
+          byUser: cleanText(media?.updated?.byUser) || null,
+        }
+      : null,
+  };
+};
+
+const getMediaGps = (media = {}) => {
+  const candidates = [media?.gps, media?.location?.gps];
   const match = candidates.find(isValidLatLng);
 
   if (!match) return null;
@@ -250,39 +301,45 @@ const getMediaGps = (media = {}, fallbackGps = null) => {
   };
 };
 
-const uploadSingleInformalErfPhoto = async ({
-  media,
-  erfId,
-  index,
-  fallbackGps,
-}) => {
+const makeMissingPhotoError = (message, code) => {
+  const error = new Error(message);
+  error.code = code;
+  error.details = {
+    retriable: false,
+    errorType: "PERMANENT",
+  };
+  return error;
+};
+
+const uploadSingleInformalErfPhoto = async ({ media, erfId, index }) => {
   const expectedPrefix = `informal_erfs/${erfId}/`;
   const existingStoragePath = cleanText(media?.storagePath);
 
   if (existingStoragePath.startsWith(expectedPrefix)) {
+    const storageReference = ref(getStorage(), existingStoragePath);
+    const existingUrl = cleanText(media?.url);
+
+    const audit = buildUploadedMediaAudit(media);
+
     return {
       tag: "informalErfSitePhoto",
       type: "image",
       storagePath: existingStoragePath,
-      url: cleanText(media?.url) || null,
-      capturedAtMs: getMediaCapturedAtMs(media),
-      gps: getMediaGps(media, fallbackGps),
+      url: existingUrl || (await getDownloadURL(storageReference)),
+      capturedAtMs: audit.capturedAtMs,
+      gps: getMediaGps(media),
+      created: audit.created,
+      updated: audit.updated,
     };
   }
 
   const localUri = cleanText(media?.uri);
 
   if (!localUri) {
-    const missingUriError = new Error(
+    throw makeMissingPhotoError(
       "The Informal ERF site photograph is not available on this device.",
+      "MISSING_LOCAL_SITE_PHOTO",
     );
-    missingUriError.code = "MISSING_LOCAL_SITE_PHOTO";
-    missingUriError.details = {
-      retriable: false,
-      errorType: "PERMANENT",
-    };
-
-    throw missingUriError;
   }
 
   const extension = getMediaExtension(media);
@@ -291,9 +348,21 @@ const uploadSingleInformalErfPhoto = async ({
     `${expectedPrefix}informal_erf_site_photo_${index + 1}.${extension}`;
 
   const response = await fetch(localUri);
+
+  if (!response?.ok && response?.status) {
+    const mediaReadError = new Error(
+      `The Informal ERF photograph could not be read (${response.status}).`,
+    );
+    mediaReadError.code = "LOCAL_MEDIA_READ_FAILED";
+    mediaReadError.details = {
+      retriable: false,
+      errorType: "PERMANENT",
+    };
+    throw mediaReadError;
+  }
+
   const blob = await response.blob();
-  const storage = getStorage();
-  const storageReference = ref(storage, storagePath);
+  const storageReference = ref(getStorage(), storagePath);
 
   try {
     await uploadBytes(storageReference, blob, {
@@ -310,20 +379,21 @@ const uploadSingleInformalErfPhoto = async ({
   }
 
   const url = await getDownloadURL(storageReference);
+  const audit = buildUploadedMediaAudit(media);
 
   return {
     tag: "informalErfSitePhoto",
     type: "image",
     storagePath,
     url,
-    capturedAtMs: getMediaCapturedAtMs(media),
-    gps: getMediaGps(media, fallbackGps),
+    capturedAtMs: audit.capturedAtMs,
+    gps: getMediaGps(media),
+    created: audit.created,
+    updated: audit.updated,
   };
 };
 
-export const uploadInformalErfSitePhotos = async (
-  payloadInput = {},
-) => {
+export const uploadInformalErfSitePhotos = async (payloadInput = {}) => {
   const media = Array.isArray(payloadInput?.media)
     ? payloadInput.media
     : [];
@@ -333,30 +403,38 @@ export const uploadInformalErfSitePhotos = async (
   );
 
   if (!sitePhotos.length) {
-    const missingPhotoError = new Error(
+    throw makeMissingPhotoError(
       "Informal ERF site photograph is required.",
+      "MISSING_SITE_PHOTO",
     );
-    missingPhotoError.code = "MISSING_SITE_PHOTO";
-    missingPhotoError.details = {
-      retriable: false,
-      errorType: "PERMANENT",
-    };
-
-    throw missingPhotoError;
   }
+
+  console.log(
+    `[INFORMAL ERF] Media upload started (${sitePhotos.length} photograph(s)).`,
+    { erfId: payloadInput?.erfId },
+  );
 
   const uploadedSitePhotos = [];
 
   for (let index = 0; index < sitePhotos.length; index += 1) {
+    console.log(
+      `[INFORMAL ERF] Uploading photograph ${index + 1}/${sitePhotos.length}.`,
+      { erfId: payloadInput?.erfId },
+    );
+
     uploadedSitePhotos.push(
       await uploadSingleInformalErfPhoto({
         media: sitePhotos[index],
         erfId: payloadInput.erfId,
         index,
-        fallbackGps: payloadInput.proposedErfLocation,
       }),
     );
   }
+
+  console.log("[INFORMAL ERF] Media upload completed.", {
+    erfId: payloadInput?.erfId,
+    uploadedCount: uploadedSitePhotos.length,
+  });
 
   return uploadedSitePhotos;
 };
@@ -365,65 +443,97 @@ export const buildInformalErfCallablePayload = (
   payloadInput = {},
   uploadedMedia = [],
 ) => ({
-  schemaVersion: 1,
-  formType: "INFORMAL_ERF_CREATE",
+  schemaVersion: INFORMAL_ERF_SCHEMA_VERSION,
+  formType: INFORMAL_ERF_FORM_TYPE,
   erfId: payloadInput.erfId,
   lmPcode: payloadInput.lmPcode,
   wardPcode: payloadInput.wardPcode,
-  deviceLocation: payloadInput.deviceLocation,
-  proposedErfLocation: payloadInput.proposedErfLocation,
-  reasonCode: payloadInput.reasonCode,
+  boundaryPoints: normalizeBoundaryPoints(payloadInput.boundaryPoints),
+  reasonCode: cleanText(payloadInput.reasonCode).toUpperCase(),
   reasonOther:
-    payloadInput.reasonCode === "OTHER"
+    cleanText(payloadInput.reasonCode).toUpperCase() === "OTHER"
       ? cleanText(payloadInput.reasonOther) || null
       : null,
   media: uploadedMedia,
+  deviceLocation: normalizeDeviceLocation(payloadInput.deviceLocation),
   clientSubmittedAtMs: payloadInput.clientSubmittedAtMs,
 });
 
-export const submitInformalErfOnline = async (
-  payloadInput = {},
-) => {
-  const identifiedPayload =
-    ensureInformalErfSubmissionIdentity(payloadInput);
+const toEnrichedSubmissionError = (error, preparedPayload) => {
+  const enrichedError =
+    error instanceof Error
+      ? error
+      : Object.assign(
+          new Error(
+            cleanText(error?.message) ||
+              "The Informal ERF could not be submitted.",
+          ),
+          error || {},
+        );
 
-  const uploadedMedia = await uploadInformalErfSitePhotos(
-    identifiedPayload,
-  );
+  enrichedError.preparedPayload = preparedPayload;
+  return enrichedError;
+};
 
+export const submitInformalErfOnline = async (payloadInput = {}) => {
+  const identifiedPayload = ensureInformalErfSubmissionIdentity(payloadInput);
+  let uploadedMedia;
+
+  try {
+    uploadedMedia = await uploadInformalErfSitePhotos(identifiedPayload);
+  } catch (error) {
+    console.error("[INFORMAL ERF] Media upload failed.", {
+      erfId: identifiedPayload.erfId,
+      code: error?.code,
+      message: error?.message,
+    });
+    throw error;
+  }
+
+  const preparedPayload = {
+    ...identifiedPayload,
+    media: uploadedMedia,
+  };
   const callablePayload = buildInformalErfCallablePayload(
-    identifiedPayload,
+    preparedPayload,
     uploadedMedia,
   );
 
-  const submitCallable = httpsCallable(
-    functions,
-    "submitInformalErfCallable",
+  console.log("[INFORMAL ERF] Callable request started.", {
+    erfId: identifiedPayload.erfId,
+    boundaryPointCount: callablePayload.boundaryPoints.length,
+  });
+
+  const apiRequest = store.dispatch(
+    informalErfsApi.endpoints.submitInformalErf.initiate(callablePayload),
   );
 
-  const response = await submitCallable(callablePayload);
-  const result = response?.data || {};
+  try {
+    const result = await apiRequest.unwrap();
 
-  if (result?.success !== true) {
-    const backendError = new Error(
-      result?.message || "Informal ERF submission failed.",
-    );
-    backendError.code = result?.code || "BACKEND_REJECTED";
-    backendError.details = result?.details || {
-      retriable: false,
-      errorType: "PERMANENT",
+    console.log("[INFORMAL ERF] Callable response received.", {
+      erfId: result?.erfId || identifiedPayload.erfId,
+      parcelNo: result?.parcelNo || null,
+      duplicate: result?.duplicate === true,
+    });
+
+    return {
+      result,
+      payload: preparedPayload,
     };
+  } catch (error) {
+    console.error("[INFORMAL ERF] Callable request failed.", {
+      erfId: identifiedPayload.erfId,
+      code: error?.code,
+      message: error?.message,
+    });
 
-    throw backendError;
+    throw toEnrichedSubmissionError(error, preparedPayload);
+  } finally {
+    if (typeof apiRequest?.reset === "function") {
+      apiRequest.reset();
+    }
   }
-
-  return {
-    result,
-    payload: {
-      ...identifiedPayload,
-      media: uploadedMedia,
-    },
-  };
 };
 
 export const getInformalErfErrorDetails = (error = {}) => {
@@ -433,32 +543,50 @@ export const getInformalErfErrorDetails = (error = {}) => {
     error?.data ||
     {};
 
-  const code = normalizeErrorCode(
-    error?.code || details?.businessCode || "UNKNOWN_ERROR",
+  const message =
+    cleanText(error?.message) ||
+    cleanText(details?.message) ||
+    "The Informal ERF could not be submitted.";
+
+  let code = normalizeErrorCode(
+    error?.code ||
+      details?.businessCode ||
+      details?.code ||
+      "UNKNOWN_ERROR",
   );
+
+  if (
+    code === "UNKNOWN_ERROR" &&
+    /network request failed|failed to fetch|networkerror|network error/i.test(
+      message,
+    )
+  ) {
+    code = "NETWORK_REQUEST_FAILED";
+  }
 
   return {
     code,
-    message:
-      cleanText(error?.message) ||
-      "The Informal ERF could not be submitted.",
+    message,
     details,
   };
 };
 
 export const isPermanentInformalErfError = (error = {}) => {
   const { code, details } = getInformalErfErrorDetails(error);
+  const errorType = String(details?.errorType || "").toUpperCase();
 
-  if (
-    details?.retriable === false ||
-    String(details?.errorType || "").toUpperCase() === "PERMANENT"
-  ) {
+  if (details?.retriable === true || errorType === "TEMPORARY") {
+    return false;
+  }
+
+  if (details?.retriable === false || errorType === "PERMANENT") {
     return true;
   }
 
   return [
     "INVALID-ARGUMENT",
     "INVALID_ARGUMENT",
+    "INVALID_PAYLOAD",
     "UNAUTHENTICATED",
     "PERMISSION-DENIED",
     "PERMISSION_DENIED",
@@ -468,8 +596,44 @@ export const isPermanentInformalErfError = (error = {}) => {
     "NOT_FOUND",
     "ALREADY-EXISTS",
     "ALREADY_EXISTS",
+    "OUT-OF-RANGE",
+    "OUT_OF_RANGE",
+    "UNIMPLEMENTED",
     "MISSING_LOCAL_SITE_PHOTO",
     "MISSING_SITE_PHOTO",
+    "LOCAL_MEDIA_READ_FAILED",
+    "UNAUTHORIZED",
+    "OBJECT-NOT-FOUND",
+    "BUCKET-NOT-FOUND",
+    "PROJECT-NOT-FOUND",
+  ].includes(code);
+};
+
+export const isRetriableInformalErfError = (error = {}) => {
+  const { code, details } = getInformalErfErrorDetails(error);
+  const errorType = String(details?.errorType || "").toUpperCase();
+
+  if (details?.retriable === false || errorType === "PERMANENT") {
+    return false;
+  }
+
+  if (details?.retriable === true || errorType === "TEMPORARY") {
+    return true;
+  }
+
+  return [
+    "UNAVAILABLE",
+    "DEADLINE-EXCEEDED",
+    "DEADLINE_EXCEEDED",
+    "NETWORK_REQUEST_FAILED",
+    "ABORTED",
+    "CANCELLED",
+    "INTERNAL",
+    "RESOURCE-EXHAUSTED",
+    "RESOURCE_EXHAUSTED",
+    "RETRY-LIMIT-EXCEEDED",
+    "SERVER-FILE-WRONG-SIZE",
+    "UNKNOWN",
   ].includes(code);
 };
 
@@ -478,8 +642,8 @@ const saveSubmissionToLocalQueue = async ({
   context,
   createdByUid,
   createdByUser,
-}) => {
-  return addInformalErfQueueItem({
+}) =>
+  addInformalErfQueueItem({
     payload,
     context: {
       lmPcode: payload?.lmPcode,
@@ -489,21 +653,43 @@ const saveSubmissionToLocalQueue = async ({
     createdByUid,
     createdByUser,
   });
-};
 
 export const submitInformalErfWithFallback = async ({
   payloadInput = {},
   context = {},
   createdByUid = "SYSTEM",
   createdByUser = "SYSTEM",
-  timeoutMs = INFORMAL_ERF_SUBMISSION_TIMEOUT_MS,
 }) => {
-  const identifiedPayload =
-    ensureInformalErfSubmissionIdentity(payloadInput);
+  let identifiedPayload;
+
+  try {
+    identifiedPayload = ensureInformalErfSubmissionIdentity(payloadInput);
+  } catch (error) {
+    const errorInfo = getInformalErfErrorDetails(error);
+
+    return {
+      success: false,
+      mode: "REJECTED",
+      code: errorInfo.code,
+      firebaseCode: errorInfo.code,
+      message: errorInfo.message,
+      details: errorInfo.details,
+      erfId: null,
+    };
+  }
 
   const online = await isDeviceOnline();
 
+  console.log("[INFORMAL ERF] Network state checked.", {
+    erfId: identifiedPayload.erfId,
+    online,
+  });
+
   if (!online) {
+    console.log("[INFORMAL ERF] Queuing submission because device is offline.", {
+      erfId: identifiedPayload.erfId,
+    });
+
     const queueResult = await saveSubmissionToLocalQueue({
       payload: identifiedPayload,
       context,
@@ -515,6 +701,8 @@ export const submitInformalErfWithFallback = async ({
       success: queueResult?.success === true,
       mode: queueResult?.success ? "QUEUED" : "FAILED",
       reason: "OFFLINE",
+      code: "OFFLINE",
+      firebaseCode: null,
       message: queueResult?.success
         ? "No network was available. The Informal ERF was saved locally."
         : queueResult?.message,
@@ -524,20 +712,20 @@ export const submitInformalErfWithFallback = async ({
   }
 
   try {
-    const onlineResult = await withInformalErfTimeout(
-      submitInformalErfOnline(identifiedPayload),
-      timeoutMs,
-    );
+    const onlineResult = await submitInformalErfOnline(identifiedPayload);
 
     return {
       success: true,
       mode: "ONLINE",
+      code: onlineResult?.result?.code || "INFORMAL_ERF_CREATED",
+      firebaseCode: null,
       message:
         onlineResult?.result?.message ||
         "Informal ERF created successfully.",
       erfId:
         onlineResult?.result?.erfId ||
         identifiedPayload.erfId,
+      parcelNo: onlineResult?.result?.parcelNo || null,
       duplicate: onlineResult?.result?.duplicate === true,
       result: onlineResult?.result || null,
     };
@@ -545,18 +733,52 @@ export const submitInformalErfWithFallback = async ({
     const errorInfo = getInformalErfErrorDetails(error);
 
     if (isPermanentInformalErfError(error)) {
+      console.warn("[INFORMAL ERF] Permanent rejection; not queued.", {
+        erfId: identifiedPayload.erfId,
+        code: errorInfo.code,
+        message: errorInfo.message,
+      });
+
       return {
         success: false,
         mode: "REJECTED",
         message: errorInfo.message,
         code: errorInfo.code,
+        firebaseCode: errorInfo.code,
         details: errorInfo.details,
         erfId: identifiedPayload.erfId,
       };
     }
 
+    if (!isRetriableInformalErfError(error)) {
+      console.error("[INFORMAL ERF] Unclassified failure; not queued.", {
+        erfId: identifiedPayload.erfId,
+        code: errorInfo.code,
+        message: errorInfo.message,
+      });
+
+      return {
+        success: false,
+        mode: "FAILED",
+        message: errorInfo.message,
+        code: errorInfo.code,
+        firebaseCode: errorInfo.code,
+        details: errorInfo.details,
+        erfId: identifiedPayload.erfId,
+      };
+    }
+
+    const queuePayload =
+      error?.preparedPayload || identifiedPayload;
+
+    console.log("[INFORMAL ERF] Queuing temporary failure.", {
+      erfId: identifiedPayload.erfId,
+      code: errorInfo.code,
+      message: errorInfo.message,
+    });
+
     const queueResult = await saveSubmissionToLocalQueue({
-      payload: identifiedPayload,
+      payload: queuePayload,
       context,
       createdByUid,
       createdByUser,
@@ -565,16 +787,13 @@ export const submitInformalErfWithFallback = async ({
     return {
       success: queueResult?.success === true,
       mode: queueResult?.success ? "QUEUED" : "FAILED",
-      reason:
-        errorInfo.code === "SUBMISSION_TIMEOUT"
-          ? "TIMEOUT"
-          : "TEMPORARY_FAILURE",
+      reason: "TEMPORARY_FAILURE",
       message: queueResult?.success
-        ? errorInfo.code === "SUBMISSION_TIMEOUT"
-          ? "The server took longer than 15 seconds. The Informal ERF was saved locally."
-          : "The server is temporarily unavailable. The Informal ERF was saved locally."
+        ? "The server is temporarily unavailable. The Informal ERF was saved locally and will retry automatically."
         : queueResult?.message,
       code: errorInfo.code,
+      firebaseCode: errorInfo.code,
+      details: errorInfo.details,
       erfId: identifiedPayload.erfId,
       queueItem: queueResult?.queueItem || null,
     };

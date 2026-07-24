@@ -17,6 +17,7 @@ import { astsApi } from "./astsApi";
 import { authApi } from "./authApi";
 import { erfsApi } from "./erfsApi";
 import { geoApi } from "./geoApi";
+import { informalErfsApi } from "./informalErfsApi";
 import { premisesApi } from "./premisesApi";
 import { salesApi } from "./salesApi";
 import { settingsApi } from "./settingsApi";
@@ -50,6 +51,7 @@ const rootReducer = combineReducers({
   [astsApi.reducerPath]: astsApi.reducer,
   [salesApi.reducerPath]: salesApi.reducer,
   [geofenceApi.reducerPath]: geofenceApi.reducer,
+  [informalErfsApi.reducerPath]: informalErfsApi.reducer,
   [irepsSelectLookupsApi.reducerPath]: irepsSelectLookupsApi.reducer,
   [irepsLookupOptionsApi.reducerPath]: irepsLookupOptionsApi.reducer,
   [lifecycleInstructionApi.reducerPath]: lifecycleInstructionApi.reducer,
@@ -86,6 +88,7 @@ const persistConfig = {
     premisesApi.reducerPath,
     salesApi.reducerPath,
     geofenceApi.reducerPath,
+    informalErfsApi.reducerPath,
     irepsSelectLookupsApi.reducerPath,
     lifecycleInstructionApi.reducerPath,
     bgoApi.reducerPath,
@@ -123,6 +126,7 @@ export const store = configureStore({
       astsApi.middleware,
       salesApi.middleware,
       geofenceApi.middleware,
+      informalErfsApi.middleware,
       irepsSelectLookupsApi.middleware,
       irepsLookupOptionsApi.middleware,
       lifecycleInstructionApi.middleware,

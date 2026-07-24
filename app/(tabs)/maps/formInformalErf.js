@@ -16,21 +16,42 @@ const toOptionalNumber = (value) => {
 export default function InformalErfFormScreen() {
   const params = useLocalSearchParams();
 
-  const latitude = toOptionalNumber(params.latitude);
-  const longitude = toOptionalNumber(params.longitude);
+  const selectedLatitude = toOptionalNumber(
+    params.selectedLatitude ?? params.latitude,
+  );
+  const selectedLongitude = toOptionalNumber(
+    params.selectedLongitude ?? params.longitude,
+  );
+
+  const initialProposedErfLocation =
+    selectedLatitude != null && selectedLongitude != null
+      ? {
+          lat: selectedLatitude,
+          lng: selectedLongitude,
+        }
+      : null;
+
+  const deviceLatitude = toOptionalNumber(params.deviceLatitude);
+  const deviceLongitude = toOptionalNumber(params.deviceLongitude);
 
   const initialDeviceLocation =
-    latitude != null && longitude != null
+    deviceLatitude != null && deviceLongitude != null
       ? {
-          latitude,
-          longitude,
+          latitude: deviceLatitude,
+          longitude: deviceLongitude,
           accuracyM: toOptionalNumber(params.accuracyM),
+          altitudeM: toOptionalNumber(params.altitudeM),
+          headingDegrees: toOptionalNumber(params.headingDegrees),
+          speedMps: toOptionalNumber(params.speedMps),
           capturedAtMs:
             toOptionalNumber(params.capturedAtMs) ?? Date.now(),
         }
       : null;
 
   return (
-    <FormInformalErf initialDeviceLocation={initialDeviceLocation} />
+    <FormInformalErf
+      initialProposedErfLocation={initialProposedErfLocation}
+      initialDeviceLocation={initialDeviceLocation}
+    />
   );
 }

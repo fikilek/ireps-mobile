@@ -4,6 +4,8 @@ const authenticatedApiLoaders = [
   () => import("./bgoApi").then((module) => module.bgoApi),
   () => import("./erfsApi").then((module) => module.erfsApi),
   () => import("./geofenceApi").then((module) => module.geofenceApi),
+  () =>
+    import("./informalErfsApi").then((module) => module.informalErfsApi),
   () => import("./geoApi").then((module) => module.geoApi),
   () =>
     import("./irepsSelectLookupsApi").then(

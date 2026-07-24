@@ -38,21 +38,72 @@ const workoutSovereignErf = (id) => {
   };
 };
 
+const buildErfNo = (id, erf = {}) => {
+  const parcelNo = erf?.sg?.parcelNo;
+  const portion = Number(erf?.sg?.portion ?? 0);
+
+  if (parcelNo != null && String(parcelNo).trim() !== "") {
+    return portion > 0
+      ? `${String(parcelNo).trim()}/${portion}`
+      : String(parcelNo).trim();
+  }
+
+  return workoutSovereignErf(id)?.erfNo || "N/A";
+};
+
+const toTimestampMs = (value) => {
+  if (value == null || value === "") return 0;
+
+  if (typeof value?.toMillis === "function") {
+    const milliseconds = value.toMillis();
+    return Number.isFinite(milliseconds) ? milliseconds : 0;
+  }
+
+  if (value instanceof Date) {
+    const milliseconds = value.getTime();
+    return Number.isFinite(milliseconds) ? milliseconds : 0;
+  }
+
+  const seconds = Number(value?.seconds ?? value?._seconds);
+  const nanoseconds = Number(value?.nanoseconds ?? value?._nanoseconds ?? 0);
+
+  if (Number.isFinite(seconds)) {
+    return seconds * 1000 + (Number.isFinite(nanoseconds) ? nanoseconds / 1e6 : 0);
+  }
+
+  const numericValue = Number(value);
+
+  if (Number.isFinite(numericValue)) {
+    return numericValue;
+  }
+
+  const parsedValue = Date.parse(String(value));
+
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+};
+
+const sortMetaByUpdatedAtDesc = (a, b) =>
+  toTimestampMs(b?.metadata?.updatedAt) -
+  toTimestampMs(a?.metadata?.updatedAt);
+
 const transformToMeta = (id, erf) => {
   return {
     id,
     admin: erf?.admin,
-    erfNo: workoutSovereignErf(id)?.erfNo,
+    erfNo: buildErfNo(id, erf),
     premises: Array.isArray(erf?.premises) ? erf.premises : [],
     metadata: erf?.metadata || {},
   };
 };
 
-const makeWardPackKey = ({ lmPcode, wardPcode }) => `${lmPcode}__${wardPcode}`;
-
+const makeWardPackKey = ({ lmPcode, wardPcode }) =>
+  `${lmPcode}__${wardPcode}`;
 
 function emptyWardPack({ lmPcode, wardPcode }) {
-  const wardCacheKey = lmPcode && wardPcode ? makeWardPackKey({ lmPcode, wardPcode }) : null;
+  const wardCacheKey =
+    lmPcode && wardPcode
+      ? makeWardPackKey({ lmPcode, wardPcode })
+      : null;
 
   return {
     metaEntries: [],
@@ -123,11 +174,7 @@ function buildWardErfPackFromSnapshot(snap, { lmPcode, wardPcode, wardCacheKey, 
     };
   });
 
-  metaEntries.sort((a, b) =>
-    String(b?.metadata?.updatedAt || "").localeCompare(
-      String(a?.metadata?.updatedAt || ""),
-    ),
-  );
+  metaEntries.sort(sortMetaByUpdatedAtDesc);
 
   const now = Date.now();
 
@@ -237,10 +284,7 @@ export const erfsApi = createApi({
                     draft.geoEntries[id] = {
                       centroid: data.centroid,
                       bbox: data.bbox,
-                      geometry:
-                        typeof data.geometry === "string"
-                          ? JSON.parse(data.geometry)
-                          : data.geometry,
+                      geometry: parseErfGeometry(data),
                     };
                   }
                 });
@@ -280,20 +324,13 @@ export const erfsApi = createApi({
                   draft.geoEntries[id] = {
                     centroid: erf.centroid,
                     bbox: erf.bbox,
-                    geometry:
-                      typeof erf.geometry === "string"
-                        ? JSON.parse(erf.geometry)
-                        : erf.geometry,
+                    geometry: parseErfGeometry(erf),
                   };
                 }
               });
 
-              // ✅ Final authoritative sort (metadata.updatedAt is ISO string)
-              draft.metaEntries.sort((a, b) =>
-                String(b?.metadata?.updatedAt || "").localeCompare(
-                  String(a?.metadata?.updatedAt || ""),
-                ),
-              );
+              // ✅ Final authoritative sort (supports Firestore Timestamp and cached values)
+              draft.metaEntries.sort(sortMetaByUpdatedAtDesc);
             });
           },
           (error) => {
@@ -523,11 +560,7 @@ export const erfsApi = createApi({
 
                 // ✅ ALWAYS RE-SORT AFTER PATCHING
                 // This is what moves a newly updated ERF to the top
-                draft.metaEntries.sort((a, b) =>
-                  String(b?.metadata?.updatedAt || "").localeCompare(
-                    String(a?.metadata?.updatedAt || ""),
-                  ),
-                );
+                draft.metaEntries.sort(sortMetaByUpdatedAtDesc);
 
                 draft.sync.status = "ready";
                 draft.sync.source = "firestore";
