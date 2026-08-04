@@ -42,7 +42,10 @@ export function normalizeTargetedBatchContext(value) {
     rowNo: Number.isInteger(rowNo) && rowNo > 0 ? rowNo : null,
     salesDocId: cleanText(value?.salesDocId),
     erfId: cleanText(value?.erfId),
-    meterNo: cleanText(value?.meterNo),
+    premiseId: cleanText(value?.premiseId),
+    targetedMeterNo: firstText(value?.targetedMeterNo, value?.meterNo),
+    meterNo: firstText(value?.targetedMeterNo, value?.meterNo),
+    returnTo: cleanText(value?.returnTo),
     accountNumber: cleanText(value?.accountNumber),
     customerName: cleanText(value?.customerName),
     sourceAddress,
@@ -72,9 +75,10 @@ export function buildTargetedBatchContextFromRow({ row = {}, bucket = {} }) {
     tbId: firstText(bucket?.id, row?.tbId, raw?.tbId),
     rowId: firstText(row?.id, raw?.id),
     rowNo: row?.rowNo ?? raw?.rowNo,
-    salesDocId: firstText(raw?.salesAllMeterId, raw?.source?.recordId),
+    salesDocId: firstText(row?.salesDocId, raw?.salesAllMeterId),
     erfId: firstText(row?.erfId, raw?.refs?.erfId),
-    meterNo: firstText(
+    premiseId: firstText(row?.refs?.premiseId, raw?.refs?.premiseId),
+    targetedMeterNo: firstText(
       row?.meterNo,
       raw?.meter?.numberRaw,
       raw?.meter?.numberNormalized,
@@ -91,6 +95,7 @@ export function buildTargetedBatchContextFromRow({ row = {}, bucket = {} }) {
       addressLine1: cleanText(raw?.location?.addressLine1),
       town: cleanText(raw?.location?.town),
     },
+    returnTo: "/(tabs)/admin/operations/my-workorders",
   });
 }
 
@@ -106,7 +111,9 @@ export function serializeTargetedBatchContext(context) {
     rowNo,
     salesDocId,
     erfId,
-    meterNo,
+    premiseId,
+    targetedMeterNo,
+    returnTo,
     sourceAddress,
   } = normalized;
 
@@ -118,8 +125,10 @@ export function serializeTargetedBatchContext(context) {
     rowNo,
     salesDocId,
     erfId,
-    meterNo,
+    premiseId,
+    targetedMeterNo,
     sourceAddress,
+    returnTo,
   });
 }
 

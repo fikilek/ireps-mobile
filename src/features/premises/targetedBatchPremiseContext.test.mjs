@@ -68,8 +68,10 @@ test("route fallback contains only safe fields and preserves correlation", () =>
     "rowNo",
     "salesDocId",
     "erfId",
-    "meterNo",
+    "premiseId",
+    "targetedMeterNo",
     "sourceAddress",
+    "returnTo",
   ]);
   assert.equal("accountNumber" in routeObject, false);
   assert.equal("customerName" in routeObject, false);

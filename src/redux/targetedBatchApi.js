@@ -10,6 +10,7 @@ import {
 import { httpsCallable } from "firebase/functions";
 
 import { db, functions } from "../firebase";
+import { appendUniqueTargetedBatchRows } from "../features/targetedBatches/targetedBatchActions";
 
 const TARGETED_BATCH_STREAM_LIMIT = 200;
 const EMPTY_TARGETED_BATCH_BUCKET_DATA = {
@@ -24,22 +25,6 @@ const EMPTY_TARGETED_BATCH_BUCKET_DATA = {
     source: "TARGETED_BATCH_BUCKET_STREAM",
     updatedAt: null,
     streamLimit: TARGETED_BATCH_STREAM_LIMIT,
-  },
-};
-
-const EMPTY_TARGETED_BATCH_ROWS_DATA = {
-  rows: [],
-  summary: {
-    total: 0,
-    notStarted: 0,
-    inProgress: 0,
-    completed: 0,
-  },
-  meta: {
-    source: "TARGETED_BATCH_ROWS_STREAM",
-    updatedAt: null,
-    tbId: null,
-    streamLimit: null,
   },
 };
 
@@ -300,6 +285,10 @@ function normalizeTargetedBatchRow(row = {}) {
     premiseId: cleanText(refs?.premiseId),
     meterId: cleanText(refs?.meterId),
     trnId: cleanText(refs?.trnId),
+    salesDocId: cleanText(row?.salesDocId) || null,
+    noAccessCount:
+      row?.noAccessCount === null ? null : Number(row?.noAccessCount || 0),
+    noAccessSourceStatus: normalizeUpper(row?.noAccessSourceStatus),
 
     meterNo: readFirstString(
       row?.meter?.numberRaw,
@@ -336,10 +325,12 @@ function normalizeTargetedBatchRow(row = {}) {
   };
 }
 
-function buildTargetedBatchRowsData({
+export function buildTargetedBatchRowsData({
   tbId,
   rows = [],
   streamLimit = null,
+  pagination = {},
+  diagnostics = {},
 }) {
   const normalizedRows = rows
     .map(normalizeTargetedBatchRow)
@@ -376,11 +367,17 @@ function buildTargetedBatchRowsData({
     rows: normalizedRows,
     summary,
     meta: {
-      source: "TARGETED_BATCH_ROWS_STREAM",
+      source: "TARGETED_BATCH_ROWS_CALLABLE",
       updatedAt: new Date().toISOString(),
       tbId,
       streamLimit,
     },
+    pagination: {
+      limit: Number(pagination?.limit || streamLimit || 0),
+      hasMore: pagination?.hasMore === true,
+      nextCursor: pagination?.nextCursor || null,
+    },
+    diagnostics,
   };
 }
 
@@ -398,6 +395,7 @@ export const targetedBatchApi = createApi({
         args = {},
         { updateCachedData, cacheDataLoaded, cacheEntryRemoved },
       ) {
+        /* eslint-disable no-unreachable */
         let unsubscribeTargetedBatches = () => {};
 
         try {
@@ -449,22 +447,31 @@ export const targetedBatchApi = createApi({
     }),
 
     getTargetedBatchRows: builder.query({
-      queryFn(args = {}) {
-        return {
-          data: {
-            ...EMPTY_TARGETED_BATCH_ROWS_DATA,
-            meta: {
-              ...EMPTY_TARGETED_BATCH_ROWS_DATA.meta,
-              tbId: cleanText(args?.tbId) || null,
-            },
-          },
-        };
+      async queryFn(args = {}) {
+        try {
+          const tbId = cleanText(args?.tbId);
+          if (!tbId) return { error: { code: "TARGETED_BATCH_ID_REQUIRED", message: "Targeted Batch is required." } };
+          const pageLimit = Number(args?.limit || 100);
+          const callable = httpsCallable(functions, "getTargetedBatchRowsCallable");
+          const result = await callable({ tbId, limit: pageLimit, cursor: args?.cursor || null });
+          const data = result?.data || {};
+          if (!data?.success) return { error: { code: data?.code || "TARGETED_BATCH_ROWS_FAILED", message: data?.message || "Could not load Targeted Batch rows." } };
+          return { data: buildTargetedBatchRowsData({ tbId, rows: data.rows, streamLimit: pageLimit, pagination: data.pagination, diagnostics: data.diagnostics }) };
+        } catch (error) {
+          console.log("getTargetedBatchRowsCallable ERROR", { code: error?.code, message: error?.message });
+          return { error: { code: error?.code || "TARGETED_BATCH_ROWS_ERROR", message: error?.message || "Could not load Targeted Batch rows." } };
+        }
       },
 
       async onCacheEntryAdded(
         args = {},
         { updateCachedData, cacheDataLoaded, cacheEntryRemoved },
       ) {
+        // Rows are callable-backed. Keep this lifecycle only to preserve the
+        // existing endpoint shape while the cache entry remains subscribed.
+        await cacheEntryRemoved;
+        return;
+        /* c8 ignore start -- retired direct listener retained temporarily */
         let unsubscribeRows = () => {};
 
         try {
@@ -522,6 +529,18 @@ export const targetedBatchApi = createApi({
 
         await cacheEntryRemoved;
         unsubscribeRows();
+        /* c8 ignore stop */
+        /* eslint-enable no-unreachable */
+      },
+      serializeQueryArgs: ({ endpointName, queryArgs }) =>
+        `${endpointName}:${cleanText(queryArgs?.tbId)}`,
+      merge(currentCache, newPage, { arg }) {
+        if (!arg?.cursor) return newPage;
+        const rows = appendUniqueTargetedBatchRows(currentCache?.rows, newPage?.rows);
+        Object.assign(currentCache, buildTargetedBatchRowsData({ tbId: arg.tbId, rows, streamLimit: arg.limit, pagination: newPage.pagination, diagnostics: newPage.diagnostics }));
+      },
+      forceRefetch({ currentArg, previousArg }) {
+        return JSON.stringify(currentArg?.cursor || null) !== JSON.stringify(previousArg?.cursor || null) || currentArg?.reloadKey !== previousArg?.reloadKey;
       },
       providesTags: ["TargetedBatch"],
     }),

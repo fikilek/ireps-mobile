@@ -5,6 +5,7 @@ import { StyleSheet, View } from "react-native";
 import { Button, Modal, Portal, Surface, Text } from "react-native-paper";
 import { useDiscovery } from "../src/context/DiscoveryContext";
 import { useGeo } from "../src/context/GeoContext";
+import { serializeTargetedBatchContext } from "../src/features/premises/targetedBatchPremiseContext";
 
 export default function MissionDiscoveryModal() {
   const router = useRouter();
@@ -12,6 +13,8 @@ export default function MissionDiscoveryModal() {
   const { isVisible, mission, closeMissionDiscovery } = useDiscovery();
 
   const premiseId = mission?.premiseId || mission?.premise?.id;
+  const targetedBatchContext = serializeTargetedBatchContext(mission?.targetedBatchContext);
+  const targetedBatchParams = targetedBatchContext ? { targetedBatchContext } : {};
 
   /* ----------------------------
      Handlers (AUTO ACTION)
@@ -30,6 +33,7 @@ export default function MissionDiscoveryModal() {
       params: {
         premiseId,
         action: JSON.stringify({ access: "no", meterType: "" }),
+        ...targetedBatchParams,
       },
     });
   };
@@ -47,6 +51,7 @@ export default function MissionDiscoveryModal() {
       params: {
         premiseId,
         action: JSON.stringify({ access: "yes", meterType: "water" }),
+        ...targetedBatchParams,
       },
     });
   };
@@ -64,6 +69,7 @@ export default function MissionDiscoveryModal() {
       params: {
         premiseId,
         action: JSON.stringify({ access: "yes", meterType: "electricity" }),
+        ...targetedBatchParams,
       },
     });
   };

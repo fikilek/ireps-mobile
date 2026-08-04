@@ -2,7 +2,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { Formik } from "formik";
 import { FlashList } from "@shopify/flash-list";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
@@ -19,9 +19,17 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { object, string } from "yup";
 
 import { useGeo } from "../../../../src/context/GeoContext";
+import { useDiscovery } from "../../../../src/context/DiscoveryContext";
 import { useWarehouse } from "../../../../src/context/WarehouseContext";
 import { useAuth } from "../../../../src/hooks/useAuth";
 import { buildTargetedBatchContextFromRow } from "../../../../src/features/premises/targetedBatchPremiseContext";
+import TargetedBatchActionTile from "../../../../src/features/targetedBatches/TargetedBatchActionTile";
+import {
+  getTargetedBatchRowActionState,
+  snapshotTargetedBatchRefs,
+  targetedBatchRefsMatch,
+  TARGETED_BATCH_INTENTS,
+} from "../../../../src/features/targetedBatches/targetedBatchActions";
 import {
   useAcceptRejectLifecycleInstructionMutation,
   useGetWmsLifecycleWorkItemsQuery,
@@ -925,6 +933,7 @@ function safeRefetch(refetchFn, label = "query") {
 export default function WorkorderManagementSystem() {
   const router = useRouter();
   const { geoState, updateGeo } = useGeo();
+  const { openMissionDiscovery } = useDiscovery();
   const {
     all,
     loading: warehouseLoading,
@@ -951,9 +960,13 @@ export default function WorkorderManagementSystem() {
     setProcessingTargetedBatchAction,
   ] = useState(null);
   const [
-    pendingTargetedBatchRowOpen,
-    setPendingTargetedBatchRowOpen,
+    pendingTargetedBatchAction,
+    setPendingTargetedBatchAction,
   ] = useState(null);
+  const targetedBatchRequestSequence = useRef(0);
+  const targetedBatchRequestKeyRef = useRef(null);
+  const [targetedBatchCursor, setTargetedBatchCursor] = useState(null);
+  const [targetedBatchReloadKey, setTargetedBatchReloadKey] = useState(0);
 
   const selectedBgoBatchId =
     selectedBucket?.bucketType === "BGOB" && !isBmdBgoBucket(selectedBucket)
@@ -1055,10 +1068,15 @@ export default function WorkorderManagementSystem() {
   const {
     data: targetedBatchRowsData,
     isLoading: isLoadingTargetedBatchRows,
+    isFetching: isFetchingTargetedBatchRows,
     error: targetedBatchRowsError,
+    refetch: refetchTargetedBatchRows,
   } = useGetTargetedBatchRowsQuery(
     {
       tbId: selectedTargetedBatchId,
+      limit: 100,
+      cursor: targetedBatchCursor,
+      reloadKey: targetedBatchReloadKey,
     },
     {
       skip:
@@ -1067,6 +1085,16 @@ export default function WorkorderManagementSystem() {
         selectedBucket?.permissions?.canViewRows !== true,
     },
   );
+
+  useEffect(() => {
+    setTargetedBatchCursor(null);
+    setPendingTargetedBatchAction(null);
+    targetedBatchRequestKeyRef.current = null;
+  }, [selectedTargetedBatchId]);
+
+  useEffect(() => () => {
+    targetedBatchRequestKeyRef.current = null;
+  }, []);
 
   const { data: teamsData = [] } = useGetTeamsQuery(undefined, {
     skip: !fieldWorkorderActor,
@@ -1108,19 +1136,7 @@ export default function WorkorderManagementSystem() {
     const rows = Array.isArray(targetedBatchRowsData?.rows)
       ? targetedBatchRowsData.rows
       : [];
-    const premises = Array.isArray(all?.prems) ? all.prems : [];
-    const meters = Array.isArray(all?.meters) ? all.meters : [];
     const erfs = Array.isArray(all?.erfs) ? all.erfs : [];
-    const premiseIdToErfId = new Map();
-
-    premises.forEach((premise) => {
-      const premiseId = getPremiseId(premise);
-      const premiseErfId = getPremiseErfId(premise);
-
-      if (premiseId && premiseErfId) {
-        premiseIdToErfId.set(premiseId, premiseErfId);
-      }
-    });
 
     return rows.map((row) => {
       const erfId = cleanId(row?.erfId || row?.refs?.erfId);
@@ -1128,14 +1144,6 @@ export default function WorkorderManagementSystem() {
         erfs.find((erf) => cleanId(erf?.id || erf?.erfId) === erfId) ||
         all?.geoLibrary?.[erfId] ||
         null;
-      const premiseCount = erfId
-        ? premises.filter((premise) => getPremiseErfId(premise) === erfId).length
-        : 0;
-      const astCount = erfId
-        ? meters.filter(
-            (meter) => getMeterErfId(meter, premiseIdToErfId) === erfId,
-          ).length
-        : 0;
       const erfNo = readFirstString(
         row?.erfNo,
         row?.raw?.property?.erfNo,
@@ -1147,22 +1155,16 @@ export default function WorkorderManagementSystem() {
         ...row,
         erfId,
         erfNo,
-        liveStats: {
-          premiseCount,
-          astCount,
-        },
       };
     });
   }, [
     targetedBatchRowsData?.rows,
-    all?.prems,
-    all?.meters,
     all?.erfs,
     all?.geoLibrary,
   ]);
 
   useEffect(() => {
-    const pending = pendingTargetedBatchRowOpen;
+    const pending = pendingTargetedBatchAction;
     if (!pending) return;
 
     const activeLmPcode = getGeoPcode(geoState?.selectedLm);
@@ -1197,32 +1199,68 @@ export default function WorkorderManagementSystem() {
     );
 
     if (warehouseErf) {
+      if (targetedBatchRequestKeyRef.current !== pending.requestKey) return;
+      const currentRow = targetedBatchRows.find((row) => row?.id === pending.rowId);
+      if (selectedTargetedBatchId !== pending.bucketId || !currentRow) {
+        setPendingTargetedBatchAction(null);
+        Alert.alert(currentRow ? "Targeted Batch no longer available." : "Targeted Batch row no longer available.");
+        return;
+      }
+      if (!targetedBatchRefsMatch(currentRow, pending.refsSnapshot)) {
+        setPendingTargetedBatchAction(null);
+        Alert.alert("Targeted Batch row changed", "The row linkage changed while the action was preparing. Please try again.");
+        return;
+      }
       const canonicalErf = {
         ...(all?.geoLibrary?.[pending.erfId] || {}),
         ...warehouseErf,
       };
       const selectedErf = buildTargetedBatchSelectedErf({
-        row: pending.row,
-        bucket: pending.bucket,
+        row: currentRow,
+        bucket: selectedBucket,
         warehouseErf: canonicalErf,
       });
 
-      setPendingTargetedBatchRowOpen(null);
+      const premiseId = cleanId(currentRow?.refs?.premiseId);
+      const meterId = cleanId(currentRow?.refs?.meterId);
+      const premise = premiseId ? (all?.prems || []).find((item) => getPremiseId(item) === premiseId) : null;
+      if (premiseId && (!premise || getPremiseErfId(premise) !== pending.erfId)) {
+        setPendingTargetedBatchAction(null);
+        Alert.alert("Premise Linkage Error", "The exact linked premise is missing or belongs to another ERF.");
+        return;
+      }
+      const meter = meterId ? (all?.meters || []).find((item) => cleanId(item?.ast?.astData?.astId || item?.id) === meterId) : null;
+      if (pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST) {
+        const premiseErfs = new Map((all?.prems || []).map((item) => [getPremiseId(item), getPremiseErfId(item)]));
+        if (!meter || getMeterErfId(meter, premiseErfs) !== pending.erfId || (premiseId && getMeterPremiseId(meter) !== premiseId)) {
+          setPendingTargetedBatchAction(null);
+          Alert.alert("AST Linkage Error", "The exact linked AST could not be safely validated.");
+          return;
+        }
+      }
+
+      setPendingTargetedBatchAction(null);
+      targetedBatchRequestKeyRef.current = null;
 
       updateGeo({
         selectedWard: pending.ward,
         selectedErf,
-        selectedPremise: null,
-        selectedMeter: null,
-        lastSelectionType: "ERF",
+        selectedPremise: premise || null,
+        selectedMeter: pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST ? meter : null,
+        lastSelectionType: pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST ? "METER" : premise ? "PREMISE" : "ERF",
       });
 
-      router.push("/(tabs)/premises");
+      if (pending.intent === TARGETED_BATCH_INTENTS.OPEN_ERF) router.push("/(tabs)/erfs");
+      else if (pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST) router.push("/(tabs)/asts");
+      else if (pending.intent === TARGETED_BATCH_INTENTS.START_METER_DISCOVERY) {
+        if (!premise) Alert.alert("Meter Discovery requires a premise.");
+        else openMissionDiscovery({ premiseId, premise, hasAccess: null, meterType: "electricity", targetedBatchContext: buildTargetedBatchContextFromRow({ bucket: selectedBucket, row: currentRow }) });
+      } else router.push("/(tabs)/premises");
       return;
     }
 
     if (syncStatus === "ERROR") {
-      setPendingTargetedBatchRowOpen(null);
+      setPendingTargetedBatchAction(null);
 
       Alert.alert(
         "Targeted Batch Ward Failed",
@@ -1247,22 +1285,28 @@ export default function WorkorderManagementSystem() {
       return;
     }
 
-    setPendingTargetedBatchRowOpen(null);
+    setPendingTargetedBatchAction(null);
 
     Alert.alert(
       "Targeted Batch ERF Not Found",
       `ERF ${pending.erfId} was not found inside the batch ward ${pending.wardName}.`,
     );
   }, [
-    pendingTargetedBatchRowOpen,
+    pendingTargetedBatchAction,
     geoState?.selectedLm,
     geoState?.selectedWard,
     all?.erfs,
     all?.geoLibrary,
+    all?.prems,
+    all?.meters,
+    targetedBatchRows,
+    selectedTargetedBatchId,
+    selectedBucket,
     warehouseLoading,
     warehouseSync?.erfs,
     router,
     updateGeo,
+    openMissionDiscovery,
   ]);
 
   const individualItems = useMemo(() => {
@@ -1529,7 +1573,7 @@ export default function WorkorderManagementSystem() {
 
   function backToBuckets() {
     setPreparingBgoDetail(false);
-    setPendingTargetedBatchRowOpen(null);
+    setPendingTargetedBatchAction(null);
     setSelectedBucket(null);
     setSelectedGroup(null);
     setStateFilter("ALL");
@@ -2063,7 +2107,7 @@ export default function WorkorderManagementSystem() {
     router.push("/(tabs)/premises");
   }
 
-  function handleOpenTargetedBatchRow({ bucket, row }) {
+  function prepareTargetedBatchAction({ bucket, row, intent }) {
     const erfId = cleanId(row?.erfId || row?.refs?.erfId);
     const scope = getTargetedBatchWardScope({ bucket, row });
 
@@ -2128,11 +2172,13 @@ export default function WorkorderManagementSystem() {
       return;
     }
 
-    setPendingTargetedBatchRowOpen({
-      requestKey: `${bucket.id}__${row.id}__${erfId}`,
-      bucket,
-      row,
+    const requestKey = `${bucket.id}__${row.id}__${++targetedBatchRequestSequence.current}`;
+    targetedBatchRequestKeyRef.current = requestKey;
+    setPendingTargetedBatchAction({
+      requestKey,
+      bucketId: bucket.id,
       rowId: row.id,
+      refsSnapshot: snapshotTargetedBatchRefs(row),
       erfId,
       lmPcode: scope.lmPcode,
       wardPcode: scope.wardPcode,
@@ -2142,6 +2188,7 @@ export default function WorkorderManagementSystem() {
         scope.wardPcode,
       ),
       ward: targetWard,
+      intent,
     });
 
     updateGeo({
@@ -2264,8 +2311,18 @@ export default function WorkorderManagementSystem() {
           }
           error={targetedBatchRowsError}
           onBack={backToBuckets}
-          onOpenRow={handleOpenTargetedBatchRow}
-          openingRowId={pendingTargetedBatchRowOpen?.rowId || null}
+          onAction={prepareTargetedBatchAction}
+          openingAction={pendingTargetedBatchAction}
+          hasMore={targetedBatchRowsData?.pagination?.hasMore === true}
+          loadingMore={isFetchingTargetedBatchRows && Boolean(targetedBatchCursor)}
+          onLoadMore={() => {
+            if (!isFetchingTargetedBatchRows && targetedBatchRowsData?.pagination?.nextCursor) setTargetedBatchCursor(targetedBatchRowsData.pagination.nextCursor);
+          }}
+          onReload={() => {
+            setTargetedBatchCursor(null);
+            setTargetedBatchReloadKey((value) => value + 1);
+            safeRefetch(refetchTargetedBatchRows, "Targeted Batch rows");
+          }}
         />
       ) : showTrnDetail ? (
         <GroupDetail
@@ -3098,15 +3155,19 @@ function TargetedBatchRowsWorklist({
   isLoading,
   error,
   onBack,
-  onOpenRow,
-  openingRowId,
+  onAction,
+  openingAction,
+  hasMore,
+  loadingMore,
+  onLoadMore,
+  onReload,
 }) {
   const renderRow = ({ item }) => (
     <TargetedBatchRowCard
       row={item}
       bucket={bucket}
-      onOpenRow={onOpenRow}
-      opening={openingRowId === item?.id}
+      onAction={onAction}
+      openingIntent={openingAction?.rowId === item?.id ? openingAction?.intent : null}
     />
   );
 
@@ -3195,6 +3256,13 @@ function TargetedBatchRowsWorklist({
               </Text>
             </View>
           }
+          ListFooterComponent={hasMore ? (
+            <Pressable style={[styles.mdBgoOpenErfBtn, loadingMore && styles.actionDisabled]} disabled={loadingMore} onPress={onLoadMore}>
+              {loadingMore ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.executeBtnText}>LOAD MORE</Text>}
+            </Pressable>
+          ) : null}
+          refreshing={isLoading && rows.length > 0}
+          onRefresh={onReload}
         />
       )}
     </View>
@@ -3204,8 +3272,8 @@ function TargetedBatchRowsWorklist({
 function TargetedBatchRowCard({
   row,
   bucket,
-  onOpenRow,
-  opening = false,
+  onAction,
+  openingIntent = null,
 }) {
   const executionStatus =
     normalizeUpper(row?.executionStatus) || "NOT_STARTED";
@@ -3215,7 +3283,7 @@ function TargetedBatchRowCard({
     row?.raw?.property?.erfNo,
   );
   const hasErf = Boolean(erfId && erfNo);
-  const liveStats = row?.liveStats || {};
+  const actions = getTargetedBatchRowActionState(row);
 
   return (
     <View style={styles.mdBgoErfCard}>
@@ -3249,39 +3317,16 @@ function TargetedBatchRowCard({
       </View>
 
       <View style={styles.mdBgoErfFooterRow}>
-        <View style={styles.mdBgoErfMiniStat}>
-          <Text style={styles.mdBgoErfMiniStatLabel}>Premises</Text>
-          <Text style={styles.mdBgoErfMiniStatValue}>
-            {liveStats?.premiseCount ?? 0}
-          </Text>
-        </View>
-
-        <View style={styles.mdBgoErfMiniStat}>
-          <Text style={styles.mdBgoErfMiniStatLabel}>ASTs</Text>
-          <Text style={styles.mdBgoErfMiniStatValue}>
-            {liveStats?.astCount ?? 0}
-          </Text>
-        </View>
-
-        <Pressable
-          style={[
-            styles.mdBgoOpenErfBtn,
-            (!hasErf || opening) && styles.actionDisabled,
-          ]}
-          onPress={() => onOpenRow({ bucket, row })}
-          disabled={!hasErf || opening}
-        >
-          {opening ? (
-            <ActivityIndicator size="small" color="#ffffff" />
-          ) : null}
-          <Text style={styles.executeBtnText} numberOfLines={1}>
-            {opening
-              ? "OPENING..."
-              : hasErf
-                ? `ERF ${erfNo}`
-                : "NO ERF"}
-          </Text>
-        </Pressable>
+        <TargetedBatchActionTile label="PREMISE" value={actions.premise.value} icon="home-outline"
+          opening={openingIntent === actions.premise.intent} onPress={() => onAction({ bucket, row, intent: actions.premise.intent })} />
+        <TargetedBatchActionTile label="AST" value={actions.ast.value} helperText={actions.ast.helperText} icon="meter-electric-outline"
+          tone={actions.invalidLinkage ? "issue" : "default"} disabled={actions.ast.disabled}
+          opening={openingIntent === actions.ast.intent} onPress={() => onAction({ bucket, row, intent: actions.ast.intent })} />
+        <TargetedBatchActionTile label="NA" value={actions.noAccess.value} helperText={actions.noAccess.helperText} icon="account-cancel-outline"
+          tone={actions.noAccess.value === null ? "issue" : "default"} disabled onPress={() => onAction({ bucket, row, intent: actions.noAccess.intent })} />
+        <TargetedBatchActionTile label={`ERF ${hasErf ? erfNo : ""}`} value="OPEN" icon="vector-square"
+          disabled={actions.erf.disabled} opening={openingIntent === actions.erf.intent}
+          onPress={() => onAction({ bucket, row, intent: actions.erf.intent })} />
       </View>
     </View>
   );
