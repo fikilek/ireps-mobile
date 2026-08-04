@@ -17,7 +17,6 @@ export const INFORMAL_ERF_SUBMISSION_TIMEOUT_MS =
   INFORMAL_ERF_CALLABLE_TIMEOUT_MS;
 
 const INFORMAL_ERF_ID_PATTERN = /^IE-(ZA\d{7})-\d{8}-\d{6}-\d{4}$/;
-const LEGACY_INFORMAL_ERF_ID_PATTERN = /^IE-\d{8}-\d{6}-\d{4}$/;
 const WARD_PCODE_PATTERN = /^ZA\d{7}$/;
 const INFORMAL_ERF_FORM_TYPE = "INFORMAL_ERF_CREATE";
 const INFORMAL_ERF_SCHEMA_VERSION = 2;
@@ -158,27 +157,36 @@ export const ensureInformalErfSubmissionIdentity = (
 
   const existingErfId = cleanText(source?.erfId);
   const existingClientSubmittedAtMs = Number(source?.clientSubmittedAtMs);
-  const currentIdMatch = existingErfId.match(INFORMAL_ERF_ID_PATTERN);
-  const isCurrentWardIdentity = currentIdMatch?.[1] === wardPcode;
-  const isLegacyQueuedIdentity =
-    LEGACY_INFORMAL_ERF_ID_PATTERN.test(existingErfId);
-  const hasReusableIdentity =
-    (isCurrentWardIdentity || isLegacyQueuedIdentity) &&
-    Number.isFinite(existingClientSubmittedAtMs) &&
-    existingClientSubmittedAtMs > 0;
-
   const preferredTimestampMs =
     Number.isFinite(existingClientSubmittedAtMs) &&
     existingClientSubmittedAtMs > 0
       ? existingClientSubmittedAtMs
       : getQueueCreatedAtMs(queueItem || {});
 
-  const identity = hasReusableIdentity
-    ? {
-        erfId: existingErfId,
-        clientSubmittedAtMs: Math.trunc(existingClientSubmittedAtMs),
-      }
-    : createInformalErfId(wardPcode, preferredTimestampMs);
+  let identity;
+
+  if (existingErfId) {
+    const currentIdMatch = existingErfId.match(INFORMAL_ERF_ID_PATTERN);
+
+    if (!currentIdMatch) {
+      throw new Error(
+        "erfId must follow IE-{wardPcode}-YYYYMMDD-hhmmss-XXXX.",
+      );
+    }
+
+    if (currentIdMatch[1] !== wardPcode) {
+      throw new Error(
+        "The wardPcode embedded in erfId must match the selected wardPcode.",
+      );
+    }
+
+    identity = {
+      erfId: existingErfId,
+      clientSubmittedAtMs: Math.trunc(preferredTimestampMs),
+    };
+  } else {
+    identity = createInformalErfId(wardPcode, preferredTimestampMs);
+  }
 
   const reasonCode = cleanText(source?.reasonCode).toUpperCase();
 
@@ -248,47 +256,6 @@ const getMediaCapturedAtMs = (media = {}) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
 
-const toValidIsoTimestamp = (value, fallbackMs = null) => {
-  const parsed = Date.parse(cleanText(value));
-
-  if (Number.isFinite(parsed) && parsed > 0) {
-    return new Date(parsed).toISOString();
-  }
-
-  const numericFallback = Number(fallbackMs);
-
-  if (Number.isFinite(numericFallback) && numericFallback > 0) {
-    return new Date(numericFallback).toISOString();
-  }
-
-  return null;
-};
-
-const buildUploadedMediaAudit = (media = {}) => {
-  const capturedAtMs = getMediaCapturedAtMs(media);
-  const createdAt = toValidIsoTimestamp(media?.created?.at, capturedAtMs);
-  const updatedAt =
-    toValidIsoTimestamp(media?.updated?.at, capturedAtMs) || createdAt;
-
-  return {
-    capturedAtMs,
-    created: createdAt
-      ? {
-          at: createdAt,
-          byUid: cleanText(media?.created?.byUid) || null,
-          byUser: cleanText(media?.created?.byUser) || null,
-        }
-      : null,
-    updated: updatedAt
-      ? {
-          at: updatedAt,
-          byUid: cleanText(media?.updated?.byUid) || null,
-          byUser: cleanText(media?.updated?.byUser) || null,
-        }
-      : null,
-  };
-};
-
 const getMediaGps = (media = {}) => {
   const candidates = [media?.gps, media?.location?.gps];
   const match = candidates.find(isValidLatLng);
@@ -319,17 +286,13 @@ const uploadSingleInformalErfPhoto = async ({ media, erfId, index }) => {
     const storageReference = ref(getStorage(), existingStoragePath);
     const existingUrl = cleanText(media?.url);
 
-    const audit = buildUploadedMediaAudit(media);
-
     return {
       tag: "informalErfSitePhoto",
       type: "image",
       storagePath: existingStoragePath,
       url: existingUrl || (await getDownloadURL(storageReference)),
-      capturedAtMs: audit.capturedAtMs,
+      capturedAtMs: getMediaCapturedAtMs(media),
       gps: getMediaGps(media),
-      created: audit.created,
-      updated: audit.updated,
     };
   }
 
@@ -379,17 +342,14 @@ const uploadSingleInformalErfPhoto = async ({ media, erfId, index }) => {
   }
 
   const url = await getDownloadURL(storageReference);
-  const audit = buildUploadedMediaAudit(media);
 
   return {
     tag: "informalErfSitePhoto",
     type: "image",
     storagePath,
     url,
-    capturedAtMs: audit.capturedAtMs,
+    capturedAtMs: getMediaCapturedAtMs(media),
     gps: getMediaGps(media),
-    created: audit.created,
-    updated: audit.updated,
   };
 };
 

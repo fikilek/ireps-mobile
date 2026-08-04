@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
   ScrollView,
@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuth } from "../../../../src/hooks/useAuth";
 
 export default function OperationsHub() {
   const router = useRouter();
@@ -22,6 +23,20 @@ export default function OperationsHub() {
       setIsNavigating(false);
     }, []),
   );
+
+  const { ready, isSPU, isADM, isMNG, isSPV, isFWR } = useAuth();
+  const fieldWorkorderActor = isSPV || isFWR;
+  const managerActor = isSPU || isADM || isMNG;
+
+  if (!ready) return null;
+
+  if (fieldWorkorderActor) {
+    return <Redirect href="/(tabs)/admin/operations/my-workorders" />;
+  }
+
+  if (!managerActor) {
+    return <Redirect href="/(tabs)/admin" />;
+  }
 
   const handleNavigate = (href) => {
     if (isNavigatingRef.current) return;

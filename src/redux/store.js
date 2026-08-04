@@ -31,6 +31,7 @@ import { irepsLookupOptionsApi } from "./irepsLookupOptionsApi";
 import { irepsSelectLookupsApi } from "./irepsSelectLookupsApi";
 import { lifecycleInstructionApi } from "./lifecycleInstructionApi";
 import { bgoApi } from "./bgoApi";
+import { targetedBatchApi } from "./targetedBatchApi";
 import { accountDataApi } from "./accountDataApi";
 import newTrnsReducer from "./newTrnsSlice";
 import offlineReducer from "./offlineSlice";
@@ -56,6 +57,7 @@ const rootReducer = combineReducers({
   [irepsLookupOptionsApi.reducerPath]: irepsLookupOptionsApi.reducer,
   [lifecycleInstructionApi.reducerPath]: lifecycleInstructionApi.reducer,
   [bgoApi.reducerPath]: bgoApi.reducer,
+  [targetedBatchApi.reducerPath]: targetedBatchApi.reducer,
   [accountDataApi.reducerPath]: accountDataApi.reducer,
 
   offline: offlineReducer,
@@ -92,6 +94,7 @@ const persistConfig = {
     irepsSelectLookupsApi.reducerPath,
     lifecycleInstructionApi.reducerPath,
     bgoApi.reducerPath,
+    targetedBatchApi.reducerPath,
     accountDataApi.reducerPath,
     "newTrns",
   ],
@@ -131,6 +134,7 @@ export const store = configureStore({
       irepsLookupOptionsApi.middleware,
       lifecycleInstructionApi.middleware,
       bgoApi.middleware,
+      targetedBatchApi.middleware,
       accountDataApi.middleware,
     ),
 });

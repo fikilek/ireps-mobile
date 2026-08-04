@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useGeo } from "../../../../../src/context/GeoContext";
 import { useWarehouse } from "../../../../../src/context/WarehouseContext";
+import { useAuth } from "../../../../../src/hooks/useAuth";
 
 const WMS_LCT_TYPES = [
   "METER_INSPECTION",
@@ -453,6 +454,24 @@ function buildTypeRows(items = []) {
 }
 
 export default function WmsDashboardScreen() {
+  const { ready, isSPU, isADM, isMNG, isSPV, isFWR } = useAuth();
+  const fieldWorkorderActor = isSPV || isFWR;
+  const managerActor = isSPU || isADM || isMNG;
+
+  if (!ready) return null;
+
+  if (fieldWorkorderActor) {
+    return <Redirect href="/(tabs)/admin/operations/my-workorders" />;
+  }
+
+  if (!managerActor) {
+    return <Redirect href="/(tabs)/admin" />;
+  }
+
+  return <WmsManagerDashboard />;
+}
+
+function WmsManagerDashboard() {
   const router = useRouter();
   const { geoState } = useGeo();
   const { all, sync, loading } = useWarehouse();

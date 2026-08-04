@@ -1,12 +1,10 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { getIn, useFormikContext } from "formik";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Dimensions,
-  Image,
   Modal as NativeModal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -351,11 +349,8 @@ const InformalErfLocationPicker = ({
 
   const mapRef = useRef(null);
   const mapTypeButtonRef = useRef(null);
-  const previewMountTimerRef = useRef(null);
-  const modalOpenFrameRef = useRef(null);
 
   const [modalVisible, setModalVisible] = useState(false);
-  const [previewMapMounted, setPreviewMapMounted] = useState(true);
   const [mapType, setMapType] = useState("standard");
   const [mapTypeMenuVisible, setMapTypeMenuVisible] = useState(false);
   const [mapTypeMenuPosition, setMapTypeMenuPosition] = useState({
@@ -366,8 +361,6 @@ const InformalErfLocationPicker = ({
   const [showNeighbourhoods, setShowNeighbourhoods] = useState(true);
   const [tempPoints, setTempPoints] = useState([]);
   const [mapSession, setMapSession] = useState(0);
-  const [previewSession, setPreviewSession] = useState(0);
-  const [previewSnapshotUri, setPreviewSnapshotUri] = useState(null);
 
   const rawValue = getIn(values, name);
   const error = getIn(errors, name);
@@ -393,11 +386,6 @@ const InformalErfLocationPicker = ({
         erfCentroid,
       }),
     [currentBoundary, rawValue, initialGps, erfCentroid],
-  );
-
-  const currentRegion = useMemo(
-    () => buildRegion(currentBoundary, initialCenter),
-    [currentBoundary, initialCenter],
   );
 
   const previewPolygonPoints = useMemo(() => {
@@ -433,68 +421,12 @@ const InformalErfLocationPicker = ({
     [tempPoints, wardBoundary],
   );
 
-  useEffect(() => {
-    if (previewMountTimerRef.current) {
-      clearTimeout(previewMountTimerRef.current);
-      previewMountTimerRef.current = null;
-    }
-
-    if (modalVisible) {
-      // Android cannot reliably display two native Google Map surfaces while a
-      // React Native Paper Portal modal is animating over the form. Keep the
-      // preview unmounted for the complete modal session.
-      setPreviewMapMounted(false);
-      return undefined;
-    }
-
-    // Paper's modal remains in the Portal briefly while its dismiss animation
-    // completes. Mounting the preview map during that transition can leave the
-    // Android native map surface permanently blank.
-    previewMountTimerRef.current = setTimeout(() => {
-      setPreviewSession((previous) => previous + 1);
-      setPreviewMapMounted(true);
-      previewMountTimerRef.current = null;
-    }, 350);
-
-    return () => {
-      if (previewMountTimerRef.current) {
-        clearTimeout(previewMountTimerRef.current);
-        previewMountTimerRef.current = null;
-      }
-    };
-  }, [modalVisible]);
-
-  useEffect(
-    () => () => {
-      if (modalOpenFrameRef.current != null) {
-        cancelAnimationFrame(modalOpenFrameRef.current);
-      }
-    },
-    [],
-  );
-
   const handleOpenModal = () => {
-    if (previewMountTimerRef.current) {
-      clearTimeout(previewMountTimerRef.current);
-      previewMountTimerRef.current = null;
-    }
-
-    if (modalOpenFrameRef.current != null) {
-      cancelAnimationFrame(modalOpenFrameRef.current);
-    }
-
-    setPreviewMapMounted(false);
     setTempPoints(currentBoundary);
     setMapType("standard");
     setMapTypeMenuVisible(false);
     setMapSession((previous) => previous + 1);
-
-    // Give Android one committed frame to destroy the preview's native map
-    // surface before the modal creates its own Google Map surface.
-    modalOpenFrameRef.current = requestAnimationFrame(() => {
-      modalOpenFrameRef.current = null;
-      setModalVisible(true);
-    });
+    setModalVisible(true);
   };
 
   const getMapTypeLabel = (type) => {
@@ -585,31 +517,13 @@ const InformalErfLocationPicker = ({
     mapRef.current?.animateToRegion(targetRegion, 350);
   };
 
-  const handleConfirm = async () => {
+  const handleConfirm = () => {
     if (!draftValidation.isValid) return;
 
     const boundaryPoints = tempPoints.map((point) => ({
       lat: Number(point.latitude),
       lng: Number(point.longitude),
     }));
-
-    try {
-      const snapshotUri = await mapRef.current?.takeSnapshot?.({
-        width: 900,
-        height: 540,
-        format: "png",
-        quality: 0.9,
-        result: "file",
-      });
-
-      if (snapshotUri) {
-        setPreviewSnapshotUri(snapshotUri);
-      }
-    } catch {
-      // The confirmed coordinates remain the source of truth. If native
-      // snapshotting is unavailable, retain the live-map preview fallback.
-      setPreviewSnapshotUri(null);
-    }
 
     setModalVisible(false);
     void setFieldValue(name, boundaryPoints, true);
@@ -667,69 +581,6 @@ const InformalErfLocationPicker = ({
               hasError && styles.previewMapShellError,
             ]}
           >
-            {hasBoundary && previewSnapshotUri ? (
-              <Image
-                source={{ uri: previewSnapshotUri }}
-                style={styles.previewMap}
-                resizeMode="cover"
-              />
-            ) : previewMapMounted ? (
-              <MapView
-                key={`informal-erf-boundary-preview-${previewSession}`}
-                provider={PROVIDER_GOOGLE}
-                style={styles.previewMap}
-                mapType="standard"
-                liteMode={Platform.OS === "android"}
-                scrollEnabled={false}
-                zoomEnabled={false}
-                rotateEnabled={false}
-                pitchEnabled={false}
-                region={currentRegion}
-              >
-                {wardBoundary.length >= 3 && (
-                  <Polygon
-                    coordinates={wardBoundary}
-                    strokeColor="#f59e0b"
-                    fillColor="rgba(245,158,11,0.05)"
-                    strokeWidth={1}
-                  />
-                )}
-
-                {currentBoundary.length === 2 && (
-                  <Polyline
-                    coordinates={currentBoundary}
-                    strokeColor="#2563eb"
-                    strokeWidth={3}
-                  />
-                )}
-
-                {currentBoundary.length >= 3 && (
-                  <Polygon
-                    coordinates={currentBoundary}
-                    strokeColor="#1d4ed8"
-                    fillColor="rgba(37,99,235,0.30)"
-                    strokeWidth={4}
-                  />
-                )}
-
-                {hasBoundary &&
-                  currentBoundary.map((point, index) => (
-                    <Marker
-                      key={`informal-erf-preview-vertex-${index}`}
-                      coordinate={point}
-                      anchor={{ x: 0.5, y: 0.5 }}
-                      tracksViewChanges={false}
-                    >
-                      <View style={styles.previewVertexMarker}>
-                        <Text style={styles.previewVertexMarkerText}>
-                          {index + 1}
-                        </Text>
-                      </View>
-                    </Marker>
-                ))}
-              </MapView>
-            ) : null}
-
             {hasBoundary && (
               <Svg
                 pointerEvents="none"
@@ -1271,12 +1122,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#dbeafe",
   },
 
-  previewMap: {
-    ...StyleSheet.absoluteFillObject,
-    width: "100%",
-    height: "100%",
-  },
-
   previewBoundaryCanvas: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 5,
@@ -1360,25 +1205,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: "#ffffff",
     textAlign: "center",
-  },
-
-  previewVertexMarker: {
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 4,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#1d4ed8",
-    borderWidth: 2,
-    borderColor: "#ffffff",
-    elevation: 3,
-  },
-
-  previewVertexMarkerText: {
-    fontSize: 8,
-    fontWeight: "900",
-    color: "#ffffff",
   },
 
   locationStatusIcon: {

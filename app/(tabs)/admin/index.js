@@ -33,6 +33,8 @@ export default function AdminDashboard() {
   const router = useRouter();
   const { isSPU, isADM, isMNG, isSPV, isFWR } = useAuth();
 
+  const fieldWorkorderActor = isSPV || isFWR;
+
   const isNavigatingRef = useRef(false);
   const [isNavigating, setIsNavigating] = useState(false);
 
@@ -113,10 +115,24 @@ export default function AdminDashboard() {
           />
 
           <Card
-            title="Operations Management Center"
-            subtitle="Workorder allocation, FW teams etc"
+            title={
+              fieldWorkorderActor
+                ? "My Workorders"
+                : "Operations Management Center"
+            }
+            subtitle={
+              fieldWorkorderActor
+                ? "Accept, reject and execute assigned field work"
+                : "Workorder allocation, FW teams etc"
+            }
             disabled={isNavigating}
-            onPress={() => handleNavigate("/(tabs)/admin/operations")}
+            onPress={() =>
+              handleNavigate(
+                fieldWorkorderActor
+                  ? "/(tabs)/admin/operations/my-workorders"
+                  : "/(tabs)/admin/operations",
+              )
+            }
           />
         </Section>
       )}

@@ -14,6 +14,7 @@ import { usePremiseFilter } from "../../../src/context/PremiseFilterContext";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
 import PremiseCard from "../../../src/features/premises/PremiseCard";
 import { filterPremises } from "../../../src/features/premises/filterPremises";
+import { serializeTargetedBatchContext } from "../../../src/features/premises/targetedBatchPremiseContext";
 
 export default function PremisesScreen() {
   const router = useRouter();
@@ -26,6 +27,10 @@ export default function PremisesScreen() {
   const { selectedLm, selectedWard, selectedErf, selectedPremise } = geoState;
 
   const { filterState } = usePremiseFilter();
+  const targetedBatchContextParam = useMemo(
+    () => serializeTargetedBatchContext(selectedErf?.targetedBatchContext),
+    [selectedErf?.targetedBatchContext],
+  );
 
   const erfById = useMemo(() => {
     const map = {};
@@ -263,6 +268,9 @@ export default function PremisesScreen() {
                   pathname: "/premises/formPremise",
                   params: {
                     id: selectedErf?.id,
+                    ...(targetedBatchContextParam
+                      ? { targetedBatchContext: targetedBatchContextParam }
+                      : {}),
                   },
                 })
               }
@@ -326,6 +334,9 @@ export default function PremisesScreen() {
                       pathname: "/premises/formPremise",
                       params: {
                         id: selectedErf?.id,
+                        ...(targetedBatchContextParam
+                          ? { targetedBatchContext: targetedBatchContextParam }
+                          : {}),
                       },
                     })
                   }

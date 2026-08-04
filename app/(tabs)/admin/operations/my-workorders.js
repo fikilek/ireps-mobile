@@ -21,6 +21,7 @@ import { object, string } from "yup";
 import { useGeo } from "../../../../src/context/GeoContext";
 import { useWarehouse } from "../../../../src/context/WarehouseContext";
 import { useAuth } from "../../../../src/hooks/useAuth";
+import { buildTargetedBatchContextFromRow } from "../../../../src/features/premises/targetedBatchPremiseContext";
 import {
   useAcceptRejectLifecycleInstructionMutation,
   useGetWmsLifecycleWorkItemsQuery,
@@ -30,6 +31,11 @@ import {
   useGetBgoBucketsQuery,
   useReverseBgoBatchAcceptanceMutation,
 } from "../../../../src/redux/bgoApi";
+import {
+  useAcceptRejectTargetedBatchMutation,
+  useGetTargetedBatchBucketsQuery,
+  useGetTargetedBatchRowsQuery,
+} from "../../../../src/redux/targetedBatchApi";
 import { useGetTeamsQuery } from "../../../../src/redux/teamsApi";
 import { removeSubmissionQueueItemsByInstructionTrnId } from "../../../../src/utils/submissionQueue";
 
@@ -456,6 +462,142 @@ function buildBmdSelectedErf({ erf = {}, bucket = {}, warehouseErf = null }) {
   };
 }
 
+function getGeoPcode(entity = {}) {
+  return cleanId(entity?.pcode || entity?.id);
+}
+
+function getTargetedBatchWardScope({ bucket = {}, row = {} }) {
+  const batchScope = bucket?.scope || bucket?.raw?.scope || {};
+  const rowScope = row?.scope || row?.raw?.scope || {};
+
+  return {
+    lmPcode: readFirstString(
+      batchScope?.lmPcode,
+      batchScope?.lmId,
+      rowScope?.lmPcode,
+      rowScope?.lmId,
+    ),
+    lmName: readFirstString(
+      batchScope?.lmName,
+      rowScope?.lmName,
+      "NAv",
+    ),
+    wardPcode: readFirstString(
+      batchScope?.wardPcode,
+      batchScope?.wardId,
+      batchScope?.ward?.pcode,
+      batchScope?.ward?.id,
+      rowScope?.wardPcode,
+      rowScope?.wardId,
+      rowScope?.ward?.pcode,
+      rowScope?.ward?.id,
+    ),
+    wardNumber: readFirstString(
+      batchScope?.wardNumber,
+      rowScope?.wardNumber,
+    ),
+    wardName: readFirstString(
+      batchScope?.wardName,
+      rowScope?.wardName,
+      row?.wardNumberLabel,
+      "NAv",
+    ),
+    rowLmPcode: readFirstString(
+      rowScope?.lmPcode,
+      rowScope?.lmId,
+    ),
+    rowWardPcode: readFirstString(
+      rowScope?.wardPcode,
+      rowScope?.wardId,
+      rowScope?.ward?.pcode,
+      rowScope?.ward?.id,
+    ),
+  };
+}
+
+function findWardByPcode(wards = [], wardPcode = "") {
+  const targetWardPcode = cleanId(wardPcode);
+  if (!targetWardPcode || !Array.isArray(wards)) return null;
+
+  return (
+    wards.find((ward) => getGeoPcode(ward) === targetWardPcode) ||
+    null
+  );
+}
+
+function findWarehouseErfById(erfs = [], erfId = "") {
+  const targetErfId = cleanId(erfId);
+  if (!targetErfId || !Array.isArray(erfs)) return null;
+
+  return (
+    erfs.find(
+      (erf) => cleanId(erf?.id || erf?.erfId) === targetErfId,
+    ) || null
+  );
+}
+
+function buildTargetedBatchSelectedErf({
+  row = {},
+  bucket = {},
+  warehouseErf = null,
+}) {
+  const erfId = cleanId(row?.erfId || row?.refs?.erfId);
+  const scope = getTargetedBatchWardScope({ bucket, row });
+  const targetedBatchContext = buildTargetedBatchContextFromRow({
+    row,
+    bucket,
+  });
+
+  return {
+    ...(warehouseErf || {}),
+    id: erfId || warehouseErf?.id || "NAv",
+    erfId: erfId || warehouseErf?.id || "NAv",
+    erfNo: readFirstString(
+      row?.erfNo,
+      row?.raw?.property?.erfNo,
+      warehouseErf?.erfNo,
+      warehouseErf?.erfNumber,
+      "NAv",
+    ),
+    erfType: readFirstString(warehouseErf?.erfType, "NAv"),
+    admin: warehouseErf?.admin || {
+      localMunicipality: {
+        pcode: scope?.lmPcode || null,
+        name: scope?.lmName || null,
+      },
+      ward: {
+        pcode: scope?.wardPcode || null,
+        name: scope?.wardName || null,
+      },
+    },
+    targetedBatchContext,
+  };
+}
+
+function getTargetedBatchStatusText(bucket = {}) {
+  switch (normalizeUpper(bucket?.acceptanceStatus)) {
+    case "WAITING":
+      return "Waiting Acceptance";
+    case "ACCEPTED":
+      return "Accepted";
+    case "REJECTED":
+      return "Rejected";
+    case "NOT_READY":
+      return "Not Ready";
+    default:
+      return normalizeUpper(bucket?.status) || "NAv";
+  }
+}
+
+function getTargetedBatchPeriodText(bucket = {}) {
+  const selection = bucket?.selection || bucket?.raw?.selection || {};
+  const from = readFirstString(selection?.salesPeriodFrom);
+  const to = readFirstString(selection?.salesPeriodTo);
+
+  if (from && to) return `${from} to ${to}`;
+  return from || to || "NAv";
+}
+
 function toActivityMillis(value) {
   if (!value) return 0;
   if (typeof value?.toMillis === "function") return value.toMillis();
@@ -783,7 +925,11 @@ function safeRefetch(refetchFn, label = "query") {
 export default function WorkorderManagementSystem() {
   const router = useRouter();
   const { geoState, updateGeo } = useGeo();
-  const { all } = useWarehouse();
+  const {
+    all,
+    loading: warehouseLoading,
+    sync: warehouseSync,
+  } = useWarehouse();
   const { user, profile } = useAuth();
 
   const actorUid = user?.uid || profile?.uid || null;
@@ -800,9 +946,22 @@ export default function WorkorderManagementSystem() {
   const [rejectItem, setRejectItem] = useState(null);
   const [preparingBgoDetail, setPreparingBgoDetail] = useState(false);
   const [processingBgoBucketAction, setProcessingBgoBucketAction] = useState(null);
+  const [
+    processingTargetedBatchAction,
+    setProcessingTargetedBatchAction,
+  ] = useState(null);
+  const [
+    pendingTargetedBatchRowOpen,
+    setPendingTargetedBatchRowOpen,
+  ] = useState(null);
 
   const selectedBgoBatchId =
     selectedBucket?.bucketType === "BGOB" && !isBmdBgoBucket(selectedBucket)
+      ? selectedBucket?.id || null
+      : null;
+
+  const selectedTargetedBatchId =
+    selectedBucket?.bucketType === "TBB"
       ? selectedBucket?.id || null
       : null;
 
@@ -877,6 +1036,38 @@ export default function WorkorderManagementSystem() {
     { skip: !fieldWorkorderActor },
   );
 
+  const {
+    data: targetedBatchData,
+    isLoading: isLoadingTargetedBatches,
+    error: targetedBatchError,
+    refetch: refetchTargetedBatches,
+  } = useGetTargetedBatchBucketsQuery(
+    {
+      actorUid,
+      actorRole,
+      actorSpId,
+      actorName,
+      limit: 200,
+    },
+    { skip: !fieldWorkorderActor },
+  );
+
+  const {
+    data: targetedBatchRowsData,
+    isLoading: isLoadingTargetedBatchRows,
+    error: targetedBatchRowsError,
+  } = useGetTargetedBatchRowsQuery(
+    {
+      tbId: selectedTargetedBatchId,
+    },
+    {
+      skip:
+        !fieldWorkorderActor ||
+        !selectedTargetedBatchId ||
+        selectedBucket?.permissions?.canViewRows !== true,
+    },
+  );
+
   const { data: teamsData = [] } = useGetTeamsQuery(undefined, {
     skip: !fieldWorkorderActor,
   });
@@ -890,7 +1081,16 @@ export default function WorkorderManagementSystem() {
   const [reverseBgoBatchAcceptance, { isLoading: reversingBgo }] =
     useReverseBgoBatchAcceptanceMutation();
 
-  const actionBusy = deciding || decidingBgo || reversingBgo;
+  const [
+    acceptRejectTargetedBatch,
+    { isLoading: decidingTargetedBatch },
+  ] = useAcceptRejectTargetedBatchMutation();
+
+  const actionBusy =
+    deciding ||
+    decidingBgo ||
+    reversingBgo ||
+    decidingTargetedBatch;
 
   // My Workorders is now a field execution screen only.
   // Manager reversal must move to a manager control surface later.
@@ -903,6 +1103,167 @@ export default function WorkorderManagementSystem() {
   const bgoDetailItems = useMemo(() => {
     return Array.isArray(bgoDetailData?.items) ? bgoDetailData.items : [];
   }, [bgoDetailData?.items]);
+
+  const targetedBatchRows = useMemo(() => {
+    const rows = Array.isArray(targetedBatchRowsData?.rows)
+      ? targetedBatchRowsData.rows
+      : [];
+    const premises = Array.isArray(all?.prems) ? all.prems : [];
+    const meters = Array.isArray(all?.meters) ? all.meters : [];
+    const erfs = Array.isArray(all?.erfs) ? all.erfs : [];
+    const premiseIdToErfId = new Map();
+
+    premises.forEach((premise) => {
+      const premiseId = getPremiseId(premise);
+      const premiseErfId = getPremiseErfId(premise);
+
+      if (premiseId && premiseErfId) {
+        premiseIdToErfId.set(premiseId, premiseErfId);
+      }
+    });
+
+    return rows.map((row) => {
+      const erfId = cleanId(row?.erfId || row?.refs?.erfId);
+      const warehouseErf =
+        erfs.find((erf) => cleanId(erf?.id || erf?.erfId) === erfId) ||
+        all?.geoLibrary?.[erfId] ||
+        null;
+      const premiseCount = erfId
+        ? premises.filter((premise) => getPremiseErfId(premise) === erfId).length
+        : 0;
+      const astCount = erfId
+        ? meters.filter(
+            (meter) => getMeterErfId(meter, premiseIdToErfId) === erfId,
+          ).length
+        : 0;
+      const erfNo = readFirstString(
+        row?.erfNo,
+        row?.raw?.property?.erfNo,
+        warehouseErf?.erfNo,
+        warehouseErf?.erfNumber,
+      );
+
+      return {
+        ...row,
+        erfId,
+        erfNo,
+        liveStats: {
+          premiseCount,
+          astCount,
+        },
+      };
+    });
+  }, [
+    targetedBatchRowsData?.rows,
+    all?.prems,
+    all?.meters,
+    all?.erfs,
+    all?.geoLibrary,
+  ]);
+
+  useEffect(() => {
+    const pending = pendingTargetedBatchRowOpen;
+    if (!pending) return;
+
+    const activeLmPcode = getGeoPcode(geoState?.selectedLm);
+    const activeWardPcode = getGeoPcode(geoState?.selectedWard);
+
+    if (
+      activeLmPcode !== pending.lmPcode ||
+      activeWardPcode !== pending.wardPcode
+    ) {
+      return;
+    }
+
+    const wardErfsSync = warehouseSync?.erfs || {};
+    const syncStatus = normalizeUpper(wardErfsSync?.status);
+    const refreshStatus = normalizeUpper(
+      wardErfsSync?.refreshStatus,
+    );
+    const syncLmPcode = cleanId(wardErfsSync?.lmPcode);
+    const syncWardPcode = cleanId(wardErfsSync?.wardPcode);
+    const syncPackKey = cleanId(wardErfsSync?.wardCacheKey);
+    const expectedPackKey = `${pending.lmPcode}__${pending.wardPcode}`;
+    const targetWarehouseMatches =
+      syncLmPcode === pending.lmPcode &&
+      syncWardPcode === pending.wardPcode &&
+      (!syncPackKey || syncPackKey === expectedPackKey);
+
+    if (!targetWarehouseMatches) return;
+
+    const warehouseErf = findWarehouseErfById(
+      all?.erfs,
+      pending.erfId,
+    );
+
+    if (warehouseErf) {
+      const canonicalErf = {
+        ...(all?.geoLibrary?.[pending.erfId] || {}),
+        ...warehouseErf,
+      };
+      const selectedErf = buildTargetedBatchSelectedErf({
+        row: pending.row,
+        bucket: pending.bucket,
+        warehouseErf: canonicalErf,
+      });
+
+      setPendingTargetedBatchRowOpen(null);
+
+      updateGeo({
+        selectedWard: pending.ward,
+        selectedErf,
+        selectedPremise: null,
+        selectedMeter: null,
+        lastSelectionType: "ERF",
+      });
+
+      router.push("/(tabs)/premises");
+      return;
+    }
+
+    if (syncStatus === "ERROR") {
+      setPendingTargetedBatchRowOpen(null);
+
+      Alert.alert(
+        "Targeted Batch Ward Failed",
+        readFirstString(
+          wardErfsSync?.lastError,
+          `The ERFs for ${pending.wardName} could not be loaded.`,
+        ),
+      );
+      return;
+    }
+
+    const targetWarehouseRefreshing = [
+      "PENDING",
+      "REFRESHING",
+    ].includes(refreshStatus);
+
+    if (
+      warehouseLoading ||
+      syncStatus !== "READY" ||
+      targetWarehouseRefreshing
+    ) {
+      return;
+    }
+
+    setPendingTargetedBatchRowOpen(null);
+
+    Alert.alert(
+      "Targeted Batch ERF Not Found",
+      `ERF ${pending.erfId} was not found inside the batch ward ${pending.wardName}.`,
+    );
+  }, [
+    pendingTargetedBatchRowOpen,
+    geoState?.selectedLm,
+    geoState?.selectedWard,
+    all?.erfs,
+    all?.geoLibrary,
+    warehouseLoading,
+    warehouseSync?.erfs,
+    router,
+    updateGeo,
+  ]);
 
   const individualItems = useMemo(() => {
     return allItems.filter(
@@ -956,6 +1317,26 @@ export default function WorkorderManagementSystem() {
     all?.trns,
   ]);
 
+  const targetedBatchBuckets = useMemo(() => {
+    const allTargetedBatchBuckets = Array.isArray(targetedBatchData?.buckets)
+      ? targetedBatchData.buckets
+      : [];
+
+    return allTargetedBatchBuckets.filter((bucket) =>
+      canActorSeeBgoBucket({
+        bucket,
+        actorUid,
+        actorSpId,
+        actorTeamIds,
+      }),
+    );
+  }, [
+    targetedBatchData?.buckets,
+    actorUid,
+    actorSpId,
+    actorTeamIds,
+  ]);
+
   const groups = useMemo(() => {
     return WMS_GROUPS.map((group) => {
       const groupItems = individualItems.filter(
@@ -997,14 +1378,33 @@ export default function WorkorderManagementSystem() {
   }, [individualItems]);
 
   const bucketCards = useMemo(() => {
-    return [individualBucket, ...bgoBuckets];
-  }, [individualBucket, bgoBuckets]);
+    return [
+      individualBucket,
+      ...bgoBuckets,
+      ...targetedBatchBuckets,
+    ];
+  }, [individualBucket, bgoBuckets, targetedBatchBuckets]);
 
   useEffect(() => {
     if (!selectedBucket?.id) return;
 
     const freshBucket = bucketCards.find((bucket) => bucket?.id === selectedBucket.id);
     if (!freshBucket || freshBucket === selectedBucket) return;
+
+    const selectedAcceptanceStatus = normalizeUpper(
+      selectedBucket?.acceptanceStatus,
+    );
+    const freshAcceptanceStatus = normalizeUpper(
+      freshBucket?.acceptanceStatus,
+    );
+
+    if (
+      selectedBucket?.bucketType === "TBB" &&
+      selectedAcceptanceStatus === "ACCEPTED" &&
+      freshAcceptanceStatus !== "ACCEPTED"
+    ) {
+      return;
+    }
 
     setSelectedBucket(freshBucket);
   }, [bucketCards, selectedBucket]);
@@ -1103,6 +1503,22 @@ export default function WorkorderManagementSystem() {
       setSelectedBucket(bucket);
       setSelectedGroup(null);
       setStateFilter("ALL");
+      return;
+    }
+
+    if (bucket?.bucketType === "TBB") {
+      if (bucket?.permissions?.canViewRows !== true) {
+        Alert.alert(
+          "Targeted Batch Locked",
+          "This Targeted Batch must be accepted before its rows can be opened for field execution.",
+        );
+        return;
+      }
+
+      setPreparingBgoDetail(false);
+      setSelectedBucket(bucket);
+      setSelectedGroup(null);
+      setStateFilter("ALL");
     }
   }
 
@@ -1113,6 +1529,7 @@ export default function WorkorderManagementSystem() {
 
   function backToBuckets() {
     setPreparingBgoDetail(false);
+    setPendingTargetedBatchRowOpen(null);
     setSelectedBucket(null);
     setSelectedGroup(null);
     setStateFilter("ALL");
@@ -1217,6 +1634,97 @@ export default function WorkorderManagementSystem() {
     }
   }
 
+  async function submitTargetedBatchDecision({
+    bucket,
+    action,
+    rejectReason = "",
+  }) {
+    if (!bucket?.id || actionBusy) return false;
+
+    setProcessingTargetedBatchAction({
+      bucketId: bucket.id,
+      action: normalizeUpper(action),
+    });
+
+    try {
+      const result = await acceptRejectTargetedBatch({
+        tbId: bucket.id,
+        action,
+        rejectReason: String(rejectReason || "").trim(),
+      }).unwrap();
+
+      if (result?.success === false) {
+        throw {
+          data: result,
+          message: result?.message || "Targeted Batch action failed.",
+        };
+      }
+
+      safeRefetch(
+        refetchTargetedBatches,
+        "Targeted Batch buckets",
+      );
+
+      if (normalizeUpper(action) === "ACCEPT") {
+        const acceptedBucket = {
+          ...bucket,
+          acceptanceStatus: "ACCEPTED",
+          permissions: {
+            ...(bucket?.permissions || {}),
+            canAccept: false,
+            canReject: false,
+            canViewRows: true,
+          },
+        };
+
+        Alert.alert(
+          "Targeted Batch Accepted",
+          result?.message ||
+            "The Targeted Batch row worklist is now ready for field execution.",
+          [
+            {
+              text: "LATER",
+              style: "cancel",
+            },
+            {
+              text: "VIEW TRANSACTIONS",
+              onPress: () => {
+                setPreparingBgoDetail(false);
+                setSelectedBucket(acceptedBucket);
+                setSelectedGroup(null);
+                setStateFilter("ALL");
+              },
+            },
+          ],
+        );
+      } else {
+        Alert.alert(
+          "Targeted Batch Rejected",
+          result?.message ||
+            "The Targeted Batch was rejected before execution started.",
+        );
+      }
+
+      return true;
+    } catch (err) {
+      console.log("Targeted Batch decision ERROR", err);
+
+      Alert.alert(
+        "Targeted Batch Action Failed",
+        getActionErrorMessage(
+          err,
+          "Could not update the Targeted Batch.",
+        ),
+      );
+
+      return false;
+    } finally {
+      setProcessingTargetedBatchAction((current) =>
+        current?.bucketId === bucket.id ? null : current,
+      );
+    }
+  }
+
   function handleAccept(item) {
     Alert.alert("Accept Work", `Accept ${item?.id || "this work item"}?`, [
       { text: "CANCEL", style: "cancel" },
@@ -1249,6 +1757,32 @@ export default function WorkorderManagementSystem() {
           text: "ACCEPT",
           onPress: () =>
             submitBgoDecision({ bucket, action: "ACCEPT" }),
+        },
+      ],
+    );
+  }
+
+  function handleAcceptTargetedBatch(bucket) {
+    if (!fieldWorkorderActor) {
+      Alert.alert(
+        "WMS Access Blocked",
+        "Only FWR and SPV(SUBC) users may accept Targeted Batches from My Workorders.",
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Accept Targeted Batch",
+      `Accept ${bucket?.id || "this Targeted Batch"}? Its rows will be opened for premise and meter discovery work.`,
+      [
+        { text: "CANCEL", style: "cancel" },
+        {
+          text: "ACCEPT",
+          onPress: () =>
+            submitTargetedBatchDecision({
+              bucket,
+              action: "ACCEPT",
+            }),
         },
       ],
     );
@@ -1301,6 +1835,32 @@ export default function WorkorderManagementSystem() {
   }
 
   async function handleReject(values, helpers) {
+    if (rejectItem?.itemKind === "TARGETED_BATCH") {
+      if (!fieldWorkorderActor) {
+        Alert.alert(
+          "WMS Access Blocked",
+          "Only FWR and SPV(SUBC) users may reject Targeted Batches from My Workorders.",
+        );
+        helpers.setSubmitting(false);
+        return;
+      }
+
+      const success = await submitTargetedBatchDecision({
+        bucket: rejectItem,
+        action: "REJECT",
+        rejectReason: values.rejectReason,
+      });
+
+      helpers.setSubmitting(false);
+
+      if (success) {
+        helpers.resetForm();
+        setRejectItem(null);
+      }
+
+      return;
+    }
+
     if (rejectItem?.itemKind === "BGO_BATCH") {
       if (!fieldWorkorderActor) {
         Alert.alert(
@@ -1503,8 +2063,101 @@ export default function WorkorderManagementSystem() {
     router.push("/(tabs)/premises");
   }
 
+  function handleOpenTargetedBatchRow({ bucket, row }) {
+    const erfId = cleanId(row?.erfId || row?.refs?.erfId);
+    const scope = getTargetedBatchWardScope({ bucket, row });
+
+    if (!bucket?.id || !row?.id || !erfId) {
+      Alert.alert(
+        "Targeted Batch Row Not Ready",
+        "This row is missing its Targeted Batch or ERF reference.",
+      );
+      return;
+    }
+
+    if (!scope.lmPcode || !scope.wardPcode) {
+      Alert.alert(
+        "Targeted Batch Ward Scope Missing",
+        "This Targeted Batch does not carry its required LM and ward scope.",
+      );
+      return;
+    }
+
+    if (
+      scope.rowLmPcode &&
+      scope.rowLmPcode !== scope.lmPcode
+    ) {
+      Alert.alert(
+        "Targeted Batch LM Scope Conflict",
+        "This row does not match the Targeted Batch municipality scope.",
+      );
+      return;
+    }
+
+    if (
+      scope.rowWardPcode &&
+      scope.rowWardPcode !== scope.wardPcode
+    ) {
+      Alert.alert(
+        "Targeted Batch Ward Scope Conflict",
+        "This row does not match the Targeted Batch ward scope.",
+      );
+      return;
+    }
+
+    const activeLmPcode = getGeoPcode(geoState?.selectedLm);
+
+    if (activeLmPcode !== scope.lmPcode) {
+      Alert.alert(
+        "Targeted Batch Workbase Mismatch",
+        `This batch belongs to ${scope.lmPcode}, but the active workbase is ${activeLmPcode || "NAv"}.`,
+      );
+      return;
+    }
+
+    const targetWard = findWardByPcode(
+      all?.wards,
+      scope.wardPcode,
+    );
+
+    if (!targetWard) {
+      Alert.alert(
+        "Targeted Batch Ward Not Available",
+        `Ward ${scope.wardPcode} is not available in the active ${scope.lmPcode} workbase.`,
+      );
+      return;
+    }
+
+    setPendingTargetedBatchRowOpen({
+      requestKey: `${bucket.id}__${row.id}__${erfId}`,
+      bucket,
+      row,
+      rowId: row.id,
+      erfId,
+      lmPcode: scope.lmPcode,
+      wardPcode: scope.wardPcode,
+      wardName: readFirstString(
+        scope.wardName,
+        targetWard?.name,
+        scope.wardPcode,
+      ),
+      ward: targetWard,
+    });
+
+    updateGeo({
+      selectedWard: targetWard,
+      selectedErf: null,
+      selectedPremise: null,
+      selectedMeter: null,
+      lastSelectionType: "WARD",
+    });
+  }
+
   const showBmdErfWorklist =
     selectedBucket?.bucketType === "BGOB" && isBmdBgoBucket(selectedBucket);
+
+  const showTargetedBatchRows =
+    selectedBucket?.bucketType === "TBB";
 
   const showIndividualGroups =
     selectedBucket?.bucketType === "INDVG" && !selectedGroup;
@@ -1566,18 +2219,26 @@ export default function WorkorderManagementSystem() {
         <BucketLanding
           isLoadingIndividual={isLoading && !wmsData}
           isLoadingBgo={isLoadingBgo || !bgoData?.meta?.updatedAt}
+          isLoadingTargetedBatches={
+            isLoadingTargetedBatches && !targetedBatchData
+          }
           individualBucket={individualBucket}
           bgoBuckets={bgoBuckets}
+          targetedBatchBuckets={targetedBatchBuckets}
           error={error}
           bgoError={bgoError}
+          targetedBatchError={targetedBatchError}
           deciding={actionBusy}
           processingBgoBucketAction={processingBgoBucketAction}
+          processingTargetedBatchAction={processingTargetedBatchAction}
           managerActor={managerActor}
           fieldWorkorderActor={fieldWorkorderActor}
           onOpenBucket={openBucket}
           onAcceptBgoBucket={handleAcceptBgoBucket}
           onRejectBgoBucket={setRejectItem}
           onReverseBgoBucket={handleReverseBgoBucket}
+          onAcceptTargetedBatch={handleAcceptTargetedBatch}
+          onRejectTargetedBatch={setRejectItem}
         />
       ) : showIndividualGroups ? (
         <GroupLanding
@@ -1592,6 +2253,19 @@ export default function WorkorderManagementSystem() {
           bucket={selectedBucket}
           onBack={backToBuckets}
           onOpenErf={handleOpenBmdErf}
+        />
+      ) : showTargetedBatchRows ? (
+        <TargetedBatchRowsWorklist
+          bucket={selectedBucket}
+          rows={targetedBatchRows}
+          summary={targetedBatchRowsData?.summary}
+          isLoading={
+            isLoadingTargetedBatchRows && !targetedBatchRowsData
+          }
+          error={targetedBatchRowsError}
+          onBack={backToBuckets}
+          onOpenRow={handleOpenTargetedBatchRow}
+          openingRowId={pendingTargetedBatchRowOpen?.rowId || null}
         />
       ) : showTrnDetail ? (
         <GroupDetail
@@ -1660,18 +2334,24 @@ function AccessDeniedWorkorders({ actorRole, onBack }) {
 function BucketLanding({
   isLoadingIndividual,
   isLoadingBgo,
+  isLoadingTargetedBatches,
   individualBucket,
   bgoBuckets = [],
+  targetedBatchBuckets = [],
   error,
   bgoError,
+  targetedBatchError,
   deciding,
   processingBgoBucketAction,
+  processingTargetedBatchAction,
   managerActor,
   fieldWorkorderActor,
   onOpenBucket,
   onAcceptBgoBucket,
   onRejectBgoBucket,
   onReverseBgoBucket,
+  onAcceptTargetedBatch,
+  onRejectTargetedBatch,
 }) {
   return (
     <ScrollView
@@ -1757,8 +2437,246 @@ function BucketLanding({
             onReverseBgoBucket={onReverseBgoBucket}
           />
         ))}
+
+        <View style={styles.bucketSectionDivider}>
+          <Text style={styles.bucketSectionTitle}>Targeted Batches</Text>
+        </View>
+
+        {isLoadingTargetedBatches ? (
+          <InlineStatusCard
+            icon="target-account"
+            title="Loading Targeted Batches..."
+            text="Preparing allocated sales row worklists..."
+            showSpinner
+          />
+        ) : null}
+
+        {targetedBatchError ? (
+          <InlineStatusCard
+            icon="alert-circle-outline"
+            title="Targeted Batch stream failed"
+            text={
+              targetedBatchError?.message ||
+              "Could not load Targeted Batches."
+            }
+            tone="error"
+          />
+        ) : null}
+
+        {!isLoadingTargetedBatches &&
+        !targetedBatchError &&
+        targetedBatchBuckets.length === 0 ? (
+          <InlineStatusCard
+            icon="target-variant"
+            title="No Targeted Batches available"
+            text="There are no Targeted Batches allocated to your team or service provider right now."
+          />
+        ) : null}
+
+        {targetedBatchBuckets.map((bucket) => (
+          <TargetedBatchCard
+            key={bucket.id}
+            bucket={bucket}
+            deciding={deciding}
+            processingTargetedBatchAction={
+              processingTargetedBatchAction
+            }
+            fieldWorkorderActor={fieldWorkorderActor}
+            onOpenBucket={onOpenBucket}
+            onAcceptTargetedBatch={onAcceptTargetedBatch}
+            onRejectTargetedBatch={onRejectTargetedBatch}
+          />
+        ))}
       </View>
     </ScrollView>
+  );
+}
+
+function TargetedBatchCard({
+  bucket,
+  deciding,
+  processingTargetedBatchAction,
+  fieldWorkorderActor,
+  onOpenBucket,
+  onAcceptTargetedBatch,
+  onRejectTargetedBatch,
+}) {
+  const counts = bucket?.counts || {};
+  const statusText = getTargetedBatchStatusText(bucket);
+  const canAccept = bucket?.permissions?.canAccept === true;
+  const canReject = bucket?.permissions?.canReject === true;
+  const canView = bucket?.permissions?.canViewRows === true;
+  const processingThisBatch =
+    processingTargetedBatchAction?.bucketId === bucket?.id;
+  const processingAction = normalizeUpper(
+    processingTargetedBatchAction?.action,
+  );
+  const disabled =
+    deciding || processingThisBatch || !fieldWorkorderActor;
+
+  return (
+    <View style={styles.bucketCard}>
+      <View style={styles.groupTopRow}>
+        <View style={styles.groupIcon}>
+          <MaterialCommunityIcons
+            name="target-account"
+            size={23}
+            color="#2563eb"
+          />
+        </View>
+
+        <View style={styles.bucketStatusBadge}>
+          <Text style={styles.bucketStatusText}>{statusText}</Text>
+        </View>
+      </View>
+
+      <Text style={styles.groupTitle}>
+        Targeted Batch • {bucket?.id || "NAv"}
+      </Text>
+      <Text style={styles.groupSub}>
+        {bucket?.subtitle || "Sales targeted field work"}
+      </Text>
+
+      <View style={styles.bucketMetaGrid}>
+        <InfoLine
+          icon="format-list-numbered"
+          label="Total Rows"
+          value={counts?.total ?? bucket?.totalRows ?? 0}
+        />
+
+        <InfoLine
+          icon="account-hard-hat-outline"
+          label="Target"
+          value={bucket?.targetText || "NAv"}
+        />
+
+        <InfoLine
+          icon="map-marker-outline"
+          label="Municipality"
+          value={
+            bucket?.scope?.lmName ||
+            bucket?.scope?.lmPcode ||
+            "NAv"
+          }
+        />
+
+        <InfoLine
+          icon="calendar-range"
+          label="Sales Period"
+          value={getTargetedBatchPeriodText(bucket)}
+        />
+
+        <InfoLine
+          icon="text-box-outline"
+          label="Selection Reason"
+          value={bucket?.selection?.reason || "NAv"}
+        />
+
+        <InfoLine
+          icon="clock-outline"
+          label="Age"
+          value={formatAge(bucket?.ageSeconds)}
+        />
+      </View>
+
+      <View style={styles.groupCounts}>
+        <MiniCount
+          label="Not Started"
+          value={counts?.notStarted ?? 0}
+        />
+        <MiniCount
+          label="In Progress"
+          value={counts?.inProgress ?? 0}
+        />
+        <MiniCount
+          label="Completed"
+          value={counts?.completed ?? 0}
+        />
+        <MiniCount
+          label="Allocated"
+          value={counts?.allocated ?? 0}
+        />
+      </View>
+
+      {processingThisBatch ? (
+        <View style={styles.bgoProcessingBox}>
+          <ActivityIndicator size="small" color="#2563eb" />
+          <View style={styles.bgoProcessingTextWrap}>
+            <Text style={styles.bgoProcessingTitle}>
+              {processingAction === "REJECT"
+                ? "Rejecting Targeted Batch..."
+                : "Accepting Targeted Batch..."}
+            </Text>
+            <Text style={styles.bgoProcessingText}>
+              Recording the whole-batch decision before field execution.
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
+      <View style={styles.actionsRow}>
+        {canAccept ? (
+          <Pressable
+            style={[
+              styles.actionBtn,
+              styles.acceptBtn,
+              disabled && styles.actionDisabled,
+            ]}
+            onPress={() => onAcceptTargetedBatch(bucket)}
+            disabled={disabled}
+          >
+            <Text style={styles.acceptBtnText}>
+              {processingThisBatch && processingAction === "ACCEPT"
+                ? "ACCEPTING..."
+                : "ACCEPT"}
+            </Text>
+          </Pressable>
+        ) : null}
+
+        {canReject ? (
+          <Pressable
+            style={[
+              styles.actionBtn,
+              styles.rejectBtn,
+              disabled && styles.actionDisabled,
+            ]}
+            onPress={() => onRejectTargetedBatch(bucket)}
+            disabled={disabled}
+          >
+            <Text style={styles.rejectBtnText}>
+              {processingThisBatch && processingAction === "REJECT"
+                ? "REJECTING..."
+                : "REJECT"}
+            </Text>
+          </Pressable>
+        ) : null}
+
+        {canView ? (
+          <Pressable
+            style={[styles.actionBtn, styles.executeBtn]}
+            onPress={() => onOpenBucket(bucket)}
+            disabled={deciding}
+          >
+            <Text style={styles.executeBtnText}>VIEW ROWS</Text>
+          </Pressable>
+        ) : null}
+
+        {!canAccept && !canReject && !canView ? (
+          <View style={styles.noActionBox}>
+            <MaterialCommunityIcons
+              name="lock-check-outline"
+              size={15}
+              color="#64748b"
+            />
+            <Text style={styles.noActionText}>
+              {statusText === "Rejected"
+                ? "Targeted Batch rejected before execution."
+                : "Targeted Batch not open for execution."}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
   );
 }
 
@@ -2167,6 +3085,202 @@ function MdBgoErfCard({ erf, bucket, onOpenErf }) {
           onPress={() => onOpenErf({ bucket, erf })}
         >
           <Text style={styles.executeBtnText}>OPEN ERF</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function TargetedBatchRowsWorklist({
+  bucket,
+  rows = [],
+  summary = {},
+  isLoading,
+  error,
+  onBack,
+  onOpenRow,
+  openingRowId,
+}) {
+  const renderRow = ({ item }) => (
+    <TargetedBatchRowCard
+      row={item}
+      bucket={bucket}
+      onOpenRow={onOpenRow}
+      opening={openingRowId === item?.id}
+    />
+  );
+
+  return (
+    <View style={styles.detailWrap}>
+      <View style={styles.mdBgoSummaryCard}>
+        <Pressable style={styles.mdBgoBackPill} onPress={onBack}>
+          <MaterialCommunityIcons
+            name="chevron-left"
+            size={18}
+            color="#0f172a"
+          />
+          <Text style={styles.backPillText}>Buckets</Text>
+        </Pressable>
+
+        <Text style={styles.mdBgoWardText} numberOfLines={1}>
+          {bucket?.id || "Targeted Batch"}
+        </Text>
+
+        <View style={styles.mdBgoCompactStat}>
+          <Text style={styles.mdBgoCompactStatLabel}>Rows</Text>
+          <Text style={styles.mdBgoCompactStatValue}>
+            {summary?.total ?? rows.length}
+          </Text>
+        </View>
+
+        <View style={styles.mdBgoCompactStat}>
+          <Text style={styles.mdBgoCompactStatLabel}>Started</Text>
+          <Text style={styles.mdBgoCompactStatValue}>
+            {summary?.inProgress ?? 0}
+          </Text>
+        </View>
+
+        <View style={styles.mdBgoCompactStat}>
+          <Text style={styles.mdBgoCompactStatLabel}>Done</Text>
+          <Text style={styles.mdBgoCompactStatValue}>
+            {summary?.completed ?? 0}
+          </Text>
+        </View>
+      </View>
+
+      {isLoading ? (
+        <View style={styles.detailPreparingCard}>
+          <ActivityIndicator size="small" color="#2563eb" />
+          <Text style={styles.detailPreparingTitle}>
+            Loading Targeted Batch rows...
+          </Text>
+          <Text style={styles.detailPreparingText}>
+            Preparing the accepted ERF worklist for premise discovery.
+          </Text>
+        </View>
+      ) : error ? (
+        <View style={styles.detailPreparingCard}>
+          <MaterialCommunityIcons
+            name="alert-circle-outline"
+            size={35}
+            color="#dc2626"
+          />
+          <Text style={styles.detailPreparingTitle}>
+            Targeted Batch rows failed
+          </Text>
+          <Text style={styles.detailPreparingText}>
+            {error?.message || "Could not load the Targeted Batch rows."}
+          </Text>
+        </View>
+      ) : (
+        <FlashList
+          data={rows}
+          keyExtractor={(item, index) => item?.id || String(index)}
+          renderItem={renderRow}
+          estimatedItemSize={122}
+          style={styles.scroll}
+          contentContainerStyle={styles.flashListContent}
+          ListEmptyComponent={
+            <View style={styles.emptyListCard}>
+              <MaterialCommunityIcons
+                name="playlist-remove"
+                size={35}
+                color="#94a3b8"
+              />
+              <Text style={styles.stateTitle}>
+                No Targeted Batch rows
+              </Text>
+              <Text style={styles.stateText}>
+                This accepted Targeted Batch does not contain any rows.
+              </Text>
+            </View>
+          }
+        />
+      )}
+    </View>
+  );
+}
+
+function TargetedBatchRowCard({
+  row,
+  bucket,
+  onOpenRow,
+  opening = false,
+}) {
+  const executionStatus =
+    normalizeUpper(row?.executionStatus) || "NOT_STARTED";
+  const erfId = cleanId(row?.erfId || row?.refs?.erfId);
+  const erfNo = readFirstString(
+    row?.erfNo,
+    row?.raw?.property?.erfNo,
+  );
+  const hasErf = Boolean(erfId && erfNo);
+  const liveStats = row?.liveStats || {};
+
+  return (
+    <View style={styles.mdBgoErfCard}>
+      <View style={styles.mdBgoErfHeader}>
+        <View style={styles.mdBgoErfIcon}>
+          <MaterialCommunityIcons
+            name="target-account"
+            size={21}
+            color="#2563eb"
+          />
+        </View>
+
+        <View style={styles.mdBgoErfMain}>
+          <Text style={styles.mdBgoErfTitle}>
+            Meter {row?.meterNo || "NAv"}
+          </Text>
+          <Text style={styles.mdBgoErfSub} numberOfLines={1}>
+            Account {row?.accountNumber || "NAv"} •{" "}
+            {row?.customerName || "NAv"}
+          </Text>
+          <Text style={styles.mdBgoErfSub} numberOfLines={1}>
+            {row?.address || row?.town || "NAv"}
+          </Text>
+        </View>
+
+        <View style={styles.mdBgoErfStatusBadge}>
+          <Text style={styles.mdBgoErfStatusText}>
+            {executionStatus.replace(/_/g, " ")}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.mdBgoErfFooterRow}>
+        <View style={styles.mdBgoErfMiniStat}>
+          <Text style={styles.mdBgoErfMiniStatLabel}>Premises</Text>
+          <Text style={styles.mdBgoErfMiniStatValue}>
+            {liveStats?.premiseCount ?? 0}
+          </Text>
+        </View>
+
+        <View style={styles.mdBgoErfMiniStat}>
+          <Text style={styles.mdBgoErfMiniStatLabel}>ASTs</Text>
+          <Text style={styles.mdBgoErfMiniStatValue}>
+            {liveStats?.astCount ?? 0}
+          </Text>
+        </View>
+
+        <Pressable
+          style={[
+            styles.mdBgoOpenErfBtn,
+            (!hasErf || opening) && styles.actionDisabled,
+          ]}
+          onPress={() => onOpenRow({ bucket, row })}
+          disabled={!hasErf || opening}
+        >
+          {opening ? (
+            <ActivityIndicator size="small" color="#ffffff" />
+          ) : null}
+          <Text style={styles.executeBtnText} numberOfLines={1}>
+            {opening
+              ? "OPENING..."
+              : hasErf
+                ? `ERF ${erfNo}`
+                : "NO ERF"}
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -2900,22 +4014,29 @@ function MiniCount({ label, value }) {
 
 function RejectModal({ visible, item, busy, onClose, onSubmit }) {
   const isBgoBucket = item?.itemKind === "BGO_BATCH";
+  const isTargetedBatch = item?.itemKind === "TARGETED_BATCH";
   const isAcceptedWorkItem = normalizeUpper(item?.workflowState) === "ACCEPTED";
-  const title = isBgoBucket
-    ? "Reject BGO Bucket"
-    : isAcceptedWorkItem
-      ? "Reject Accepted Work"
-      : "Reject Work Item";
-  const placeholder = isBgoBucket
-    ? "Explain why this BGO bucket cannot be accepted"
-    : isAcceptedWorkItem
-      ? "Explain why this accepted work item cannot be executed"
-      : "Explain why this work item cannot be accepted";
-  const submitText = isBgoBucket
-    ? "REJECT BUCKET"
-    : isAcceptedWorkItem
-      ? "REJECT WORK"
-      : "SUBMIT REJECTION";
+  const title = isTargetedBatch
+    ? "Reject Targeted Batch"
+    : isBgoBucket
+      ? "Reject BGO Bucket"
+      : isAcceptedWorkItem
+        ? "Reject Accepted Work"
+        : "Reject Work Item";
+  const placeholder = isTargetedBatch
+    ? "Explain why this Targeted Batch cannot be accepted"
+    : isBgoBucket
+      ? "Explain why this BGO bucket cannot be accepted"
+      : isAcceptedWorkItem
+        ? "Explain why this accepted work item cannot be executed"
+        : "Explain why this work item cannot be accepted";
+  const submitText = isTargetedBatch
+    ? "REJECT BATCH"
+    : isBgoBucket
+      ? "REJECT BUCKET"
+      : isAcceptedWorkItem
+        ? "REJECT WORK"
+        : "SUBMIT REJECTION";
 
   return (
     <Modal

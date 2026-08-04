@@ -1,8 +1,6 @@
 export const INFORMAL_ERF_QUEUE_FORM_TYPE =
   "INFORMAL_ERF_CREATE";
 
-export const INFORMAL_ERF_PAYLOAD_SCHEMA_VERSION = 1;
-
 export const INFORMAL_ERF_SITE_PHOTO_TAG =
   "informalErfSitePhoto";
 

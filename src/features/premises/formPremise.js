@@ -35,6 +35,12 @@ import {
   updatePremiseQueueItem,
 } from "../../utils/premiseSubmissionQueue";
 import { ForensicFooter } from "../meters/ForensicFooter";
+import {
+  getMissingTargetedBatchContextFields,
+  normalizeTargetedBatchContext,
+  parseTargetedBatchAddress,
+  parseTargetedBatchContextRouteParam,
+} from "./targetedBatchPremiseContext";
 
 const streetTypeOptions = [
   "Select...",
@@ -132,7 +138,13 @@ export default function FormPremise() {
 
   const router = useRouter();
 
-  const { id, premiseId, duplicateId, queueItemId } = useLocalSearchParams();
+  const {
+    id,
+    premiseId,
+    duplicateId,
+    queueItemId,
+    targetedBatchContext: routeTargetedBatchContext,
+  } = useLocalSearchParams();
 
   const isEdit = !!premiseId;
 
@@ -181,6 +193,42 @@ export default function FormPremise() {
 
   const selectedErf = geoState?.selectedErf || null;
 
+  const routeContext = useMemo(
+    () => parseTargetedBatchContextRouteParam(routeTargetedBatchContext),
+    [routeTargetedBatchContext],
+  );
+
+  const originatedFromTargetedBatch = Boolean(
+    routeTargetedBatchContext !== undefined ||
+      Object.prototype.hasOwnProperty.call(
+        selectedErf || {},
+        "targetedBatchContext",
+      ) ||
+      (isQueueEdit &&
+        Object.prototype.hasOwnProperty.call(
+          queueItem?.payload || {},
+          "targetedBatchContext",
+        )),
+  );
+
+  const targetedBatchContext = useMemo(() => {
+    if (isQueueEdit) {
+      return normalizeTargetedBatchContext(
+        queueItem?.payload?.targetedBatchContext,
+      );
+    }
+
+    return (
+      normalizeTargetedBatchContext(selectedErf?.targetedBatchContext) ||
+      routeContext
+    );
+  }, [
+    isQueueEdit,
+    queueItem?.payload?.targetedBatchContext,
+    selectedErf?.targetedBatchContext,
+    routeContext,
+  ]);
+
   const targetGeo =
     all?.geoLibrary?.[id] || all?.geoLibrary?.[selectedErf?.erfId] || null;
 
@@ -188,6 +236,7 @@ export default function FormPremise() {
     queueItem?.payload?.erfNo ||
     sourcePremise?.erfNo ||
     selectedErf?.erfNo ||
+    targetGeo?.erfNo ||
     "NAv";
 
   const erfCentroid = useMemo(() => {
@@ -201,7 +250,11 @@ export default function FormPremise() {
     return { lat: -34.035, lng: 23.048 };
   }, [targetGeo]);
 
-  const admin = selectedErf?.admin;
+  const admin =
+    String(selectedErf?.id || selectedErf?.erfId || "").trim() ===
+    String(id || "").trim()
+      ? selectedErf?.admin
+      : targetGeo?.admin;
 
   const premiseSchema = useMemo(() => {
     return Yup.object().shape({
@@ -427,14 +480,18 @@ export default function FormPremise() {
     }
 
     // NEW
+    const targetedBatchAddress = targetedBatchContext
+      ? parseTargetedBatchAddress(targetedBatchContext.sourceAddress)
+      : null;
+
     return {
       context: baseContext,
 
       address: {
-        suburbName: "",
-        strNo: "",
-        strName: "",
-        strType: "Select...",
+        suburbName: targetedBatchAddress?.suburbName || "",
+        strNo: targetedBatchAddress?.strNo || "",
+        strName: targetedBatchAddress?.strName || "",
+        strType: targetedBatchAddress?.strType || "Select...",
       },
 
       propertyType: {
@@ -459,6 +516,7 @@ export default function FormPremise() {
     selectedErf?.isTownship,
     isQueueEdit,
     queueItem,
+    targetedBatchContext,
   ]);
 
   const [createPremise] = useCreatePremiseMutation();
@@ -596,6 +654,37 @@ export default function FormPremise() {
     try {
       const systemFields = buildSystemFields();
       const premiseDocId = systemFields.id;
+      const linkedTargetedBatchContext =
+        !isEdit && !isDuplicate ? targetedBatchContext : null;
+
+      if (!isEdit && !isDuplicate && originatedFromTargetedBatch) {
+        const missingContextFields = getMissingTargetedBatchContextFields(
+          linkedTargetedBatchContext,
+        );
+
+        if (missingContextFields.length > 0) {
+          console.warn("Targeted Batch premise submission blocked", {
+            missingFields: missingContextFields,
+            tbId: linkedTargetedBatchContext?.tbId || null,
+            rowId: linkedTargetedBatchContext?.rowId || null,
+            salesDocId: linkedTargetedBatchContext?.salesDocId || null,
+            erfId: linkedTargetedBatchContext?.erfId || null,
+          });
+          throw new Error(
+            `Targeted Batch context is incomplete: ${missingContextFields.join(", ")}.`,
+          );
+        }
+
+        if (
+          linkedTargetedBatchContext.erfId !==
+          String(systemFields?.erfId || "").trim()
+        ) {
+          throw new Error(
+            "Targeted Batch ERF context does not match the premise ERF.",
+          );
+        }
+      }
+
       // logSubmitTime("system fields built");
 
       const netState = await NetInfo.fetch();
@@ -631,6 +720,12 @@ export default function FormPremise() {
             occupancy: {
               status: values?.occupancy?.status || "Occupied",
             },
+
+            ...(linkedTargetedBatchContext
+              ? {
+                  targetedBatchContext: linkedTargetedBatchContext,
+                }
+              : {}),
 
             geometry: {
               centroid: {
