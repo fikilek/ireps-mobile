@@ -2,13 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { appendUniqueTargetedBatchRows, getTargetedBatchRowActionState, snapshotTargetedBatchRefs, targetedBatchRefsMatch, TARGETED_BATCH_INTENTS } from "./targetedBatchActions.js";
 
-const row = (refs = {}, count = 0, status = "OK") => ({ refs, erfNo: "1138", noAccessCount: count, noAccessSourceStatus: status });
+const row = (refs = {}, count = 0, status = "OK") => ({ id: "ROW1", salesDocId: "SALE1", allocationStatus: "ALLOCATED", executionStatus: "NOT_STARTED", refs: { erfId: "ERF1", ...refs }, erfNo: "1138", noAccessCount: count, noAccessSourceStatus: status });
 
-test("State A exposes row values and disables AST/NA", () => {
+test("State A exposes row values, disables AST, and enables pre-premise NA", () => {
   const state = getTargetedBatchRowActionState(row());
   assert.equal(state.premise.value, 0); assert.equal(state.ast.value, 0);
   assert.equal(state.ast.disabled, true); assert.equal(state.ast.helperText, "PREMISE REQUIRED");
-  assert.equal(state.noAccess.value, 0); assert.equal(state.noAccess.disabled, true);
+  assert.equal(state.noAccess.value, 0); assert.equal(state.noAccess.disabled, false);
 });
 
 test("State B enables discovery for the exact linked premise", () => {
@@ -17,6 +17,7 @@ test("State B enables discovery for the exact linked premise", () => {
   assert.equal(state.ast.disabled, false); assert.equal(state.ast.helperText, "DISCOVER");
   assert.equal(state.ast.intent, TARGETED_BATCH_INTENTS.START_METER_DISCOVERY);
   assert.equal(state.noAccess.value, 2);
+  assert.equal(state.noAccess.disabled, false);
 });
 
 test("State C opens AST and marks NA discovery complete", () => {
@@ -48,4 +49,3 @@ test("reference snapshots detect stale row changes", () => {
   assert.equal(targetedBatchRefsMatch(original, snapshot), true);
   assert.equal(targetedBatchRefsMatch(row({ erfId: "E1", premiseId: "P1", meterId: "A1" }), snapshot), false);
 });
-

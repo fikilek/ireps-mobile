@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
 import { FlashList } from "@shopify/flash-list";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -30,6 +30,7 @@ import {
   targetedBatchRefsMatch,
   TARGETED_BATCH_INTENTS,
 } from "../../../../src/features/targetedBatches/targetedBatchActions";
+import { buildTargetedBatchNoAccessContext } from "../../../../src/features/targetedBatches/targetedBatchNoAccess";
 import {
   useAcceptRejectLifecycleInstructionMutation,
   useGetWmsLifecycleWorkItemsQuery,
@@ -932,6 +933,7 @@ function safeRefetch(refetchFn, label = "query") {
 
 export default function WorkorderManagementSystem() {
   const router = useRouter();
+  const routeParams = useLocalSearchParams();
   const { geoState, updateGeo } = useGeo();
   const { openMissionDiscovery } = useDiscovery();
   const {
@@ -1092,6 +1094,12 @@ export default function WorkorderManagementSystem() {
     targetedBatchRequestKeyRef.current = null;
   }, [selectedTargetedBatchId]);
 
+  useEffect(() => {
+    if (!routeParams?.targetedBatchRefresh) return;
+    setTargetedBatchCursor(null);
+    setTargetedBatchReloadKey((value) => value + 1);
+  }, [routeParams?.targetedBatchRefresh]);
+
   useEffect(() => () => {
     targetedBatchRequestKeyRef.current = null;
   }, []);
@@ -1223,6 +1231,14 @@ export default function WorkorderManagementSystem() {
 
       const premiseId = cleanId(currentRow?.refs?.premiseId);
       const meterId = cleanId(currentRow?.refs?.meterId);
+      if (pending.intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS &&
+          (meterId || currentRow?.noAccessSourceStatus !== "OK")) {
+        setPendingTargetedBatchAction(null);
+        targetedBatchRequestKeyRef.current = null;
+        Alert.alert(meterId ? "Discovery Complete" : "Targeted Batch Data Issue",
+          meterId ? "A meter is already linked. No Access cannot be recorded." : "The Sales correlation is no longer valid.");
+        return;
+      }
       const premise = premiseId ? (all?.prems || []).find((item) => getPremiseId(item) === premiseId) : null;
       if (premiseId && (!premise || getPremiseErfId(premise) !== pending.erfId)) {
         setPendingTargetedBatchAction(null);
@@ -1251,6 +1267,16 @@ export default function WorkorderManagementSystem() {
       });
 
       if (pending.intent === TARGETED_BATCH_INTENTS.OPEN_ERF) router.push("/(tabs)/erfs");
+      else if (pending.intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS) {
+        try {
+          router.push({
+            pathname: "/(tabs)/admin/operations/targeted-batch-no-access",
+            params: { context: JSON.stringify(buildTargetedBatchNoAccessContext({ bucket: selectedBucket, row: currentRow })) },
+          });
+        } catch (error) {
+          Alert.alert("Targeted Batch Row Not Ready", error?.message || "Required No Access context is missing.");
+        }
+      }
       else if (pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST) router.push("/(tabs)/asts");
       else if (pending.intent === TARGETED_BATCH_INTENTS.START_METER_DISCOVERY) {
         if (!premise) Alert.alert("Meter Discovery requires a premise.");
@@ -2110,6 +2136,11 @@ export default function WorkorderManagementSystem() {
   function prepareTargetedBatchAction({ bucket, row, intent }) {
     const erfId = cleanId(row?.erfId || row?.refs?.erfId);
     const scope = getTargetedBatchWardScope({ bucket, row });
+
+    if (intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS && getTargetedBatchRowActionState(row).noAccess.disabled) {
+      Alert.alert("No Access unavailable", "This Targeted Batch row is not currently valid for No Access capture.");
+      return;
+    }
 
     if (!bucket?.id || !row?.id || !erfId) {
       Alert.alert(
@@ -3323,7 +3354,8 @@ function TargetedBatchRowCard({
           tone={actions.invalidLinkage ? "issue" : "default"} disabled={actions.ast.disabled}
           opening={openingIntent === actions.ast.intent} onPress={() => onAction({ bucket, row, intent: actions.ast.intent })} />
         <TargetedBatchActionTile label="NA" value={actions.noAccess.value} helperText={actions.noAccess.helperText} icon="account-cancel-outline"
-          tone={actions.noAccess.value === null ? "issue" : "default"} disabled onPress={() => onAction({ bucket, row, intent: actions.noAccess.intent })} />
+          tone={actions.noAccess.value === null ? "issue" : "default"} disabled={actions.noAccess.disabled}
+          opening={openingIntent === actions.noAccess.intent} onPress={() => onAction({ bucket, row, intent: actions.noAccess.intent })} />
         <TargetedBatchActionTile label={`ERF ${hasErf ? erfNo : ""}`} value="OPEN" icon="vector-square"
           disabled={actions.erf.disabled} opening={openingIntent === actions.erf.intent}
           onPress={() => onAction({ bucket, row, intent: actions.erf.intent })} />

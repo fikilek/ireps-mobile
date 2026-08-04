@@ -67,6 +67,13 @@ export const addSubmissionQueueItem = async ({
 }) => {
   try {
     const queue = readQueueFromStorage();
+    const stableTrnId = String(payload?.trnId || payload?.id || "").trim();
+    const existingAttempt = stableTrnId
+      ? queue.find((item) => String(item?.payload?.trnId || item?.payload?.id || "").trim() === stableTrnId)
+      : null;
+    if (existingAttempt) {
+      return { success: true, message: "Queue item already saved locally", queueItem: existingAttempt, alreadyQueued: true };
+    }
     const timestamp = nowIso();
 
     const newQueueItem = {
@@ -644,6 +651,10 @@ export function getCallableNameForSubmissionQueueItem(queueItem = {}) {
   )
     .trim()
     .toUpperCase();
+
+  if (formType === "SALES_TARGETED_BATCH_NO_ACCESS") {
+    return "recordTargetedBatchNoAccessCallable";
+  }
 
   if (formType === "METER_INSTALLATION" || trnType === "METER_INSTALLATION") {
     return "onMeterInstallationCallable";

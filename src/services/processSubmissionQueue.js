@@ -71,7 +71,8 @@ export const processSubmissionQueue = async ({
                   ? `${payload?.meterType}_meters`
                   : "no_access";
 
-              const fileName = `${payload?.accessData?.erfId}_${mediaItem?.tag}_${Date.now()}.jpg`;
+            const stableId = payload?.trnId || payload?.id || item?.id;
+            const fileName = `${stableId}_${mediaItem?.tag}.jpg`;
 
               const storageRef = ref(storage, `meters/${folder}/${fileName}`);
 
@@ -98,6 +99,10 @@ export const processSubmissionQueue = async ({
           ...payload,
           media: syncedMedia,
         };
+
+        if (JSON.stringify(syncedMedia) !== JSON.stringify(originalMedia)) {
+          await updateSubmissionQueueItem(item.id, { payload: finalPayload }, agentUid, agentName);
+        }
 
         const callableName = getCallableNameForSubmissionQueueItem(item);
 
@@ -138,6 +143,21 @@ export const processSubmissionQueue = async ({
 
         if (!result?.success) {
           const code = result?.code || "SYNC_FAILED";
+
+          if ([
+            "TARGETED_BATCH_METER_ALREADY_LINKED", "TARGETED_BATCH_ROW_NOT_EXECUTABLE",
+            "TARGETED_BATCH_ROW_EXECUTION_STATE_INVALID", "TARGETED_BATCH_ROW_CORRELATION_MISMATCH",
+            "TARGETED_BATCH_SALES_LINK_MISMATCH", "TARGETED_BATCH_ERF_LINK_MISMATCH",
+            "TARGETED_BATCH_PREMISE_LINK_MISMATCH", "SALES_DOCUMENT_NOT_FOUND",
+            "SALES_TB_REF_NOT_FOUND", "SALES_TB_REF_DUPLICATE", "IDEMPOTENCY_CONFLICT",
+            "TARGETED_BATCH_ACCESS_DENIED", "TARGETED_BATCH_NOT_ASSIGNED_TO_ACTOR",
+          ].includes(code)) {
+            await updateSubmissionQueueItem(item.id, {
+              status: "CONFLICT",
+              result: { success: false, code, message: result?.message || "Submission requires review.", trnId: finalPayload?.trnId || "NAv" },
+            }, agentUid, agentName);
+            continue;
+          }
 
           // Parent premise not ready yet -> keep retryable
           if (code === "INVALID_PREMISE_ID" || code === "PREMISE_NOT_FOUND") {

@@ -13,6 +13,14 @@ export function getTargetedBatchRowActionState(row = {}) {
   const meterId = clean(row?.refs?.meterId);
   const salesOk = row?.noAccessSourceStatus === "OK";
   const invalidLinkage = !premiseId && Boolean(meterId);
+  const rowExecutable = clean(row?.allocationStatus || row?.allocation?.status).toUpperCase() === "ALLOCATED" &&
+    ["NOT_STARTED", "IN_PROGRESS"].includes(clean(row?.executionStatus || row?.execution?.status || "NOT_STARTED").toUpperCase());
+  const requiredContextPresent = Boolean(
+    clean(row?.id) &&
+      clean(row?.refs?.erfId || row?.erfId) &&
+      clean(row?.salesDocId || row?.salesAllMeterId || row?.source?.recordId),
+  );
+  const noAccessEnabled = salesOk && rowExecutable && !meterId && !invalidLinkage && requiredContextPresent;
 
   return {
     premise: { value: premiseId ? 1 : 0, disabled: false, intent: TARGETED_BATCH_INTENTS.OPEN_PREMISE },
@@ -24,8 +32,8 @@ export function getTargetedBatchRowActionState(row = {}) {
     },
     noAccess: {
       value: salesOk ? row?.noAccessCount ?? 0 : null,
-      helperText: !salesOk ? "DATA ISSUE" : meterId ? "DISCOVERY COMPLETE" : "PHASE 4",
-      disabled: true,
+      helperText: !salesOk || !requiredContextPresent ? "DATA ISSUE" : meterId ? "DISCOVERY COMPLETE" : !rowExecutable ? "NOT EXECUTABLE" : null,
+      disabled: !noAccessEnabled,
       intent: TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS,
     },
     erf: { value: clean(row?.erfNo) || "—", disabled: !clean(row?.refs?.erfId), intent: TARGETED_BATCH_INTENTS.OPEN_ERF },
