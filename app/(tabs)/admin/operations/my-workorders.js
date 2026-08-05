@@ -1,8 +1,8 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { Formik } from "formik";
 import { FlashList } from "@shopify/flash-list";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
@@ -19,10 +19,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { object, string } from "yup";
 
 import { useGeo } from "../../../../src/context/GeoContext";
-import { useDiscovery } from "../../../../src/context/DiscoveryContext";
 import { useWarehouse } from "../../../../src/context/WarehouseContext";
 import { useAuth } from "../../../../src/hooks/useAuth";
-import { buildTargetedBatchContextFromRow } from "../../../../src/features/premises/targetedBatchPremiseContext";
+import {
+  buildTargetedBatchContextFromRow,
+  serializeTargetedBatchContext,
+} from "../../../../src/features/premises/targetedBatchPremiseContext";
 import TargetedBatchActionTile from "../../../../src/features/targetedBatches/TargetedBatchActionTile";
 import {
   getTargetedBatchRowActionState,
@@ -933,9 +935,7 @@ function safeRefetch(refetchFn, label = "query") {
 
 export default function WorkorderManagementSystem() {
   const router = useRouter();
-  const routeParams = useLocalSearchParams();
   const { geoState, updateGeo } = useGeo();
-  const { openMissionDiscovery } = useDiscovery();
   const {
     all,
     loading: warehouseLoading,
@@ -952,6 +952,7 @@ export default function WorkorderManagementSystem() {
   const fieldWorkorderActor = isFieldWorkorderActor({ actorRole, profile });
 
   const [selectedBucket, setSelectedBucket] = useState(null);
+  const [selectedBucketCategory, setSelectedBucketCategory] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [stateFilter, setStateFilter] = useState("ALL");
   const [rejectItem, setRejectItem] = useState(null);
@@ -967,8 +968,48 @@ export default function WorkorderManagementSystem() {
   ] = useState(null);
   const targetedBatchRequestSequence = useRef(0);
   const targetedBatchRequestKeyRef = useRef(null);
-  const [targetedBatchCursor, setTargetedBatchCursor] = useState(null);
-  const [targetedBatchReloadKey, setTargetedBatchReloadKey] = useState(0);
+  const targetedBatchPaintFrameRef = useRef(null);
+  const targetedBatchPreparationFrameRef = useRef(null);
+  const targetedBatchScreenMountedRef = useRef(true);
+
+  const cancelTargetedBatchPreparationFrames = useCallback(() => {
+    if (targetedBatchPaintFrameRef.current !== null) {
+      cancelAnimationFrame(targetedBatchPaintFrameRef.current);
+      targetedBatchPaintFrameRef.current = null;
+    }
+
+    if (targetedBatchPreparationFrameRef.current !== null) {
+      cancelAnimationFrame(targetedBatchPreparationFrameRef.current);
+      targetedBatchPreparationFrameRef.current = null;
+    }
+  }, []);
+
+  const clearPendingTargetedBatchAction = useCallback(
+    (requestKey = null) => {
+      if (
+        requestKey &&
+        targetedBatchRequestKeyRef.current !== requestKey
+      ) {
+        return false;
+      }
+
+      cancelTargetedBatchPreparationFrames();
+      targetedBatchRequestKeyRef.current = null;
+
+      if (targetedBatchScreenMountedRef.current) {
+        setPendingTargetedBatchAction((current) => {
+          if (requestKey && current?.requestKey !== requestKey) {
+            return current;
+          }
+
+          return null;
+        });
+      }
+
+      return true;
+    },
+    [cancelTargetedBatchPreparationFrames],
+  );
 
   const selectedBgoBatchId =
     selectedBucket?.bucketType === "BGOB" && !isBmdBgoBucket(selectedBucket)
@@ -979,6 +1020,48 @@ export default function WorkorderManagementSystem() {
     selectedBucket?.bucketType === "TBB"
       ? selectedBucket?.id || null
       : null;
+
+  useEffect(() => {
+    targetedBatchScreenMountedRef.current = true;
+    console.log("[MY WORKORDERS][MOUNT]");
+
+    return () => {
+      targetedBatchScreenMountedRef.current = false;
+      cancelTargetedBatchPreparationFrames();
+      targetedBatchRequestKeyRef.current = null;
+      console.log("[MY WORKORDERS][UNMOUNT]");
+    };
+  }, [cancelTargetedBatchPreparationFrames]);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        clearPendingTargetedBatchAction();
+      };
+    }, [clearPendingTargetedBatchAction]),
+  );
+
+  useEffect(() => {
+    console.log("[MY WORKORDERS][ACTOR STATE]", {
+      actorUid,
+      actorRole,
+      actorSpId,
+      actorName,
+      fieldWorkorderActor,
+      selectedTargetedBatchId,
+      selectedBucketType: selectedBucket?.bucketType || null,
+      selectedBucketId: selectedBucket?.id || null,
+    });
+  }, [
+    actorUid,
+    actorRole,
+    actorSpId,
+    actorName,
+    fieldWorkorderActor,
+    selectedTargetedBatchId,
+    selectedBucket?.bucketType,
+    selectedBucket?.id,
+  ]);
 
   useEffect(() => {
     if (!actorUid || fieldWorkorderActor) return;
@@ -1055,7 +1138,6 @@ export default function WorkorderManagementSystem() {
     data: targetedBatchData,
     isLoading: isLoadingTargetedBatches,
     error: targetedBatchError,
-    refetch: refetchTargetedBatches,
   } = useGetTargetedBatchBucketsQuery(
     {
       actorUid,
@@ -1067,42 +1149,81 @@ export default function WorkorderManagementSystem() {
     { skip: !fieldWorkorderActor },
   );
 
+  const targetedBatchRowsQuerySkipped =
+    !fieldWorkorderActor ||
+    !selectedTargetedBatchId ||
+    selectedBucket?.permissions?.canViewRows !== true;
+
   const {
     data: targetedBatchRowsData,
     isLoading: isLoadingTargetedBatchRows,
-    isFetching: isFetchingTargetedBatchRows,
     error: targetedBatchRowsError,
-    refetch: refetchTargetedBatchRows,
   } = useGetTargetedBatchRowsQuery(
     {
       tbId: selectedTargetedBatchId,
-      limit: 100,
-      cursor: targetedBatchCursor,
-      reloadKey: targetedBatchReloadKey,
     },
     {
-      skip:
-        !fieldWorkorderActor ||
-        !selectedTargetedBatchId ||
-        selectedBucket?.permissions?.canViewRows !== true,
+      skip: targetedBatchRowsQuerySkipped,
     },
   );
 
   useEffect(() => {
-    setTargetedBatchCursor(null);
-    setPendingTargetedBatchAction(null);
-    targetedBatchRequestKeyRef.current = null;
-  }, [selectedTargetedBatchId]);
+    const receivedRows = Array.isArray(targetedBatchRowsData?.rows)
+      ? targetedBatchRowsData.rows
+      : [];
+
+    console.log("[MY WORKORDERS][TB ROW QUERY STATE]", {
+      selectedTargetedBatchId,
+      querySkipped: targetedBatchRowsQuerySkipped,
+      canViewRows: selectedBucket?.permissions?.canViewRows === true,
+      isLoading: isLoadingTargetedBatchRows,
+      error: targetedBatchRowsError
+        ? {
+            status: targetedBatchRowsError?.status || null,
+            code:
+              targetedBatchRowsError?.data?.code ||
+              targetedBatchRowsError?.code ||
+              null,
+            message:
+              targetedBatchRowsError?.data?.message ||
+              targetedBatchRowsError?.message ||
+              String(targetedBatchRowsError),
+            data: targetedBatchRowsError?.data || null,
+          }
+        : null,
+      responseSummary: targetedBatchRowsData?.summary || null,
+      responsePagination: targetedBatchRowsData?.pagination || null,
+      responseDiagnostics: targetedBatchRowsData?.diagnostics || null,
+      receivedRowCount: receivedRows.length,
+      receivedRows: receivedRows.map((row) => ({
+        id: row?.id || null,
+        tbId: row?.tbId || null,
+        rowNo: row?.rowNo ?? null,
+        meterNo: row?.meterNo || null,
+        salesAllMeterId: row?.salesAllMeterId || null,
+        salesDocId: row?.salesDocId || null,
+        noAccessCount: row?.noAccessCount ?? null,
+        fieldWorkMeterId: row?.fieldWorkMeterId || row?.raw?.fieldWorkMeterId || null,
+        noAccessSourceStatus: row?.noAccessSourceStatus || null,
+        executionStatus:
+          row?.executionStatus ||
+          row?.execution?.status ||
+          null,
+        refs: row?.refs || null,
+      })),
+    });
+  }, [
+    selectedTargetedBatchId,
+    targetedBatchRowsQuerySkipped,
+    selectedBucket?.permissions?.canViewRows,
+    isLoadingTargetedBatchRows,
+    targetedBatchRowsError,
+    targetedBatchRowsData,
+  ]);
 
   useEffect(() => {
-    if (!routeParams?.targetedBatchRefresh) return;
-    setTargetedBatchCursor(null);
-    setTargetedBatchReloadKey((value) => value + 1);
-  }, [routeParams?.targetedBatchRefresh]);
-
-  useEffect(() => () => {
-    targetedBatchRequestKeyRef.current = null;
-  }, []);
+    clearPendingTargetedBatchAction();
+  }, [selectedTargetedBatchId, clearPendingTargetedBatchAction]);
 
   const { data: teamsData = [] } = useGetTeamsQuery(undefined, {
     skip: !fieldWorkorderActor,
@@ -1172,8 +1293,42 @@ export default function WorkorderManagementSystem() {
   ]);
 
   useEffect(() => {
+    if (!selectedTargetedBatchId && targetedBatchRows.length === 0) return;
+
+    console.log("[MY WORKORDERS][TB ROW ACTION STATE]", {
+      selectedTargetedBatchId,
+      rowCount: targetedBatchRows.length,
+      rows: targetedBatchRows.map((row) => {
+        const actions = getTargetedBatchRowActionState(row);
+
+        return {
+          id: row?.id || null,
+          tbId: row?.tbId || null,
+          rowNo: row?.rowNo ?? null,
+          meterNo: row?.meterNo || null,
+          salesAllMeterId: row?.salesAllMeterId || null,
+          salesDocId: row?.salesDocId || null,
+          noAccessCount: row?.noAccessCount ?? null,
+          fieldWorkMeterId: row?.fieldWorkMeterId || row?.raw?.fieldWorkMeterId || null,
+          noAccessSourceStatus: row?.noAccessSourceStatus || null,
+          executionStatus:
+            row?.executionStatus ||
+            row?.execution?.status ||
+            null,
+          refs: row?.refs || null,
+          invalidLinkage: actions?.invalidLinkage === true,
+          premiseAction: actions?.premise || null,
+          astAction: actions?.ast || null,
+          noAccessAction: actions?.noAccess || null,
+          erfAction: actions?.erf || null,
+        };
+      }),
+    });
+  }, [selectedTargetedBatchId, targetedBatchRows]);
+
+  useEffect(() => {
     const pending = pendingTargetedBatchAction;
-    if (!pending) return;
+    if (!pending || pending.preparationStarted !== true) return;
 
     const activeLmPcode = getGeoPcode(geoState?.selectedLm);
     const activeWardPcode = getGeoPcode(geoState?.selectedWard);
@@ -1210,12 +1365,12 @@ export default function WorkorderManagementSystem() {
       if (targetedBatchRequestKeyRef.current !== pending.requestKey) return;
       const currentRow = targetedBatchRows.find((row) => row?.id === pending.rowId);
       if (selectedTargetedBatchId !== pending.bucketId || !currentRow) {
-        setPendingTargetedBatchAction(null);
+        clearPendingTargetedBatchAction(pending.requestKey);
         Alert.alert(currentRow ? "Targeted Batch no longer available." : "Targeted Batch row no longer available.");
         return;
       }
       if (!targetedBatchRefsMatch(currentRow, pending.refsSnapshot)) {
-        setPendingTargetedBatchAction(null);
+        clearPendingTargetedBatchAction(pending.requestKey);
         Alert.alert("Targeted Batch row changed", "The row linkage changed while the action was preparing. Please try again.");
         return;
       }
@@ -1231,17 +1386,23 @@ export default function WorkorderManagementSystem() {
 
       const premiseId = cleanId(currentRow?.refs?.premiseId);
       const meterId = cleanId(currentRow?.refs?.meterId);
-      if (pending.intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS &&
-          (meterId || currentRow?.noAccessSourceStatus !== "OK")) {
-        setPendingTargetedBatchAction(null);
-        targetedBatchRequestKeyRef.current = null;
-        Alert.alert(meterId ? "Discovery Complete" : "Targeted Batch Data Issue",
-          meterId ? "A meter is already linked. No Access cannot be recorded." : "The Sales correlation is no longer valid.");
+      const fieldWorkMeterId = cleanId(
+        currentRow?.fieldWorkMeterId || currentRow?.raw?.fieldWorkMeterId,
+      );
+      if (
+        pending.intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS &&
+        fieldWorkMeterId
+      ) {
+        clearPendingTargetedBatchAction(pending.requestKey);
+        Alert.alert(
+          "Discovery Complete",
+          "A meter is already linked. No Access cannot be recorded.",
+        );
         return;
       }
       const premise = premiseId ? (all?.prems || []).find((item) => getPremiseId(item) === premiseId) : null;
       if (premiseId && (!premise || getPremiseErfId(premise) !== pending.erfId)) {
-        setPendingTargetedBatchAction(null);
+        clearPendingTargetedBatchAction(pending.requestKey);
         Alert.alert("Premise Linkage Error", "The exact linked premise is missing or belongs to another ERF.");
         return;
       }
@@ -1249,44 +1410,114 @@ export default function WorkorderManagementSystem() {
       if (pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST) {
         const premiseErfs = new Map((all?.prems || []).map((item) => [getPremiseId(item), getPremiseErfId(item)]));
         if (!meter || getMeterErfId(meter, premiseErfs) !== pending.erfId || (premiseId && getMeterPremiseId(meter) !== premiseId)) {
-          setPendingTargetedBatchAction(null);
+          clearPendingTargetedBatchAction(pending.requestKey);
           Alert.alert("AST Linkage Error", "The exact linked AST could not be safely validated.");
           return;
         }
       }
 
-      setPendingTargetedBatchAction(null);
-      targetedBatchRequestKeyRef.current = null;
+      let navigationTarget;
 
-      updateGeo({
-        selectedWard: pending.ward,
-        selectedErf,
-        selectedPremise: premise || null,
-        selectedMeter: pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST ? meter : null,
-        lastSelectionType: pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST ? "METER" : premise ? "PREMISE" : "ERF",
-      });
-
-      if (pending.intent === TARGETED_BATCH_INTENTS.OPEN_ERF) router.push("/(tabs)/erfs");
-      else if (pending.intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS) {
-        try {
-          router.push({
+      try {
+        if (pending.intent === TARGETED_BATCH_INTENTS.OPEN_ERF) {
+          navigationTarget = "/(tabs)/erfs";
+        } else if (
+          pending.intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS
+        ) {
+          navigationTarget = {
             pathname: "/(tabs)/admin/operations/targeted-batch-no-access",
-            params: { context: JSON.stringify(buildTargetedBatchNoAccessContext({ bucket: selectedBucket, row: currentRow })) },
+            params: {
+              context: JSON.stringify(
+                buildTargetedBatchNoAccessContext({
+                  bucket: selectedBucket,
+                  row: currentRow,
+                }),
+              ),
+            },
+          };
+        } else if (pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST) {
+          navigationTarget = "/(tabs)/asts";
+        } else if (
+          pending.intent ===
+          TARGETED_BATCH_INTENTS.START_METER_DISCOVERY
+        ) {
+          if (!premise) {
+            clearPendingTargetedBatchAction(pending.requestKey);
+            Alert.alert("Meter Discovery requires a premise.");
+            return;
+          }
+
+          const targetedBatchContext = buildTargetedBatchContextFromRow({
+            bucket: selectedBucket,
+            row: currentRow,
           });
-        } catch (error) {
-          Alert.alert("Targeted Batch Row Not Ready", error?.message || "Required No Access context is missing.");
+          const serializedTargetedBatchContext =
+            serializeTargetedBatchContext(targetedBatchContext);
+
+          if (!serializedTargetedBatchContext) {
+            clearPendingTargetedBatchAction(pending.requestKey);
+            Alert.alert(
+              "Targeted Batch Row Not Ready",
+              "The Meter Discovery context could not be prepared.",
+            );
+            return;
+          }
+
+          navigationTarget = {
+            pathname: "/(tabs)/premises/form",
+            params: {
+              premiseId,
+              action: JSON.stringify({
+                access: "yes",
+                meterType: "electricity",
+              }),
+              targetedBatchContext: serializedTargetedBatchContext,
+            },
+          };
+        } else {
+          navigationTarget = "/(tabs)/premises";
         }
+      } catch (error) {
+        clearPendingTargetedBatchAction(pending.requestKey);
+        Alert.alert(
+          "Targeted Batch Row Not Ready",
+          error?.message || "Required action context is missing.",
+        );
+        return;
       }
-      else if (pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST) router.push("/(tabs)/asts");
-      else if (pending.intent === TARGETED_BATCH_INTENTS.START_METER_DISCOVERY) {
-        if (!premise) Alert.alert("Meter Discovery requires a premise.");
-        else openMissionDiscovery({ premiseId, premise, hasAccess: null, meterType: "electricity", targetedBatchContext: buildTargetedBatchContextFromRow({ bucket: selectedBucket, row: currentRow }) });
-      } else router.push("/(tabs)/premises");
+
+      try {
+        updateGeo({
+          selectedWard: pending.ward,
+          selectedErf,
+          selectedPremise: premise || null,
+          selectedMeter:
+            pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST
+              ? meter
+              : null,
+          lastSelectionType:
+            pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST
+              ? "METER"
+              : premise
+                ? "PREMISE"
+                : "ERF",
+        });
+
+        router.push(navigationTarget);
+      } catch (error) {
+        clearPendingTargetedBatchAction(pending.requestKey);
+        Alert.alert(
+          "Targeted Batch Navigation Failed",
+          error?.message ||
+            "The selected Targeted Batch action could not be opened.",
+        );
+      }
+
       return;
     }
 
     if (syncStatus === "ERROR") {
-      setPendingTargetedBatchAction(null);
+      clearPendingTargetedBatchAction(pending.requestKey);
 
       Alert.alert(
         "Targeted Batch Ward Failed",
@@ -1311,7 +1542,7 @@ export default function WorkorderManagementSystem() {
       return;
     }
 
-    setPendingTargetedBatchAction(null);
+    clearPendingTargetedBatchAction(pending.requestKey);
 
     Alert.alert(
       "Targeted Batch ERF Not Found",
@@ -1332,7 +1563,7 @@ export default function WorkorderManagementSystem() {
     warehouseSync?.erfs,
     router,
     updateGeo,
-    openMissionDiscovery,
+    clearPendingTargetedBatchAction,
   ]);
 
   const individualItems = useMemo(() => {
@@ -1407,6 +1638,60 @@ export default function WorkorderManagementSystem() {
     actorTeamIds,
   ]);
 
+  useEffect(() => {
+    const receivedBuckets = Array.isArray(targetedBatchData?.buckets)
+      ? targetedBatchData.buckets
+      : [];
+
+    console.log("[MY WORKORDERS][TB BUCKET QUERY STATE]", {
+      actorUid,
+      actorRole,
+      actorSpId,
+      actorTeamIds,
+      isLoading: isLoadingTargetedBatches,
+      error: targetedBatchError
+        ? {
+            status: targetedBatchError?.status || null,
+            code:
+              targetedBatchError?.data?.code ||
+              targetedBatchError?.code ||
+              null,
+            message:
+              targetedBatchError?.data?.message ||
+              targetedBatchError?.message ||
+              String(targetedBatchError),
+            data: targetedBatchError?.data || null,
+          }
+        : null,
+      responseMeta: targetedBatchData?.meta || null,
+      receivedBucketCount: receivedBuckets.length,
+      visibleBucketCount: targetedBatchBuckets.length,
+      receivedBuckets: receivedBuckets.map((bucket) => ({
+        id: bucket?.id || null,
+        bucketType: bucket?.bucketType || null,
+        acceptanceStatus: bucket?.acceptanceStatus || null,
+        status: bucket?.status || null,
+        target: getBgoBucketTarget(bucket),
+        targetText: bucket?.targetText || null,
+        permissions: bucket?.permissions || null,
+        counts: bucket?.counts || null,
+        scope: bucket?.scope || bucket?.raw?.scope || null,
+      })),
+      visibleBucketIds: targetedBatchBuckets
+        .map((bucket) => bucket?.id)
+        .filter(Boolean),
+    });
+  }, [
+    actorUid,
+    actorRole,
+    actorSpId,
+    actorTeamIds,
+    isLoadingTargetedBatches,
+    targetedBatchError,
+    targetedBatchData,
+    targetedBatchBuckets,
+  ]);
+
   const groups = useMemo(() => {
     return WMS_GROUPS.map((group) => {
       const groupItems = individualItems.filter(
@@ -1450,10 +1735,16 @@ export default function WorkorderManagementSystem() {
   const bucketCards = useMemo(() => {
     return [
       individualBucket,
-      ...bgoBuckets,
       ...targetedBatchBuckets,
+      ...bgoBuckets,
     ];
-  }, [individualBucket, bgoBuckets, targetedBatchBuckets]);
+  }, [individualBucket, targetedBatchBuckets, bgoBuckets]);
+
+  const individualBucketReady = !isLoading && Boolean(wmsData);
+  const targetedBatchBucketReady = Boolean(
+    targetedBatchData?.meta?.updatedAt,
+  );
+  const bgoBucketReady = Boolean(bgoData?.meta?.updatedAt);
 
   useEffect(() => {
     if (!selectedBucket?.id) return;
@@ -1544,6 +1835,35 @@ export default function WorkorderManagementSystem() {
         allVisibleBucketItems.length === 0 &&
         Number(selectedBucket?.totalTrns || selectedBucket?.counts?.total || 0) > 0));
 
+  function openBucketCategory(bucketType) {
+    if (bucketType === "INDVG") {
+      if (!individualBucketReady || error) return;
+
+      setSelectedBucketCategory(null);
+      openBucket(individualBucket);
+      return;
+    }
+
+    if (bucketType === "TBB") {
+      if (!targetedBatchBucketReady || targetedBatchError) return;
+
+      setSelectedBucketCategory("TBB");
+      setSelectedBucket(null);
+      setSelectedGroup(null);
+      setStateFilter("ALL");
+      return;
+    }
+
+    if (bucketType === "BGOB") {
+      if (!bgoBucketReady || bgoError) return;
+
+      setSelectedBucketCategory("BGOB");
+      setSelectedBucket(null);
+      setSelectedGroup(null);
+      setStateFilter("ALL");
+    }
+  }
+
   function openBucket(bucket) {
     if (bucket?.bucketType === "INDVG") {
       setPreparingBgoDetail(false);
@@ -1597,9 +1917,18 @@ export default function WorkorderManagementSystem() {
     setStateFilter("ALL");
   }
 
+  function backToBucketCategories() {
+    setPreparingBgoDetail(false);
+    clearPendingTargetedBatchAction();
+    setSelectedBucketCategory(null);
+    setSelectedBucket(null);
+    setSelectedGroup(null);
+    setStateFilter("ALL");
+  }
+
   function backToBuckets() {
     setPreparingBgoDetail(false);
-    setPendingTargetedBatchAction(null);
+    clearPendingTargetedBatchAction();
     setSelectedBucket(null);
     setSelectedGroup(null);
     setStateFilter("ALL");
@@ -1729,11 +2058,6 @@ export default function WorkorderManagementSystem() {
           message: result?.message || "Targeted Batch action failed.",
         };
       }
-
-      safeRefetch(
-        refetchTargetedBatches,
-        "Targeted Batch buckets",
-      );
 
       if (normalizeUpper(action) === "ACCEPT") {
         const acceptedBucket = {
@@ -2136,9 +2460,31 @@ export default function WorkorderManagementSystem() {
   function prepareTargetedBatchAction({ bucket, row, intent }) {
     const erfId = cleanId(row?.erfId || row?.refs?.erfId);
     const scope = getTargetedBatchWardScope({ bucket, row });
+    const actions = getTargetedBatchRowActionState(row);
 
-    if (intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS && getTargetedBatchRowActionState(row).noAccess.disabled) {
-      Alert.alert("No Access unavailable", "This Targeted Batch row is not currently valid for No Access capture.");
+    console.log("[MY WORKORDERS][TB ACTION TAP]", {
+      bucketId: bucket?.id || null,
+      rowId: row?.id || null,
+      meterNo: row?.meterNo || null,
+      intent,
+      salesAllMeterId: row?.salesAllMeterId || null,
+      salesDocId: row?.salesDocId || null,
+      noAccessCount: row?.noAccessCount ?? null,
+      fieldWorkMeterId: row?.fieldWorkMeterId || row?.raw?.fieldWorkMeterId || null,
+      noAccessSourceStatus: row?.noAccessSourceStatus || null,
+      refs: row?.refs || null,
+      actionState: actions,
+      scope,
+    });
+
+    if (
+      intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS &&
+      actions.noAccess.disabled
+    ) {
+      Alert.alert(
+        "Discovery Complete",
+        "A meter is already linked. No Access cannot be recorded.",
+      );
       return;
     }
 
@@ -2203,6 +2549,8 @@ export default function WorkorderManagementSystem() {
       return;
     }
 
+    cancelTargetedBatchPreparationFrames();
+
     const requestKey = `${bucket.id}__${row.id}__${++targetedBatchRequestSequence.current}`;
     targetedBatchRequestKeyRef.current = requestKey;
     setPendingTargetedBatchAction({
@@ -2220,14 +2568,43 @@ export default function WorkorderManagementSystem() {
       ),
       ward: targetWard,
       intent,
+      preparationStarted: false,
     });
 
-    updateGeo({
-      selectedWard: targetWard,
-      selectedErf: null,
-      selectedPremise: null,
-      selectedMeter: null,
-      lastSelectionType: "WARD",
+    targetedBatchPaintFrameRef.current = requestAnimationFrame(() => {
+      targetedBatchPaintFrameRef.current = null;
+
+      if (
+        !targetedBatchScreenMountedRef.current ||
+        targetedBatchRequestKeyRef.current !== requestKey
+      ) {
+        return;
+      }
+
+      targetedBatchPreparationFrameRef.current = requestAnimationFrame(() => {
+        targetedBatchPreparationFrameRef.current = null;
+
+        if (
+          !targetedBatchScreenMountedRef.current ||
+          targetedBatchRequestKeyRef.current !== requestKey
+        ) {
+          return;
+        }
+
+        setPendingTargetedBatchAction((current) =>
+          current?.requestKey === requestKey
+            ? { ...current, preparationStarted: true }
+            : current,
+        );
+
+        updateGeo({
+          selectedWard: targetWard,
+          selectedErf: null,
+          selectedPremise: null,
+          selectedMeter: null,
+          lastSelectionType: "WARD",
+        });
+      });
     });
   }
 
@@ -2289,34 +2666,55 @@ export default function WorkorderManagementSystem() {
         </View>
 
         <View style={styles.headerCountBadge}>
-          <Text style={styles.headerCountText}>Buckets {bucketCards.length}</Text>
+          <Text style={styles.headerCountText}>Buckets 3</Text>
         </View>
       </View>
 
-      {!selectedBucket ? (
-        <BucketLanding
-          isLoadingIndividual={isLoading && !wmsData}
-          isLoadingBgo={isLoadingBgo || !bgoData?.meta?.updatedAt}
-          isLoadingTargetedBatches={
-            isLoadingTargetedBatches && !targetedBatchData
+      {!selectedBucket && !selectedBucketCategory ? (
+        <BucketTypeLanding
+          individualReady={individualBucketReady}
+          individualLoading={!individualBucketReady && !error}
+          individualError={error}
+          individualCount={individualItems.length}
+          targetedReady={targetedBatchBucketReady}
+          targetedLoading={
+            !targetedBatchBucketReady && !targetedBatchError
           }
-          individualBucket={individualBucket}
-          bgoBuckets={bgoBuckets}
-          targetedBatchBuckets={targetedBatchBuckets}
-          error={error}
+          targetedError={targetedBatchError}
+          targetedCount={targetedBatchBuckets.length}
+          bgoReady={bgoBucketReady}
+          bgoLoading={!bgoBucketReady && !bgoError}
           bgoError={bgoError}
-          targetedBatchError={targetedBatchError}
+          bgoCount={bgoBuckets.length}
+          onOpen={openBucketCategory}
+        />
+      ) : !selectedBucket && selectedBucketCategory === "TBB" ? (
+        <TargetedBatchBucketLanding
+          isLoading={!targetedBatchBucketReady && !targetedBatchError}
+          error={targetedBatchError}
+          buckets={targetedBatchBuckets}
+          deciding={actionBusy}
+          processingTargetedBatchAction={processingTargetedBatchAction}
+          fieldWorkorderActor={fieldWorkorderActor}
+          onBack={backToBucketCategories}
+          onOpenBucket={openBucket}
+          onAcceptTargetedBatch={handleAcceptTargetedBatch}
+          onRejectTargetedBatch={setRejectItem}
+        />
+      ) : !selectedBucket && selectedBucketCategory === "BGOB" ? (
+        <BgoBucketLanding
+          isLoading={!bgoBucketReady && !bgoError}
+          error={bgoError}
+          buckets={bgoBuckets}
           deciding={actionBusy}
           processingBgoBucketAction={processingBgoBucketAction}
-          processingTargetedBatchAction={processingTargetedBatchAction}
           managerActor={managerActor}
           fieldWorkorderActor={fieldWorkorderActor}
+          onBack={backToBucketCategories}
           onOpenBucket={openBucket}
           onAcceptBgoBucket={handleAcceptBgoBucket}
           onRejectBgoBucket={setRejectItem}
           onReverseBgoBucket={handleReverseBgoBucket}
-          onAcceptTargetedBatch={handleAcceptTargetedBatch}
-          onRejectTargetedBatch={setRejectItem}
         />
       ) : showIndividualGroups ? (
         <GroupLanding
@@ -2344,16 +2742,7 @@ export default function WorkorderManagementSystem() {
           onBack={backToBuckets}
           onAction={prepareTargetedBatchAction}
           openingAction={pendingTargetedBatchAction}
-          hasMore={targetedBatchRowsData?.pagination?.hasMore === true}
-          loadingMore={isFetchingTargetedBatchRows && Boolean(targetedBatchCursor)}
-          onLoadMore={() => {
-            if (!isFetchingTargetedBatchRows && targetedBatchRowsData?.pagination?.nextCursor) setTargetedBatchCursor(targetedBatchRowsData.pagination.nextCursor);
-          }}
-          onReload={() => {
-            setTargetedBatchCursor(null);
-            setTargetedBatchReloadKey((value) => value + 1);
-            safeRefetch(refetchTargetedBatchRows, "Targeted Batch rows");
-          }}
+          hasMore={false}
         />
       ) : showTrnDetail ? (
         <GroupDetail
@@ -2419,27 +2808,20 @@ function AccessDeniedWorkorders({ actorRole, onBack }) {
   );
 }
 
-function BucketLanding({
-  isLoadingIndividual,
-  isLoadingBgo,
-  isLoadingTargetedBatches,
-  individualBucket,
-  bgoBuckets = [],
-  targetedBatchBuckets = [],
-  error,
+function BucketTypeLanding({
+  individualReady,
+  individualLoading,
+  individualError,
+  individualCount,
+  targetedReady,
+  targetedLoading,
+  targetedError,
+  targetedCount,
+  bgoReady,
+  bgoLoading,
   bgoError,
-  targetedBatchError,
-  deciding,
-  processingBgoBucketAction,
-  processingTargetedBatchAction,
-  managerActor,
-  fieldWorkorderActor,
-  onOpenBucket,
-  onAcceptBgoBucket,
-  onRejectBgoBucket,
-  onReverseBgoBucket,
-  onAcceptTargetedBatch,
-  onRejectTargetedBatch,
+  bgoCount,
+  onOpen,
 }) {
   return (
     <ScrollView
@@ -2449,25 +2831,177 @@ function BucketLanding({
       <Text style={styles.sectionEyebrow}>Assigned Work Queue</Text>
       <Text style={styles.sectionTitle}>My Work Buckets</Text>
 
-      <View style={styles.bucketList}>
-        <BucketCard
-          key={individualBucket.id}
-          bucket={individualBucket}
-          deciding={deciding}
-          processingBgoBucketAction={processingBgoBucketAction}
-          managerActor={managerActor}
-          fieldWorkorderActor={fieldWorkorderActor}
-          onOpenBucket={onOpenBucket}
-          onAcceptBgoBucket={onAcceptBgoBucket}
-          onRejectBgoBucket={onRejectBgoBucket}
-          onReverseBgoBucket={onReverseBgoBucket}
+      <View style={styles.bucketTypeList}>
+        <BucketTypeCard
+          title="Individual Work"
+          subtitle="Individually issued lifecycle TRNs"
+          icon="account-hard-hat-outline"
+          count={individualCount}
+          countLabel="TRNs"
+          ready={individualReady}
+          loading={individualLoading}
+          error={individualError}
+          onPress={() => onOpen("INDVG")}
         />
 
-        {isLoadingIndividual ? (
+        <BucketTypeCard
+          title="Targeted Batches"
+          subtitle="Allocated sales-targeted field work"
+          icon="target-account"
+          count={targetedCount}
+          countLabel="Batches"
+          ready={targetedReady}
+          loading={targetedLoading}
+          error={targetedError}
+          onPress={() => onOpen("TBB")}
+        />
+
+        <BucketTypeCard
+          title="BGO Buckets"
+          subtitle="Bulk geofence originated work"
+          icon="map-marker-radius-outline"
+          count={bgoCount}
+          countLabel="Buckets"
+          ready={bgoReady}
+          loading={bgoLoading}
+          error={bgoError}
+          onPress={() => onOpen("BGOB")}
+        />
+      </View>
+    </ScrollView>
+  );
+}
+
+function BucketTypeCard({
+  title,
+  subtitle,
+  icon,
+  count,
+  countLabel,
+  ready,
+  loading,
+  error,
+  onPress,
+}) {
+  const disabled = !ready || Boolean(error);
+  const statusText = error ? "FAILED" : ready ? "READY" : "LOADING";
+
+  return (
+    <Pressable
+      style={[
+        styles.bucketTypeCard,
+        disabled && styles.bucketTypeCardDisabled,
+      ]}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <View style={styles.bucketTypeTopRow}>
+        <View style={styles.bucketTypeIcon}>
+          <MaterialCommunityIcons name={icon} size={26} color="#2563eb" />
+        </View>
+
+        <View
+          style={[
+            styles.bucketTypeStatusBadge,
+            ready && styles.bucketTypeStatusReady,
+            error && styles.bucketTypeStatusError,
+          ]}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#2563eb" />
+          ) : null}
+          <Text
+            style={[
+              styles.bucketTypeStatusText,
+              ready && styles.bucketTypeStatusTextReady,
+              error && styles.bucketTypeStatusTextError,
+            ]}
+          >
+            {statusText}
+          </Text>
+        </View>
+      </View>
+
+      <Text style={styles.bucketTypeTitle}>{title}</Text>
+      <Text style={styles.bucketTypeSubtitle}>{subtitle}</Text>
+
+      {error ? (
+        <Text style={styles.bucketTypeErrorText} numberOfLines={2}>
+          {error?.message || "This work stream could not be loaded."}
+        </Text>
+      ) : null}
+
+      <View style={styles.bucketTypeFooter}>
+        <View style={styles.bucketTypeCountBox}>
+          <Text style={styles.bucketTypeCountValue}>{ready ? count : "—"}</Text>
+          <Text style={styles.bucketTypeCountLabel}>{countLabel}</Text>
+        </View>
+
+        <View
+          style={[
+            styles.bucketTypeOpenBox,
+            !ready && styles.bucketTypeOpenBoxWaiting,
+            error && styles.bucketTypeOpenBoxError,
+          ]}
+        >
+          {ready ? (
+            <>
+              <Text style={styles.bucketTypeOpenText}>OPEN</Text>
+              <MaterialCommunityIcons
+                name="chevron-right"
+                size={20}
+                color="#ffffff"
+              />
+            </>
+          ) : error ? (
+            <Text style={styles.bucketTypeUnavailableText}>UNAVAILABLE</Text>
+          ) : (
+            <>
+              <ActivityIndicator size="small" color="#64748b" />
+              <Text style={styles.bucketTypeLoadingText}>PREPARING</Text>
+            </>
+          )}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function TargetedBatchBucketLanding({
+  isLoading,
+  error,
+  buckets = [],
+  deciding,
+  processingTargetedBatchAction,
+  fieldWorkorderActor,
+  onBack,
+  onOpenBucket,
+  onAcceptTargetedBatch,
+  onRejectTargetedBatch,
+}) {
+  return (
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.scrollContent}
+    >
+      <Pressable style={styles.backPill} onPress={onBack}>
+        <MaterialCommunityIcons
+          name="chevron-left"
+          size={20}
+          color="#0f172a"
+        />
+        <Text style={styles.backPillText}>Work Buckets</Text>
+      </Pressable>
+
+      <Text style={[styles.sectionEyebrow, { marginTop: 10 }]}>Targeted Work</Text>
+      <Text style={styles.sectionTitle}>Targeted Batches</Text>
+
+      <View style={styles.bucketList}>
+        {isLoading ? (
           <InlineStatusCard
-            icon="account-hard-hat-outline"
-            title="Loading individual work..."
-            text="Individual counts will update as the work stream arrives."
+            icon="target-account"
+            title="Loading Targeted Batches..."
+            text="Preparing allocated sales row worklists..."
             showSpinner
           />
         ) : null}
@@ -2475,17 +3009,70 @@ function BucketLanding({
         {error ? (
           <InlineStatusCard
             icon="alert-circle-outline"
-            title="Individual work stream failed"
-            text={error?.message || "Could not load individual WMS work."}
+            title="Targeted Batch stream failed"
+            text={error?.message || "Could not load Targeted Batches."}
             tone="error"
           />
         ) : null}
 
-        <View style={styles.bucketSectionDivider}>
-          <Text style={styles.bucketSectionTitle}>BGO Buckets</Text>
-        </View>
+        {!isLoading && !error && buckets.length === 0 ? (
+          <InlineStatusCard
+            icon="target-variant"
+            title="No Targeted Batches available"
+            text="There are no Targeted Batches allocated to your team or service provider right now."
+          />
+        ) : null}
 
-        {isLoadingBgo ? (
+        {buckets.map((bucket) => (
+          <TargetedBatchCard
+            key={bucket.id}
+            bucket={bucket}
+            deciding={deciding}
+            processingTargetedBatchAction={processingTargetedBatchAction}
+            fieldWorkorderActor={fieldWorkorderActor}
+            onOpenBucket={onOpenBucket}
+            onAcceptTargetedBatch={onAcceptTargetedBatch}
+            onRejectTargetedBatch={onRejectTargetedBatch}
+          />
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+function BgoBucketLanding({
+  isLoading,
+  error,
+  buckets = [],
+  deciding,
+  processingBgoBucketAction,
+  managerActor,
+  fieldWorkorderActor,
+  onBack,
+  onOpenBucket,
+  onAcceptBgoBucket,
+  onRejectBgoBucket,
+  onReverseBgoBucket,
+}) {
+  return (
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.scrollContent}
+    >
+      <Pressable style={styles.backPill} onPress={onBack}>
+        <MaterialCommunityIcons
+          name="chevron-left"
+          size={20}
+          color="#0f172a"
+        />
+        <Text style={styles.backPillText}>Work Buckets</Text>
+      </Pressable>
+
+      <Text style={[styles.sectionEyebrow, { marginTop: 10 }]}>Bulk Work</Text>
+      <Text style={styles.sectionTitle}>BGO Buckets</Text>
+
+      <View style={styles.bucketList}>
+        {isLoading ? (
           <InlineStatusCard
             icon="map-marker-radius-outline"
             title="Loading BGO buckets..."
@@ -2494,16 +3081,16 @@ function BucketLanding({
           />
         ) : null}
 
-        {bgoError ? (
+        {error ? (
           <InlineStatusCard
             icon="alert-circle-outline"
             title="BGO bucket stream failed"
-            text={bgoError?.message || "Could not load BGO buckets."}
+            text={error?.message || "Could not load BGO buckets."}
             tone="error"
           />
         ) : null}
 
-        {!isLoadingBgo && !bgoError && bgoBuckets.length === 0 ? (
+        {!isLoading && !error && buckets.length === 0 ? (
           <InlineStatusCard
             icon="playlist-remove"
             title="No BGO buckets available"
@@ -2511,7 +3098,7 @@ function BucketLanding({
           />
         ) : null}
 
-        {bgoBuckets.map((bucket) => (
+        {buckets.map((bucket) => (
           <BucketCard
             key={bucket.id}
             bucket={bucket}
@@ -2523,56 +3110,6 @@ function BucketLanding({
             onAcceptBgoBucket={onAcceptBgoBucket}
             onRejectBgoBucket={onRejectBgoBucket}
             onReverseBgoBucket={onReverseBgoBucket}
-          />
-        ))}
-
-        <View style={styles.bucketSectionDivider}>
-          <Text style={styles.bucketSectionTitle}>Targeted Batches</Text>
-        </View>
-
-        {isLoadingTargetedBatches ? (
-          <InlineStatusCard
-            icon="target-account"
-            title="Loading Targeted Batches..."
-            text="Preparing allocated sales row worklists..."
-            showSpinner
-          />
-        ) : null}
-
-        {targetedBatchError ? (
-          <InlineStatusCard
-            icon="alert-circle-outline"
-            title="Targeted Batch stream failed"
-            text={
-              targetedBatchError?.message ||
-              "Could not load Targeted Batches."
-            }
-            tone="error"
-          />
-        ) : null}
-
-        {!isLoadingTargetedBatches &&
-        !targetedBatchError &&
-        targetedBatchBuckets.length === 0 ? (
-          <InlineStatusCard
-            icon="target-variant"
-            title="No Targeted Batches available"
-            text="There are no Targeted Batches allocated to your team or service provider right now."
-          />
-        ) : null}
-
-        {targetedBatchBuckets.map((bucket) => (
-          <TargetedBatchCard
-            key={bucket.id}
-            bucket={bucket}
-            deciding={deciding}
-            processingTargetedBatchAction={
-              processingTargetedBatchAction
-            }
-            fieldWorkorderActor={fieldWorkorderActor}
-            onOpenBucket={onOpenBucket}
-            onAcceptTargetedBatch={onAcceptTargetedBatch}
-            onRejectTargetedBatch={onRejectTargetedBatch}
           />
         ))}
       </View>
@@ -3267,6 +3804,7 @@ function TargetedBatchRowsWorklist({
       ) : (
         <FlashList
           data={rows}
+          extraData={openingAction}
           keyExtractor={(item, index) => item?.id || String(index)}
           renderItem={renderRow}
           estimatedItemSize={122}
@@ -3292,8 +3830,6 @@ function TargetedBatchRowsWorklist({
               {loadingMore ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.executeBtnText}>LOAD MORE</Text>}
             </Pressable>
           ) : null}
-          refreshing={isLoading && rows.length > 0}
-          onRefresh={onReload}
         />
       )}
     </View>
@@ -4220,6 +4756,140 @@ function RejectModal({ visible, item, busy, onClose, onSubmit }) {
 }
 
 const styles = StyleSheet.create({
+  bucketTypeList: {
+    gap: 12,
+  },
+  bucketTypeCard: {
+    minHeight: 164,
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    padding: 14,
+  },
+  bucketTypeCardDisabled: {
+    opacity: 0.78,
+  },
+  bucketTypeTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  bucketTypeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 17,
+    backgroundColor: "#eff6ff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bucketTypeStatusBadge: {
+    minHeight: 32,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    backgroundColor: "#eff6ff",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  bucketTypeStatusReady: {
+    backgroundColor: "#dcfce7",
+  },
+  bucketTypeStatusError: {
+    backgroundColor: "#fee2e2",
+  },
+  bucketTypeStatusText: {
+    color: "#1d4ed8",
+    fontSize: 9,
+    fontWeight: "900",
+  },
+  bucketTypeStatusTextReady: {
+    color: "#166534",
+  },
+  bucketTypeStatusTextError: {
+    color: "#991b1b",
+  },
+  bucketTypeTitle: {
+    color: "#0f172a",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  bucketTypeSubtitle: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+  bucketTypeErrorText: {
+    color: "#b91c1c",
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 7,
+    lineHeight: 14,
+  },
+  bucketTypeFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 16,
+  },
+  bucketTypeCountBox: {
+    minWidth: 82,
+    minHeight: 46,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  bucketTypeCountValue: {
+    color: "#0f172a",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  bucketTypeCountLabel: {
+    color: "#64748b",
+    fontSize: 8,
+    fontWeight: "900",
+    textTransform: "uppercase",
+    marginTop: 1,
+  },
+  bucketTypeOpenBox: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 13,
+    backgroundColor: "#0f172a",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  bucketTypeOpenBoxWaiting: {
+    backgroundColor: "#f1f5f9",
+  },
+  bucketTypeOpenBoxError: {
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+  },
+  bucketTypeOpenText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  bucketTypeLoadingText: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  bucketTypeUnavailableText: {
+    color: "#991b1b",
+    fontSize: 10,
+    fontWeight: "900",
+  },
   bucketList: {
     gap: 10,
   },
