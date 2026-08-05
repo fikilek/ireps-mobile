@@ -962,15 +962,59 @@ export default function WorkorderManagementSystem() {
     processingTargetedBatchAction,
     setProcessingTargetedBatchAction,
   ] = useState(null);
+  const [openingTargetedBatchId, setOpeningTargetedBatchId] = useState(null);
   const [
     pendingTargetedBatchAction,
     setPendingTargetedBatchAction,
   ] = useState(null);
+  const openingTargetedBatchIdRef = useRef(null);
+  const targetedBatchCardOpenPaintFrameRef = useRef(null);
+  const targetedBatchCardOpenPreparationFrameRef = useRef(null);
+  const targetedBatchBucketsRef = useRef([]);
   const targetedBatchRequestSequence = useRef(0);
   const targetedBatchRequestKeyRef = useRef(null);
   const targetedBatchPaintFrameRef = useRef(null);
   const targetedBatchPreparationFrameRef = useRef(null);
   const targetedBatchScreenMountedRef = useRef(true);
+
+  const cancelTargetedBatchCardOpeningFrames = useCallback(() => {
+    if (targetedBatchCardOpenPaintFrameRef.current !== null) {
+      cancelAnimationFrame(targetedBatchCardOpenPaintFrameRef.current);
+      targetedBatchCardOpenPaintFrameRef.current = null;
+    }
+
+    if (targetedBatchCardOpenPreparationFrameRef.current !== null) {
+      cancelAnimationFrame(targetedBatchCardOpenPreparationFrameRef.current);
+      targetedBatchCardOpenPreparationFrameRef.current = null;
+    }
+  }, []);
+
+  const clearOpeningTargetedBatch = useCallback(
+    (targetedBatchId = null) => {
+      if (
+        targetedBatchId &&
+        openingTargetedBatchIdRef.current !== targetedBatchId
+      ) {
+        return false;
+      }
+
+      cancelTargetedBatchCardOpeningFrames();
+      openingTargetedBatchIdRef.current = null;
+
+      if (targetedBatchScreenMountedRef.current) {
+        setOpeningTargetedBatchId((current) => {
+          if (targetedBatchId && current !== targetedBatchId) {
+            return current;
+          }
+
+          return null;
+        });
+      }
+
+      return true;
+    },
+    [cancelTargetedBatchCardOpeningFrames],
+  );
 
   const cancelTargetedBatchPreparationFrames = useCallback(() => {
     if (targetedBatchPaintFrameRef.current !== null) {
@@ -1027,18 +1071,24 @@ export default function WorkorderManagementSystem() {
 
     return () => {
       targetedBatchScreenMountedRef.current = false;
+      cancelTargetedBatchCardOpeningFrames();
+      openingTargetedBatchIdRef.current = null;
       cancelTargetedBatchPreparationFrames();
       targetedBatchRequestKeyRef.current = null;
       console.log("[MY WORKORDERS][UNMOUNT]");
     };
-  }, [cancelTargetedBatchPreparationFrames]);
+  }, [
+    cancelTargetedBatchCardOpeningFrames,
+    cancelTargetedBatchPreparationFrames,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
       return () => {
+        clearOpeningTargetedBatch();
         clearPendingTargetedBatchAction();
       };
-    }, [clearPendingTargetedBatchAction]),
+    }, [clearOpeningTargetedBatch, clearPendingTargetedBatchAction]),
   );
 
   useEffect(() => {
@@ -1639,6 +1689,39 @@ export default function WorkorderManagementSystem() {
   ]);
 
   useEffect(() => {
+    targetedBatchBucketsRef.current = targetedBatchBuckets;
+
+    const openingId = openingTargetedBatchIdRef.current;
+
+    if (!openingId) return;
+
+    const liveBucket = targetedBatchBuckets.find(
+      (bucket) => bucket?.id === openingId,
+    );
+
+    if (!liveBucket) {
+      clearOpeningTargetedBatch(openingId);
+      Alert.alert(
+        "Targeted Batch Unavailable",
+        "This Targeted Batch is no longer available in your allocated worklist.",
+      );
+      return;
+    }
+
+    if (liveBucket?.permissions?.canViewRows !== true) {
+      clearOpeningTargetedBatch(openingId);
+      Alert.alert(
+        "Targeted Batch Locked",
+        "This Targeted Batch is no longer available for field execution.",
+      );
+    }
+  }, [
+    targetedBatchBuckets,
+    openingTargetedBatchId,
+    clearOpeningTargetedBatch,
+  ]);
+
+  useEffect(() => {
     const receivedBuckets = Array.isArray(targetedBatchData?.buckets)
       ? targetedBatchData.buckets
       : [];
@@ -1836,6 +1919,8 @@ export default function WorkorderManagementSystem() {
         Number(selectedBucket?.totalTrns || selectedBucket?.counts?.total || 0) > 0));
 
   function openBucketCategory(bucketType) {
+    clearOpeningTargetedBatch();
+
     if (bucketType === "INDVG") {
       if (!individualBucketReady || error) return;
 
@@ -1897,7 +1982,25 @@ export default function WorkorderManagementSystem() {
     }
 
     if (bucket?.bucketType === "TBB") {
-      if (bucket?.permissions?.canViewRows !== true) {
+      const targetedBatchId = String(bucket?.id || "").trim();
+
+      if (!targetedBatchId || actionBusy || openingTargetedBatchIdRef.current) {
+        return;
+      }
+
+      const liveBucket = targetedBatchBucketsRef.current.find(
+        (candidate) => candidate?.id === targetedBatchId,
+      );
+
+      if (!liveBucket) {
+        Alert.alert(
+          "Targeted Batch Unavailable",
+          "This Targeted Batch is no longer available in your allocated worklist.",
+        );
+        return;
+      }
+
+      if (liveBucket?.permissions?.canViewRows !== true) {
         Alert.alert(
           "Targeted Batch Locked",
           "This Targeted Batch must be accepted before its rows can be opened for field execution.",
@@ -1905,10 +2008,60 @@ export default function WorkorderManagementSystem() {
         return;
       }
 
-      setPreparingBgoDetail(false);
-      setSelectedBucket(bucket);
-      setSelectedGroup(null);
-      setStateFilter("ALL");
+      cancelTargetedBatchCardOpeningFrames();
+      openingTargetedBatchIdRef.current = targetedBatchId;
+      setOpeningTargetedBatchId(targetedBatchId);
+
+      targetedBatchCardOpenPaintFrameRef.current = requestAnimationFrame(() => {
+        targetedBatchCardOpenPaintFrameRef.current = null;
+
+        if (
+          !targetedBatchScreenMountedRef.current ||
+          openingTargetedBatchIdRef.current !== targetedBatchId
+        ) {
+          return;
+        }
+
+        targetedBatchCardOpenPreparationFrameRef.current =
+          requestAnimationFrame(() => {
+            targetedBatchCardOpenPreparationFrameRef.current = null;
+
+            if (
+              !targetedBatchScreenMountedRef.current ||
+              openingTargetedBatchIdRef.current !== targetedBatchId
+            ) {
+              return;
+            }
+
+            const latestBucket = targetedBatchBucketsRef.current.find(
+              (candidate) => candidate?.id === targetedBatchId,
+            );
+
+            if (!latestBucket) {
+              clearOpeningTargetedBatch(targetedBatchId);
+              Alert.alert(
+                "Targeted Batch Unavailable",
+                "This Targeted Batch is no longer available in your allocated worklist.",
+              );
+              return;
+            }
+
+            if (latestBucket?.permissions?.canViewRows !== true) {
+              clearOpeningTargetedBatch(targetedBatchId);
+              Alert.alert(
+                "Targeted Batch Locked",
+                "This Targeted Batch is no longer available for field execution.",
+              );
+              return;
+            }
+
+            setPreparingBgoDetail(false);
+            setSelectedBucket(latestBucket);
+            setSelectedGroup(null);
+            setStateFilter("ALL");
+            clearOpeningTargetedBatch(targetedBatchId);
+          });
+      });
     }
   }
 
@@ -1919,6 +2072,7 @@ export default function WorkorderManagementSystem() {
 
   function backToBucketCategories() {
     setPreparingBgoDetail(false);
+    clearOpeningTargetedBatch();
     clearPendingTargetedBatchAction();
     setSelectedBucketCategory(null);
     setSelectedBucket(null);
@@ -1928,6 +2082,7 @@ export default function WorkorderManagementSystem() {
 
   function backToBuckets() {
     setPreparingBgoDetail(false);
+    clearOpeningTargetedBatch();
     clearPendingTargetedBatchAction();
     setSelectedBucket(null);
     setSelectedGroup(null);
@@ -2695,6 +2850,7 @@ export default function WorkorderManagementSystem() {
           buckets={targetedBatchBuckets}
           deciding={actionBusy}
           processingTargetedBatchAction={processingTargetedBatchAction}
+          openingTargetedBatchId={openingTargetedBatchId}
           fieldWorkorderActor={fieldWorkorderActor}
           onBack={backToBucketCategories}
           onOpenBucket={openBucket}
@@ -2973,6 +3129,7 @@ function TargetedBatchBucketLanding({
   buckets = [],
   deciding,
   processingTargetedBatchAction,
+  openingTargetedBatchId,
   fieldWorkorderActor,
   onBack,
   onOpenBucket,
@@ -3029,6 +3186,7 @@ function TargetedBatchBucketLanding({
             bucket={bucket}
             deciding={deciding}
             processingTargetedBatchAction={processingTargetedBatchAction}
+            openingTargetedBatchId={openingTargetedBatchId}
             fieldWorkorderActor={fieldWorkorderActor}
             onOpenBucket={onOpenBucket}
             onAcceptTargetedBatch={onAcceptTargetedBatch}
@@ -3121,6 +3279,7 @@ function TargetedBatchCard({
   bucket,
   deciding,
   processingTargetedBatchAction,
+  openingTargetedBatchId,
   fieldWorkorderActor,
   onOpenBucket,
   onAcceptTargetedBatch,
@@ -3136,8 +3295,13 @@ function TargetedBatchCard({
   const processingAction = normalizeUpper(
     processingTargetedBatchAction?.action,
   );
+  const openingThisBatch = openingTargetedBatchId === bucket?.id;
+  const anyTargetedBatchOpening = Boolean(openingTargetedBatchId);
   const disabled =
-    deciding || processingThisBatch || !fieldWorkorderActor;
+    deciding ||
+    processingThisBatch ||
+    anyTargetedBatchOpening ||
+    !fieldWorkorderActor;
 
   return (
     <View style={styles.bucketCard}>
@@ -3278,11 +3442,20 @@ function TargetedBatchCard({
 
         {canView ? (
           <Pressable
-            style={[styles.actionBtn, styles.executeBtn]}
+            style={[
+              styles.actionBtn,
+              styles.executeBtn,
+              disabled && styles.actionDisabled,
+            ]}
             onPress={() => onOpenBucket(bucket)}
-            disabled={deciding}
+            disabled={disabled}
           >
-            <Text style={styles.executeBtnText}>VIEW ROWS</Text>
+            {openingThisBatch ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : null}
+            <Text style={styles.executeBtnText}>
+              {openingThisBatch ? "OPENING..." : "VIEW ROWS"}
+            </Text>
           </Pressable>
         ) : null}
 
