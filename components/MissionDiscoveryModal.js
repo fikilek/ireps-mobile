@@ -23,6 +23,16 @@ export default function MissionDiscoveryModal() {
   const goNoAccess = () => {
     closeMissionDiscovery();
 
+    if (targetedBatchContext) {
+      router.push({
+        pathname: "/(tabs)/admin/operations/targeted-batch-no-access",
+        params: {
+          context: targetedBatchContext,
+        },
+      });
+      return;
+    }
+
     updateGeo({
       selectedPremise: mission?.premise || null,
       lastSelectionType: "PREMISE",
@@ -33,7 +43,6 @@ export default function MissionDiscoveryModal() {
       params: {
         premiseId,
         action: JSON.stringify({ access: "no", meterType: "" }),
-        ...targetedBatchParams,
       },
     });
   };

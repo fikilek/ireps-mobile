@@ -44,7 +44,13 @@ import {
   removeSubmissionQueueItem,
   updateSubmissionQueueItem,
 } from "../../utils/submissionQueue";
+import {
+  getMissingTargetedBatchContextFields,
+  normalizeTargetedBatchContext,
+  parseTargetedBatchContextRouteParam,
+} from "../premises/targetedBatchPremiseContext";
 import { ForensicFooter } from "./ForensicFooter";
+import { NO_ACCESS_REASONS } from "./noAccessReasons";
 
 function buildMeterDiscoveryTrnId({ wardPcode, erfNo, meterType }) {
   const ts = Date.now();
@@ -128,6 +134,7 @@ export default function FormMeterDiscovery() {
     premiseId,
     action: actionRaw,
     queueItemId: queueItemIdRaw,
+    targetedBatchContext: routeTargetedBatchContext,
   } = useLocalSearchParams();
 
   const queueItemId = Array.isArray(queueItemIdRaw)
@@ -135,6 +142,22 @@ export default function FormMeterDiscovery() {
     : queueItemIdRaw;
 
   const [editQueueItem, setEditQueueItem] = useState(undefined);
+
+  const targetedBatchContext = useMemo(
+    () =>
+      normalizeTargetedBatchContext(
+        editQueueItem?.payload?.targetedBatchContext,
+      ) ||
+      parseTargetedBatchContextRouteParam(routeTargetedBatchContext),
+    [
+      editQueueItem?.payload?.targetedBatchContext,
+      routeTargetedBatchContext,
+    ],
+  );
+
+  const targetedBatchReturnTo =
+    targetedBatchContext?.returnTo ||
+    "/(tabs)/premises";
 
   const { data: allServiceProviders = [] } = useGetServiceProvidersQuery();
 
@@ -244,7 +267,7 @@ export default function FormMeterDiscovery() {
   const currentMissionType =
     action?.access === "no" ? "NA" : action?.meterType || "NA";
 
-  const { getOptions, noAccessReasons } =
+  const { getOptions } =
     useMeterFormLookupOptions(currentMissionType);
 
   const premiseAddress =
@@ -999,6 +1022,26 @@ export default function FormMeterDiscovery() {
         throw new Error("Unable to determine transaction payload.");
       }
 
+      if (targetedBatchContext) {
+        const missingContextFields =
+          getMissingTargetedBatchContextFields(targetedBatchContext);
+
+        if (missingContextFields.length > 0) {
+          throw new Error(
+            `Targeted Batch context is missing: ${missingContextFields.join(", ")}.`,
+          );
+        }
+
+        cleanPayload.targetedBatchContext = {
+          ...targetedBatchContext,
+          premiseId:
+            gate?.resolvedPremiseId ||
+            premise?.id ||
+            targetedBatchContext?.premiseId ||
+            null,
+        };
+      }
+
       cleanPayload = JSON.parse(
         JSON.stringify(cleanPayload, (key, value) =>
           value === undefined ? null : value,
@@ -1069,7 +1112,7 @@ export default function FormMeterDiscovery() {
 
         setTimeout(() => {
           updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
-          router.replace("/(tabs)/premises");
+          router.replace(targetedBatchReturnTo);
         }, 1500);
 
         return true;
@@ -1225,7 +1268,7 @@ export default function FormMeterDiscovery() {
 
       setTimeout(() => {
         updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
-        router.replace("/(tabs)/premises");
+        router.replace(targetedBatchReturnTo);
         setInProgress(false);
       }, 2000);
     } catch (error) {
@@ -1459,7 +1502,7 @@ export default function FormMeterDiscovery() {
                       // onPress={() => router.back()}
                       onPress={() => {
                         router.dismissAll();
-                        router.replace("/(tabs)/premises");
+                        router.replace(targetedBatchReturnTo);
                       }}
                       style={{ marginLeft: 10, padding: 5 }}
                       activeOpacity={0.7}
@@ -1596,7 +1639,7 @@ export default function FormMeterDiscovery() {
                     }}
                     value={values?.accessData?.access?.reason}
                   >
-                    {noAccessReasons.map((r) => (
+                    {NO_ACCESS_REASONS.map((r) => (
                       <RadioButton.Item key={r} label={r} value={r} />
                     ))}
                   </RadioButton.Group>
