@@ -6,6 +6,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Provider } from "react-redux";
 
 import { PersistGate } from "redux-persist/integration/react";
+import "../src/services/fwr-monitoring/fwrLocationTask";
 import { DiscoveryProvider } from "../src/context/DiscoveryContext";
 import { GeoProvider } from "../src/context/GeoContext";
 import { InstallationProvider } from "../src/context/InstallationContext";
@@ -14,6 +15,7 @@ import { WarehouseProvider } from "../src/context/WarehouseContext";
 import { auth } from "../src/firebase";
 import { useAuth } from "../src/hooks/useAuth";
 import AuthBootstrap from "../src/navigation/AuthBootstrap";
+import FwrMonitoringCoordinator from "../src/services/fwr-monitoring/FwrMonitoringCoordinator";
 import { persistor, store } from "../src/redux/store";
 import { startInformalErfQueueSyncService } from "../src/services/startInformalErfQueueSyncService";
 
@@ -190,6 +192,7 @@ export default function RootLayout() {
                     <InstallationProvider>
                       <AuthBootstrap />
                       <InformalErfQueueSyncCoordinator />
+                      <FwrMonitoringCoordinator />
                       <AuthGate />
                       <SessionSlot />
                     </InstallationProvider>
