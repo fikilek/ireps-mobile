@@ -841,7 +841,7 @@ export default function FormMeterDiscovery() {
         },
         ast: {
           astData: {
-            astNo: "",
+            astNo: targetedBatchContext?.targetedMeterNo || "",
             astManufacturer: "",
             astName: "",
             meter: {
@@ -1032,6 +1032,7 @@ export default function FormMeterDiscovery() {
           );
         }
 
+        cleanPayload.sourceModule = targetedBatchContext.sourceModule;
         cleanPayload.targetedBatchContext = {
           ...targetedBatchContext,
           premiseId:
@@ -1280,7 +1281,13 @@ export default function FormMeterDiscovery() {
 
   const actionInit = useMemo(
     () => getInitialValues(),
-    [premiseId, actionRaw, trnId, editQueueItem],
+    [
+      premiseId,
+      actionRaw,
+      trnId,
+      editQueueItem,
+      targetedBatchContext?.targetedMeterNo,
+    ],
   );
 
   // 2. Setup the Watcher in a useEffect

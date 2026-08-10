@@ -942,12 +942,28 @@ export default function FormPremise() {
         // logSubmitTime("queue item removed");
       }
 
+      const targetedBatchLink = result?.targetedBatchLink;
+      const targetedBatchPremiseLinked = Boolean(
+        !isEdit &&
+          linkedTargetedBatchContext &&
+          targetedBatchLink?.linked === true &&
+          String(result?.premiseId || "").trim() === premiseDocId &&
+          String(targetedBatchLink?.tbId || "").trim() ===
+            linkedTargetedBatchContext.tbId &&
+          String(targetedBatchLink?.rowId || "").trim() ===
+            linkedTargetedBatchContext.rowId,
+      );
+      const successRoute = targetedBatchPremiseLinked
+        ? linkedTargetedBatchContext.returnTo ||
+          "/(tabs)/admin/operations/my-workorders"
+        : "/(tabs)/premises";
+
       updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
       // logSubmitTime("geo updated");
 
       ToastAndroid.show("Premise saved.", ToastAndroid.LONG);
 
-      router.replace("/(tabs)/premises");
+      router.replace(successRoute);
       // logSubmitTime("SUCCESS END");
     } catch (err) {
       // logSubmitTime("ERROR END");

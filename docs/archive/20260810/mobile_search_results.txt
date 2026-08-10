@@ -1,0 +1,109 @@
+﻿C:\dev\ireps-mobile\src\features\asts\filterAsts.js:438: if (trnType === "METER_DISCOVERY") return "DISCOVERY";
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:48: getMissingTargetedBatchContextFields,
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:49: normalizeTargetedBatchContext,
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:50: parseTargetedBatchContextRouteParam,
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:69: return `TRN_MDIS_${ts}_${typeCode}_${safeWardPcode}_${safeErfNo}`;
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:132: export default function FormMeterDiscovery() {
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:137: targetedBatchContext: routeTargetedBatchContext,
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:146: const targetedBatchContext = useMemo(
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:148: normalizeTargetedBatchContext(
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:149: editQueueItem?.payload?.targetedBatchContext,
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:151: parseTargetedBatchContextRouteParam(routeTargetedBatchContext),
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:153: editQueueItem?.payload?.targetedBatchContext,
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:154: routeTargetedBatchContext,
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:159: targetedBatchContext?.returnTo ||
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:284: // console.log(`FormMeterDiscovery ----showSuccess`, showSuccess);
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:287: // console.log(`FormMeterDiscovery ----finalErfNo`, finalErfNo);
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:365: trnType: "METER_DISCOVERY",
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:844: astNo: targetedBatchContext?.targetedMeterNo || "",
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:1025: if (targetedBatchContext) {
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:1027: getMissingTargetedBatchContextFields(targetedBatchContext);
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:1035: cleanPayload.targetedBatchContext = {
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:1036: ...targetedBatchContext,
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:1040: targetedBatchContext?.premiseId ||
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:1093: formType: "METER_DISCOVERY",
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:1184: const onMeterDiscoveryCallable = httpsCallable(
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:1288: targetedBatchContext?.targetedMeterNo,
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:1488: //   `FormMeterDiscovery --values`,
+C:\dev\ireps-mobile\src\features\meters\FormMeterDiscovery.js:1492: // console.log(`FormMeterDiscovery --values`, values);
+C:\dev\ireps-mobile\src\features\meters\FormMeterIstallation.js:1122: const onMeterInstallationCallable = httpsCallable(
+C:\dev\ireps-mobile\src\features\premises\FormAccountData.js:1047: const callable = httpsCallable(functions, "onCreateAccountDataCallable");
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:39: getMissingTargetedBatchContextFields,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:40: normalizeTargetedBatchContext,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:42: parseTargetedBatchContextRouteParam,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:146: targetedBatchContext: routeTargetedBatchContext,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:197: () => parseTargetedBatchContextRouteParam(routeTargetedBatchContext),
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:198: [routeTargetedBatchContext],
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:202: routeTargetedBatchContext !== undefined ||
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:205: "targetedBatchContext",
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:210: "targetedBatchContext",
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:214: const targetedBatchContext = useMemo(() => {
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:216: return normalizeTargetedBatchContext(
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:217: queueItem?.payload?.targetedBatchContext,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:222: normalizeTargetedBatchContext(selectedErf?.targetedBatchContext) ||
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:227: queueItem?.payload?.targetedBatchContext,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:228: selectedErf?.targetedBatchContext,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:483: const targetedBatchAddress = targetedBatchContext
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:484: ? parseTargetedBatchAddress(targetedBatchContext.sourceAddress)
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:519: targetedBatchContext,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:657: const linkedTargetedBatchContext =
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:658: !isEdit && !isDuplicate ? targetedBatchContext : null;
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:661: const missingContextFields = getMissingTargetedBatchContextFields(
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:662: linkedTargetedBatchContext,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:668: tbId: linkedTargetedBatchContext?.tbId || null,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:669: rowId: linkedTargetedBatchContext?.rowId || null,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:670: salesDocId: linkedTargetedBatchContext?.salesDocId || null,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:671: erfId: linkedTargetedBatchContext?.erfId || null,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:679: linkedTargetedBatchContext.erfId !==
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:724: ...(linkedTargetedBatchContext
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:726: targetedBatchContext: linkedTargetedBatchContext,
+C:\dev\ireps-mobile\src\features\premises\formPremise.js:748: Same model as FormMeterDiscovery
+C:\dev\ireps-mobile\src\features\premises\targetedBatchPremiseContext.js:2: export const TARGETED_BATCH_OPERATION_TYPE = "METER_DISCOVERY";
+C:\dev\ireps-mobile\src\features\premises\targetedBatchPremiseContext.js:17: export function normalizeTargetedBatchContext(value) {
+C:\dev\ireps-mobile\src\features\premises\targetedBatchPremiseContext.js:55: export function getMissingTargetedBatchContextFields(context) {
+C:\dev\ireps-mobile\src\features\premises\targetedBatchPremiseContext.js:69: export function buildTargetedBatchContextFromRow({ row = {}, bucket = {} }) {
+C:\dev\ireps-mobile\src\features\premises\targetedBatchPremiseContext.js:72: return normalizeTargetedBatchContext({
+C:\dev\ireps-mobile\src\features\premises\targetedBatchPremiseContext.js:102: export function serializeTargetedBatchContext(context) {
+C:\dev\ireps-mobile\src\features\premises\targetedBatchPremiseContext.js:103: const normalized = normalizeTargetedBatchContext(context);
+C:\dev\ireps-mobile\src\features\premises\targetedBatchPremiseContext.js:135: export function parseTargetedBatchContextRouteParam(value) {
+C:\dev\ireps-mobile\src\features\premises\targetedBatchPremiseContext.js:140: return normalizeTargetedBatchContext(JSON.parse(routeValue));
+C:\dev\ireps-mobile\src\features\targetedBatches\targetedBatchActions.js:4: START_METER_DISCOVERY: "START_METER_DISCOVERY",
+C:\dev\ireps-mobile\src\features\targetedBatches\targetedBatchActions.js:29: intent: meterId ? TARGETED_BATCH_INTENTS.OPEN_AST : TARGETED_BATCH_INTENTS.START_METER_DISCOVERY,
+C:\dev\ireps-mobile\src\features\targetedBatches\targetedBatchNoAccess.js:29: return `TRN_MDIS_${now}_NA_${Math.floor(random * 0xffffff).toString(36).toUpperCase().padStart(5, "0")}`;
+C:\dev\ireps-mobile\src\features\trns\filterTrns.js:63: "METER_DISCOVERY",
+C:\dev\ireps-mobile\src\features\trns\TrnFilterModal.js:51: METER_DISCOVERY: "Meter Discovery",
+C:\dev\ireps-mobile\src\features\trns\TrnStatsModal.js:8: METER_DISCOVERY: "Meter Discovery",
+C:\dev\ireps-mobile\src\hooks\useUserStats.js:13: (t) => t.accessData?.trnType === "METER_DISCOVERY",
+C:\dev\ireps-mobile\src\redux\authApi.js:176: const fn = httpsCallable(functions, "signupFieldWorker");
+C:\dev\ireps-mobile\src\redux\authApi.js:518: const fn = httpsCallable(functions, "createAdminUser");
+C:\dev\ireps-mobile\src\redux\authApi.js:547: const fn = httpsCallable(functions, "inviteManagerUser");
+C:\dev\ireps-mobile\src\redux\authApi.js:575: const fn = httpsCallable(functions, "inviteAdminUser");
+C:\dev\ireps-mobile\src\redux\authApi.js:605: const fn = httpsCallable(functions, "inviteSupervisorUser");
+C:\dev\ireps-mobile\src\redux\authApi.js:636: const fn = httpsCallable(functions, "authorizeFieldWorker");
+C:\dev\ireps-mobile\src\redux\bgoApi.js:172: case "METER_DISCOVERY":
+C:\dev\ireps-mobile\src\redux\bgoApi.js:197: sourceModule === "BULK_METER_DISCOVERY" ||
+C:\dev\ireps-mobile\src\redux\bgoApi.js:198: (operationType === "METER_DISCOVERY" && createsChildTrnsUpfront === false)
+C:\dev\ireps-mobile\src\redux\bgoApi.js:756: const callable = httpsCallable(
+C:\dev\ireps-mobile\src\redux\bgoApi.js:796: const callable = httpsCallable(
+C:\dev\ireps-mobile\src\redux\geofenceApi.js:62: const callable = httpsCallable(functions, "createGeoFence");
+C:\dev\ireps-mobile\src\redux\informalErfsApi.js:94: const submitCallable = httpsCallable(
+C:\dev\ireps-mobile\src\redux\irepsLookupOptionsApi.js:10: const callable = httpsCallable(functions, LOOKUP_OPTIONS_CALLABLE);
+C:\dev\ireps-mobile\src\redux\irepsSelectLookupsApi.js:10: const callable = httpsCallable(functions, ADMIN_CALLABLE_NAME);
+C:\dev\ireps-mobile\src\redux\lifecycleInstructionApi.js:956: const callable = httpsCallable(
+C:\dev\ireps-mobile\src\redux\lifecycleInstructionApi.js:997: const callable = httpsCallable(
+C:\dev\ireps-mobile\src\redux\lifecycleInstructionApi.js:1039: const callable = httpsCallable(
+C:\dev\ireps-mobile\src\redux\premisesApi.js:278: const createPremiseCallable = httpsCallable(
+C:\dev\ireps-mobile\src\redux\targetedBatchApi.js:554: const callable = httpsCallable(
+C:\dev\ireps-mobile\src\redux\teamsApi.js:59: const callable = httpsCallable(functions, "createTeam");
+C:\dev\ireps-mobile\src\redux\teamsApi.js:92: const callable = httpsCallable(functions, "renameTeam");
+C:\dev\ireps-mobile\src\redux\teamsApi.js:126: const callable = httpsCallable(functions, "addTeamMember");
+C:\dev\ireps-mobile\src\redux\teamsApi.js:161: const callable = httpsCallable(functions, "removeTeamMember");
+C:\dev\ireps-mobile\src\redux\teamsApi.js:197: const callable = httpsCallable(functions, "deleteTeam");
+C:\dev\ireps-mobile\src\redux\trnsApi.js:84: const isMeterDiscovery = accessData?.trnType === "METER_DISCOVERY";
+C:\dev\ireps-mobile\src\services\fwr-monitoring\fwrLocationCallableClient.js:12: const submitLocationCallable = httpsCallable(
+C:\dev\ireps-mobile\src\services\fwr-monitoring\fwrLocationCallableClient.js:17: const updateStatusCallable = httpsCallable(
+C:\dev\ireps-mobile\src\services\processPremiseSubmissionQueue.js:52: const callable = httpsCallable(functions, "onPremiseCreateCallable");
+C:\dev\ireps-mobile\src\services\processSubmissionQueue.js:125: const callable = httpsCallable(functions, callableName);
+C:\dev\ireps-mobile\src\utils\processSinglePremiseQueueItem.js:80: const callable = httpsCallable(functions, "onPremiseCreateCallable");
+C:\dev\ireps-mobile\src\utils\submissionQueue.js:656: return "recordTargetedBatchNoAccessCallable";
+C:\dev\ireps-mobile\src\utils\submissionQueue.js:663: if (formType === "METER_DISCOVERY" || trnType === "METER_DISCOVERY") {

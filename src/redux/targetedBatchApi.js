@@ -1,7 +1,7 @@
 import { createApi, fakeBaseQuery } from "@reduxjs/toolkit/query/react";
 import {
   collection,
-  limit as firestoreLimit,
+  doc,
   onSnapshot,
   orderBy,
   query,
@@ -10,9 +10,7 @@ import {
 import { httpsCallable } from "firebase/functions";
 
 import { db, functions } from "../firebase";
-import { appendUniqueTargetedBatchRows } from "../features/targetedBatches/targetedBatchActions";
 
-const TARGETED_BATCH_STREAM_LIMIT = 200;
 const EMPTY_TARGETED_BATCH_BUCKET_DATA = {
   buckets: [],
   summary: {
@@ -24,7 +22,6 @@ const EMPTY_TARGETED_BATCH_BUCKET_DATA = {
   meta: {
     source: "TARGETED_BATCH_BUCKET_STREAM",
     updatedAt: null,
-    streamLimit: TARGETED_BATCH_STREAM_LIMIT,
   },
 };
 
@@ -224,10 +221,7 @@ function normalizeTargetedBatchBucket(batch = {}) {
   };
 }
 
-function buildTargetedBatchBucketData({
-  batches = [],
-  streamLimit = TARGETED_BATCH_STREAM_LIMIT,
-}) {
+function buildTargetedBatchBucketData({ batches = [] }) {
   const buckets = batches
     .map(normalizeTargetedBatchBucket)
     .filter((bucket) => bucket?.allocationStatus === "ALLOCATED")
@@ -261,7 +255,6 @@ function buildTargetedBatchBucketData({
     meta: {
       source: "TARGETED_BATCH_BUCKET_STREAM",
       updatedAt: new Date().toISOString(),
-      streamLimit,
     },
   };
 }
@@ -289,6 +282,7 @@ function normalizeTargetedBatchRow(row = {}) {
     noAccessCount:
       row?.noAccessCount === null ? null : Number(row?.noAccessCount || 0),
     noAccessSourceStatus: normalizeUpper(row?.noAccessSourceStatus),
+    fieldWorkMeterId: cleanText(row?.fieldWorkMeterId) || null,
 
     meterNo: readFirstString(
       row?.meter?.numberRaw,
@@ -323,6 +317,30 @@ function normalizeTargetedBatchRow(row = {}) {
     refs,
     raw: row,
   };
+}
+
+export function enrichTargetedBatchRowFromSales(row = {}, sales = null) {
+  const salesDocId = cleanText(row?.salesAllMeterId);
+  let noAccessSourceStatus = "OK";
+  let noAccessCount = 0;
+  let fieldWorkMeterId = null;
+  if (!salesDocId) noAccessSourceStatus = "SALES_DOCUMENT_ID_MISSING";
+  else if (!sales) noAccessSourceStatus = "SALES_DOCUMENT_MISSING";
+  else {
+    const tbRef = Array.isArray(sales?.tbRefs)
+      ? sales.tbRefs.find((item) => cleanText(item?.id) === cleanText(row?.tbId))
+      : null;
+    if (!tbRef) noAccessSourceStatus = "TB_REFERENCE_MISSING";
+    else if (tbRef.fieldWork != null && (typeof tbRef.fieldWork !== "object" || Array.isArray(tbRef.fieldWork))) {
+      noAccessSourceStatus = "FIELDWORK_INVALID";
+    } else {
+      const fieldWork = tbRef.fieldWork || {};
+      fieldWorkMeterId = cleanText(fieldWork.meterId) || null;
+      if (fieldWork.noAccess != null && !Array.isArray(fieldWork.noAccess)) noAccessSourceStatus = "FIELDWORK_INVALID";
+      else noAccessCount = fieldWork.noAccess?.length || 0;
+    }
+  }
+  return { ...row, salesDocId: salesDocId || null, noAccessCount, fieldWorkMeterId, noAccessSourceStatus };
 }
 
 export function buildTargetedBatchRowsData({
@@ -367,7 +385,7 @@ export function buildTargetedBatchRowsData({
     rows: normalizedRows,
     summary,
     meta: {
-      source: "TARGETED_BATCH_ROWS_CALLABLE",
+      source: "TARGETED_BATCH_ROWS_STREAM",
       updatedAt: new Date().toISOString(),
       tbId,
       streamLimit,
@@ -395,20 +413,14 @@ export const targetedBatchApi = createApi({
         args = {},
         { updateCachedData, cacheDataLoaded, cacheEntryRemoved },
       ) {
-        /* eslint-disable no-unreachable */
         let unsubscribeTargetedBatches = () => {};
 
         try {
           await cacheDataLoaded;
 
-          const streamLimit = Number(
-            args?.limit || TARGETED_BATCH_STREAM_LIMIT,
-          );
-
           const targetedBatchQuery = query(
             collection(db, "tb_uploads"),
             orderBy("metadata.createdAt", "desc"),
-            firestoreLimit(streamLimit),
           );
 
           unsubscribeTargetedBatches = onSnapshot(
@@ -420,10 +432,7 @@ export const targetedBatchApi = createApi({
               }));
 
               updateCachedData(() =>
-                buildTargetedBatchBucketData({
-                  batches,
-                  streamLimit,
-                }),
+                buildTargetedBatchBucketData({ batches }),
               );
             },
             (error) => {
@@ -447,71 +456,72 @@ export const targetedBatchApi = createApi({
     }),
 
     getTargetedBatchRows: builder.query({
-      async queryFn(args = {}) {
-        try {
-          const tbId = cleanText(args?.tbId);
-          if (!tbId) return { error: { code: "TARGETED_BATCH_ID_REQUIRED", message: "Targeted Batch is required." } };
-          const pageLimit = Number(args?.limit || 100);
-          const callable = httpsCallable(functions, "getTargetedBatchRowsCallable");
-          const result = await callable({ tbId, limit: pageLimit, cursor: args?.cursor || null });
-          const data = result?.data || {};
-          if (!data?.success) return { error: { code: data?.code || "TARGETED_BATCH_ROWS_FAILED", message: data?.message || "Could not load Targeted Batch rows." } };
-          return { data: buildTargetedBatchRowsData({ tbId, rows: data.rows, streamLimit: pageLimit, pagination: data.pagination, diagnostics: data.diagnostics }) };
-        } catch (error) {
-          console.log("getTargetedBatchRowsCallable ERROR", { code: error?.code, message: error?.message });
-          return { error: { code: error?.code || "TARGETED_BATCH_ROWS_ERROR", message: error?.message || "Could not load Targeted Batch rows." } };
-        }
+      queryFn(args = {}) {
+        const tbId = cleanText(args?.tbId);
+        if (!tbId) return { error: { code: "TARGETED_BATCH_ID_REQUIRED", message: "Targeted Batch is required." } };
+        return { data: buildTargetedBatchRowsData({ tbId, rows: [] }) };
       },
 
       async onCacheEntryAdded(
         args = {},
         { updateCachedData, cacheDataLoaded, cacheEntryRemoved },
       ) {
-        // Rows are callable-backed. Keep this lifecycle only to preserve the
-        // existing endpoint shape while the cache entry remains subscribed.
-        await cacheEntryRemoved;
-        return;
-        /* c8 ignore start -- retired direct listener retained temporarily */
         let unsubscribeRows = () => {};
+        const salesListeners = new Map();
+        const salesDocuments = new Map();
+        let currentRows = [];
+        let active = true;
+
+        const publish = () => {
+          if (!active) return;
+          const rows = currentRows.map((row) =>
+            enrichTargetedBatchRowFromSales(row, salesDocuments.get(cleanText(row?.salesAllMeterId)) || null));
+          updateCachedData(() => buildTargetedBatchRowsData({ tbId: cleanText(args?.tbId), rows }));
+        };
+
+        const reconcileSalesListeners = () => {
+          const requiredIds = new Set(currentRows.map((row) => cleanText(row?.salesAllMeterId)).filter(Boolean));
+          for (const [id, unsubscribe] of salesListeners) {
+            if (!requiredIds.has(id)) {
+              unsubscribe();
+              salesListeners.delete(id);
+              salesDocuments.delete(id);
+            }
+          }
+          for (const id of requiredIds) {
+            if (salesListeners.has(id)) continue;
+            const unsubscribe = onSnapshot(doc(db, "sales-all-meters", id), (snapshot) => {
+              if (!active) return;
+              if (snapshot.exists()) salesDocuments.set(id, snapshot.data() || {});
+              else salesDocuments.delete(id);
+              publish();
+            }, (error) => {
+              console.error("[TARGETED_BATCH_SALES_STREAM_ERROR]", { id, error });
+            });
+            salesListeners.set(id, unsubscribe);
+          }
+        };
 
         try {
           await cacheDataLoaded;
 
           const tbId = cleanText(args?.tbId);
-          const streamLimit = Number(args?.limit || 0);
-
           if (!tbId) {
             await cacheEntryRemoved;
             return;
           }
 
-          const rowsQuery =
-            streamLimit > 0
-              ? query(
-                  collection(db, "tb_rows"),
-                  where("tbId", "==", tbId),
-                  firestoreLimit(streamLimit),
-                )
-              : query(
-                  collection(db, "tb_rows"),
-                  where("tbId", "==", tbId),
-                );
+          const rowsQuery = query(collection(db, "tb_rows"), where("tbId", "==", tbId));
 
           unsubscribeRows = onSnapshot(
             rowsQuery,
             (snapshot) => {
-              const rows = snapshot.docs.map((docSnap) => ({
+              currentRows = snapshot.docs.map((docSnap) => ({
                 id: docSnap.id,
                 ...docSnap.data(),
               }));
-
-              updateCachedData(() =>
-                buildTargetedBatchRowsData({
-                  tbId,
-                  rows,
-                  streamLimit,
-                }),
-              );
+              reconcileSalesListeners();
+              publish();
             },
             (error) => {
               console.error(
@@ -528,20 +538,13 @@ export const targetedBatchApi = createApi({
         }
 
         await cacheEntryRemoved;
+        active = false;
         unsubscribeRows();
-        /* c8 ignore stop */
-        /* eslint-enable no-unreachable */
+        for (const unsubscribe of salesListeners.values()) unsubscribe();
+        salesListeners.clear();
       },
       serializeQueryArgs: ({ endpointName, queryArgs }) =>
         `${endpointName}:${cleanText(queryArgs?.tbId)}`,
-      merge(currentCache, newPage, { arg }) {
-        if (!arg?.cursor) return newPage;
-        const rows = appendUniqueTargetedBatchRows(currentCache?.rows, newPage?.rows);
-        Object.assign(currentCache, buildTargetedBatchRowsData({ tbId: arg.tbId, rows, streamLimit: arg.limit, pagination: newPage.pagination, diagnostics: newPage.diagnostics }));
-      },
-      forceRefetch({ currentArg, previousArg }) {
-        return JSON.stringify(currentArg?.cursor || null) !== JSON.stringify(previousArg?.cursor || null) || currentArg?.reloadKey !== previousArg?.reloadKey;
-      },
       providesTags: ["TargetedBatch"],
     }),
 

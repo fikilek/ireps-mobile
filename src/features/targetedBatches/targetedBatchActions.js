@@ -11,16 +11,14 @@ const clean = (value) => String(value ?? "").trim();
 export function getTargetedBatchRowActionState(row = {}) {
   const premiseId = clean(row?.refs?.premiseId);
   const meterId = clean(row?.refs?.meterId);
-  const salesOk = row?.noAccessSourceStatus === "OK";
-  const invalidLinkage = !premiseId && Boolean(meterId);
-  const rowExecutable = clean(row?.allocationStatus || row?.allocation?.status).toUpperCase() === "ALLOCATED" &&
-    ["NOT_STARTED", "IN_PROGRESS"].includes(clean(row?.executionStatus || row?.execution?.status || "NOT_STARTED").toUpperCase());
-  const requiredContextPresent = Boolean(
-    clean(row?.id) &&
-      clean(row?.refs?.erfId || row?.erfId) &&
-      clean(row?.salesDocId || row?.salesAllMeterId || row?.source?.recordId),
+  const fieldWorkMeterId = clean(
+    row?.fieldWorkMeterId || row?.raw?.fieldWorkMeterId,
   );
-  const noAccessEnabled = salesOk && rowExecutable && !meterId && !invalidLinkage && requiredContextPresent;
+  const invalidLinkage = !premiseId && Boolean(meterId);
+  const noAccessCount = Number(row?.noAccessCount);
+  const safeNoAccessCount = Number.isFinite(noAccessCount)
+    ? Math.max(0, Math.trunc(noAccessCount))
+    : 0;
 
   return {
     premise: { value: premiseId ? 1 : 0, disabled: false, intent: TARGETED_BATCH_INTENTS.OPEN_PREMISE },
@@ -31,9 +29,9 @@ export function getTargetedBatchRowActionState(row = {}) {
       intent: meterId ? TARGETED_BATCH_INTENTS.OPEN_AST : TARGETED_BATCH_INTENTS.START_METER_DISCOVERY,
     },
     noAccess: {
-      value: salesOk ? row?.noAccessCount ?? 0 : null,
-      helperText: !salesOk || !requiredContextPresent ? "DATA ISSUE" : meterId ? "DISCOVERY COMPLETE" : !rowExecutable ? "NOT EXECUTABLE" : null,
-      disabled: !noAccessEnabled,
+      value: safeNoAccessCount,
+      helperText: fieldWorkMeterId ? "DISCOVERY COMPLETE" : null,
+      disabled: Boolean(fieldWorkMeterId),
       intent: TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS,
     },
     erf: { value: clean(row?.erfNo) || "—", disabled: !clean(row?.refs?.erfId), intent: TARGETED_BATCH_INTENTS.OPEN_ERF },

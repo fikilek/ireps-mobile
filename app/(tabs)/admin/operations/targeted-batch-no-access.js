@@ -2,17 +2,18 @@ import NetInfo from "@react-native-community/netinfo";
 import * as Location from "expo-location";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
+import { array, object, string } from "yup";
 import { useMemo, useRef, useState } from "react";
 import { Alert, ScrollView, StyleSheet, View } from "react-native";
-import { Button, Surface, Text } from "react-native-paper";
+import { Surface, Text } from "react-native-paper";
 import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
 import { IrepsNoAccessSection } from "../../../../components/forms/IrepsNoAccessSection";
-import { selectWithOtherToText } from "../../../../components/IrepsSelectWithOther";
 import { functions } from "../../../../src/firebase";
 import { useAuth } from "../../../../src/hooks/useAuth";
 import { addSubmissionQueueItem } from "../../../../src/utils/submissionQueue";
+import { ForensicFooter } from "../../../../src/features/meters/ForensicFooter";
 import {
   SALES_TB_NA_FORM_TYPE,
   SALES_TB_RETURN_ROUTE,
@@ -20,6 +21,25 @@ import {
   buildTargetedBatchNoAccessTrnId,
   validateTargetedBatchNoAccessPayload,
 } from "../../../../src/features/targetedBatches/targetedBatchNoAccess";
+
+const TargetedBatchNoAccessSchema = object({
+  reason: string()
+    .trim()
+    .required("No Access reason is required."),
+  media: array()
+    .test(
+      "no-access-photo",
+      "No Access photograph is required.",
+      (value) =>
+        Array.isArray(value) &&
+        value.some(
+          (item) =>
+            item?.tag === "noAccessPhoto" &&
+            Boolean(item?.uri || item?.url),
+        ),
+    )
+    .required("No Access photograph is required."),
+});
 
 const parseContext = (raw) => {
   try { return JSON.parse(String(raw || "{}")); } catch { return {}; }
@@ -110,16 +130,59 @@ export default function TargetedBatchNoAccessScreen() {
         <Text>Batch {context.tbId || "NAv"} · NA {context.noAccessCount ?? 0}</Text>
         <Text>{context.premiseId ? "Premise linked" : "Premise not yet linked"}</Text>
       </Surface>
-      <Formik initialValues={{ reason: "", reasonSelect: null, media: [] }} onSubmit={submit}>
-        {({ values, setFieldValue, handleSubmit, errors }) => <View>
-          <IrepsNoAccessSection visible value={values.reasonSelect} onChange={(value) => { setFieldValue("reasonSelect", value); setFieldValue("reason", selectWithOtherToText(value)); }} agentName={agentName} agentUid={agentUid} reasonErrorText={errors.reason} mediaErrorText={errors.media} />
-          {!!errors.location && <Text style={styles.error}>{errors.location}</Text>}
-          <Button mode="contained" loading={busy} disabled={busy} onPress={handleSubmit}>Capture GPS and submit</Button>
-          <Button disabled={busy} onPress={() => router.back()}>Cancel</Button>
-        </View>}
+      <Formik
+        initialValues={{ reason: "", media: [] }}
+        validationSchema={TargetedBatchNoAccessSchema}
+        onSubmit={submit}
+      >
+        {({ values, setFieldValue, errors, touched }) => (
+          <View>
+            <IrepsNoAccessSection
+              visible
+              value={values.reason}
+              onChange={(value) => {
+                setFieldValue("reason", value);
+              }}
+              agentName={agentName}
+              agentUid={agentUid}
+              reasonErrorText={
+                touched.reason || errors.reason ? errors.reason : ""
+              }
+              mediaErrorText={
+                touched.media || errors.media ? errors.media : ""
+              }
+            />
+
+            {!!errors.location && (
+              <Text style={styles.error}>{errors.location}</Text>
+            )}
+
+            <ForensicFooter isTrnLoading={busy} />
+          </View>
+        )}
       </Formik>
     </ScrollView>
   </>;
 }
 
-const styles = StyleSheet.create({ content: { padding: 16, gap: 12 }, context: { padding: 16, borderRadius: 14, backgroundColor: "white", gap: 5 }, error: { color: "#b91c1c", marginBottom: 8 } });
+const styles = StyleSheet.create({
+  content: {
+    flexGrow: 1,
+    padding: 16,
+    paddingBottom: 40,
+    backgroundColor: "#F1F5F9",
+  },
+
+  context: {
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    gap: 5,
+    marginBottom: 12,
+  },
+
+  error: {
+    color: "#b91c1c",
+    marginBottom: 8,
+  },
+});
