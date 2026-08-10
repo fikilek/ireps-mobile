@@ -6,25 +6,25 @@ web-build/
 expo-env.d.ts
 
 .kotlin/
-_.orig._
-_.jks
-_.p8
-_.p12
-_.key
-\*.mobileprovision
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
 
-.metro-health-check\*
+.metro-health-check*
 
-npm-debug._
-yarn-debug._
-yarn-error.\*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
 
 .DS_Store
-\*.pem
+*.pem
 
-.env\*.local
+.env*.local
 
-\*.tsbuildinfo
+*.tsbuildinfo
 
 app-example
 
@@ -32,6 +32,6 @@ app-example
 /android
 
 .env
-.env.\*.local
+.env.*.local
 
 # firebase
