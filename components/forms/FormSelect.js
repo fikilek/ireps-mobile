@@ -10,10 +10,25 @@ import {
 } from "react-native";
 import { Divider, List, Modal, Portal, Surface } from "react-native-paper";
 
+function normalizeOption(option) {
+  if (option && typeof option === "object") {
+    const optionValue = option.value ?? option.label;
+    return {
+      label: String(option.label ?? optionValue ?? ""),
+      value: optionValue,
+    };
+  }
+
+  return {
+    label: String(option ?? ""),
+    value: option,
+  };
+}
+
 const FormSelect = ({
   label,
   name,
-  options,
+  options = [],
   icon = "form-select",
   disabled = false,
   onValueChange,
@@ -32,6 +47,20 @@ const FormSelect = ({
   const hasError = !!error;
   const isDisabled = disabled || isSubmitting;
 
+  const normalizedOptions = (Array.isArray(options) ? options : []).map(
+    normalizeOption,
+  );
+
+  const selectedOption = normalizedOptions.find(
+    (option) => option.value === value,
+  );
+
+  const displayValue =
+    selectedOption?.label ||
+    (value !== undefined && value !== null && value !== ""
+      ? String(value)
+      : "Select...");
+
   return (
     <>
       <TouchableOpacity
@@ -47,7 +76,7 @@ const FormSelect = ({
           <Text style={[styles.label, hasError && { color: "#ef4444" }]}>
             {label}
           </Text>
-          <Text style={styles.value}>{value || "Select..."}</Text>
+          <Text style={styles.value}>{displayValue}</Text>
         </View>
         <MaterialCommunityIcons
           name={isDisabled ? "lock" : "chevron-down"}
@@ -66,18 +95,18 @@ const FormSelect = ({
             <Text style={styles.modalTitle}>{label}</Text>
             <Divider />
             <ScrollView style={{ maxHeight: 350 }}>
-              {options.map((opt) => (
+              {normalizedOptions.map((option, index) => (
                 <List.Item
-                  key={opt}
-                  title={opt}
+                  key={`${String(option.value)}_${index}`}
+                  title={option.label}
                   onPress={() => {
-                    setFieldValue(name, opt, true);
-                    onValueChange?.(opt);
+                    setFieldValue(name, option.value, true);
+                    onValueChange?.(option.value);
                     setFieldTouched(name, true, false);
                     setVisible(false);
                   }}
                   right={(p) =>
-                    value === opt && (
+                    value === option.value && (
                       <List.Icon {...p} icon="check" color="#059669" />
                     )
                   }

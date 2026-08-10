@@ -6,6 +6,7 @@ import { AnomalySection } from "./AnomalySection";
 import FormInput from "./FormInput";
 import { FormSection } from "./FormSection";
 import FormSelect from "./FormSelect";
+import { OtherAnomalySection } from "./OtherAnomalySection";
 
 export const WaterSections = ({
   values,
@@ -42,13 +43,19 @@ export const WaterSections = ({
 
         <FormSelect
           label="Category (Normal/Bulk)"
-          options={["Normal", "Bulk"]}
+          options={
+            isDiscovery ? getOptions("meter_categories") : ["Normal", "Bulk"]
+          }
           name="ast.astData.meter.category"
           disabled={disabled}
         />
         <FormSelect
           label="TYPE"
-          options={["prepaid", "conventional"]}
+          options={
+            isDiscovery
+              ? getOptions("meter_types")
+              : ["prepaid", "conventional"]
+          }
           name="ast.astData.meter.type"
           disabled={disabled}
         />
@@ -110,7 +117,7 @@ export const WaterSections = ({
           <FormSelect
             label="METER STATUS"
             name="status.state"
-            options={["CONNECTED", "DISCONNECTED"]}
+            options={getOptions("meter_statuses")}
             disabled={disabled}
           />
         )}
@@ -124,6 +131,15 @@ export const WaterSections = ({
         setFieldValue={setFieldValue}
         disabled={disabled}
       />
+
+      {isDiscovery && (
+        <OtherAnomalySection
+          values={values}
+          setFieldValue={setFieldValue}
+          options={getOptions("other_anomalies")}
+          disabled={disabled}
+        />
+      )}
 
       <SovereignLocationPicker
         label="METER GPS LOCATION"

@@ -34,7 +34,6 @@ import { getSafeCoords } from "../../context/MapContext";
 import { useWarehouse } from "../../context/WarehouseContext";
 import { functions } from "../../firebase";
 import { useAuth } from "../../hooks/useAuth";
-import { useMeterFormLookupOptions } from "../../hooks/useMeterFormLookupOptions";
 import { useGetServiceProvidersQuery } from "../../redux/spApi";
 import { useAddTrnMutation } from "../../redux/trnsApi";
 import { getPremiseQueueItemByPremiseId } from "../../utils/premiseSubmissionQueue";
@@ -50,7 +49,11 @@ import {
   parseTargetedBatchContextRouteParam,
 } from "../premises/targetedBatchPremiseContext";
 import { ForensicFooter } from "./ForensicFooter";
-import { NO_ACCESS_REASONS } from "./noAccessReasons";
+import {
+  getFormOptionValues,
+  getFormOptions,
+  isFormOptionPhotoRequired,
+} from "./formOptions";
 
 function buildMeterDiscoveryTrnId({ wardPcode, erfNo, meterType }) {
   const ts = Date.now();
@@ -128,6 +131,151 @@ function isValidMeterGps(value) {
   );
 }
 
+const OTHER_ANOMALY_VALUES = getFormOptionValues("other_anomalies");
+const STANDARD_ELECTRICITY_MANUFACTURERS = getFormOptionValues(
+  "elec_manufacturers",
+).filter((value) => value !== "Other");
+const SEAL_NUMBER_COMMENT_REASONS = getFormOptionValues(
+  "seal_number_comment_reasons",
+);
+const KEYPAD_SERIAL_NUMBER_COMMENT_REASONS = getFormOptionValues(
+  "keypad_serial_number_comment_reasons",
+);
+const CB_COMMENT_REASONS = getFormOptionValues("cb_comment_reasons");
+
+function hydrateInfrastructureComment(container, valueKey, allowedComments) {
+  if (!container || typeof container !== "object") return;
+
+  const capturedValue = String(container?.[valueKey] || "").trim();
+  const storedComment = String(container?.comment || "").trim();
+
+  container.commentOther = "";
+
+  if (
+    !capturedValue &&
+    storedComment &&
+    storedComment !== "Other" &&
+    !allowedComments.includes(storedComment)
+  ) {
+    container.comment = "Other";
+    container.commentOther = storedComment;
+  }
+}
+
+function canonicalizeInfrastructureComment(container, valueKey) {
+  if (!container || typeof container !== "object") return;
+
+  const capturedValue = String(container?.[valueKey] || "").trim();
+
+  if (capturedValue) {
+    container.comment = "";
+  } else if (container.comment === "Other") {
+    container.comment = String(container?.commentOther || "").trim();
+  }
+
+  delete container.commentOther;
+}
+
+const otherAnomaliesSchema = array()
+  .of(string().oneOf(OTHER_ANOMALY_VALUES, "Invalid Other Anomaly"))
+  .test(
+    "unique-other-anomalies",
+    "Other Anomalies cannot contain duplicates",
+    (value) => !Array.isArray(value) || new Set(value).size === value.length,
+  );
+
+function clonePlainValue(value) {
+  if (value === null || value === undefined) return value;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function hydrateMeterDiscoveryEditPayload(payload) {
+  const hydrated = clonePlainValue(payload);
+
+  if (
+    !hydrated ||
+    hydrated?.accessData?.access?.hasAccess === "no" ||
+    !hydrated?.ast
+  ) {
+    return hydrated;
+  }
+
+  hydrated.ast.anomalies = {
+    ...(hydrated.ast.anomalies || {}),
+    otherAnomalies: Array.isArray(hydrated?.ast?.anomalies?.otherAnomalies)
+      ? [...hydrated.ast.anomalies.otherAnomalies]
+      : [],
+  };
+
+  if (hydrated?.meterType === "electricity") {
+    hydrated.ast.astData = {
+      ...(hydrated.ast.astData || {}),
+    };
+
+    const storedManufacturer = String(
+      hydrated?.ast?.astData?.astManufacturer || "",
+    ).trim();
+
+    hydrated.ast.astData.astManufacturerOther = "";
+
+    if (
+      storedManufacturer &&
+      storedManufacturer !== "Other" &&
+      !STANDARD_ELECTRICITY_MANUFACTURERS.includes(storedManufacturer)
+    ) {
+      hydrated.ast.astData.astManufacturer = "Other";
+      hydrated.ast.astData.astManufacturerOther = storedManufacturer;
+    }
+
+    const meter = hydrated?.ast?.astData?.meter || {};
+    hydrateInfrastructureComment(
+      meter.seal,
+      "sealNo",
+      SEAL_NUMBER_COMMENT_REASONS,
+    );
+    hydrateInfrastructureComment(
+      meter.keypad,
+      "serialNo",
+      KEYPAD_SERIAL_NUMBER_COMMENT_REASONS,
+    );
+    hydrateInfrastructureComment(meter.cb, "size", CB_COMMENT_REASONS);
+  }
+
+  return hydrated;
+}
+
+function buildCanonicalMeterDiscoveryAst(values) {
+  const canonicalAst = clonePlainValue(values?.ast || {});
+
+  canonicalAst.anomalies = {
+    ...(canonicalAst.anomalies || {}),
+    otherAnomalies: Array.isArray(canonicalAst?.anomalies?.otherAnomalies)
+      ? [...canonicalAst.anomalies.otherAnomalies]
+      : [],
+  };
+
+  if (values?.meterType === "electricity") {
+    canonicalAst.astData = {
+      ...(canonicalAst.astData || {}),
+    };
+
+    if (canonicalAst.astData.astManufacturer === "Other") {
+      canonicalAst.astData.astManufacturer = String(
+        canonicalAst.astData.astManufacturerOther || "",
+      ).trim();
+    }
+
+    delete canonicalAst.astData.astManufacturerOther;
+
+    const meter = canonicalAst?.astData?.meter || {};
+    canonicalizeInfrastructureComment(meter.seal, "sealNo");
+    canonicalizeInfrastructureComment(meter.keypad, "serialNo");
+    canonicalizeInfrastructureComment(meter.cb, "size");
+  }
+
+  return canonicalAst;
+}
+
 // --- MAIN FORM COMPONENT ---
 export default function FormMeterDiscovery() {
   const {
@@ -147,17 +295,12 @@ export default function FormMeterDiscovery() {
     () =>
       normalizeTargetedBatchContext(
         editQueueItem?.payload?.targetedBatchContext,
-      ) ||
-      parseTargetedBatchContextRouteParam(routeTargetedBatchContext),
-    [
-      editQueueItem?.payload?.targetedBatchContext,
-      routeTargetedBatchContext,
-    ],
+      ) || parseTargetedBatchContextRouteParam(routeTargetedBatchContext),
+    [editQueueItem?.payload?.targetedBatchContext, routeTargetedBatchContext],
   );
 
   const targetedBatchReturnTo =
-    targetedBatchContext?.returnTo ||
-    "/(tabs)/premises";
+    targetedBatchContext?.returnTo || "/(tabs)/premises";
 
   const { data: allServiceProviders = [] } = useGetServiceProvidersQuery();
 
@@ -267,8 +410,7 @@ export default function FormMeterDiscovery() {
   const currentMissionType =
     action?.access === "no" ? "NA" : action?.meterType || "NA";
 
-  const { getOptions } =
-    useMeterFormLookupOptions(currentMissionType);
+  const getOptions = getFormOptions;
 
   const premiseAddress =
     `${premise?.address?.strNo || ""} ${premise?.address?.strName || ""} ${premise?.address?.strType || ""}`.trim();
@@ -479,6 +621,8 @@ export default function FormMeterDiscovery() {
           then: (schema) => schema.required("Anomaly detail is required"),
           otherwise: (schema) => schema.notRequired().nullable(),
         }),
+
+        otherAnomalies: otherAnomaliesSchema,
       }),
       location: object().shape({
         gps: object()
@@ -570,6 +714,13 @@ export default function FormMeterDiscovery() {
 
         astManufacturer: string().required("Manufacturer is required"),
 
+        astManufacturerOther: string().when("astManufacturer", {
+          is: "Other",
+          then: (schema) =>
+            schema.trim().required("Other manufacturer is required"),
+          otherwise: (schema) => schema.notRequired().nullable(),
+        }),
+
         astName: string().when("astManufacturer", {
           is: (val) => val && val.length > 0,
           then: (schema) => schema.required("Model name is required"),
@@ -588,37 +739,155 @@ export default function FormMeterDiscovery() {
             .required("Meter Category Required"),
 
           seal: object().shape({
-            sealNo: string().required("Seal number is required"),
+            sealNo: string().test(
+              "seal-number-or-comment",
+              "Seal number or comment is required",
+              (value, context) => {
+                const hasSealNumber = !!String(value || "").trim();
+                const hasComment = !!String(
+                  context.parent?.comment || "",
+                ).trim();
+                return hasSealNumber || hasComment;
+              },
+            ),
 
             comment: string().when("sealNo", {
               is: (val) => !val || String(val).trim().length === 0,
-              then: (s) => s.required("Comment required if no seal number"),
-              otherwise: (s) => s.notRequired(),
+              then: (schema) =>
+                schema
+                  .oneOf(
+                    SEAL_NUMBER_COMMENT_REASONS,
+                    "Select a valid Seal Number Comment",
+                  )
+                  .required("Seal Number Comment is required"),
+              otherwise: (schema) => schema.notRequired().nullable(),
             }),
+
+            commentOther: string().test(
+              "seal-other-reason",
+              "Other Seal Number Reason is required",
+              (value, context) => {
+                const hasSealNumber = !!String(
+                  context.parent?.sealNo || "",
+                ).trim();
+                if (hasSealNumber || context.parent?.comment !== "Other") {
+                  return true;
+                }
+                return !!String(value || "").trim();
+              },
+            ),
           }),
 
           keypad: object()
             .shape({
               serialNo: string().nullable(),
               comment: string().nullable(),
+              commentOther: string().nullable(),
             })
             .test(
-              "prepaid-keypad",
-              "Keypad serial number is required for prepaid meters",
-              function (value) {
-                if (this.parent?.type !== "prepaid") return true;
-                return !!String(value?.serialNo || "").trim();
+              "prepaid-keypad-serial-or-comment",
+              "Keypad serial number or comment is required",
+              (value, context) => {
+                if (context.parent?.type !== "prepaid") return true;
+
+                const hasSerialNumber = !!String(value?.serialNo || "").trim();
+                const hasComment = !!String(value?.comment || "").trim();
+
+                if (hasSerialNumber || hasComment) return true;
+
+                return context.createError({
+                  path: context.path + ".serialNo",
+                  message: "Keypad serial number or comment is required",
+                });
+              },
+            )
+            .test(
+              "prepaid-keypad-comment-required",
+              "Keypad Serial Number Comment is required",
+              (value, context) => {
+                if (context.parent?.type !== "prepaid") return true;
+
+                const hasSerialNumber = !!String(value?.serialNo || "").trim();
+                const hasComment = !!String(value?.comment || "").trim();
+
+                if (hasSerialNumber || hasComment) return true;
+
+                return context.createError({
+                  path: context.path + ".comment",
+                  message: "Keypad Serial Number Comment is required",
+                });
+              },
+            )
+            .test(
+              "prepaid-keypad-comment-valid",
+              "Select a valid Keypad Serial Number Comment",
+              (value, context) => {
+                if (context.parent?.type !== "prepaid") return true;
+
+                const hasSerialNumber = !!String(value?.serialNo || "").trim();
+                const comment = String(value?.comment || "").trim();
+
+                if (hasSerialNumber || !comment) return true;
+                if (KEYPAD_SERIAL_NUMBER_COMMENT_REASONS.includes(comment)) {
+                  return true;
+                }
+
+                return context.createError({
+                  path: context.path + ".comment",
+                  message: "Select a valid Keypad Serial Number Comment",
+                });
+              },
+            )
+            .test(
+              "prepaid-keypad-other-reason",
+              "Other Keypad Serial Number Reason is required",
+              (value, context) => {
+                if (context.parent?.type !== "prepaid") return true;
+
+                const hasSerialNumber = !!String(value?.serialNo || "").trim();
+                const comment = String(value?.comment || "").trim();
+
+                if (hasSerialNumber || comment !== "Other") return true;
+                if (String(value?.commentOther || "").trim()) return true;
+
+                return context.createError({
+                  path: context.path + ".commentOther",
+                  message: "Other Keypad Serial Number Reason is required",
+                });
               },
             ),
 
           cb: object().shape({
-            size: string().required("Required"),
+            size: string().test(
+              "cb-size-or-comment",
+              "CB size or comment is required",
+              (value, context) => {
+                const hasSize = !!String(value || "").trim();
+                const hasComment = !!String(
+                  context.parent?.comment || "",
+                ).trim();
+                return hasSize || hasComment;
+              },
+            ),
 
             comment: string().when("size", {
-              is: (val) => !val || val.trim().length === 0,
-              then: (s) => s.required("Comment required if CB size is missing"),
-              otherwise: (s) => s.notRequired(),
+              is: (val) => !val || String(val).trim().length === 0,
+              then: (schema) =>
+                schema
+                  .oneOf(CB_COMMENT_REASONS, "Select a valid CB Comment")
+                  .required("CB Comment is required"),
+              otherwise: (schema) => schema.notRequired().nullable(),
             }),
+
+            commentOther: string().test(
+              "cb-other-reason",
+              "Other Circuit Breaker Reason is required",
+              (value, context) => {
+                const hasSize = !!String(context.parent?.size || "").trim();
+                if (hasSize || context.parent?.comment !== "Other") return true;
+                return !!String(value || "").trim();
+              },
+            ),
           }),
         }),
       }),
@@ -631,6 +900,8 @@ export default function FormMeterDiscovery() {
           then: (schema) => schema.required("Anomaly detail is required"),
           otherwise: (schema) => schema.notRequired().nullable(),
         }),
+
+        otherAnomalies: otherAnomaliesSchema,
       }),
 
       ogs: object().shape({
@@ -680,21 +951,45 @@ export default function FormMeterDiscovery() {
             return this.createError({ message: "Meter No. photo required" });
           }
 
-          if (sealNo?.trim() && !value?.some((m) => m.tag === "sealPhoto")) {
+          const sealComment = ast?.astData?.meter?.seal?.comment;
+          const sealPhotoRequired =
+            !!sealNo?.trim() ||
+            (!sealNo?.trim() &&
+              isFormOptionPhotoRequired(
+                "seal_number_comment_reasons",
+                sealComment,
+              ));
+
+          if (sealPhotoRequired && !value?.some((m) => m.tag === "sealPhoto")) {
             return this.createError({ message: "Seal photo required" });
           }
 
-          if (
+          const keypadComment = ast?.astData?.meter?.keypad?.comment;
+          const keypadPhotoRequired =
             meterSubtype === "prepaid" &&
-            (!keypadSerial?.trim() ||
-              !value?.some((m) => m.tag === "keypadPhoto"))
+            (!!keypadSerial?.trim() ||
+              (!keypadSerial?.trim() &&
+                isFormOptionPhotoRequired(
+                  "keypad_serial_number_comment_reasons",
+                  keypadComment,
+                )));
+
+          if (
+            keypadPhotoRequired &&
+            !value?.some((m) => m.tag === "keypadPhoto")
           ) {
             return this.createError({
-              message: "Keypad Serial photo required",
+              message: "Keypad photo required",
             });
           }
 
-          if (cbSize?.trim() && !value?.some((m) => m.tag === "astCbPhoto")) {
+          const cbComment = ast?.astData?.meter?.cb?.comment;
+          const cbPhotoRequired =
+            !!cbSize?.trim() ||
+            (!cbSize?.trim() &&
+              isFormOptionPhotoRequired("cb_comment_reasons", cbComment));
+
+          if (cbPhotoRequired && !value?.some((m) => m.tag === "astCbPhoto")) {
             return this.createError({
               message: "Circuit Breaker photo required",
             });
@@ -745,28 +1040,34 @@ export default function FormMeterDiscovery() {
     const editPayload = editQueueItem?.payload || null;
 
     if (editPayload) {
+      const hydratedEditPayload = hydrateMeterDiscoveryEditPayload(editPayload);
+
       const editHasAccess =
-        editPayload?.accessData?.access?.hasAccess === "no" ? "no" : "yes";
+        hydratedEditPayload?.accessData?.access?.hasAccess === "no"
+          ? "no"
+          : "yes";
 
       const editMeterType =
-        editHasAccess === "no" ? "NA" : editPayload?.meterType || "electricity";
+        editHasAccess === "no"
+          ? "NA"
+          : hydratedEditPayload?.meterType || "electricity";
 
       if (editHasAccess === "no") {
         return {
-          initValues: editPayload,
+          initValues: hydratedEditPayload,
           schema: accessSchema,
         };
       }
 
       if (editMeterType === "water") {
         return {
-          initValues: editPayload,
+          initValues: hydratedEditPayload,
           schema: WaterDiscoverySchema,
         };
       }
 
       return {
-        initValues: editPayload,
+        initValues: hydratedEditPayload,
         schema: ElecDiscoverySchema,
       };
     }
@@ -812,6 +1113,7 @@ export default function FormMeterDiscovery() {
             anomalies: {
               anomaly: "",
               anomalyDetail: "",
+              otherAnomalies: [],
             },
             location: {
               gps: null, // Placeholder for the final liveLocation capture
@@ -843,19 +1145,21 @@ export default function FormMeterDiscovery() {
           astData: {
             astNo: targetedBatchContext?.targetedMeterNo || "",
             astManufacturer: "",
+            astManufacturerOther: "",
             astName: "",
             meter: {
               phase: "",
               type: "",
               category: "",
-              seal: { sealNo: "", comment: "" }, // 🎯 Initialized
-              keypad: { serialNo: "", comment: "" }, // 🎯 Initialized
-              cb: { size: "", comment: "" }, // 🎯 Initialized
+              seal: { sealNo: "", comment: "", commentOther: "" }, // 🎯 Initialized
+              keypad: { serialNo: "", comment: "", commentOther: "" }, // 🎯 Initialized
+              cb: { size: "", comment: "", commentOther: "" }, // 🎯 Initialized
             },
           },
           anomalies: {
             anomaly: "",
             anomalyDetail: "",
+            otherAnomalies: [],
           },
           location: {
             gps: null, // 🛰️ Will be an Object {lat, lng} via the Picker
@@ -955,7 +1259,7 @@ export default function FormMeterDiscovery() {
         const creationTokenReading = String(
           values?.ast?.tokenReading || "",
         ).trim();
-        const cleanAst = { ...(values.ast || {}) };
+        const cleanAst = buildCanonicalMeterDiscoveryAst(values);
         delete cleanAst.meterReading;
         delete cleanAst.tokenReading;
 
@@ -1005,7 +1309,7 @@ export default function FormMeterDiscovery() {
             ...baseSystemFields,
             access: values.accessData.access,
           },
-          ast: values.ast,
+          ast: buildCanonicalMeterDiscoveryAst(values),
           meterType: "electricity",
           media: values?.media || [],
           status: {
@@ -1493,7 +1797,7 @@ export default function FormMeterDiscovery() {
           // console.log(`FormMeterDiscovery --values`, values);
           // console.log(` `);
           // console.log(`handleSubmitDiscovery --errors`, errors);
-          // console.log(`errors`, JSON.stringify(errors, null, 2));
+          console.log(`errors`, JSON.stringify(errors, null, 2));
 
           return (
             <ScrollView
@@ -1646,7 +1950,7 @@ export default function FormMeterDiscovery() {
                     }}
                     value={values?.accessData?.access?.reason}
                   >
-                    {NO_ACCESS_REASONS.map((r) => (
+                    {getOptions("no_access_reasons").map((r) => (
                       <RadioButton.Item key={r} label={r} value={r} />
                     ))}
                   </RadioButton.Group>

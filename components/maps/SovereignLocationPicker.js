@@ -28,7 +28,7 @@ const SovereignLocationPicker = ({
   nearbyPremises = [],
   nearbyMeters = [],
 }) => {
-  const { values, setFieldValue, errors, touched } = useFormikContext();
+  const { values, setFieldValue, errors } = useFormikContext();
   const [modalVisible, setModalVisible] = useState(false);
   const [mapType, setMapType] = useState("standard");
   const [mapTypeMenuVisible, setMapTypeMenuVisible] = useState(false);
@@ -39,8 +39,7 @@ const SovereignLocationPicker = ({
 
   const rawValue = getIn(values, name);
   const error = getIn(errors, name);
-  const isTouched = getIn(touched, name);
-  const hasError = !!error && (isTouched || values?.submitCount > 0);
+  const hasError = !!error;
 
   const getCoords = (val) => {
     if (Array.isArray(val) && val.length === 2) {
@@ -185,43 +184,43 @@ const SovereignLocationPicker = ({
   return (
     <FormSection title={label}>
       <View style={[styles.container, disabled && { opacity: 0.6 }]}>
-        <TouchableOpacity
-          disabled={disabled}
-          activeOpacity={0.8}
-          style={[styles.previewWrapper, hasError && styles.previewError]}
-          onPress={() => setModalVisible(true)}
-        >
-          <MapView
-            provider={PROVIDER_GOOGLE}
-            style={styles.miniMap}
-            mapType="standard"
-            scrollEnabled={false}
-            zoomEnabled={false}
-            region={{
-              ...currentCoords,
-              latitudeDelta: 0.001,
-              longitudeDelta: 0.001,
-            }}
+        <View style={[styles.previewFrame, hasError && styles.previewError]}>
+          <TouchableOpacity
+            disabled={disabled}
+            activeOpacity={0.8}
+            style={styles.previewWrapper}
+            onPress={() => setModalVisible(true)}
           >
-            {referenceBoundary.length > 0 && (
-              <Polygon
-                coordinates={referenceBoundary}
-                strokeColor="#FFD700"
-                fillColor="rgba(255, 215, 0, 0.1)"
-                strokeWidth={2}
-              />
-            )}
+            <MapView
+              provider={PROVIDER_GOOGLE}
+              style={styles.miniMap}
+              mapType="standard"
+              scrollEnabled={false}
+              zoomEnabled={false}
+              region={{
+                ...currentCoords,
+                latitudeDelta: 0.001,
+                longitudeDelta: 0.001,
+              }}
+            >
+              {referenceBoundary.length > 0 && (
+                <Polygon
+                  coordinates={referenceBoundary}
+                  strokeColor="#FFD700"
+                  fillColor="rgba(255, 215, 0, 0.1)"
+                  strokeWidth={2}
+                />
+              )}
 
-            <Marker coordinate={currentCoords}>
-              <MaterialCommunityIcons
-                name={icon}
-                size={28}
-                color={hasError ? "#ef4444" : "#0f172a"}
-              />
-            </Marker>
-          </MapView>
+              <Marker coordinate={currentCoords}>
+                <MaterialCommunityIcons
+                  name={icon}
+                  size={28}
+                  color={hasError ? "#ef4444" : "#0f172a"}
+                />
+              </Marker>
+            </MapView>
 
-          <View style={styles.overlay}>
             <View
               style={[
                 styles.overlay,
@@ -246,8 +245,11 @@ const SovereignLocationPicker = ({
                 <Text style={styles.overlaySubText}>TAP TO RE-ADJUST</Text>
               )}
             </View>
-          </View>
-        </TouchableOpacity>
+          </TouchableOpacity>
+          {hasError && (
+            <View pointerEvents="none" style={styles.validationIndicator} />
+          )}
+        </View>
 
         <Portal>
           <Modal
@@ -472,21 +474,39 @@ const SovereignLocationPicker = ({
 const styles = StyleSheet.create({
   container: { marginBottom: 10 },
 
-  previewWrapper: {
+  previewFrame: {
     height: 140,
     borderRadius: 12,
-    overflow: "hidden",
     borderWidth: 1,
     borderColor: "#e2e8f0",
+    backgroundColor: "#fff",
   },
 
   previewError: {
     borderColor: "#ef4444",
-    borderLeftWidth: 8,
+  },
+
+  validationIndicator: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: 8,
+    borderTopLeftRadius: 12,
+    borderBottomLeftRadius: 12,
+    backgroundColor: "#ef4444",
+    zIndex: 10,
+    elevation: 10,
+  },
+
+  previewWrapper: {
+    flex: 1,
+    borderRadius: 11,
+    overflow: "hidden",
   },
 
   miniMap: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
   },
 
   overlay: {
@@ -494,6 +514,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.4)",
     justifyContent: "center",
     alignItems: "center",
+    zIndex: 1,
+    elevation: 1,
   },
 
   overlayText: {

@@ -5,6 +5,7 @@ import SovereignLocationPicker from "../maps/SovereignLocationPicker";
 import { IrepsMedia } from "../media/IrepsMedia";
 import { AnomalySection } from "./AnomalySection";
 import FormInput from "./FormInput";
+import { OtherAnomalySection } from "./OtherAnomalySection";
 import { FormSection } from "./FormSection";
 import FormSelect from "./FormSelect";
 
@@ -30,14 +31,29 @@ export const ElectricitySections = ({
   const showNormalisation = !isInstallation;
   const isDiscovery = trnId.startsWith("TRN_MDIS_");
 
-  // 🛰️ TRANSFORMING SETTINGS FOR MULTI-SELECT
-  // We take the raw strings from Firestore and turn them into {label, value} objects
-  const normalizationOptions = (getOptions("norm_actions") || []).map(
-    (opt) => ({
-      label: opt === "none" ? "NONE (SAFE)" : opt.toUpperCase(),
+  const rawNormalizationOptions = getOptions("norm_actions") || [];
+
+  const normalizationOptions = rawNormalizationOptions.map((opt) => {
+    if (opt && typeof opt === "object") {
+      const value = opt.value ?? opt.label;
+      return {
+        label: String(opt.label ?? value ?? ""),
+        value,
+      };
+    }
+
+    if (isDiscovery) {
+      return {
+        label: opt === "none" ? "None" : String(opt),
+        value: opt,
+      };
+    }
+
+    return {
+      label: opt === "none" ? "NONE (SAFE)" : String(opt).toUpperCase(),
       value: opt,
-    }),
-  );
+    };
+  });
 
   const handleToggle = (optionValue) => {
     // 🏛️ 1. Get current actions, ensuring we handle undefined safely
@@ -103,7 +119,21 @@ export const ElectricitySections = ({
             name="ast.astData.astManufacturer"
             options={getOptions("elec_manufacturers")}
             disabled={disabled}
+            onValueChange={(nextValue) => {
+              if (isDiscovery && nextValue !== "Other") {
+                setFieldValue("ast.astData.astManufacturerOther", "", false);
+              }
+            }}
           />
+          {isDiscovery &&
+            values?.ast?.astData?.astManufacturer === "Other" && (
+              <FormInput
+                label="Other Manufacturer"
+                name="ast.astData.astManufacturerOther"
+                placeholder="Enter Manufacturer"
+                disabled={disabled}
+              />
+            )}
           <FormInput
             label="MODEL (NAME)"
             name="ast.astData.astName"
@@ -115,7 +145,11 @@ export const ElectricitySections = ({
               <FormSelect
                 label="PHASE"
                 name="ast.astData.meter.phase"
-                options={["single", "three"]}
+                options={
+                  isDiscovery
+                    ? getOptions("meter_phases")
+                    : ["single", "three"]
+                }
                 disabled={disabled}
               />
             </View>
@@ -124,7 +158,11 @@ export const ElectricitySections = ({
               <FormSelect
                 label="TYPE"
                 name="ast.astData.meter.type"
-                options={["prepaid", "conventional"]}
+                options={
+                  isDiscovery
+                    ? getOptions("meter_types")
+                    : ["prepaid", "conventional"]
+                }
                 disabled={disabled}
               />
             </View>
@@ -133,7 +171,11 @@ export const ElectricitySections = ({
           <FormSelect
             label="CATEGORY"
             name="ast.astData.meter.category"
-            options={["Normal", "Bulk"]}
+            options={
+              isDiscovery
+                ? getOptions("meter_categories")
+                : ["Normal", "Bulk"]
+            }
             disabled={disabled}
           />
         </Surface>
@@ -149,14 +191,23 @@ export const ElectricitySections = ({
             name="ast.astData.meter.seal.sealNo"
             disabled={disabled}
           />
-          {/* 🛡️ Reactive Logic: Required if Serial is missing */}
           {!values?.ast?.astData?.meter?.seal?.sealNo && (
-            <FormInput
-              label="SEAL COMMENT (REQUIRED)"
-              name="ast.astData.meter.seal.comment"
-              placeholder="Why is there no seal?"
-              disabled={disabled}
-            />
+            <>
+              <FormSelect
+                label="Seal Number Comment"
+                name="ast.astData.meter.seal.comment"
+                options={getOptions("seal_number_comment_reasons")}
+                disabled={disabled}
+              />
+              {values?.ast?.astData?.meter?.seal?.comment === "Other" && (
+                <FormInput
+                  label="Other Reason"
+                  name="ast.astData.meter.seal.commentOther"
+                  placeholder="Enter Seal Number Reason"
+                  disabled={disabled}
+                />
+              )}
+            </>
           )}
           <IrepsMedia
             tag={"sealPhoto"}
@@ -175,6 +226,24 @@ export const ElectricitySections = ({
               name="ast.astData.meter.keypad.serialNo"
               disabled={disabled}
             />
+            {!values?.ast?.astData?.meter?.keypad?.serialNo && (
+              <>
+                <FormSelect
+                  label="Keypad Serial Number Comment"
+                  name="ast.astData.meter.keypad.comment"
+                  options={getOptions("keypad_serial_number_comment_reasons")}
+                  disabled={disabled}
+                />
+                {values?.ast?.astData?.meter?.keypad?.comment === "Other" && (
+                  <FormInput
+                    label="Other Reason"
+                    name="ast.astData.meter.keypad.commentOther"
+                    placeholder="Enter Keypad Serial Number Reason"
+                    disabled={disabled}
+                  />
+                )}
+              </>
+            )}
             <IrepsMedia
               tag={"keypadPhoto"}
               agentName={agentName}
@@ -193,12 +262,22 @@ export const ElectricitySections = ({
             disabled={disabled}
           />
           {!values?.ast?.astData?.meter?.cb?.size && (
-            <FormInput
-              label="CB COMMENT (REQUIRED)"
-              name="ast.astData.meter.cb.comment"
-              placeholder="Why is the CB size missing?"
-              disabled={disabled}
-            />
+            <>
+              <FormSelect
+                label="CB Comment"
+                name="ast.astData.meter.cb.comment"
+                options={getOptions("cb_comment_reasons")}
+                disabled={disabled}
+              />
+              {values?.ast?.astData?.meter?.cb?.comment === "Other" && (
+                <FormInput
+                  label="Other Reason"
+                  name="ast.astData.meter.cb.commentOther"
+                  placeholder="Enter Circuit Breaker Reason"
+                  disabled={disabled}
+                />
+              )}
+            </>
           )}
           <IrepsMedia
             tag={"astCbPhoto"}
@@ -237,14 +316,16 @@ export const ElectricitySections = ({
           <FormSelect
             label="METER STATUS"
             name="status.state"
-            options={["CONNECTED", "DISCONNECTED"]}
+            options={getOptions("meter_statuses")}
             disabled={disabled}
           />
         )}
         <FormSelect
           label="OFF-GRID SUPPLY?"
           name="ast.ogs.hasOffGridSupply"
-          options={["yes", "no"]}
+          options={
+            isDiscovery ? getOptions("off_grid_supply") : ["yes", "no"]
+          }
           disabled={disabled}
         />
         {values?.ast?.ogs?.hasOffGridSupply === "yes" && (
@@ -266,6 +347,15 @@ export const ElectricitySections = ({
         setFieldValue={setFieldValue}
         disabled={disabled}
       />
+
+      {isDiscovery && (
+        <OtherAnomalySection
+          values={values}
+          setFieldValue={setFieldValue}
+          options={getOptions("other_anomalies")}
+          disabled={disabled}
+        />
+      )}
 
       {/* 🏛️ REPAIRED SECTION 4: NORMALISATION */}
       {showNormalisation && (
