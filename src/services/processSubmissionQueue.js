@@ -2,6 +2,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { functions } from "../firebase";
+import { cleanupNoAccessMeterDiscoveryMedia } from "../utils/persistNoAccessMeterDiscoveryMedia";
 
 import {
   getCallableNameForSubmissionQueueItem,
@@ -17,10 +18,14 @@ let isQueueProcessing = false;
 export const processSubmissionQueue = async ({
   agentUid = "SYSTEM",
   agentName = "SYSTEM",
+  queueItemIds = null,
+  filterMode = null,
+  includeSyncing = false,
 }) => {
   if (isQueueProcessing) {
     return {
       success: false,
+      code: "QUEUE_BUSY",
       message: "Queue processing already in progress",
     };
   }
@@ -35,15 +40,53 @@ export const processSubmissionQueue = async ({
     if (!isOnline) {
       return {
         success: false,
+        code: "DEVICE_OFFLINE",
         message: "Device offline",
       };
     }
 
     const queue = await getSubmissionQueue();
+    const selectedQueueItemIds = Array.isArray(queueItemIds)
+      ? new Set(queueItemIds.filter(Boolean))
+      : null;
 
-    const retryableItems = queue.filter(
-      (item) => item?.status === "PENDING" || item?.status === "FAILED",
-    );
+    const retryableStatuses = includeSyncing
+      ? new Set(["PENDING", "FAILED", "SYNCING"])
+      : new Set(["PENDING", "FAILED"]);
+
+    const retryableItems = queue.filter((item) => {
+      if (!retryableStatuses.has(item?.status)) return false;
+
+      if (selectedQueueItemIds && !selectedQueueItemIds.has(item?.id)) {
+        return false;
+      }
+
+      if (filterMode === "METER_DISCOVERY_NO_ACCESS") {
+        const formType = String(item?.formType || "")
+          .trim()
+          .toUpperCase();
+        const trnType = String(
+          item?.context?.trnType ||
+            item?.payload?.accessData?.trnType ||
+            item?.payload?.trnType ||
+            "",
+        )
+          .trim()
+          .toUpperCase();
+        const hasAccess = String(
+          item?.payload?.accessData?.access?.hasAccess || "",
+        )
+          .trim()
+          .toLowerCase();
+
+        return (
+          (formType === "METER_DISCOVERY" || trnType === "METER_DISCOVERY") &&
+          hasAccess === "no"
+        );
+      }
+
+      return true;
+    });
 
     if (!retryableItems.length) {
       return {
@@ -56,7 +99,18 @@ export const processSubmissionQueue = async ({
 
     for (const item of retryableItems) {
       try {
-        await markSubmissionQueueItemSyncing(item.id, agentUid, agentName);
+        const syncingResult = await markSubmissionQueueItemSyncing(
+          item.id,
+          agentUid,
+          agentName,
+        );
+
+        if (
+          syncingResult?.queueItem?.status === "SUCCESS" &&
+          syncingResult?.queueItem?.result?.success === true
+        ) {
+          continue;
+        }
 
         const payload = item?.payload || {};
         const originalMedia = Array.isArray(payload?.media)
@@ -71,8 +125,8 @@ export const processSubmissionQueue = async ({
                   ? `${payload?.meterType}_meters`
                   : "no_access";
 
-            const stableId = payload?.trnId || payload?.id || item?.id;
-            const fileName = `${stableId}_${mediaItem?.tag}.jpg`;
+              const stableId = payload?.trnId || payload?.id || item?.id;
+              const fileName = `${stableId}_${mediaItem?.tag}.jpg`;
 
               const storageRef = ref(storage, `meters/${folder}/${fileName}`);
 
@@ -101,7 +155,12 @@ export const processSubmissionQueue = async ({
         };
 
         if (JSON.stringify(syncedMedia) !== JSON.stringify(originalMedia)) {
-          await updateSubmissionQueueItem(item.id, { payload: finalPayload }, agentUid, agentName);
+          await updateSubmissionQueueItem(
+            item.id,
+            { payload: finalPayload },
+            agentUid,
+            agentName,
+          );
         }
 
         const callableName = getCallableNameForSubmissionQueueItem(item);
@@ -195,7 +254,7 @@ export const processSubmissionQueue = async ({
           continue;
         }
 
-        await markSubmissionQueueItemSuccess(
+        const successResult = await markSubmissionQueueItemSuccess(
           item.id,
           {
             code: result?.code || "SUCCESS",
@@ -205,6 +264,32 @@ export const processSubmissionQueue = async ({
           agentUid,
           agentName,
         );
+
+        if (
+          successResult?.success === true &&
+          successResult?.queueItem?.status === "SUCCESS" &&
+          successResult?.queueItem?.result?.success === true &&
+          String(finalPayload?.accessData?.trnType || "")
+            .trim()
+            .toUpperCase() === "METER_DISCOVERY" &&
+          String(finalPayload?.accessData?.access?.hasAccess || "")
+            .trim()
+            .toLowerCase() === "no"
+        ) {
+          try {
+            await cleanupNoAccessMeterDiscoveryMedia({
+              trnId: finalPayload?.id,
+            });
+          } catch (cleanupError) {
+            console.warn(
+              "processSubmissionQueue -- durable No Access media cleanup failed",
+              {
+                trnId: finalPayload?.id || "NAv",
+                message: cleanupError?.message || String(cleanupError),
+              },
+            );
+          }
+        }
       } catch (error) {
         console.log("processSubmissionQueue -- item failed", item?.id, error);
 

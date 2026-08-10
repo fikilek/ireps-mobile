@@ -15,9 +15,10 @@ import { WarehouseProvider } from "../src/context/WarehouseContext";
 import { auth } from "../src/firebase";
 import { useAuth } from "../src/hooks/useAuth";
 import AuthBootstrap from "../src/navigation/AuthBootstrap";
-import FwrMonitoringCoordinator from "../src/services/fwr-monitoring/FwrMonitoringCoordinator";
 import { persistor, store } from "../src/redux/store";
+import FwrMonitoringCoordinator from "../src/services/fwr-monitoring/FwrMonitoringCoordinator";
 import { startInformalErfQueueSyncService } from "../src/services/startInformalErfQueueSyncService";
+import { startMeterDiscoveryNoAccessQueueSyncService } from "../src/services/startMeterDiscoveryNoAccessQueueSyncService";
 
 const AuthGate = memo(function AuthGate() {
   const {
@@ -171,6 +172,40 @@ const InformalErfQueueSyncCoordinator = memo(
   },
 );
 
+const MeterDiscoveryNoAccessQueueSyncCoordinator = memo(
+  function MeterDiscoveryNoAccessQueueSyncCoordinator() {
+    const { user, profile, status, logoutInProgress } = useAuth();
+
+    const agentUid = user?.uid || null;
+    const agentName =
+      profile?.profile?.displayName ||
+      user?.displayName ||
+      "iREPS User";
+
+    useEffect(() => {
+      if (
+        logoutInProgress ||
+        !agentUid ||
+        !["COMPLETE", "COMPLETED"].includes(String(status || "").toUpperCase())
+      ) {
+        return undefined;
+      }
+
+      return startMeterDiscoveryNoAccessQueueSyncService({
+        agentUid,
+        agentName,
+      });
+    }, [
+      agentUid,
+      agentName,
+      logoutInProgress,
+      status,
+    ]);
+
+    return null;
+  },
+);
+
 const SessionSlot = memo(function SessionSlot() {
   const { logoutInProgress } = useAuth();
 
@@ -191,8 +226,9 @@ export default function RootLayout() {
                   <DiscoveryProvider>
                     <InstallationProvider>
                       <AuthBootstrap />
-                      <InformalErfQueueSyncCoordinator />
                       <FwrMonitoringCoordinator />
+                      <InformalErfQueueSyncCoordinator />
+                      <MeterDiscoveryNoAccessQueueSyncCoordinator />
                       <AuthGate />
                       <SessionSlot />
                     </InstallationProvider>

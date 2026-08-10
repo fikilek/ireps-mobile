@@ -1,4 +1,5 @@
 import { createMMKV } from "react-native-mmkv";
+import { cleanupNoAccessMeterDiscoveryMedia } from "./persistNoAccessMeterDiscoveryMedia";
 
 const SUBMISSION_QUEUE_STORAGE_KEY = "submission_queue_items";
 
@@ -189,9 +190,32 @@ export const updateSubmissionQueueItem = async (
     const updatedQueue = queue.map((item) => {
       if (item?.id !== queueItemId) return item;
 
+      const isServerConfirmedSuccess =
+        item?.status === "SUCCESS" &&
+        item?.result?.success === true &&
+        item?.result?.code === "SERVER_CONFIRMED";
+
+      const requestsStatusDowngrade =
+        updates?.status && updates.status !== "SUCCESS";
+
+      let safeUpdates = updates;
+
+      if (isServerConfirmedSuccess && requestsStatusDowngrade) {
+        const requestedStatus = updates.status;
+        safeUpdates = { ...updates };
+        delete safeUpdates.status;
+        delete safeUpdates.result;
+        delete safeUpdates.sync;
+
+        console.log(
+          "updateSubmissionQueueItem -- preserving server-confirmed SUCCESS",
+          { queueItemId, requestedStatus },
+        );
+      }
+
       return {
         ...item,
-        ...updates,
+        ...safeUpdates,
         metadata: {
           ...item?.metadata,
           updatedAt: nowIso(),
@@ -280,6 +304,17 @@ export const markSubmissionQueueItemFailed = async (
   updatedByUser = "SYSTEM",
 ) => {
   const existingItem = await getSubmissionQueueItemById(queueItemId);
+
+  if (
+    existingItem?.status === "SUCCESS" &&
+    existingItem?.result?.success === true
+  ) {
+    return {
+      success: true,
+      message: "Queue item is already server-confirmed.",
+      queueItem: existingItem,
+    };
+  }
 
   console.log("markSubmissionQueueItemFailed -- keeping item PENDING", {
     queueItemId,
@@ -498,8 +533,21 @@ function readQueueTrnType(queueItem = {}) {
   );
 }
 
-function isLifecycleQueueItem(queueItem = {}) {
+function isNoAccessMeterDiscoveryQueueItem(queueItem = {}) {
   const trnType = readQueueTrnType(queueItem);
+  const hasAccess = normalizeQueueUpper(
+    queueItem?.payload?.accessData?.access?.hasAccess,
+  );
+
+  return trnType === "METER_DISCOVERY" && hasAccess === "NO";
+}
+
+function isReconciliableQueueItem(queueItem = {}) {
+  const trnType = readQueueTrnType(queueItem);
+
+  if (isNoAccessMeterDiscoveryQueueItem(queueItem)) {
+    return true;
+  }
 
   return [
     "METER_INSPECTION",
@@ -510,12 +558,17 @@ function isLifecycleQueueItem(queueItem = {}) {
   ].includes(trnType);
 }
 
-function isCompletedLifecycleServerTrn(serverTrn = {}) {
+function isServerConfirmedTrn(serverTrn = {}) {
   const serverTrnId = readServerTrnId(serverTrn);
   const serverTrnType = readServerTrnType(serverTrn);
   const workflowState = readServerWorkflowState(serverTrn);
 
   if (!serverTrnId) return false;
+
+  if (serverTrnType === "METER_DISCOVERY") {
+    return true;
+  }
+
   if (workflowState !== "COMPLETED") return false;
 
   return [
@@ -543,42 +596,47 @@ export const reconcileSubmissionQueueWithServerTrns = async ({
       };
     }
 
-    const completedLifecycleTrns = (Array.isArray(trns) ? trns : []).filter(
-      isCompletedLifecycleServerTrn,
+    const confirmedServerTrns = (Array.isArray(trns) ? trns : []).filter(
+      isServerConfirmedTrn,
     );
 
-    if (!completedLifecycleTrns.length) {
+    if (!confirmedServerTrns.length) {
       return {
         success: true,
         changedCount: 0,
-        message: "No completed lifecycle TRNs found in stream.",
+        message: "No server-confirmed queue TRNs found in stream.",
       };
     }
 
-    const completedById = new Map();
+    const confirmedById = new Map();
 
-    completedLifecycleTrns.forEach((serverTrn) => {
+    confirmedServerTrns.forEach((serverTrn) => {
       const serverTrnId = readServerTrnId(serverTrn);
       if (serverTrnId) {
-        completedById.set(serverTrnId, serverTrn);
+        confirmedById.set(serverTrnId, serverTrn);
       }
     });
 
     let changedCount = 0;
+    const reconciledNoAccessTrnIds = [];
     const timestamp = nowIso();
 
     const updatedQueue = queue.map((queueItem) => {
       if (!queueItem?.id) return queueItem;
       if (queueItem?.status === "SUCCESS") return queueItem;
-      if (!isLifecycleQueueItem(queueItem)) return queueItem;
+      if (!isReconciliableQueueItem(queueItem)) return queueItem;
 
       const queueInstructionTrnId = readQueueInstructionTrnId(queueItem);
       if (!queueInstructionTrnId) return queueItem;
 
-      const serverTrn = completedById.get(queueInstructionTrnId);
+      const serverTrn = confirmedById.get(queueInstructionTrnId);
       if (!serverTrn) return queueItem;
 
       changedCount += 1;
+
+      if (isNoAccessMeterDiscoveryQueueItem(queueItem)) {
+        reconciledNoAccessTrnIds.push(queueInstructionTrnId);
+      }
 
       return {
         ...queueItem,
@@ -587,7 +645,7 @@ export const reconcileSubmissionQueueWithServerTrns = async ({
           success: true,
           code: "SERVER_CONFIRMED",
           message:
-            "Server confirmed this lifecycle TRN was completed successfully.",
+            "Server confirmed this queued TRN was saved successfully.",
           trnId: readServerTrnId(serverTrn),
         },
         sync: {
@@ -608,7 +666,7 @@ export const reconcileSubmissionQueueWithServerTrns = async ({
       return {
         success: true,
         changedCount: 0,
-        message: "No matching lifecycle queue items needed reconciliation.",
+        message: "No matching queue items needed reconciliation.",
       };
     }
 
@@ -622,10 +680,21 @@ export const reconcileSubmissionQueueWithServerTrns = async ({
       };
     }
 
+    for (const trnId of reconciledNoAccessTrnIds) {
+      try {
+        await cleanupNoAccessMeterDiscoveryMedia({ trnId });
+      } catch (cleanupError) {
+        console.warn(
+          "reconcileSubmissionQueueWithServerTrns -- durable media cleanup failed",
+          { trnId, message: cleanupError?.message || String(cleanupError) },
+        );
+      }
+    }
+
     return {
       success: true,
       changedCount,
-      message: `${changedCount} lifecycle queue item(s) reconciled from server stream.`,
+      message: `${changedCount} queue item(s) reconciled from server stream.`,
     };
   } catch (error) {
     console.log("reconcileSubmissionQueueWithServerTrns error:", error);

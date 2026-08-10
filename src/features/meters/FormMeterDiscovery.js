@@ -36,6 +36,9 @@ import { functions } from "../../firebase";
 import { useAuth } from "../../hooks/useAuth";
 import { useGetServiceProvidersQuery } from "../../redux/spApi";
 import { useAddTrnMutation } from "../../redux/trnsApi";
+import { processSubmissionQueue } from "../../services/processSubmissionQueue";
+import { scheduleMeterDiscoveryNoAccessQueueSyncRetry } from "../../services/startMeterDiscoveryNoAccessQueueSyncService";
+import { persistNoAccessMeterDiscoveryMedia } from "../../utils/persistNoAccessMeterDiscoveryMedia";
 import { getPremiseQueueItemByPremiseId } from "../../utils/premiseSubmissionQueue";
 import {
   addSubmissionQueueItem,
@@ -1353,7 +1356,19 @@ export default function FormMeterDiscovery() {
         ),
       );
 
-      const saveMeterDraftToQueue = async (messageTitle, messageBody) => {
+      const isNoAccessSubmission =
+        cleanPayload?.accessData?.access?.hasAccess === "no";
+
+      if (isNoAccessSubmission) {
+        cleanPayload.media = await persistNoAccessMeterDiscoveryMedia({
+          trnId: cleanPayload?.id,
+          media: cleanPayload?.media || [],
+        });
+      }
+
+      let activeQueueItemId = queueItemId || null;
+
+      const persistMeterDraftToQueue = async () => {
         const nextContext = {
           meterNo: values?.ast?.astData?.astNo || "NAv",
           meterType: cleanPayload?.meterType || "NAv",
@@ -1366,15 +1381,18 @@ export default function FormMeterDiscovery() {
 
         let queueResult = null;
 
-        if (queueItemId) {
-          const existingSync = editQueueItem?.sync || {
+        if (activeQueueItemId) {
+          const currentQueueItem =
+            (await getSubmissionQueueItemById(activeQueueItemId)) ||
+            editQueueItem;
+          const existingSync = currentQueueItem?.sync || {
             attempts: 0,
             lastAttemptAt: "NAv",
             nextRetryAt: "NAv",
           };
 
           queueResult = await updateSubmissionQueueItem(
-            queueItemId,
+            activeQueueItemId,
             {
               payload: cleanPayload,
               context: nextContext,
@@ -1401,7 +1419,27 @@ export default function FormMeterDiscovery() {
             createdByUid: agentUid,
             createdByUser: agentName,
           });
+
+          activeQueueItemId =
+            queueResult?.queueItem?.id || activeQueueItemId;
         }
+
+        return queueResult;
+      };
+
+      const showSavedQueueConfirmation = (messageTitle, messageBody) => {
+        Alert.alert(messageTitle, messageBody);
+
+        setShowSuccess(true);
+
+        setTimeout(() => {
+          updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
+          router.replace(targetedBatchReturnTo);
+        }, 1500);
+      };
+
+      const saveMeterDraftToQueue = async (messageTitle, messageBody) => {
+        const queueResult = await persistMeterDraftToQueue();
 
         if (!queueResult?.success) {
           Alert.alert(
@@ -1411,14 +1449,7 @@ export default function FormMeterDiscovery() {
           return false;
         }
 
-        Alert.alert(messageTitle, messageBody);
-
-        setShowSuccess(true);
-
-        setTimeout(() => {
-          updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
-          router.replace(targetedBatchReturnTo);
-        }, 1500);
+        showSavedQueueConfirmation(messageTitle, messageBody);
 
         return true;
       };
@@ -1439,12 +1470,125 @@ export default function FormMeterDiscovery() {
 
       setInProgress(true);
 
-      // Connectivity is only checked after the gate passes.
+      // No Access Meter Discovery is persisted before any network work.
+      // The queue item holds the durable local evidence URI and stable TRN id.
+      if (isNoAccessSubmission) {
+        const queueResult = await persistMeterDraftToQueue();
+
+        if (!queueResult?.success || !activeQueueItemId) {
+          Alert.alert(
+            "Draft Save Failed",
+            "Failed to save this No Access Meter Discovery safely on the device.",
+          );
+          setInProgress(false);
+          return;
+        }
+      }
+
+      // NO ACCESS PATH:
+      // The already-persisted queue item enters the 15-second operation
+      // immediately. processSubmissionQueue owns the connectivity check, so
+      // connectivity + evidence upload + callable all share one deadline.
+      if (isNoAccessSubmission) {
+        let queueProcessResult = null;
+
+        try {
+          queueProcessResult = await withSubmitTimeout(
+            processSubmissionQueue({
+              agentUid,
+              agentName,
+              queueItemIds: [activeQueueItemId],
+              filterMode: "METER_DISCOVERY_NO_ACCESS",
+              includeSyncing: true,
+            }),
+            15000,
+          );
+        } catch (error) {
+          if (error?.message === "SUBMISSION_TIMEOUT") {
+            scheduleMeterDiscoveryNoAccessQueueSyncRetry({
+              agentUid,
+              agentName,
+              delayMs: 20000,
+            });
+
+            showSavedQueueConfirmation(
+              "Saved Locally",
+              "The online submission was not confirmed within 15 seconds. Your No Access data and evidence remain safely stored on this device for automatic retry.",
+            );
+
+            setInProgress(false);
+            return;
+          }
+
+          setInProgress(false);
+
+          Alert.alert(
+            "Submission Failed",
+            error?.message || "No Access Meter Discovery submission failed.",
+          );
+
+          return;
+        }
+
+        const syncedQueueItem = await getSubmissionQueueItemById(
+          activeQueueItemId,
+        );
+
+        if (queueProcessResult?.code === "QUEUE_BUSY") {
+          scheduleMeterDiscoveryNoAccessQueueSyncRetry({
+            agentUid,
+            agentName,
+          });
+
+          showSavedQueueConfirmation(
+            "Saved Locally",
+            "Your No Access submission is safely stored on this device and will sync automatically.",
+          );
+
+          setInProgress(false);
+          return;
+        }
+
+        if (queueProcessResult?.code === "DEVICE_OFFLINE") {
+          showSavedQueueConfirmation(
+            "Saved Offline",
+            "No internet connection. This No Access submission is safely stored on the device and will sync automatically when online.",
+          );
+
+          setInProgress(false);
+          return;
+        }
+
+        if (
+          syncedQueueItem?.status !== "SUCCESS" ||
+          syncedQueueItem?.result?.success !== true
+        ) {
+          setInProgress(false);
+
+          Alert.alert(
+            "Submission Failed",
+            syncedQueueItem?.result?.message ||
+              "The No Access submission remains safely stored locally for retry.",
+          );
+
+          return;
+        }
+
+        setShowSuccess(true);
+
+        setTimeout(() => {
+          updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
+          router.replace(targetedBatchReturnTo);
+          setInProgress(false);
+        }, 2000);
+
+        return;
+      }
+
+      // Accessed Meter Discovery keeps the existing connectivity path.
       const netState = await NetInfo.fetch();
       const isOnline = netState.isConnected && netState.isInternetReachable;
 
-      // OFFLINE PATH:
-      // Parent premise is valid, but there is no connectivity.
       if (!isOnline) {
         await saveMeterDraftToQueue(
           "Saved Offline",
