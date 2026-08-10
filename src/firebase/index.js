@@ -84,6 +84,16 @@ const FIREBASE_CONFIGS = {
     appId: "1:941227937262:web:92d002062f1e39784a92ff",
     measurementId: "G-WXG8YWD5YC",
   },
+
+  live: {
+    apiKey: "AIzaSyCivNf1fZ_8d692nLhjpuiRwSqZVBofMIM",
+    authDomain: "ireps-5c3e9.firebaseapp.com",
+    projectId: "ireps-5c3e9",
+    storageBucket: "ireps-5c3e9.firebasestorage.app",
+    messagingSenderId: "236369917108",
+    appId: "1:236369917108:web:85b87ec389686408d1d3e1",
+    measurementId: "G-EC8PYLH79J",
+  },
 };
 
 const firebaseConfig = FIREBASE_CONFIGS[APP_ENV];
