@@ -30,6 +30,7 @@ export const IrepsCamera = ({
   const [isVisible, setIsVisible] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [flashMode, setFlashMode] = useState("auto");
 
   const [currentGps, setCurrentGps] = useState(null);
 
@@ -93,6 +94,9 @@ export const IrepsCamera = ({
       const { granted } = await requestPermission();
       if (!granted) return;
     }
+
+    // Each new camera session starts in AUTO flash mode.
+    setFlashMode("auto");
 
     // Open camera immediately
     setIsVisible(true);
@@ -273,9 +277,49 @@ export const IrepsCamera = ({
                 ref={cameraRef}
                 style={StyleSheet.absoluteFill}
                 facing="back"
+                flash={flashMode}
               />
               <View style={styles.overlayContainer} pointerEvents="box-none">
-                <Text style={styles.guideText}>ALIGN {tag?.toUpperCase()}</Text>
+                <View style={styles.topSection}>
+                  <Text style={styles.guideText}>ALIGN {tag?.toUpperCase()}</Text>
+
+                  <View style={styles.flashControls}>
+                    {[
+                      { value: "auto", label: "AUTO", icon: "flash-auto" },
+                      { value: "on", label: "ON", icon: "flash" },
+                      { value: "off", label: "OFF", icon: "flash-off" },
+                    ].map((option) => {
+                      const isActive = flashMode === option.value;
+
+                      return (
+                        <TouchableOpacity
+                          key={option.value}
+                          style={[
+                            styles.flashOption,
+                            isActive && styles.flashOptionActive,
+                          ]}
+                          onPress={() => setFlashMode(option.value)}
+                          activeOpacity={0.8}
+                        >
+                          <MaterialCommunityIcons
+                            name={option.icon}
+                            size={17}
+                            color={isActive ? "#0f172a" : "white"}
+                          />
+                          <Text
+                            style={[
+                              styles.flashOptionText,
+                              isActive && styles.flashOptionTextActive,
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
                 <View style={styles.reticle} />
                 <View style={styles.bottomSection}>
                   <IconButton
@@ -341,12 +385,43 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 60,
   },
+  topSection: {
+    alignItems: "center",
+  },
   guideText: {
     color: "white",
     fontWeight: "bold",
     backgroundColor: "rgba(0,0,0,0.5)",
     padding: 10,
     borderRadius: 20,
+  },
+  flashControls: {
+    flexDirection: "row",
+    marginTop: 12,
+    padding: 4,
+    borderRadius: 18,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  flashOption: {
+    minWidth: 66,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+  },
+  flashOptionActive: {
+    backgroundColor: "white",
+  },
+  flashOptionText: {
+    color: "white",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  flashOptionTextActive: {
+    color: "#0f172a",
   },
   reticle: {
     width: 280,
