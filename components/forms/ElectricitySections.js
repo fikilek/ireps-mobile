@@ -1,9 +1,11 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Checkbox, Surface } from "react-native-paper";
 import FormInputMeterNo from "../../src/features/meters/FormInputMeterNo";
+import { getFormOptions } from "../../src/features/meters/formOptions";
 import SovereignLocationPicker from "../maps/SovereignLocationPicker";
 import { IrepsMedia } from "../media/IrepsMedia";
 import { AnomalySection } from "./AnomalySection";
+import FormBarcodeInput from "./FormBarcodeInput";
 import FormInput from "./FormInput";
 import { OtherAnomalySection } from "./OtherAnomalySection";
 import { FormSection } from "./FormSection";
@@ -186,9 +188,11 @@ export const ElectricitySections = ({
         {/* SEAL */}
 
         <Surface style={styles.section} elevation={2}>
-          <FormInput
+          <FormBarcodeInput
             label="SEAL NO"
             name="ast.astData.meter.seal.sealNo"
+            placeholder="Enter or Scan Seal No"
+            scanPrompt="Align Seal Barcode"
             disabled={disabled}
           />
           {!values?.ast?.astData?.meter?.seal?.sealNo && (
@@ -196,8 +200,18 @@ export const ElectricitySections = ({
               <FormSelect
                 label="Seal Number Comment"
                 name="ast.astData.meter.seal.comment"
-                options={getOptions("seal_number_comment_reasons")}
+                options={getFormOptions("seal_number_comment_reasons")}
                 disabled={disabled}
+                clearable
+                onValueChange={(nextValue) => {
+                  if (nextValue !== "Other") {
+                    setFieldValue(
+                      "ast.astData.meter.seal.commentOther",
+                      "",
+                      false,
+                    );
+                  }
+                }}
               />
               {values?.ast?.astData?.meter?.seal?.comment === "Other" && (
                 <FormInput
@@ -221,9 +235,11 @@ export const ElectricitySections = ({
 
         {values?.ast?.astData?.meter?.type === "prepaid" && (
           <Surface style={styles.section} elevation={2}>
-            <FormInput
+            <FormBarcodeInput
               label="KEYPAD SERIAL NO"
               name="ast.astData.meter.keypad.serialNo"
+              placeholder="Enter or Scan Keypad Serial No"
+              scanPrompt="Align Keypad Barcode"
               disabled={disabled}
             />
             {!values?.ast?.astData?.meter?.keypad?.serialNo && (
@@ -231,8 +247,18 @@ export const ElectricitySections = ({
                 <FormSelect
                   label="Keypad Serial Number Comment"
                   name="ast.astData.meter.keypad.comment"
-                  options={getOptions("keypad_serial_number_comment_reasons")}
+                  options={getFormOptions("keypad_serial_number_comment_reasons")}
                   disabled={disabled}
+                  clearable
+                  onValueChange={(nextValue) => {
+                    if (nextValue !== "Other") {
+                      setFieldValue(
+                        "ast.astData.meter.keypad.commentOther",
+                        "",
+                        false,
+                      );
+                    }
+                  }}
                 />
                 {values?.ast?.astData?.meter?.keypad?.comment === "Other" && (
                   <FormInput
@@ -266,8 +292,18 @@ export const ElectricitySections = ({
               <FormSelect
                 label="CB Comment"
                 name="ast.astData.meter.cb.comment"
-                options={getOptions("cb_comment_reasons")}
+                options={getFormOptions("cb_comment_reasons")}
                 disabled={disabled}
+                clearable
+                onValueChange={(nextValue) => {
+                  if (nextValue !== "Other") {
+                    setFieldValue(
+                      "ast.astData.meter.cb.commentOther",
+                      "",
+                      false,
+                    );
+                  }
+                }}
               />
               {values?.ast?.astData?.meter?.cb?.comment === "Other" && (
                 <FormInput
@@ -293,7 +329,7 @@ export const ElectricitySections = ({
         <FormSelect
           label="Meter Placement"
           name="ast.location.placement"
-          options={getOptions("placements")}
+          options={getFormOptions("placements")}
           disabled={disabled}
         />
         <SovereignLocationPicker

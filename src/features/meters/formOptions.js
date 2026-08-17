@@ -44,6 +44,7 @@ const FORM_OPTIONS = Object.freeze({
     "Boundary Wall",
     "Meter Room",
     "Wall Indoors",
+    "Inside Property",
     "Other",
   ]),
 

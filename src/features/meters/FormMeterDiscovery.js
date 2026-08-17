@@ -145,6 +145,7 @@ const KEYPAD_SERIAL_NUMBER_COMMENT_REASONS = getFormOptionValues(
   "keypad_serial_number_comment_reasons",
 );
 const CB_COMMENT_REASONS = getFormOptionValues("cb_comment_reasons");
+const METER_PLACEMENT_VALUES = getFormOptionValues("placements");
 
 function hydrateInfrastructureComment(container, valueKey, allowedComments) {
   if (!container || typeof container !== "object") return;
@@ -788,40 +789,6 @@ export default function FormMeterDiscovery() {
               commentOther: string().nullable(),
             })
             .test(
-              "prepaid-keypad-serial-or-comment",
-              "Keypad serial number or comment is required",
-              (value, context) => {
-                if (context.parent?.type !== "prepaid") return true;
-
-                const hasSerialNumber = !!String(value?.serialNo || "").trim();
-                const hasComment = !!String(value?.comment || "").trim();
-
-                if (hasSerialNumber || hasComment) return true;
-
-                return context.createError({
-                  path: context.path + ".serialNo",
-                  message: "Keypad serial number or comment is required",
-                });
-              },
-            )
-            .test(
-              "prepaid-keypad-comment-required",
-              "Keypad Serial Number Comment is required",
-              (value, context) => {
-                if (context.parent?.type !== "prepaid") return true;
-
-                const hasSerialNumber = !!String(value?.serialNo || "").trim();
-                const hasComment = !!String(value?.comment || "").trim();
-
-                if (hasSerialNumber || hasComment) return true;
-
-                return context.createError({
-                  path: context.path + ".comment",
-                  message: "Keypad Serial Number Comment is required",
-                });
-              },
-            )
-            .test(
               "prepaid-keypad-comment-valid",
               "Select a valid Keypad Serial Number Comment",
               (value, context) => {
@@ -860,38 +827,44 @@ export default function FormMeterDiscovery() {
               },
             ),
 
-          cb: object().shape({
-            size: string().test(
-              "cb-size-or-comment",
-              "CB size or comment is required",
+          cb: object()
+            .shape({
+              size: string().nullable(),
+              comment: string().nullable(),
+              commentOther: string().nullable(),
+            })
+            .test(
+              "cb-comment-valid",
+              "Select a valid CB Comment",
               (value, context) => {
-                const hasSize = !!String(value || "").trim();
-                const hasComment = !!String(
-                  context.parent?.comment || "",
-                ).trim();
-                return hasSize || hasComment;
+                const hasSize = !!String(value?.size || "").trim();
+                const comment = String(value?.comment || "").trim();
+
+                if (hasSize || !comment) return true;
+                if (CB_COMMENT_REASONS.includes(comment)) return true;
+
+                return context.createError({
+                  path: context.path + ".comment",
+                  message: "Select a valid CB Comment",
+                });
               },
-            ),
-
-            comment: string().when("size", {
-              is: (val) => !val || String(val).trim().length === 0,
-              then: (schema) =>
-                schema
-                  .oneOf(CB_COMMENT_REASONS, "Select a valid CB Comment")
-                  .required("CB Comment is required"),
-              otherwise: (schema) => schema.notRequired().nullable(),
-            }),
-
-            commentOther: string().test(
+            )
+            .test(
               "cb-other-reason",
               "Other Circuit Breaker Reason is required",
               (value, context) => {
-                const hasSize = !!String(context.parent?.size || "").trim();
-                if (hasSize || context.parent?.comment !== "Other") return true;
-                return !!String(value || "").trim();
+                const hasSize = !!String(value?.size || "").trim();
+                const comment = String(value?.comment || "").trim();
+
+                if (hasSize || comment !== "Other") return true;
+                if (String(value?.commentOther || "").trim()) return true;
+
+                return context.createError({
+                  path: context.path + ".commentOther",
+                  message: "Other Circuit Breaker Reason is required",
+                });
               },
             ),
-          }),
         }),
       }),
 
@@ -916,7 +889,9 @@ export default function FormMeterDiscovery() {
       }),
 
       location: object().shape({
-        placement: string().required("Placement Required"),
+        placement: string()
+          .required("Placement Required")
+          .oneOf(METER_PLACEMENT_VALUES, "Select a valid Meter Placement"),
         gps: object()
           .nullable()
           .required("GPS location is required")

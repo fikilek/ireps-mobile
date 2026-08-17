@@ -337,22 +337,6 @@ export default function FormPremise() {
       media: Yup.array()
         .default([])
         .test(
-          "property-type-photo-required",
-          "Property Type photo is mandatory once property type is selected",
-          (media, context) => {
-            const propertyType = context?.parent?.propertyType?.type;
-
-            const propertyTypeChosen =
-              !!propertyType &&
-              propertyType !== "Select..." &&
-              String(propertyType).trim() !== "";
-
-            if (!propertyTypeChosen) return true;
-
-            return hasTaggedMedia(media, "propertyTypePhoto");
-          },
-        )
-        .test(
           "property-address-photo-required",
           "Property Address photo is mandatory once street number and street name are completed",
           (media, context) => {
@@ -1110,13 +1094,6 @@ export default function FormPremise() {
                       />
                     )}
                   </Surface>
-
-                  <IrepsMedia
-                    tag={"propertyTypePhoto"}
-                    agentName={agentName}
-                    agentUid={agentUid}
-                    fallbackGps={values?.geometry?.centroid}
-                  />
                 </Surface>
 
                 {/* STREET ADDRESS */}

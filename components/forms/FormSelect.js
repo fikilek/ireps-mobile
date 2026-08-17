@@ -32,6 +32,8 @@ const FormSelect = ({
   icon = "form-select",
   disabled = false,
   onValueChange,
+  clearable = false,
+  clearLabel = "Select (clear)",
 }) => {
   const {
     values,
@@ -47,9 +49,12 @@ const FormSelect = ({
   const hasError = !!error;
   const isDisabled = disabled || isSubmitting;
 
-  const normalizedOptions = (Array.isArray(options) ? options : []).map(
-    normalizeOption,
-  );
+  const normalizedOptions = [
+    ...(clearable ? [{ label: clearLabel, value: "" }] : []),
+    ...(Array.isArray(options) ? options : [])
+      .map(normalizeOption)
+      .filter((option) => !(clearable && option.value === "")),
+  ];
 
   const selectedOption = normalizedOptions.find(
     (option) => option.value === value,
