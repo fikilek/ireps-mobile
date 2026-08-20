@@ -932,6 +932,7 @@ export default function FormMeterDisconnection() {
     trnId: trnIdRaw,
     action: actionRaw,
     queueItemId: queueItemIdRaw,
+    returnTo: returnToRaw,
   } = useLocalSearchParams();
 
   const routeAstId = Array.isArray(astIdRaw) ? astIdRaw[0] : astIdRaw;
@@ -948,6 +949,9 @@ export default function FormMeterDisconnection() {
   const queueItemId = Array.isArray(queueItemIdRaw)
     ? queueItemIdRaw[0]
     : queueItemIdRaw;
+  const routeReturnTo = Array.isArray(returnToRaw)
+    ? returnToRaw[0]
+    : returnToRaw;
 
   const action = useMemo(() => {
     try {
@@ -957,7 +961,7 @@ export default function FormMeterDisconnection() {
     }
   }, [actionRaw]);
 
-  const instructionTrnId = readFirstString(
+  const instructionTrnIdCandidate = readFirstString(
     routeInstructionTrnId,
     routeTrnId,
     action?.instructionTrnId,
@@ -990,9 +994,7 @@ export default function FormMeterDisconnection() {
     return [];
   }, [action]);
 
-  const instructionLocked = useMemo(() => {
-    return Boolean(instructionTrnId) || isLifecycleInstructionLocked(action);
-  }, [action, instructionTrnId]);
+
 
   const router = useRouter();
   const { all } = useWarehouse();
@@ -1000,6 +1002,33 @@ export default function FormMeterDisconnection() {
   const { data: allServiceProviders = [] } = useGetServiceProvidersQuery();
 
   const [editQueueItem, setEditQueueItem] = useState(undefined);
+
+  const actionOriginChannel = String(action?.origin?.channel || "")
+    .trim()
+    .toUpperCase();
+  const actionOriginSource = String(action?.origin?.source || "")
+    .trim()
+    .toUpperCase();
+  const queuedOriginChannel = String(
+    editQueueItem?.payload?.origin?.channel || "",
+  )
+    .trim()
+    .toUpperCase();
+  const queuedOriginSource = String(editQueueItem?.payload?.origin?.source || "")
+    .trim()
+    .toUpperCase();
+
+  const isFieldOrigin =
+    (actionOriginChannel === "FIELD" && actionOriginSource === "AST_ITEM") ||
+    (queuedOriginChannel === "FIELD" && queuedOriginSource === "AST_ITEM");
+
+  const instructionTrnId = isFieldOrigin ? "" : instructionTrnIdCandidate;
+  const returnTo = readFirstString(routeReturnTo, action?.returnTo);
+
+  const instructionLocked = useMemo(() => {
+    return Boolean(instructionTrnId) || isLifecycleInstructionLocked(action);
+  }, [action, instructionTrnId]);
+
   const [inProgress, setInProgress] = useState(false);
   const [saveInProgress, setSaveInProgress] = useState(false);
   const [initialEligible, setInitialEligible] = useState(null);
@@ -1014,6 +1043,19 @@ export default function FormMeterDisconnection() {
 
   const agentUid = user?.uid || "unknown_uid";
   const agentName = profile?.profile?.displayName || "Field Agent";
+
+  function getLifecycleReturnRoute() {
+    return readFirstString(
+      returnTo,
+      queueItemId ? "/(tabs)/admin/storage/forms-submission-queue" : "",
+      instructionTrnId ? "/(tabs)/admin/operations/my-workorders" : "",
+      "/(tabs)/asts",
+    );
+  }
+
+  function navigateAfterDisconnection() {
+    router.replace(getLifecycleReturnRoute());
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -1242,6 +1284,32 @@ export default function FormMeterDisconnection() {
     profile?.employment?.serviceProvider?.name,
   ]);
 
+  const fieldOriginatedTrnId = useMemo(() => {
+    if (instructionTrnId) return instructionTrnId;
+    if (!isFieldOrigin) return "";
+
+    const cleanMeterType = String(meterType || "")
+      .trim()
+      .toLowerCase();
+
+    const serviceCode =
+      cleanMeterType === "electricity" || cleanMeterType === "elec"
+        ? "ELC"
+        : cleanMeterType === "water" || cleanMeterType === "wtr"
+          ? "WTR"
+          : "MTR";
+
+    const safeWardPcode = String(wardPcode || "WARD")
+      .replace(/[^a-zA-Z0-9]+/g, "_")
+      .toUpperCase();
+
+    const safeErfNo = String(erfNo || "ERF")
+      .replace(/[^a-zA-Z0-9]+/g, "_")
+      .toUpperCase();
+
+    return `TRN_MDCN_${Date.now()}_${serviceCode}_${safeWardPcode}_${safeErfNo}`;
+  }, [instructionTrnId, isFieldOrigin, meterType, wardPcode, erfNo]);
+
   const disconnectionInstructionLookup = useIrepsLookupOptions(
     "METER_DISCONNECTION_INSTRUCTION",
   );
@@ -1281,8 +1349,15 @@ export default function FormMeterDisconnection() {
   }
 
   function buildQueueContext(values, baseSystemFields) {
+    const resolvedTrnId = readFirstString(
+      instructionTrnId,
+      values?.id,
+      fieldOriginatedTrnId,
+    );
+
     return {
       trnType: "METER_DISCONNECTION",
+      trnId: resolvedTrnId || "NAv",
       instructionTrnId: instructionTrnId || "NAv",
       sourceAstId: astDoc?.id || sourceAstId || "NAv",
       astId: astDoc?.id || sourceAstId || "NAv",
@@ -1308,9 +1383,15 @@ export default function FormMeterDisconnection() {
       success: !noAccess,
     };
 
-    return removeUndefined({
-      id: instructionTrnId,
+    const resolvedTrnId = readFirstString(
       instructionTrnId,
+      values?.id,
+      fieldOriginatedTrnId,
+    );
+
+    return removeUndefined({
+      id: resolvedTrnId,
+      instructionTrnId: instructionTrnId || "",
       sourceAstId: astDoc?.id || sourceAstId || "NAv",
 
       trnType: "METER_DISCONNECTION",
@@ -1343,6 +1424,28 @@ export default function FormMeterDisconnection() {
       media: filterExecutionMedia(mediaOverride || values.media || []),
       status: values.status,
       serviceProvider,
+
+      origin: isFieldOrigin
+        ? {
+            channel: "FIELD",
+            source: "AST_ITEM",
+            parentInspectionTrnId: null,
+          }
+        : {
+            channel: "OFFICE",
+            source: "WMS",
+            parentInspectionTrnId:
+              values?.origin?.parentInspectionTrnId ||
+              action?.origin?.parentInspectionTrnId ||
+              null,
+          },
+
+      workflow: isFieldOrigin
+        ? {
+            state: "COMPLETED",
+            requiresAcceptance: false,
+          }
+        : values?.workflow,
     });
   }
 
@@ -1394,7 +1497,7 @@ export default function FormMeterDisconnection() {
             success: false,
             code: "LOCAL_SAVE_ONLY",
             message: "Saved locally only. Not submitted.",
-            trnId: instructionTrnId || "NAv",
+            trnId: cleanPayload?.id || instructionTrnId || "NAv",
           },
           sync: {
             ...existingSync,
@@ -1464,9 +1567,11 @@ export default function FormMeterDisconnection() {
     if (editPayload) {
       return {
         ...editPayload,
-        id: instructionTrnId || editPayload?.id || "NAv",
-        instructionTrnId:
-          instructionTrnId || editPayload?.instructionTrnId || "NAv",
+        id:
+          instructionTrnId || editPayload?.id || fieldOriginatedTrnId || "NAv",
+        instructionTrnId: isFieldOrigin
+          ? ""
+          : instructionTrnId || editPayload?.instructionTrnId || "",
         sourceAstId: sourceAstId || editPayload?.sourceAstId || "NAv",
 
         accessData: {
@@ -1515,8 +1620,8 @@ export default function FormMeterDisconnection() {
     }
 
     return {
-      id: instructionTrnId,
-      instructionTrnId,
+      id: instructionTrnId || fieldOriginatedTrnId,
+      instructionTrnId: instructionTrnId || "",
       sourceAstId: astDoc?.id || sourceAstId || "NAv",
 
       accessData: {
@@ -1611,6 +1716,8 @@ export default function FormMeterDisconnection() {
   }, [
     editQueueItem,
     instructionTrnId,
+    fieldOriginatedTrnId,
+    isFieldOrigin,
     sourceAstId,
     astDoc?.id,
     astData?.astNo,
@@ -1641,7 +1748,7 @@ export default function FormMeterDisconnection() {
   const actionInit = useMemo(() => getInitialValues(), [getInitialValues]);
 
   const handleSubmitDisconnection = async (values) => {
-    if (!instructionTrnId) {
+    if (!instructionTrnId && !isFieldOrigin) {
       Alert.alert(
         "Missing Instruction",
         "This DCN execution form must be opened from an accepted WMS instruction.",
@@ -1677,11 +1784,16 @@ export default function FormMeterDisconnection() {
       }
 
       const storage = getStorage();
+      const uploadTrnId = readFirstString(
+        instructionTrnId,
+        values?.id,
+        fieldOriginatedTrnId,
+      );
 
       const syncedMedia = await Promise.all(
         filterExecutionMedia(values?.media || []).map(async (item) => {
           if (item.uri && !item.url) {
-            const fileName = `${instructionTrnId}_${item.tag}_${Date.now()}.jpg`;
+            const fileName = `${uploadTrnId}_${item.tag}_${Date.now()}.jpg`;
             const storageRef = ref(
               storage,
               `meters/lifecycle/disconnection/${fileName}`,
@@ -1762,7 +1874,7 @@ export default function FormMeterDisconnection() {
 
       setInProgress(false);
 
-      router.replace("/admin/operations/my-workorders");
+      navigateAfterDisconnection();
       return;
     } catch (error) {
       console.error("Disconnection Submission Error:", error);
@@ -1771,7 +1883,7 @@ export default function FormMeterDisconnection() {
     }
   };
 
-  function closeAfterExecutionOutcome(outcomeType) {
+  function closeAfterExecutionOutcome() {
     setSubmitOutcome({
       visible: false,
       type: null,
@@ -1780,12 +1892,7 @@ export default function FormMeterDisconnection() {
       goBackOnContinue: true,
     });
 
-    if (outcomeType === "savedLocally") {
-      router.replace("/(tabs)/admin/operations/my-workorders");
-      return;
-    }
-
-    router.replace("/(tabs)/admin/operations/my-workorders");
+    navigateAfterDisconnection();
   }
 
   const confirmCancel = () => {
@@ -1823,7 +1930,7 @@ export default function FormMeterDisconnection() {
     );
   }
 
-  if (!instructionTrnId) {
+  if (!instructionTrnId && !isFieldOrigin) {
     return (
       <ScrollView style={styles.container}>
         <Stack.Screen
@@ -1985,7 +2092,9 @@ export default function FormMeterDisconnection() {
                 <View style={styles.summaryGrid}>
                   <View style={styles.summaryItem}>
                     <Text style={styles.summaryLabel}>Instruction TRN</Text>
-                    <Text style={styles.summaryValue}>{instructionTrnId}</Text>
+                    <Text style={styles.summaryValue}>
+                      {instructionTrnId || fieldOriginatedTrnId || "FIELD TRN"}
+                    </Text>
                   </View>
 
                   <View style={styles.summaryItem}>

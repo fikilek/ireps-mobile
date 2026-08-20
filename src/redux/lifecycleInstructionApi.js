@@ -738,6 +738,7 @@ function buildWmsData({
   const items = trns
     .filter((trn) => WMS_LCT_TYPES.includes(getTrnType(trn)))
     .filter((trn) => WMS_WORKFLOW_STATES.includes(getWorkflowState(trn)))
+    .filter((trn) => normalizeUpper(trn?.origin?.channel) !== "FIELD")
     .filter((trn) => {
       const trnBgoBatchId = getBgoBatchIdFromTrn(trn);
 
