@@ -686,7 +686,6 @@ const AstItem = ({ item }) => {
     );
   }, [serviceProviders, actorServiceProviderId]);
 
-  const isMncSpv = isSPV && serviceProviderLooksMnc(actorServiceProvider);
   const isSubcSpv =
     isSPV &&
     Boolean(actorServiceProvider) &&
@@ -697,8 +696,8 @@ const AstItem = ({ item }) => {
   const canCommission =
     isCommissionCandidate && canCreateAndSubmitCommissioning;
 
-  const canOriginateOfficeLct = isMNG || isMncSpv;
-  const canOriginateFieldLct = isFWR || isSubcSpv;
+  const canOriginateOfficeLct = isMNG;
+  const canOriginateFieldLct = isFWR || isSPV;
 
   const normalizedMeterKind = String(meterKind || "")
     .trim()
@@ -721,7 +720,7 @@ const AstItem = ({ item }) => {
   const canMeterRead = meterState !== "DECOMMISSIONED" && isConventionalMeter;
 
   const canStartMeterReading =
-    canMeterRead && (canOriginateOfficeLct || isFWR || isSubcSpv);
+    canMeterRead && (canOriginateOfficeLct || canOriginateFieldLct);
 
   const inspectionLifecycle = getLifecycleProgress(item, "METER_INSPECTION");
   const disconnectionLifecycle = getLifecycleProgress(
@@ -793,7 +792,7 @@ const AstItem = ({ item }) => {
   const alertNoLifecycleOriginRights = () => {
     Alert.alert(
       "Not Allowed",
-      "Lifecycle work must be issued by MNG or SPV from Operations. Field workers must execute assigned work from TrnsScreen.",
+      "Office lifecycle work can only be issued by MNG.",
     );
   };
 
@@ -968,7 +967,7 @@ const AstItem = ({ item }) => {
       return;
     }
 
-    if (isFWR || isSubcSpv) {
+    if (canOriginateFieldLct) {
       router.push({
         pathname: "/(tabs)/asts/meter-reading",
         params: {
