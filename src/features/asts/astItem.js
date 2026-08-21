@@ -686,7 +686,6 @@ const AstItem = ({ item }) => {
     );
   }, [serviceProviders, actorServiceProviderId]);
 
-  const isMncSpv = isSPV && serviceProviderLooksMnc(actorServiceProvider);
   const isSubcSpv =
     isSPV &&
     Boolean(actorServiceProvider) &&
@@ -697,7 +696,8 @@ const AstItem = ({ item }) => {
   const canCommission =
     isCommissionCandidate && canCreateAndSubmitCommissioning;
 
-  const canOriginateOfficeLct = isMNG || isMncSpv;
+  const canOriginateOfficeLct = isMNG;
+  const canOriginateFieldLct = isFWR || isSPV;
 
   const normalizedMeterKind = String(meterKind || "")
     .trim()
@@ -720,7 +720,7 @@ const AstItem = ({ item }) => {
   const canMeterRead = meterState !== "DECOMMISSIONED" && isConventionalMeter;
 
   const canStartMeterReading =
-    canMeterRead && (canOriginateOfficeLct || isFWR || isSubcSpv);
+    canMeterRead && (canOriginateOfficeLct || canOriginateFieldLct);
 
   const inspectionLifecycle = getLifecycleProgress(item, "METER_INSPECTION");
   const disconnectionLifecycle = getLifecycleProgress(
@@ -762,10 +762,44 @@ const AstItem = ({ item }) => {
     });
   };
 
+  const launchFieldLifecycle = ({ pathname, trnType }) => {
+    router.push({
+      pathname,
+      params: {
+        astId: item.id,
+        premiseId: item?.accessData?.premise?.id || "NAv",
+        returnTo: "/(tabs)/asts",
+        asset: encodeURIComponent(JSON.stringify(item)),
+        action: JSON.stringify({
+          source: "FIELD",
+          trnType,
+          returnTo: "/(tabs)/asts",
+          astId: item.id,
+          sourceAstId: item.id,
+          premiseId: item?.accessData?.premise?.id || "NAv",
+          meterType: item?.meterType || "NAv",
+          meterNo: item?.ast?.astData?.astNo || "NAv",
+          statusBefore: item?.status?.state || "UNKNOWN",
+          origin: {
+            channel: "FIELD",
+            source: "AST_ITEM",
+          },
+        }),
+      },
+    });
+  };
+
   const alertNoLifecycleOriginRights = () => {
     Alert.alert(
       "Not Allowed",
-      "Lifecycle work must be issued by MNG or SPV from Operations. Field workers must execute assigned work from TrnsScreen.",
+      "Office lifecycle work can only be issued by MNG.",
+    );
+  };
+
+  const alertNoDualOriginLifecycleRights = () => {
+    Alert.alert(
+      "Not Allowed",
+      "Only MNG, SPV(MNC), FWR, or SPV(SUBC) can start this lifecycle action.",
     );
   };
 
@@ -816,12 +850,20 @@ const AstItem = ({ item }) => {
       return;
     }
 
-    if (!canOriginateOfficeLct) {
-      alertNoLifecycleOriginRights();
+    if (canOriginateOfficeLct) {
+      launchTrnOrigin("METER_REMOVAL");
       return;
     }
 
-    launchTrnOrigin("METER_REMOVAL");
+    if (canOriginateFieldLct) {
+      launchFieldLifecycle({
+        pathname: "/(tabs)/asts/removal",
+        trnType: "METER_REMOVAL",
+      });
+      return;
+    }
+
+    alertNoDualOriginLifecycleRights();
   };
 
   const launchInspection = () => {
@@ -860,12 +902,20 @@ const AstItem = ({ item }) => {
       return;
     }
 
-    if (!canOriginateOfficeLct) {
-      alertNoLifecycleOriginRights();
+    if (canOriginateOfficeLct) {
+      launchTrnOrigin("METER_DISCONNECTION");
       return;
     }
 
-    launchTrnOrigin("METER_DISCONNECTION");
+    if (canOriginateFieldLct) {
+      launchFieldLifecycle({
+        pathname: "/(tabs)/asts/disconnection",
+        trnType: "METER_DISCONNECTION",
+      });
+      return;
+    }
+
+    alertNoDualOriginLifecycleRights();
   };
 
   const launchReconnection = () => {
@@ -882,12 +932,20 @@ const AstItem = ({ item }) => {
       return;
     }
 
-    if (!canOriginateOfficeLct) {
-      alertNoLifecycleOriginRights();
+    if (canOriginateOfficeLct) {
+      launchTrnOrigin("METER_RECONNECTION");
       return;
     }
 
-    launchTrnOrigin("METER_RECONNECTION");
+    if (canOriginateFieldLct) {
+      launchFieldLifecycle({
+        pathname: "/(tabs)/asts/reconnection",
+        trnType: "METER_RECONNECTION",
+      });
+      return;
+    }
+
+    alertNoDualOriginLifecycleRights();
   };
 
   const launchMeterReading = () => {
@@ -909,7 +967,7 @@ const AstItem = ({ item }) => {
       return;
     }
 
-    if (isFWR || isSubcSpv) {
+    if (canOriginateFieldLct) {
       router.push({
         pathname: "/(tabs)/asts/meter-reading",
         params: {

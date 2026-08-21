@@ -437,7 +437,7 @@ export default function TrnOriginScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { geoState } = useGeo();
-  const { user, profile, isMNG, isSPV } = useAuth();
+  const { user, profile, isMNG } = useAuth();
 
   const asset = useMemo(() => {
     return safeParseJson(params?.asset || params?.assetJson, null);
@@ -484,13 +484,7 @@ export default function TrnOriginScreen() {
   const wardPcode = getWardPcode(asset, geoState);
   const assetGps = getAssetGps(asset);
 
-  const actorSpId = profile?.employment?.serviceProvider?.id || null;
-  const actorSp = useMemo(() => {
-    return serviceProviders.find((sp) => sp?.id === actorSpId) || null;
-  }, [serviceProviders, actorSpId]);
-
-  const isMncSpv = isSPV && serviceProviderLooksMnc(actorSp);
-  const canCreateInstruction = isMNG || isMncSpv;
+  const canCreateInstruction = isMNG;
 
   const allowedSpIds = useMemo(() => {
     return getAllowedServiceProviderIds({
@@ -814,7 +808,7 @@ export default function TrnOriginScreen() {
               color="#b45309"
             />
             <Text style={styles.warningText}>
-              Only MNG and MNC supervisors can create lifecycle instructions.
+              Only MNG can create lifecycle instructions.
             </Text>
           </View>
         )}
