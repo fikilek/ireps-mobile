@@ -27,6 +27,7 @@ import { array, object, string } from "yup";
 import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
+import { IrepsFieldCommentSection } from "../../../components/forms/IrepsFieldCommentSection";
 import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
 import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import IrepsSelectWithOther, {
@@ -57,11 +58,19 @@ const EMPTY_SELECT_WITH_OTHER = {
 const DCN_SUBMIT_TIMEOUT_MS = 15000; // TEST ONLY - restore to 15000 after MMKV reconciliation test
 
 const EXECUTION_MEDIA_TAGS = [
+  "instructionMedia",
   "disconnectionLevelEvidence",
-  "disconnectionMeterReadingEvidence",
-  "tokenReadingPhoto",
-  "safetyEvidence",
+  "supplyDisconnectedEvidence",
   "noAccessPhoto",
+  "fieldCommentPhoto",
+  "fieldCommentVoice",
+  "fieldCommentVideo",
+];
+
+const FIELD_DISCONNECTION_INSTRUCTION_OPTIONS = [
+  { code: "CREDIT_CONTROL_INSTRUCTION", label: "Credit Control Instruction" },
+  { code: "ILLEGAL_CONNECTION", label: "Illegal Connection" },
+  { code: "NON_PAYMENT", label: "Non Payment" },
 ];
 
 function makeEmptySelectWithOther() {
@@ -219,20 +228,6 @@ function normalizeInstructionValue(value) {
   return makeEmptySelectWithOther();
 }
 
-function normalizeNoReadingReasonValue(value) {
-  if (!value) return makeEmptySelectWithOther();
-
-  if (typeof value === "string") {
-    return textToOtherSelectValue(value);
-  }
-
-  if (value?.code !== undefined || value?.otherText !== undefined) {
-    return normalizeSelectWithOtherValue(value);
-  }
-
-  return makeEmptySelectWithOther();
-}
-
 function normalizeNoAccessReasonValue(value, reasonText = "") {
   if (value?.code !== undefined || value?.otherText !== undefined) {
     return normalizeSelectWithOtherValue(value);
@@ -255,17 +250,6 @@ function normalizeCodeLabelValue(value) {
   return makeEmptySelectWithOther();
 }
 
-function normalizeMeterKindForReading(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]/g, "");
-}
-
-function isPrepaidMeterKind(value) {
-  return normalizeMeterKindForReading(value) === "prepaid";
-}
-
 function getHasAccess(values = {}) {
   return String(values?.accessData?.access?.hasAccess || "yes").toLowerCase();
 }
@@ -284,9 +268,32 @@ function filterExecutionMedia(media = []) {
   );
 }
 
+function getMediaExtension(mediaItem = {}) {
+  const type = String(mediaItem?.type || "")
+    .trim()
+    .toUpperCase();
+
+  if (type === "VIDEO") return "mp4";
+  if (type === "AUDIO" || type === "VOICE") return "m4a";
+  if (type === "IMAGE" || type === "PHOTO") return "jpg";
+
+  const uri = String(mediaItem?.uri || "").toLowerCase();
+
+  if (uri.includes(".mp4")) return "mp4";
+  if (uri.includes(".mov")) return "mov";
+  if (uri.includes(".m4a")) return "m4a";
+  if (uri.includes(".mp3")) return "mp3";
+  if (uri.includes(".wav")) return "wav";
+  if (uri.includes(".aac")) return "aac";
+  if (uri.includes(".png")) return "png";
+  if (uri.includes(".webp")) return "webp";
+
+  return "jpg";
+}
+
 function buildBackendDisconnectionPayload(
   disconnection = {},
-  { isPrepaid = false, noAccess = false } = {},
+  { noAccess = false } = {},
 ) {
   if (noAccess) {
     return {
@@ -296,15 +303,6 @@ function buildBackendDisconnectionPayload(
       },
 
       supplyDisconnected: {
-        answer: "",
-        notes: "",
-      },
-
-      meterReading: "",
-      tokenReading: "",
-      noReadingReason: "",
-
-      safetyConfirmed: {
         answer: "",
         notes: "",
       },
@@ -320,16 +318,6 @@ function buildBackendDisconnectionPayload(
     supplyDisconnected: {
       answer: disconnection?.supplyDisconnected?.answer || "",
       notes: disconnection?.supplyDisconnected?.notes || "",
-    },
-
-    meterReading: isPrepaid ? "" : String(disconnection?.meterReading || ""),
-    tokenReading: isPrepaid ? String(disconnection?.tokenReading || "") : "",
-
-    noReadingReason: selectWithOtherToText(disconnection?.noReadingReason),
-
-    safetyConfirmed: {
-      answer: disconnection?.safetyConfirmed?.answer || "",
-      notes: disconnection?.safetyConfirmed?.notes || "",
     },
   };
 }
@@ -459,20 +447,10 @@ const DisconnectionSchema = object()
         answer: string().notRequired(),
         notes: string().notRequired(),
       }),
+    }),
 
-      meterReading: string().notRequired(),
-      tokenReading: string().notRequired(),
-
-      noReadingReason: object().shape({
-        code: string().notRequired(),
-        label: string().notRequired(),
-        otherText: string().notRequired(),
-      }),
-
-      safetyConfirmed: object().shape({
-        answer: string().notRequired(),
-        notes: string().notRequired(),
-      }),
+    fieldComment: object().shape({
+      text: string().notRequired(),
     }),
 
     media: array().of(object()),
@@ -528,56 +506,10 @@ const DisconnectionSchema = object()
       });
     }
 
-    const meterReading = String(disconnection?.meterReading || "").trim();
-    const tokenReading = String(disconnection?.tokenReading || "").trim();
-
-    if (
-      !meterReading &&
-      !tokenReading &&
-      !isSelectWithOtherFilled(disconnection?.noReadingReason)
-    ) {
-      return this.createError({
-        path: "disconnection.noReadingReason",
-        message:
-          "Meter reading, token reading, or no-reading reason is required",
-      });
-    }
-
-    if (
-      meterReading &&
-      !hasMediaTag(media, "disconnectionMeterReadingEvidence")
-    ) {
+    if (!hasMediaTag(media, "supplyDisconnectedEvidence")) {
       return this.createError({
         path: "media",
-        message: "Disconnection meter reading evidence required",
-      });
-    }
-
-    if (tokenReading && !hasMediaTag(media, "tokenReadingPhoto")) {
-      return this.createError({
-        path: "media",
-        message: "Token reading photo is required",
-      });
-    }
-
-    if (!["yes", "no"].includes(disconnection?.safetyConfirmed?.answer)) {
-      return this.createError({
-        path: "disconnection.safetyConfirmed.answer",
-        message: "Safety confirmed answer is required",
-      });
-    }
-
-    if (disconnection?.safetyConfirmed?.answer !== "yes") {
-      return this.createError({
-        path: "disconnection.safetyConfirmed.answer",
-        message: "Safety must be confirmed before submit",
-      });
-    }
-
-    if (!hasMediaTag(media, "safetyEvidence")) {
-      return this.createError({
-        path: "media",
-        message: "Safety evidence required",
+        message: "Supply disconnected evidence required",
       });
     }
 
@@ -994,8 +926,6 @@ export default function FormMeterDisconnection() {
     return [];
   }, [action]);
 
-
-
   const router = useRouter();
   const { all } = useWarehouse();
   const { profile, user } = useAuth();
@@ -1014,7 +944,9 @@ export default function FormMeterDisconnection() {
   )
     .trim()
     .toUpperCase();
-  const queuedOriginSource = String(editQueueItem?.payload?.origin?.source || "")
+  const queuedOriginSource = String(
+    editQueueItem?.payload?.origin?.source || "",
+  )
     .trim()
     .toUpperCase();
 
@@ -1224,8 +1156,6 @@ export default function FormMeterDisconnection() {
     readFirstString(meter?.type, action?.meterKind, "NAv"),
   ).toLowerCase();
 
-  const isPrepaidReading = isPrepaidMeterKind(meterKind);
-
   const currentStatus = String(
     readFirstString(astDoc?.status?.state, action?.meterPreStatus, "UNKNOWN"),
   ).toUpperCase();
@@ -1310,21 +1240,8 @@ export default function FormMeterDisconnection() {
     return `TRN_MDCN_${Date.now()}_${serviceCode}_${safeWardPcode}_${safeErfNo}`;
   }, [instructionTrnId, isFieldOrigin, meterType, wardPcode, erfNo]);
 
-  const disconnectionInstructionLookup = useIrepsLookupOptions(
-    "METER_DISCONNECTION_INSTRUCTION",
-  );
-  console.log(
-    `disconnnection --disconnectionInstructionLookup`,
-    disconnectionInstructionLookup,
-  );
-
   const levelLookup = useIrepsLookupOptions("METER_DISCONNECTION_LEVEL");
   console.log(`disconnnection --levelLookup`, levelLookup);
-
-  const noReadingReasonLookup = useIrepsLookupOptions(
-    "METER_NO_READING_REASON",
-  );
-  console.log(`disconnnection --noReadingReasonLookup`, noReadingReasonLookup);
 
   function buildTrnSystemFields() {
     return {
@@ -1408,9 +1325,12 @@ export default function FormMeterDisconnection() {
       ast: values.ast,
 
       disconnection: buildBackendDisconnectionPayload(values.disconnection, {
-        isPrepaid: isPrepaidReading,
         noAccess,
       }),
+
+      fieldComment: {
+        text: String(values?.fieldComment?.text || "").trim(),
+      },
 
       executionOutcome,
 
@@ -1598,21 +1518,16 @@ export default function FormMeterDisconnection() {
         },
 
         disconnection: {
-          ...editPayload?.disconnection,
           level: normalizeCodeLabelValue(editPayload?.disconnection?.level),
-          meterReading:
-            typeof editPayload?.disconnection?.meterReading === "object"
-              ? editPayload?.disconnection?.meterReading?.reading || ""
-              : editPayload?.disconnection?.meterReading || "",
-          tokenReading: editPayload?.disconnection?.tokenReading || "",
-          noReadingReason: normalizeNoReadingReasonValue(
-            editPayload?.disconnection?.noReadingReason ||
-              editPayload?.disconnection?.meterReading?.noReadingReason,
-          ),
-          safetyConfirmed: editPayload?.disconnection?.safetyConfirmed || {
-            answer: "",
-            notes: "",
-          },
+          supplyDisconnected:
+            editPayload?.disconnection?.supplyDisconnected || {
+              answer: "",
+              notes: "",
+            },
+        },
+
+        fieldComment: {
+          text: String(editPayload?.fieldComment?.text || ""),
         },
 
         media: filterExecutionMedia(editPayload?.media || []),
@@ -1649,15 +1564,6 @@ export default function FormMeterDisconnection() {
         level: makeEmptySelectWithOther(),
 
         supplyDisconnected: {
-          answer: "",
-          notes: "",
-        },
-
-        meterReading: "",
-        tokenReading: "",
-        noReadingReason: makeEmptySelectWithOther(),
-
-        safetyConfirmed: {
           answer: "",
           notes: "",
         },
@@ -1701,6 +1607,10 @@ export default function FormMeterDisconnection() {
         cancelledByUid: action?.assignment?.cancelledByUid || null,
         cancelledByUser: action?.assignment?.cancelledByUser || null,
         cancelReason: action?.assignment?.cancelReason || "",
+      },
+
+      fieldComment: {
+        text: "",
       },
 
       meterType,
@@ -1793,7 +1703,9 @@ export default function FormMeterDisconnection() {
       const syncedMedia = await Promise.all(
         filterExecutionMedia(values?.media || []).map(async (item) => {
           if (item.uri && !item.url) {
-            const fileName = `${uploadTrnId}_${item.tag}_${Date.now()}.jpg`;
+            const extension = getMediaExtension(item);
+            const fileName =
+              `${uploadTrnId}_${item.tag}_${Date.now()}.${extension}`;
             const storageRef = ref(
               storage,
               `meters/lifecycle/disconnection/${fileName}`,
@@ -2170,20 +2082,10 @@ export default function FormMeterDisconnection() {
                   <IrepsSelectWithOther
                     label="Disconnection Instruction"
                     placeholder="Select disconnection instruction"
-                    options={disconnectionInstructionLookup.options}
-                    includeOther={
-                      disconnectionInstructionLookup.allowOther ?? true
-                    }
-                    otherCode={
-                      disconnectionInstructionLookup.otherCode || "OTHER"
-                    }
-                    otherLabel={
-                      disconnectionInstructionLookup.otherLabel || "Other"
-                    }
-                    loading={
-                      disconnectionInstructionLookup.isLoading ||
-                      disconnectionInstructionLookup.isFetching
-                    }
+                    options={FIELD_DISCONNECTION_INSTRUCTION_OPTIONS}
+                    includeOther={true}
+                    otherCode="OTHER"
+                    otherLabel="Other"
                     value={values?.assignment?.instructionSelect}
                     onChange={(nextValue) => {
                       setFieldValue("assignment.instructionSelect", nextValue);
@@ -2210,6 +2112,21 @@ export default function FormMeterDisconnection() {
                     numberOfLines={3}
                     style={styles.notesInput}
                   />
+
+                  <View style={styles.questionEvidenceSlot}>
+                    <Text style={styles.questionTitle}>Instruction Photo</Text>
+                    <Text style={styles.questionDescription}>
+                      Optional. Capture the written instruction if available.
+                    </Text>
+                    <IrepsMedia
+                      name="media"
+                      tag="instructionMedia"
+                      agentName={agentName}
+                      agentUid={agentUid}
+                      fallbackGps={fallbackGps}
+                      required={false}
+                    />
+                  </View>
                 </Surface>
               )}
 
@@ -2292,6 +2209,24 @@ export default function FormMeterDisconnection() {
                             : ""
                         }
                       />
+
+                      <View style={styles.questionEvidenceSlot}>
+                        <Text style={styles.questionTitle}>
+                          Disconnection Level Photo
+                        </Text>
+                        <Text style={styles.questionDescription}>
+                          Capture photo evidence of the selected disconnection
+                          level.
+                        </Text>
+                        <IrepsMedia
+                          name="media"
+                          tag="disconnectionLevelEvidence"
+                          agentName={agentName}
+                          agentUid={agentUid}
+                          fallbackGps={fallbackGps}
+                          required={true}
+                        />
+                      </View>
                     </Surface>
 
                     <YesNoQuestion
@@ -2307,9 +2242,15 @@ export default function FormMeterDisconnection() {
                         disconnectionErrors?.supplyDisconnected?.notes
                       }
                     >
+                      <Text style={styles.questionTitle}>
+                        Supply Disconnected Photo
+                      </Text>
+                      <Text style={styles.questionDescription}>
+                        Capture photo evidence that the supply was disconnected.
+                      </Text>
                       <IrepsMedia
                         name="media"
-                        tag="disconnectionLevelEvidence"
+                        tag="supplyDisconnectedEvidence"
                         agentName={agentName}
                         agentUid={agentUid}
                         fallbackGps={fallbackGps}
@@ -2320,135 +2261,6 @@ export default function FormMeterDisconnection() {
                       />
                     </YesNoQuestion>
 
-                    <Surface style={styles.questionCard} elevation={1}>
-                      <View style={styles.questionHeader}>
-                        <Text style={styles.questionTitle}>
-                          {isPrepaidReading ? "Token reading" : "Meter reading"}
-                        </Text>
-
-                        <Text style={styles.questionDescription}>
-                          {isPrepaidReading
-                            ? "Capture the prepaid token/register reading at disconnection. If unavailable, provide the reason."
-                            : "Capture the meter reading at disconnection. If unavailable, provide the reason."}
-                        </Text>
-                      </View>
-
-                      {isPrepaidReading ? (
-                        <>
-                          <TextInput
-                            mode="outlined"
-                            label="Token Reading"
-                            value={values?.disconnection?.tokenReading}
-                            onChangeText={(text) =>
-                              setFieldValue(
-                                "disconnection.tokenReading",
-                                text.replace(/[^\d.]/g, ""),
-                              )
-                            }
-                            keyboardType="numeric"
-                            style={styles.readingInput}
-                          />
-
-                          <View style={styles.questionEvidenceSlot}>
-                            <IrepsMedia
-                              name="media"
-                              tag="tokenReadingPhoto"
-                              agentName={agentName}
-                              agentUid={agentUid}
-                              fallbackGps={fallbackGps}
-                              required={
-                                !!String(
-                                  values?.disconnection?.tokenReading || "",
-                                ).trim()
-                              }
-                            />
-                          </View>
-                        </>
-                      ) : (
-                        <>
-                          <TextInput
-                            mode="outlined"
-                            label="Meter Reading"
-                            value={values?.disconnection?.meterReading}
-                            onChangeText={(text) =>
-                              setFieldValue(
-                                "disconnection.meterReading",
-                                text.replace(/[^\d.]/g, ""),
-                              )
-                            }
-                            keyboardType="numeric"
-                            style={styles.readingInput}
-                          />
-
-                          <View style={styles.questionEvidenceSlot}>
-                            <IrepsMedia
-                              name="media"
-                              tag="disconnectionMeterReadingEvidence"
-                              agentName={agentName}
-                              agentUid={agentUid}
-                              fallbackGps={fallbackGps}
-                              required={
-                                !!String(
-                                  values?.disconnection?.meterReading || "",
-                                ).trim()
-                              }
-                            />
-                          </View>
-                        </>
-                      )}
-
-                      <IrepsSelectWithOther
-                        label="No Reading Reason"
-                        placeholder="Select reason"
-                        options={noReadingReasonLookup.options}
-                        includeOther={noReadingReasonLookup.allowOther ?? true}
-                        otherCode={noReadingReasonLookup.otherCode || "OTHER"}
-                        otherLabel={noReadingReasonLookup.otherLabel || "Other"}
-                        loading={
-                          noReadingReasonLookup.isLoading ||
-                          noReadingReasonLookup.isFetching
-                        }
-                        value={values?.disconnection?.noReadingReason}
-                        onChange={(nextValue) =>
-                          setFieldValue(
-                            "disconnection.noReadingReason",
-                            nextValue,
-                          )
-                        }
-                        errorText={
-                          typeof disconnectionErrors?.noReadingReason ===
-                          "string"
-                            ? disconnectionErrors.noReadingReason
-                            : ""
-                        }
-                      />
-                    </Surface>
-
-                    <YesNoQuestion
-                      title="Safety confirmed"
-                      description="Confirm that the disconnection was left safe after the work was done."
-                      value={values?.disconnection?.safetyConfirmed?.answer}
-                      notes={values?.disconnection?.safetyConfirmed?.notes}
-                      answerPath="disconnection.safetyConfirmed.answer"
-                      notesPath="disconnection.safetyConfirmed.notes"
-                      setFieldValue={setFieldValue}
-                      errorText={
-                        disconnectionErrors?.safetyConfirmed?.answer ||
-                        disconnectionErrors?.safetyConfirmed?.notes
-                      }
-                    >
-                      <IrepsMedia
-                        name="media"
-                        tag="safetyEvidence"
-                        agentName={agentName}
-                        agentUid={agentUid}
-                        fallbackGps={fallbackGps}
-                        required={
-                          values?.disconnection?.safetyConfirmed?.answer ===
-                          "yes"
-                        }
-                      />
-                    </YesNoQuestion>
                   </>
                 )}
 
@@ -2456,6 +2268,13 @@ export default function FormMeterDisconnection() {
                   <Text style={styles.errorText}>{errors.media}</Text>
                 )}
               </Surface>
+
+              <IrepsFieldCommentSection
+                agentName={agentName}
+                agentUid={agentUid}
+                fallbackGps={fallbackGps}
+                disabled={inProgress || saveInProgress}
+              />
 
               <IrepsFormActions
                 resetLabel="RESET"

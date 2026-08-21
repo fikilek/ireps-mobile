@@ -31,6 +31,38 @@ export function IrepsNoAccessSection({
 }) {
   const [modalVisible, setModalVisible] = useState(false);
 
+  const isStructuredValue =
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value);
+
+  const selectedCode = isStructuredValue
+    ? String(value?.code || value?.label || "").trim()
+    : String(value || "").trim();
+
+  const selectedLabel = isStructuredValue
+    ? String(value?.label || value?.code || "").trim()
+    : selectedCode;
+
+  const selectedText =
+    selectedLabel || selectedCode || "Select reason ...";
+
+  function handleReasonChange(nextValue) {
+    const nextReason = String(nextValue || "").trim();
+
+    if (isStructuredValue) {
+      onChange?.({
+        code: nextReason,
+        label: nextReason,
+        otherText: "",
+      });
+    } else {
+      onChange?.(nextReason);
+    }
+
+    setModalVisible(false);
+  }
+
   if (!visible) return null;
 
   return (
@@ -55,7 +87,7 @@ export function IrepsNoAccessSection({
             activeOpacity={0.8}
           >
             <Text style={styles.selectorValue}>
-              {value || "Select reason ..."}
+              {selectedText}
             </Text>
 
             <MaterialCommunityIcons
@@ -93,11 +125,8 @@ export function IrepsNoAccessSection({
           contentContainerStyle={styles.modalContent}
         >
           <RadioButton.Group
-            onValueChange={(nextValue) => {
-              onChange?.(nextValue);
-              setModalVisible(false);
-            }}
-            value={value}
+            onValueChange={handleReasonChange}
+            value={selectedCode}
           >
             {NO_ACCESS_REASONS.map((reason) => (
               <RadioButton.Item

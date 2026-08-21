@@ -27,6 +27,7 @@ import { array, object, string } from "yup";
 import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
+import { IrepsFieldCommentSection } from "../../../components/forms/IrepsFieldCommentSection";
 import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
 import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import IrepsSelectWithOther, {
@@ -39,7 +40,6 @@ import { ScreenLock } from "../../../components/SceenLock";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
 import { functions } from "../../../src/firebase";
 import { useAuth } from "../../../src/hooks/useAuth";
-import { useIrepsLookupOptions } from "../../../src/hooks/useIrepsLookupOptions";
 import { useGetServiceProvidersQuery } from "../../../src/redux/spApi";
 import {
   addSubmissionQueueItem,
@@ -57,11 +57,20 @@ const EMPTY_SELECT_WITH_OTHER = {
 const RCN_SUBMIT_TIMEOUT_MS = 15000;
 
 const EXECUTION_MEDIA_TAGS = [
+  "instructionMedia",
   "reconnectionEvidence",
-  "reconnectionMeterReadingEvidence",
-  "tokenReadingPhoto",
-  "safetyEvidence",
   "noAccessPhoto",
+  "fieldCommentPhoto",
+  "fieldCommentVoice",
+  "fieldCommentVideo",
+];
+
+const FIELD_RECONNECTION_INSTRUCTION_OPTIONS = [
+  {
+    code: "METER_RECONNECTION",
+    label:
+      "Reconnect meter supply and confirm the supply has been made good again",
+  },
 ];
 
 function makeEmptySelectWithOther() {
@@ -219,20 +228,6 @@ function normalizeInstructionValue(value) {
   return makeEmptySelectWithOther();
 }
 
-function normalizeNoReadingReasonValue(value) {
-  if (!value) return makeEmptySelectWithOther();
-
-  if (typeof value === "string") {
-    return textToOtherSelectValue(value);
-  }
-
-  if (value?.code !== undefined || value?.otherText !== undefined) {
-    return normalizeSelectWithOtherValue(value);
-  }
-
-  return makeEmptySelectWithOther();
-}
-
 function normalizeNoAccessReasonValue(value, reasonText = "") {
   if (value?.code !== undefined || value?.otherText !== undefined) {
     return normalizeSelectWithOtherValue(value);
@@ -243,17 +238,6 @@ function normalizeNoAccessReasonValue(value, reasonText = "") {
   }
 
   return makeEmptySelectWithOther();
-}
-
-function normalizeMeterKindForReading(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]/g, "");
-}
-
-function isPrepaidMeterKind(value) {
-  return normalizeMeterKindForReading(value) === "prepaid";
 }
 
 function getHasAccess(values = {}) {
@@ -274,22 +258,36 @@ function filterExecutionMedia(media = []) {
   );
 }
 
+function getMediaExtension(mediaItem = {}) {
+  const type = String(mediaItem?.type || "")
+    .trim()
+    .toUpperCase();
+
+  if (type === "VIDEO") return "mp4";
+  if (type === "AUDIO" || type === "VOICE") return "m4a";
+  if (type === "IMAGE" || type === "PHOTO") return "jpg";
+
+  const uri = String(mediaItem?.uri || "").toLowerCase();
+
+  if (uri.includes(".mp4")) return "mp4";
+  if (uri.includes(".mov")) return "mov";
+  if (uri.includes(".m4a")) return "m4a";
+  if (uri.includes(".mp3")) return "mp3";
+  if (uri.includes(".wav")) return "wav";
+  if (uri.includes(".aac")) return "aac";
+  if (uri.includes(".png")) return "png";
+  if (uri.includes(".webp")) return "webp";
+
+  return "jpg";
+}
+
 function buildBackendReconnectionPayload(
   reconnection = {},
-  { isPrepaid = false, noAccess = false } = {},
+  { noAccess = false } = {},
 ) {
   if (noAccess) {
     return {
       supplyReconnected: {
-        answer: "",
-        notes: "",
-      },
-
-      meterReading: "",
-      tokenReading: "",
-      noReadingReason: "",
-
-      safetyConfirmed: {
         answer: "",
         notes: "",
       },
@@ -300,16 +298,6 @@ function buildBackendReconnectionPayload(
     supplyReconnected: {
       answer: reconnection?.supplyReconnected?.answer || "",
       notes: reconnection?.supplyReconnected?.notes || "",
-    },
-
-    meterReading: isPrepaid ? "" : String(reconnection?.meterReading || ""),
-    tokenReading: isPrepaid ? String(reconnection?.tokenReading || "") : "",
-
-    noReadingReason: selectWithOtherToText(reconnection?.noReadingReason),
-
-    safetyConfirmed: {
-      answer: reconnection?.safetyConfirmed?.answer || "",
-      notes: reconnection?.safetyConfirmed?.notes || "",
     },
   };
 }
@@ -433,20 +421,10 @@ const ReconnectionSchema = object()
         answer: string().notRequired(),
         notes: string().notRequired(),
       }),
+    }),
 
-      meterReading: string().notRequired(),
-      tokenReading: string().notRequired(),
-
-      noReadingReason: object().shape({
-        code: string().notRequired(),
-        label: string().notRequired(),
-        otherText: string().notRequired(),
-      }),
-
-      safetyConfirmed: object().shape({
-        answer: string().notRequired(),
-        notes: string().notRequired(),
-      }),
+    fieldComment: object().shape({
+      text: string().notRequired(),
     }),
 
     media: array().of(object()),
@@ -492,59 +470,6 @@ const ReconnectionSchema = object()
       return this.createError({
         path: "media",
         message: "Reconnection evidence required",
-      });
-    }
-
-    const meterReading = String(reconnection?.meterReading || "").trim();
-    const tokenReading = String(reconnection?.tokenReading || "").trim();
-
-    if (
-      !meterReading &&
-      !tokenReading &&
-      !isSelectWithOtherFilled(reconnection?.noReadingReason)
-    ) {
-      return this.createError({
-        path: "reconnection.noReadingReason",
-        message:
-          "Meter reading, token reading, or no-reading reason is required",
-      });
-    }
-
-    if (
-      meterReading &&
-      !hasMediaTag(media, "reconnectionMeterReadingEvidence")
-    ) {
-      return this.createError({
-        path: "media",
-        message: "Reconnection meter reading evidence required",
-      });
-    }
-
-    if (tokenReading && !hasMediaTag(media, "tokenReadingPhoto")) {
-      return this.createError({
-        path: "media",
-        message: "Token reading photo is required",
-      });
-    }
-
-    if (!["yes", "no"].includes(reconnection?.safetyConfirmed?.answer)) {
-      return this.createError({
-        path: "reconnection.safetyConfirmed.answer",
-        message: "Safety confirmed answer is required",
-      });
-    }
-
-    if (reconnection?.safetyConfirmed?.answer !== "yes") {
-      return this.createError({
-        path: "reconnection.safetyConfirmed.answer",
-        message: "Safety must be confirmed before submit",
-      });
-    }
-
-    if (!hasMediaTag(media, "safetyEvidence")) {
-      return this.createError({
-        path: "media",
-        message: "Safety evidence required",
       });
     }
 
@@ -1189,7 +1114,6 @@ export default function FormMeterReconnection() {
     readFirstString(meter?.type, action?.meterKind, "NAv"),
   ).toLowerCase();
 
-  const isPrepaidReading = isPrepaidMeterKind(meterKind);
 
   const currentStatus = String(
     readFirstString(astDoc?.status?.state, action?.meterPreStatus, "UNKNOWN"),
@@ -1275,14 +1199,6 @@ export default function FormMeterReconnection() {
     return `TRN_MRCN_${Date.now()}_${serviceCode}_${safeWardPcode}_${safeErfNo}`;
   }, [instructionTrnId, isFieldOrigin, meterType, wardPcode, erfNo]);
 
-  const reconnectionInstructionLookup = useIrepsLookupOptions(
-    "METER_RECONNECTION_INSTRUCTION",
-  );
-
-  const noReadingReasonLookup = useIrepsLookupOptions(
-    "METER_NO_READING_REASON",
-  );
-
   function buildTrnSystemFields() {
     return {
       erfId: astDoc?.accessData?.erfId || premise?.erfId || "NAv",
@@ -1365,9 +1281,12 @@ export default function FormMeterReconnection() {
       ast: values.ast,
 
       reconnection: buildBackendReconnectionPayload(values.reconnection, {
-        isPrepaid: isPrepaidReading,
         noAccess,
       }),
+
+      fieldComment: {
+        text: String(values?.fieldComment?.text || "").trim(),
+      },
 
       executionOutcome,
 
@@ -1559,29 +1478,14 @@ export default function FormMeterReconnection() {
         },
 
         reconnection: {
-          ...editReconnection,
-
-          meterReading:
-            typeof editReconnection?.meterReading === "object"
-              ? editReconnection?.meterReading?.reading || ""
-              : editReconnection?.meterReading || "",
-
-          tokenReading: editReconnection?.tokenReading || "",
-
-          noReadingReason: normalizeNoReadingReasonValue(
-            editReconnection?.noReadingReason ||
-              editReconnection?.meterReading?.noReadingReason,
-          ),
-
           supplyReconnected: editReconnection?.supplyReconnected || {
             answer: "",
             notes: "",
           },
+        },
 
-          safetyConfirmed: editReconnection?.safetyConfirmed || {
-            answer: "",
-            notes: "",
-          },
+        fieldComment: {
+          text: String(editPayload?.fieldComment?.text || ""),
         },
 
         media: filterExecutionMedia(editPayload?.media || []),
@@ -1616,15 +1520,6 @@ export default function FormMeterReconnection() {
 
       reconnection: {
         supplyReconnected: {
-          answer: "",
-          notes: "",
-        },
-
-        meterReading: "",
-        tokenReading: "",
-        noReadingReason: makeEmptySelectWithOther(),
-
-        safetyConfirmed: {
           answer: "",
           notes: "",
         },
@@ -1668,6 +1563,10 @@ export default function FormMeterReconnection() {
         cancelledByUid: action?.assignment?.cancelledByUid || null,
         cancelledByUser: action?.assignment?.cancelledByUser || null,
         cancelReason: action?.assignment?.cancelReason || "",
+      },
+
+      fieldComment: {
+        text: "",
       },
 
       meterType,
@@ -1763,7 +1662,9 @@ export default function FormMeterReconnection() {
       const syncedMedia = await Promise.all(
         filterExecutionMedia(values?.media || []).map(async (item) => {
           if (item.uri && !item.url) {
-            const fileName = `${uploadTrnId}_${item.tag}_${Date.now()}.jpg`;
+            const extension = getMediaExtension(item);
+            const fileName =
+              `${uploadTrnId}_${item.tag}_${Date.now()}.${extension}`;
             const storageRef = ref(
               storage,
               `meters/lifecycle/reconnection/${fileName}`,
@@ -2143,20 +2044,10 @@ export default function FormMeterReconnection() {
                   <IrepsSelectWithOther
                     label="Reconnection Instruction"
                     placeholder="Select reconnection instruction"
-                    options={reconnectionInstructionLookup.options}
-                    includeOther={
-                      reconnectionInstructionLookup.allowOther ?? true
-                    }
-                    otherCode={
-                      reconnectionInstructionLookup.otherCode || "OTHER"
-                    }
-                    otherLabel={
-                      reconnectionInstructionLookup.otherLabel || "Other"
-                    }
-                    loading={
-                      reconnectionInstructionLookup.isLoading ||
-                      reconnectionInstructionLookup.isFetching
-                    }
+                    options={FIELD_RECONNECTION_INSTRUCTION_OPTIONS}
+                    includeOther={true}
+                    otherCode="OTHER"
+                    otherLabel="Other"
                     value={values?.assignment?.instructionSelect}
                     onChange={(nextValue) => {
                       setFieldValue("assignment.instructionSelect", nextValue);
@@ -2183,6 +2074,21 @@ export default function FormMeterReconnection() {
                     numberOfLines={3}
                     style={styles.notesInput}
                   />
+
+                  <View style={styles.questionEvidenceSlot}>
+                    <Text style={styles.questionTitle}>Instruction Photo</Text>
+                    <Text style={styles.questionDescription}>
+                      Optional. Capture the written instruction if available.
+                    </Text>
+                    <IrepsMedia
+                      name="media"
+                      tag="instructionMedia"
+                      agentName={agentName}
+                      agentUid={agentUid}
+                      fallbackGps={fallbackGps}
+                      required={false}
+                    />
+                  </View>
                 </Surface>
               )}
 
@@ -2262,135 +2168,6 @@ export default function FormMeterReconnection() {
                       />
                     </YesNoQuestion>
 
-                    <Surface style={styles.questionCard} elevation={1}>
-                      <View style={styles.questionHeader}>
-                        <Text style={styles.questionTitle}>
-                          {isPrepaidReading ? "Token reading" : "Meter reading"}
-                        </Text>
-
-                        <Text style={styles.questionDescription}>
-                          {isPrepaidReading
-                            ? "Capture the prepaid token/register reading at reconnection. If unavailable, provide the reason."
-                            : "Capture the meter reading at reconnection. If unavailable, provide the reason."}
-                        </Text>
-                      </View>
-
-                      {isPrepaidReading ? (
-                        <>
-                          <TextInput
-                            mode="outlined"
-                            label="Token Reading"
-                            value={values?.reconnection?.tokenReading}
-                            onChangeText={(text) =>
-                              setFieldValue(
-                                "reconnection.tokenReading",
-                                text.replace(/[^\d.]/g, ""),
-                              )
-                            }
-                            keyboardType="numeric"
-                            style={styles.readingInput}
-                          />
-
-                          <View style={styles.questionEvidenceSlot}>
-                            <IrepsMedia
-                              name="media"
-                              tag="tokenReadingPhoto"
-                              agentName={agentName}
-                              agentUid={agentUid}
-                              fallbackGps={fallbackGps}
-                              required={
-                                !!String(
-                                  values?.reconnection?.tokenReading || "",
-                                ).trim()
-                              }
-                            />
-                          </View>
-                        </>
-                      ) : (
-                        <>
-                          <TextInput
-                            mode="outlined"
-                            label="Meter Reading"
-                            value={values?.reconnection?.meterReading}
-                            onChangeText={(text) =>
-                              setFieldValue(
-                                "reconnection.meterReading",
-                                text.replace(/[^\d.]/g, ""),
-                              )
-                            }
-                            keyboardType="numeric"
-                            style={styles.readingInput}
-                          />
-
-                          <View style={styles.questionEvidenceSlot}>
-                            <IrepsMedia
-                              name="media"
-                              tag="reconnectionMeterReadingEvidence"
-                              agentName={agentName}
-                              agentUid={agentUid}
-                              fallbackGps={fallbackGps}
-                              required={
-                                !!String(
-                                  values?.reconnection?.meterReading || "",
-                                ).trim()
-                              }
-                            />
-                          </View>
-                        </>
-                      )}
-
-                      <IrepsSelectWithOther
-                        label="No Reading Reason"
-                        placeholder="Select reason"
-                        options={noReadingReasonLookup.options}
-                        includeOther={noReadingReasonLookup.allowOther ?? true}
-                        otherCode={noReadingReasonLookup.otherCode || "OTHER"}
-                        otherLabel={noReadingReasonLookup.otherLabel || "Other"}
-                        loading={
-                          noReadingReasonLookup.isLoading ||
-                          noReadingReasonLookup.isFetching
-                        }
-                        value={values?.reconnection?.noReadingReason}
-                        onChange={(nextValue) =>
-                          setFieldValue(
-                            "reconnection.noReadingReason",
-                            nextValue,
-                          )
-                        }
-                        errorText={
-                          typeof reconnectionErrors?.noReadingReason ===
-                          "string"
-                            ? reconnectionErrors.noReadingReason
-                            : ""
-                        }
-                      />
-                    </Surface>
-
-                    <YesNoQuestion
-                      title="Safety confirmed"
-                      description="Confirm that the reconnection was left safe after the work was done."
-                      value={values?.reconnection?.safetyConfirmed?.answer}
-                      notes={values?.reconnection?.safetyConfirmed?.notes}
-                      answerPath="reconnection.safetyConfirmed.answer"
-                      notesPath="reconnection.safetyConfirmed.notes"
-                      setFieldValue={setFieldValue}
-                      errorText={
-                        reconnectionErrors?.safetyConfirmed?.answer ||
-                        reconnectionErrors?.safetyConfirmed?.notes
-                      }
-                    >
-                      <IrepsMedia
-                        name="media"
-                        tag="safetyEvidence"
-                        agentName={agentName}
-                        agentUid={agentUid}
-                        fallbackGps={fallbackGps}
-                        required={
-                          values?.reconnection?.safetyConfirmed?.answer ===
-                          "yes"
-                        }
-                      />
-                    </YesNoQuestion>
                   </>
                 )}
 
@@ -2398,6 +2175,13 @@ export default function FormMeterReconnection() {
                   <Text style={styles.errorText}>{errors.media}</Text>
                 )}
               </Surface>
+
+              <IrepsFieldCommentSection
+                agentName={agentName}
+                agentUid={agentUid}
+                fallbackGps={fallbackGps}
+                disabled={inProgress || saveInProgress}
+              />
 
               <IrepsFormActions
                 resetLabel="RESET"
