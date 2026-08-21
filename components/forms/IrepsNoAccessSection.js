@@ -12,6 +12,7 @@ import {
   Portal,
   RadioButton,
   Surface,
+  TextInput,
 } from "react-native-paper";
 
 import { NO_ACCESS_REASONS } from "../../src/features/meters/noAccessReasons";
@@ -36,31 +37,70 @@ export function IrepsNoAccessSection({
     typeof value === "object" &&
     !Array.isArray(value);
 
-  const selectedCode = isStructuredValue
+  const rawSelectedValue = isStructuredValue
     ? String(value?.code || value?.label || "").trim()
     : String(value || "").trim();
 
+  const isLegacyOtherValue =
+    !isStructuredValue && /^other(?:\s*:|$)/i.test(rawSelectedValue);
+
+  const selectedCode =
+    String(rawSelectedValue).toUpperCase() === "OTHER" || isLegacyOtherValue
+      ? "OTHER"
+      : rawSelectedValue;
+
   const selectedLabel = isStructuredValue
     ? String(value?.label || value?.code || "").trim()
-    : selectedCode;
+    : selectedCode === "OTHER"
+      ? "Other"
+      : rawSelectedValue;
+
+  const selectedOtherText = isStructuredValue
+    ? String(value?.otherText || "")
+    : isLegacyOtherValue
+      ? rawSelectedValue.replace(/^other\s*:?\s*/i, "")
+      : "";
+
+  const isOtherSelected = selectedCode === "OTHER";
 
   const selectedText =
     selectedLabel || selectedCode || "Select reason ...";
 
   function handleReasonChange(nextValue) {
-    const nextReason = String(nextValue || "").trim();
+    const nextCode = String(nextValue || "").trim();
+    const isOther = nextCode === "OTHER";
+    const nextLabel = isOther ? "Other" : nextCode;
 
     if (isStructuredValue) {
       onChange?.({
-        code: nextReason,
-        label: nextReason,
-        otherText: "",
+        code: nextCode,
+        label: nextLabel,
+        otherText: isOther && isOtherSelected ? selectedOtherText : "",
       });
     } else {
-      onChange?.(nextReason);
+      onChange?.(
+        isOther
+          ? selectedOtherText.trim()
+            ? `Other: ${selectedOtherText.trim()}`
+            : "Other"
+          : nextLabel,
+      );
     }
 
     setModalVisible(false);
+  }
+
+  function handleOtherTextChange(text) {
+    if (isStructuredValue) {
+      onChange?.({
+        code: "OTHER",
+        label: "Other",
+        otherText: text,
+      });
+      return;
+    }
+
+    onChange?.(text.trim() ? `Other: ${text}` : "Other");
   }
 
   if (!visible) return null;
@@ -101,6 +141,20 @@ export function IrepsNoAccessSection({
             <Text style={styles.errorText}>{reasonErrorText}</Text>
           )}
 
+          {isOtherSelected ? (
+            <TextInput
+              mode="outlined"
+              label="Other NA Reason"
+              value={selectedOtherText}
+              onChangeText={handleOtherTextChange}
+              placeholder="Enter no-access reason"
+              multiline
+              numberOfLines={3}
+              error={Boolean(reasonErrorText) && !selectedOtherText.trim()}
+              style={styles.otherInput}
+            />
+          ) : null}
+
           <Divider style={styles.divider} />
 
           <IrepsMedia
@@ -128,13 +182,17 @@ export function IrepsNoAccessSection({
             onValueChange={handleReasonChange}
             value={selectedCode}
           >
-            {NO_ACCESS_REASONS.map((reason) => (
-              <RadioButton.Item
-                key={reason}
-                label={reason}
-                value={reason}
-              />
-            ))}
+            {NO_ACCESS_REASONS.map((reason) => {
+              const reasonValue = reason === "Other" ? "OTHER" : reason;
+
+              return (
+                <RadioButton.Item
+                  key={reason}
+                  label={reason}
+                  value={reasonValue}
+                />
+              );
+            })}
           </RadioButton.Group>
         </Modal>
       </Portal>
@@ -194,6 +252,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#1E293B",
+  },
+
+  otherInput: {
+    marginTop: 12,
+    backgroundColor: "#fff",
   },
 
   divider: {

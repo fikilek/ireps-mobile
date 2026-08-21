@@ -41,9 +41,6 @@ export function useMeterFormLookupOptions(meterType) {
     "METER_NORMALISATION_ACTION",
   );
   const placementLookup = useIrepsLookupOptions("METER_PLACEMENT");
-  const noAccessReasonLookup = useIrepsLookupOptions(
-    "METER_NO_ACCESS_REASON",
-  );
 
   const normalizedMeterType = String(meterType || "")
     .trim()
@@ -81,11 +78,6 @@ export function useMeterFormLookupOptions(meterType) {
     [placementLookup.options],
   );
 
-  const noAccessReasons = useMemo(
-    () => optionLabels(noAccessReasonLookup.options),
-    [noAccessReasonLookup.options],
-  );
-
   const getOptions = useCallback(
     (name) => {
       switch (name) {
@@ -114,8 +106,5 @@ export function useMeterFormLookupOptions(meterType) {
     ],
   );
 
-  return {
-    getOptions,
-    noAccessReasons,
-  };
+  return { getOptions };
 }

@@ -13,11 +13,8 @@ import {
 } from "react-native";
 import {
   ActivityIndicator,
-  Divider,
   Modal,
   Portal,
-  RadioButton,
-  Surface,
   Text,
 } from "react-native-paper";
 import { array, object, string } from "yup";
@@ -26,8 +23,8 @@ import { array, object, string } from "yup";
 import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { ElectricitySections } from "../../../components/forms/ElectricitySections";
+import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import { WaterSections } from "../../../components/forms/WaterSections";
-import { IrepsMedia } from "../../../components/media/IrepsMedia";
 import { ScreenLock } from "../../../components/SceenLock";
 import { useGeo } from "../../context/GeoContext";
 import { getSafeCoords } from "../../context/MapContext";
@@ -52,6 +49,7 @@ import {
   parseTargetedBatchContextRouteParam,
 } from "../premises/targetedBatchPremiseContext";
 import { ForensicFooter } from "./ForensicFooter";
+import { isCompleteNoAccessReason } from "./noAccessReasons";
 import {
   getFormOptionValues,
   getFormOptions,
@@ -424,8 +422,6 @@ export default function FormMeterDiscovery() {
   const propType =
     `${premise?.propertyType?.type || ""} ${premise?.propertyType?.name || ""} ${premise?.propertyType?.unitNo || ""}`.trim();
 
-  const [modalVisible, setModalVisible] = useState(false);
-
   const [showSuccess, setShowSuccess] = useState(false);
   // console.log(`FormMeterDiscovery ----showSuccess`, showSuccess);
 
@@ -574,7 +570,16 @@ export default function FormMeterDiscovery() {
         reason: string().when("hasAccess", {
           is: (val) => val === "no",
           then: (s) =>
-            s.trim().required("Please provide a reason for no access"),
+            s
+              .trim()
+              .required("Please provide a reason for no access")
+              .test(
+                "complete-no-access-reason",
+                "Please provide details for Other",
+                (value) =>
+                  !String(value || "").trim() ||
+                  isCompleteNoAccessReason(value),
+              ),
           otherwise: (s) => s.nullable().notRequired(),
         }),
       }),
@@ -2002,52 +2007,22 @@ export default function FormMeterDiscovery() {
                 </View>
               ) : (
                 // NO ACCESS SECTION
-                <Surface style={styles.card}>
-                  {values?.accessData?.access?.hasAccess === "no" && (
-                    <Surface style={styles.naCard} elevation={2}>
-                      <View style={styles.sectionHeader}>
-                        <MaterialCommunityIcons
-                          name="alert-circle"
-                          size={18}
-                          color="#dc2626"
-                        />
-                        <Text
-                          style={[styles.sectionTitle, { color: "#dc2626" }]}
-                        >
-                          NA Reason
-                        </Text>
-                      </View>
-
-                      {/* Reason Selector */}
-                      <TouchableOpacity
-                        style={styles.selector}
-                        onPress={() => setModalVisible(true)}
-                      >
-                        <View>
-                          <Text style={styles.selectorValue}>
-                            {values?.accessData?.access?.reason ||
-                              "Select reason ..."}
-                          </Text>
-                        </View>
-                        <MaterialCommunityIcons
-                          name="chevron-down"
-                          size={22}
-                          color="#dc2626"
-                        />
-                      </TouchableOpacity>
-
-                      <Divider style={{ marginVertical: 15 }} />
-
-                      <IrepsMedia
-                        name="media" // 🎯 Ensure this is NOT "accessData.media"
-                        tag={"noAccessPhoto"}
-                        agentName={agentName}
-                        agentUid={agentUid}
-                        fallbackGps={landingPoint}
-                      />
-                    </Surface>
-                  )}
-                </Surface>
+                <IrepsNoAccessSection
+                  visible={values?.accessData?.access?.hasAccess === "no"}
+                  value={values?.accessData?.access?.reason}
+                  onChange={(nextReason) =>
+                    setFieldValue("accessData.access.reason", nextReason)
+                  }
+                  mediaName="media"
+                  mediaTag="noAccessPhoto"
+                  agentName={agentName}
+                  agentUid={agentUid}
+                  fallbackGps={landingPoint}
+                  reasonErrorText={errors?.accessData?.access?.reason || ""}
+                  mediaErrorText={
+                    typeof errors?.media === "string" ? errors.media : ""
+                  }
+                />
               )}
 
               {/* RESET / SUBMIT BTNS */}
@@ -2057,24 +2032,6 @@ export default function FormMeterDiscovery() {
               />
 
               <Portal>
-                <Modal
-                  visible={modalVisible}
-                  onDismiss={() => setModalVisible(false)}
-                  contentContainerStyle={styles.modalContent}
-                >
-                  <RadioButton.Group
-                    onValueChange={(v) => {
-                      setFieldValue("accessData.access.reason", v);
-                      setModalVisible(false);
-                    }}
-                    value={values?.accessData?.access?.reason}
-                  >
-                    {getOptions("no_access_reasons").map((r) => (
-                      <RadioButton.Item key={r} label={r} value={r} />
-                    ))}
-                  </RadioButton.Group>
-                </Modal>
-
                 <Modal
                   visible={showSuccess}
                   dismissable={false} // Force them to acknowledge or wait for auto-nav
@@ -2119,42 +2076,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     overflow: "hidden",
   },
-  sectionHeader: {
-    padding: 10,
-    backgroundColor: "#E2E8F0",
-    flexDirection: "row",
-    gap: 8,
-  },
   sectionTitle: { fontSize: 14, fontWeight: "bold", color: "#475569" },
   input: { marginBottom: 10, backgroundColor: "#fff" },
-  selector: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    padding: 15,
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 8,
-    backgroundColor: "#fff",
-  },
-  modalContent: {
-    backgroundColor: "white",
-    padding: 20,
-    margin: 20,
-    borderRadius: 12,
-  },
-
   card: {
     backgroundColor: "#FFF",
     padding: 20,
     borderRadius: 16,
-    marginBottom: 16,
-  },
-  naCard: {
-    backgroundColor: "#fef2f2",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#fecaca",
     marginBottom: 16,
   },
   label: {
@@ -2172,7 +2099,6 @@ const styles = StyleSheet.create({
     color: "#475569",
     marginTop: 4,
   },
-  selectorValue: { fontSize: 16, fontWeight: "600", color: "#1E293B" },
   footer: { flexDirection: "row", gap: 12, marginTop: 20, padding: 20 },
   submitBtn: { flex: 2, borderRadius: 10 },
   resetBtn: { flex: 1, borderRadius: 10 },
