@@ -91,23 +91,6 @@ const FORM_OPTIONS = Object.freeze({
     evidenceOption("Other", false),
   ]),
 
-  no_access_reasons: Object.freeze([
-    "Property Locked",
-    "Access Refused/Denied",
-    "Occupant/Owner Not Available",
-    "Vandalized/Abandoned Building",
-    "Building Under Construction",
-    "Meter Missing/Removed",
-    "Empty (Vacant) Stand",
-    "Meter Obstructed",
-    "Dog(s) Danger",
-    "Dangerous Environment / Safety Risk",
-    "Meter Box Vandalized",
-    "Property Demolished",
-    "Meter Cannot Be Located",
-    "Other",
-  ]),
-
   anomalies: Object.freeze([
     Object.freeze({
       anomaly: "Meter Ok",
