@@ -14,7 +14,12 @@ import {
   getWardPcode,
 } from "./wardErfSyncStatus";
 
-const ErfFilterHeader = ({ selectedWard, setSelectedWard, filteredCount }) => {
+const ErfFilterHeader = ({
+  selectedWard,
+  setSelectedWard,
+  filteredCount,
+  onWardErfSync,
+}) => {
   const [visible, setVisible] = useState(false);
   const showDialog = () => setVisible(true);
   const hideDialog = () => setVisible(false);
@@ -65,19 +70,31 @@ const ErfFilterHeader = ({ selectedWard, setSelectedWard, filteredCount }) => {
   return (
     <Surface style={styles.header} elevation={1}>
       <View style={styles.row}>
-        {/* 🎯 LEFT: WARD SELECTION */}
-        <View style={styles.leftCol}>
-          <Button
-            mode="outlined"
-            onPress={showDialog}
-            style={styles.wardButton}
-            icon="filter-variant"
-            contentStyle={styles.buttonContent}
-            labelStyle={styles.buttonLabel}
-            compact
+        {/* 🎯 LEFT: WARD SELECTION + SYNC ACCESS */}
+        <View style={styles.leftControls}>
+          <View style={styles.leftCol}>
+            <Button
+              mode="outlined"
+              onPress={showDialog}
+              style={styles.wardButton}
+              icon="filter-variant"
+              contentStyle={styles.buttonContent}
+              labelStyle={styles.buttonLabel}
+              compact
+            >
+              {displayWardName}
+            </Button>
+          </View>
+
+          <TouchableOpacity
+            style={styles.syncButton}
+            onPress={onWardErfSync}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Manage Ward ERF sync"
           >
-            {displayWardName}
-          </Button>
+            <MaterialCommunityIcons name="sync" size={20} color="#2563eb" />
+          </TouchableOpacity>
         </View>
 
         {/* 📊 RIGHT: TACTICAL STATS */}
@@ -334,9 +351,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  leftControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 1,
+  },
   leftCol: {
-    flex: 0.35,
     justifyContent: "center",
+  },
+  syncButton: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 8,
   },
   rightCol: {
     // flex: 0.4,

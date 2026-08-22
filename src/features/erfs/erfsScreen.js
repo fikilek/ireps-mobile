@@ -116,6 +116,10 @@ export default function ErfsScreen() {
 
   /* ================= HEADER WARD SELECT ================= */
 
+  const handleWardErfSync = () => {
+    router.push("/(tabs)/erfs/ward-erfs-sync");
+  };
+
   const handleWardSelectionFromHeader = (ward) => {
     if (!ward?.id) {
       updateGeo({
@@ -195,6 +199,7 @@ export default function ErfsScreen() {
           selectedWard={geoState.selectedWard}
           setSelectedWard={handleWardSelectionFromHeader}
           filteredCount={0}
+          onWardErfSync={handleWardErfSync}
         />
 
         <AwaitWardState lmName={lmName} wardsCount={wardsCount} />
@@ -240,6 +245,7 @@ export default function ErfsScreen() {
         selectedWard={geoState.selectedWard}
         setSelectedWard={handleWardSelectionFromHeader}
         filteredCount={visibleErfs.length}
+        onWardErfSync={handleWardErfSync}
       />
 
       <FlashList
