@@ -135,21 +135,14 @@ const FORM_OPTIONS = Object.freeze({
 
   norm_actions: Object.freeze([
     option("None", "none"),
-    option("Issue Fine"),
-    option("Meter Removal"),
-    option("Meter Disconnection"),
-    option("Meter Reconnection"),
-    option("Meter Damaged - New Meter Installed"),
-    option("Meter Faulty - New Meter Installed"),
-    option("Meter Illegal Connected - Tamper Removed"),
-    option("Meter Illegal Connected - New Meter Installed"),
-    option("Meter Bridged (By Munic) - New Meter Installed"),
-    option("Meter Blocked (By Munic) - New Meter Installed"),
+    option("New Meter Installed"),
+    option("Meter Removed"),
+    option("Meter Disconnected"),
     option("Meter Reconnected"),
-    option("Keypad - Normalised"),
-    option("Completed Service Points (Cable Installed)"),
+    option("Tamper Removed"),
+    option("Keypad Normalised"),
+    option("Service Point Completed / Cable Installed"),
     option("Meter Registered"),
-    option("Meter Missing Installed"),
   ]),
 });
 
