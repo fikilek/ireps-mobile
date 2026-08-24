@@ -133,6 +133,7 @@ function isValidMeterGps(value) {
 }
 
 const OTHER_ANOMALY_VALUES = getFormOptionValues("other_anomalies");
+const NORMALISATION_ACTION_VALUES = getFormOptionValues("norm_actions");
 const STANDARD_ELECTRICITY_MANUFACTURERS = getFormOptionValues(
   "elec_manufacturers",
 ).filter((value) => value !== "Other");
@@ -890,7 +891,32 @@ export default function FormMeterDiscovery() {
       }),
 
       normalisation: object().shape({
-        actionTaken: array().of(string()).required("Required"),
+        actionTaken: array()
+          .strict()
+          .of(
+            string()
+              .strict()
+              .oneOf(
+                NORMALISATION_ACTION_VALUES,
+                "Select a valid Normalisation action",
+              ),
+          )
+          .min(1, "Select at least one Normalisation action")
+          .required("Normalisation action is required")
+          .test(
+            "unique-normalisation-actions",
+            "Normalisation actions cannot contain duplicates",
+            (value) =>
+              !Array.isArray(value) || new Set(value).size === value.length,
+          )
+          .test(
+            "normalisation-none-exclusive",
+            "None cannot be combined with another Normalisation action",
+            (value) =>
+              !Array.isArray(value) ||
+              !value.includes("none") ||
+              value.length === 1,
+          ),
       }),
 
       location: object().shape({
