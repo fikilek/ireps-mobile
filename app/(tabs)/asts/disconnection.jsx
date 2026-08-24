@@ -1241,7 +1241,7 @@ export default function FormMeterDisconnection() {
   }, [instructionTrnId, isFieldOrigin, meterType, wardPcode, erfNo]);
 
   const levelLookup = useIrepsLookupOptions("METER_DISCONNECTION_LEVEL");
-  console.log(`disconnnection --levelLookup`, levelLookup);
+  // console.log(`disconnnection --levelLookup`, levelLookup);
 
   function buildTrnSystemFields() {
     return {
@@ -1519,11 +1519,11 @@ export default function FormMeterDisconnection() {
 
         disconnection: {
           level: normalizeCodeLabelValue(editPayload?.disconnection?.level),
-          supplyDisconnected:
-            editPayload?.disconnection?.supplyDisconnected || {
-              answer: "",
-              notes: "",
-            },
+          supplyDisconnected: editPayload?.disconnection
+            ?.supplyDisconnected || {
+            answer: "",
+            notes: "",
+          },
         },
 
         fieldComment: {
@@ -1704,8 +1704,7 @@ export default function FormMeterDisconnection() {
         filterExecutionMedia(values?.media || []).map(async (item) => {
           if (item.uri && !item.url) {
             const extension = getMediaExtension(item);
-            const fileName =
-              `${uploadTrnId}_${item.tag}_${Date.now()}.${extension}`;
+            const fileName = `${uploadTrnId}_${item.tag}_${Date.now()}.${extension}`;
             const storageRef = ref(
               storage,
               `meters/lifecycle/disconnection/${fileName}`,
@@ -2260,7 +2259,6 @@ export default function FormMeterDisconnection() {
                         }
                       />
                     </YesNoQuestion>
-
                   </>
                 )}
 
