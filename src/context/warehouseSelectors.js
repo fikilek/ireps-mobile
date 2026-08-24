@@ -94,6 +94,13 @@ export const selectFilteredMeters = ({
   return metersArr;
 };
 
+export const resolveTrnAstId = (trn) =>
+  trn?.ast?.astData?.astId ||
+  trn?.inspection?.captured?.ast?.astData?.astId ||
+  trn?.inspection?.lastKnown?.ast?.astData?.astId ||
+  trn?.derived?.astId ||
+  null;
+
 export const selectFilteredTrns = ({
   trns = [],
   selectedErfId = null,
@@ -103,7 +110,7 @@ export const selectFilteredTrns = ({
   const trnsArr = Array.isArray(trns) ? trns : [];
 
   if (selectedMeterId) {
-    return trnsArr.filter((t) => t?.derived?.astId === selectedMeterId);
+    return trnsArr.filter((t) => resolveTrnAstId(t) === selectedMeterId);
   }
 
   if (selectedPremiseId) {
