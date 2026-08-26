@@ -40,7 +40,6 @@ import { ScreenLock } from "../../../components/SceenLock";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
 import { functions } from "../../../src/firebase";
 import { useAuth } from "../../../src/hooks/useAuth";
-import { useIrepsLookupOptions } from "../../../src/hooks/useIrepsLookupOptions";
 import { useGetServiceProvidersQuery } from "../../../src/redux/spApi";
 import {
   addSubmissionQueueItem,
@@ -60,7 +59,6 @@ const DCN_SUBMIT_TIMEOUT_MS = 15000; // TEST ONLY - restore to 15000 after MMKV 
 const EXECUTION_MEDIA_TAGS = [
   "instructionMedia",
   "disconnectionLevelEvidence",
-  "supplyDisconnectedEvidence",
   "noAccessPhoto",
   "fieldCommentPhoto",
   "fieldCommentVoice",
@@ -71,6 +69,21 @@ const FIELD_DISCONNECTION_INSTRUCTION_OPTIONS = [
   { code: "CREDIT_CONTROL_INSTRUCTION", label: "Credit Control Instruction" },
   { code: "ILLEGAL_CONNECTION", label: "Illegal Connection" },
   { code: "NON_PAYMENT", label: "Non Payment" },
+];
+
+const FIELD_DISCONNECTION_LEVEL_OPTIONS = [
+  {
+    code: "LEVEL_1_CB_ONLY",
+    label: "Level 1 - Flip circuit breaker only",
+  },
+  {
+    code: "LEVEL_2_CB_WIRE_REMOVED",
+    label: "Level 2 - Remove wire on circuit breaker",
+  },
+  {
+    code: "LEVEL_3_SUPPLY_CABLE_REMOVED",
+    label: "Level 3 - Remove whole supply cable",
+  },
 ];
 
 function makeEmptySelectWithOther() {
@@ -301,11 +314,6 @@ function buildBackendDisconnectionPayload(
         code: "",
         label: "",
       },
-
-      supplyDisconnected: {
-        answer: "",
-        notes: "",
-      },
     };
   }
 
@@ -313,11 +321,6 @@ function buildBackendDisconnectionPayload(
     level: {
       code: disconnection?.level?.code || "",
       label: disconnection?.level?.label || "",
-    },
-
-    supplyDisconnected: {
-      answer: disconnection?.supplyDisconnected?.answer || "",
-      notes: disconnection?.supplyDisconnected?.notes || "",
     },
   };
 }
@@ -443,10 +446,6 @@ const DisconnectionSchema = object()
         otherText: string().notRequired(),
       }),
 
-      supplyDisconnected: object().shape({
-        answer: string().notRequired(),
-        notes: string().notRequired(),
-      }),
     }),
 
     fieldComment: object().shape({
@@ -485,19 +484,6 @@ const DisconnectionSchema = object()
       });
     }
 
-    if (!["yes", "no"].includes(disconnection?.supplyDisconnected?.answer)) {
-      return this.createError({
-        path: "disconnection.supplyDisconnected.answer",
-        message: "Supply disconnected answer is required",
-      });
-    }
-
-    if (disconnection?.supplyDisconnected?.answer !== "yes") {
-      return this.createError({
-        path: "disconnection.supplyDisconnected.answer",
-        message: "Supply must be confirmed as disconnected before submit",
-      });
-    }
 
     if (!hasMediaTag(media, "disconnectionLevelEvidence")) {
       return this.createError({
@@ -506,78 +492,9 @@ const DisconnectionSchema = object()
       });
     }
 
-    if (!hasMediaTag(media, "supplyDisconnectedEvidence")) {
-      return this.createError({
-        path: "media",
-        message: "Supply disconnected evidence required",
-      });
-    }
 
     return true;
   });
-
-const YesNoQuestion = ({
-  title,
-  description,
-  value,
-  notes,
-  answerPath,
-  notesPath,
-  setFieldValue,
-  errorText,
-  children,
-}) => {
-  return (
-    <Surface style={styles.questionCard} elevation={1}>
-      <View style={styles.questionHeader}>
-        <Text style={styles.questionTitle}>{title}</Text>
-        <Text style={styles.questionDescription}>{description}</Text>
-      </View>
-
-      <RadioButton.Group
-        value={value}
-        onValueChange={(nextValue) => setFieldValue(answerPath, nextValue)}
-      >
-        <View style={styles.radioRow}>
-          <TouchableOpacity
-            style={[
-              styles.radioChoice,
-              value === "yes" && styles.radioChoiceYes,
-            ]}
-            onPress={() => setFieldValue(answerPath, "yes")}
-          >
-            <RadioButton value="yes" />
-            <Text style={styles.radioText}>YES</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.radioChoice, value === "no" && styles.radioChoiceNo]}
-            onPress={() => setFieldValue(answerPath, "no")}
-          >
-            <RadioButton value="no" />
-            <Text style={styles.radioText}>NO</Text>
-          </TouchableOpacity>
-        </View>
-      </RadioButton.Group>
-
-      {value === "no" && (
-        <TextInput
-          mode="outlined"
-          label="Reason / Notes"
-          value={notes}
-          onChangeText={(text) => setFieldValue(notesPath, text)}
-          multiline
-          numberOfLines={3}
-          style={styles.notesInput}
-        />
-      )}
-
-      <View style={styles.questionEvidenceSlot}>{children}</View>
-
-      {!!errorText && <Text style={styles.errorText}>{errorText}</Text>}
-    </Surface>
-  );
-};
 
 const AccessOutcomeCard = ({ value, setFieldValue }) => {
   return (
@@ -1240,8 +1157,6 @@ export default function FormMeterDisconnection() {
     return `TRN_MDCN_${Date.now()}_${serviceCode}_${safeWardPcode}_${safeErfNo}`;
   }, [instructionTrnId, isFieldOrigin, meterType, wardPcode, erfNo]);
 
-  const levelLookup = useIrepsLookupOptions("METER_DISCONNECTION_LEVEL");
-  console.log(`disconnnection --levelLookup`, levelLookup);
 
   function buildTrnSystemFields() {
     return {
@@ -1519,11 +1434,6 @@ export default function FormMeterDisconnection() {
 
         disconnection: {
           level: normalizeCodeLabelValue(editPayload?.disconnection?.level),
-          supplyDisconnected:
-            editPayload?.disconnection?.supplyDisconnected || {
-              answer: "",
-              notes: "",
-            },
         },
 
         fieldComment: {
@@ -1562,11 +1472,6 @@ export default function FormMeterDisconnection() {
 
       disconnection: {
         level: makeEmptySelectWithOther(),
-
-        supplyDisconnected: {
-          answer: "",
-          notes: "",
-        },
       },
 
       assignment: {
@@ -2194,11 +2099,8 @@ export default function FormMeterDisconnection() {
                       <IrepsSelectWithOther
                         label="Level"
                         placeholder="Select disconnection level"
-                        options={levelLookup.options}
+                        options={FIELD_DISCONNECTION_LEVEL_OPTIONS}
                         includeOther={false}
-                        loading={
-                          levelLookup.isLoading || levelLookup.isFetching
-                        }
                         value={values?.disconnection?.level}
                         onChange={(nextValue) =>
                           setFieldValue("disconnection.level", nextValue)
@@ -2229,37 +2131,6 @@ export default function FormMeterDisconnection() {
                       </View>
                     </Surface>
 
-                    <YesNoQuestion
-                      title="Supply disconnected"
-                      description="Confirm that the supply was disconnected according to the selected level."
-                      value={values?.disconnection?.supplyDisconnected?.answer}
-                      notes={values?.disconnection?.supplyDisconnected?.notes}
-                      answerPath="disconnection.supplyDisconnected.answer"
-                      notesPath="disconnection.supplyDisconnected.notes"
-                      setFieldValue={setFieldValue}
-                      errorText={
-                        disconnectionErrors?.supplyDisconnected?.answer ||
-                        disconnectionErrors?.supplyDisconnected?.notes
-                      }
-                    >
-                      <Text style={styles.questionTitle}>
-                        Supply Disconnected Photo
-                      </Text>
-                      <Text style={styles.questionDescription}>
-                        Capture photo evidence that the supply was disconnected.
-                      </Text>
-                      <IrepsMedia
-                        name="media"
-                        tag="supplyDisconnectedEvidence"
-                        agentName={agentName}
-                        agentUid={agentUid}
-                        fallbackGps={fallbackGps}
-                        required={
-                          values?.disconnection?.supplyDisconnected?.answer ===
-                          "yes"
-                        }
-                      />
-                    </YesNoQuestion>
 
                   </>
                 )}
