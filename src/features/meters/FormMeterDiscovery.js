@@ -23,6 +23,7 @@ import { array, object, string } from "yup";
 import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { ElectricitySections } from "../../../components/forms/ElectricitySections";
+import { IrepsFieldCommentSection } from "../../../components/forms/IrepsFieldCommentSection";
 import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import { WaterSections } from "../../../components/forms/WaterSections";
 import { ScreenLock } from "../../../components/SceenLock";
@@ -35,6 +36,7 @@ import { useGetServiceProvidersQuery } from "../../redux/spApi";
 import { useAddTrnMutation } from "../../redux/trnsApi";
 import { processSubmissionQueue } from "../../services/processSubmissionQueue";
 import { scheduleMeterDiscoveryNoAccessQueueSyncRetry } from "../../services/startMeterDiscoveryNoAccessQueueSyncService";
+import { getMediaExtension } from "../../utils/getMediaExtension";
 import { persistNoAccessMeterDiscoveryMedia } from "../../utils/persistNoAccessMeterDiscoveryMedia";
 import { getPremiseQueueItemByPremiseId } from "../../utils/premiseSubmissionQueue";
 import {
@@ -50,6 +52,11 @@ import {
 } from "../premises/targetedBatchPremiseContext";
 import { ForensicFooter } from "./ForensicFooter";
 import { isCompleteNoAccessReason } from "./noAccessReasons";
+import {
+  canonicalizeRemainingCredit,
+  getRemainingCreditValidationError,
+  hydrateRemainingCreditMeter,
+} from "./remainingCreditContract";
 import {
   getFormOptionValues,
   getFormOptions,
@@ -145,6 +152,35 @@ const KEYPAD_SERIAL_NUMBER_COMMENT_REASONS = getFormOptionValues(
 );
 const CB_COMMENT_REASONS = getFormOptionValues("cb_comment_reasons");
 const METER_PLACEMENT_VALUES = getFormOptionValues("placements");
+const REMAINING_CREDIT_COMMENT_REASONS = getFormOptionValues(
+  "remaining_credit_comment_reasons",
+);
+
+const fieldCommentSchema = object().shape({
+  text: string().notRequired(),
+});
+
+function withRemainingCreditValidation(schema) {
+  return schema.test(
+    "remaining-credit-contract",
+    "Remaining Credit details are invalid",
+    function (value) {
+      const validationError = getRemainingCreditValidationError({
+        isDiscovery: true,
+        meter: value?.ast?.astData?.meter || {},
+        media: value?.media || [],
+        approvedReasons: REMAINING_CREDIT_COMMENT_REASONS,
+      });
+
+      if (!validationError) return true;
+
+      return this.createError({
+        path: validationError.path,
+        message: validationError.message,
+      });
+    },
+  );
+}
 
 function hydrateInfrastructureComment(container, valueKey, allowedComments) {
   if (!container || typeof container !== "object") return;
@@ -195,13 +231,24 @@ function clonePlainValue(value) {
 function hydrateMeterDiscoveryEditPayload(payload) {
   const hydrated = clonePlainValue(payload);
 
+  if (!hydrated) return hydrated;
+
+  hydrated.fieldComment = {
+    ...(hydrated.fieldComment || {}),
+    text: String(hydrated?.fieldComment?.text ?? ""),
+  };
+
   if (
-    !hydrated ||
     hydrated?.accessData?.access?.hasAccess === "no" ||
     !hydrated?.ast
   ) {
     return hydrated;
   }
+
+  hydrated.ast.astData = {
+    ...(hydrated.ast.astData || {}),
+    meter: hydrateRemainingCreditMeter(hydrated?.ast?.astData?.meter || {}),
+  };
 
   hydrated.ast.anomalies = {
     ...(hydrated.ast.anomalies || {}),
@@ -249,6 +296,16 @@ function hydrateMeterDiscoveryEditPayload(payload) {
 
 function buildCanonicalMeterDiscoveryAst(values) {
   const canonicalAst = clonePlainValue(values?.ast || {});
+  const remainingCredit = canonicalizeRemainingCredit({
+    meter: canonicalAst?.astData?.meter || {},
+    media: values?.media || [],
+    isDiscovery: true,
+  });
+
+  canonicalAst.astData = {
+    ...(canonicalAst.astData || {}),
+    meter: remainingCredit.meter,
+  };
 
   canonicalAst.anomalies = {
     ...(canonicalAst.anomalies || {}),
@@ -277,6 +334,14 @@ function buildCanonicalMeterDiscoveryAst(values) {
   }
 
   return canonicalAst;
+}
+
+function buildCanonicalMeterDiscoveryMedia(values) {
+  return canonicalizeRemainingCredit({
+    meter: values?.ast?.astData?.meter || {},
+    media: values?.media || [],
+    isDiscovery: true,
+  }).media;
 }
 
 // --- MAIN FORM COMPONENT ---
@@ -562,6 +627,7 @@ export default function FormMeterDiscovery() {
   }
 
   const accessSchema = object().shape({
+    fieldComment: fieldCommentSchema,
     accessData: object().shape({
       access: object().shape({
         hasAccess: string()
@@ -602,9 +668,11 @@ export default function FormMeterDiscovery() {
       }),
   });
 
-  const WaterDiscoverySchema = object().shape({
+  const WaterDiscoverySchema = withRemainingCreditValidation(
+    object().shape({
     // --- SECTION 1: ADMINISTRATIVE ---
     accessData: accessSchema.fields.accessData, // Reusing your locked-in base schema
+    fieldComment: fieldCommentSchema,
 
     // --- SECTION 2: THE PHYSICAL ASSET ---
     ast: object().shape({
@@ -713,10 +781,13 @@ export default function FormMeterDiscovery() {
         .oneOf(["CONNECTED", "DISCONNECTED"])
         .required("Meter status is required"),
     }),
-  });
+    }),
+  );
 
-  const ElecDiscoverySchema = object().shape({
+  const ElecDiscoverySchema = withRemainingCreditValidation(
+    object().shape({
     accessData: accessSchema.fields.accessData,
+    fieldComment: fieldCommentSchema,
 
     ast: object().shape({
       astData: object().shape({
@@ -1043,7 +1114,8 @@ export default function FormMeterDiscovery() {
         .oneOf(["CONNECTED", "DISCONNECTED"])
         .required("Meter status is required"),
     }),
-  });
+    }),
+  );
 
   const getInitialValues = () => {
     const editPayload = editQueueItem?.payload || null;
@@ -1092,6 +1164,7 @@ export default function FormMeterDiscovery() {
           accessData: accessInitValues,
           ast: null,
           meterType: "NA",
+          fieldComment: { text: "" },
           media: [],
           status: {
             state: null,
@@ -1117,7 +1190,13 @@ export default function FormMeterDiscovery() {
               astNo: "", // Empty for real field use
               astManufacturer: "",
               astName: "",
-              meter: { category: "Normal", type: "conventional" },
+              meter: {
+                category: "Normal",
+                type: "conventional",
+                remainingCredit: "",
+                remainingCreditComment: "",
+                remainingCreditCommentOther: "",
+              },
             },
             anomalies: {
               anomaly: "",
@@ -1131,6 +1210,7 @@ export default function FormMeterDiscovery() {
             tokenReading: "",
           },
           meterType: "water",
+          fieldComment: { text: "" },
           media: [],
           status: {
             state: null,
@@ -1163,6 +1243,9 @@ export default function FormMeterDiscovery() {
               seal: { sealNo: "", comment: "", commentOther: "" }, // 🎯 Initialized
               keypad: { serialNo: "", comment: "", commentOther: "" }, // 🎯 Initialized
               cb: { size: "", comment: "", commentOther: "" }, // 🎯 Initialized
+              remainingCredit: "",
+              remainingCreditComment: "",
+              remainingCreditCommentOther: "",
             },
           },
           anomalies: {
@@ -1178,6 +1261,7 @@ export default function FormMeterDiscovery() {
           normalisation: { actionTaken: ["none"] },
         },
         meterType: "electricity",
+        fieldComment: { text: "" },
         media: [],
         status: {
           state: null,
@@ -1258,7 +1342,7 @@ export default function FormMeterDiscovery() {
           },
           ast: null,
           meterType: "NA",
-          media: values?.media || [],
+          media: buildCanonicalMeterDiscoveryMedia(values),
           metadata: trnMetadata,
           serviceProvider,
         };
@@ -1302,7 +1386,7 @@ export default function FormMeterDiscovery() {
                 ]
               : [],
           meterType: "water",
-          media: values?.media || [],
+          media: buildCanonicalMeterDiscoveryMedia(values),
           status: {
             state: values?.status?.state,
             id: lmPcode || "NAv",
@@ -1320,7 +1404,7 @@ export default function FormMeterDiscovery() {
           },
           ast: buildCanonicalMeterDiscoveryAst(values),
           meterType: "electricity",
-          media: values?.media || [],
+          media: buildCanonicalMeterDiscoveryMedia(values),
           status: {
             state: values?.status?.state,
             id: lmPcode || "NAv",
@@ -1334,6 +1418,11 @@ export default function FormMeterDiscovery() {
       if (!cleanPayload) {
         throw new Error("Unable to determine transaction payload.");
       }
+
+      cleanPayload.meterDiscoveryContractVersion = 2;
+      cleanPayload.fieldComment = {
+        text: String(values?.fieldComment?.text ?? "").trim(),
+      };
 
       if (targetedBatchContext) {
         const missingContextFields =
@@ -1609,14 +1698,14 @@ export default function FormMeterDiscovery() {
       const storage = getStorage();
 
       const syncedMedia = await Promise.all(
-        (values?.media || []).map(async (item) => {
+        (cleanPayload?.media || []).map(async (item) => {
           if (item.uri && !item.url) {
             const folder =
               values?.accessData?.access?.hasAccess === "yes"
                 ? `${values?.meterType}_meters`
                 : "no_access";
 
-            const fileName = `${baseSystemFields.erfId}_${item.tag}_${Date.now()}.jpg`;
+            const fileName = `${baseSystemFields.erfId}_${item.tag}_${Date.now()}.${getMediaExtension(item)}`;
             const storageRef = ref(storage, `meters/${folder}/${fileName}`);
 
             const response = await fetch(item.uri);
@@ -2011,6 +2100,7 @@ export default function FormMeterDiscovery() {
                       nearbyErfs={nearbyErfs}
                       nearbyPremises={nearbyPremises}
                       nearbyMeters={nearbyMeters}
+                      isDiscovery={true}
                     />
                   ) : (
                     <WaterSections
@@ -2028,6 +2118,7 @@ export default function FormMeterDiscovery() {
                       nearbyErfs={nearbyErfs}
                       nearbyPremises={nearbyPremises}
                       nearbyMeters={nearbyMeters}
+                      isDiscovery={true}
                     />
                   )}
                 </View>
@@ -2050,6 +2141,15 @@ export default function FormMeterDiscovery() {
                   }
                 />
               )}
+
+              <IrepsFieldCommentSection
+                commentName="fieldComment.text"
+                mediaName="media"
+                agentName={agentName}
+                agentUid={agentUid}
+                fallbackGps={landingPoint}
+                disabled={isTrnLoading}
+              />
 
               {/* RESET / SUBMIT BTNS */}
               <ForensicFooter

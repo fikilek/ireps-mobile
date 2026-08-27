@@ -91,6 +91,15 @@ const FORM_OPTIONS = Object.freeze({
     evidenceOption("Other", false),
   ]),
 
+  remaining_credit_comment_reasons: Object.freeze([
+    "Display blank / no reading",
+    "Display damaged",
+    "Display unreadable",
+    "Unable to obtain balance",
+    "Meter not responding",
+    "Other",
+  ]),
+
   anomalies: Object.freeze([
     Object.freeze({
       anomaly: "Meter Ok",

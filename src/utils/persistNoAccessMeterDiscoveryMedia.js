@@ -1,3 +1,4 @@
+import { getMediaExtension } from "./getMediaExtension";
 import * as FileSystem from "expo-file-system/legacy";
 
 const NO_ACCESS_MEDIA_ROOT = `${FileSystem.documentDirectory || ""}ireps/submission-media/meter-discovery-no-access/`;
@@ -59,7 +60,7 @@ export async function persistNoAccessMeterDiscoveryMedia({
     const safeTag = sanitizePathSegment(item?.tag, `media_${index + 1}`);
     const randomSuffix = Math.random().toString(36).slice(2, 10);
     const uniqueSuffix = `${Date.now()}_${randomSuffix}_${index + 1}`;
-    const destinationUri = `${trnDirectory}${uniqueSuffix}_${safeTag}.jpg`;
+    const destinationUri = `${trnDirectory}${uniqueSuffix}_${safeTag}.${getMediaExtension(item)}`;
 
     await FileSystem.copyAsync({
       from: item.uri,

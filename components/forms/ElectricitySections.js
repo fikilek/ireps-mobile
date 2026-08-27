@@ -2,6 +2,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Checkbox, Surface } from "react-native-paper";
 import FormInputMeterNo from "../../src/features/meters/FormInputMeterNo";
 import { getFormOptions } from "../../src/features/meters/formOptions";
+import { removeRemainingCreditPhoto } from "../../src/features/meters/remainingCreditContract";
 import SovereignLocationPicker from "../maps/SovereignLocationPicker";
 import { IrepsMedia } from "../media/IrepsMedia";
 import { AnomalySection } from "./AnomalySection";
@@ -10,6 +11,7 @@ import FormInput from "./FormInput";
 import { OtherAnomalySection } from "./OtherAnomalySection";
 import { FormSection } from "./FormSection";
 import FormSelect from "./FormSelect";
+import { RemainingCreditSection } from "./RemainingCreditSection";
 
 export const ElectricitySections = ({
   values,
@@ -27,11 +29,11 @@ export const ElectricitySections = ({
   nearbyErfs = [],
   nearbyPremises = [],
   nearbyMeters = [],
+  isDiscovery = false,
 }) => {
   const trnId = values?.id || "";
   const isInstallation = trnId.startsWith("TRN_MINST_");
   const showNormalisation = !isInstallation;
-  const isDiscovery = trnId.startsWith("TRN_MDIS_");
 
   const rawNormalizationOptions = getOptions("norm_actions") || [];
 
@@ -166,6 +168,30 @@ export const ElectricitySections = ({
                     : ["prepaid", "conventional"]
                 }
                 disabled={disabled}
+                onValueChange={(nextValue) => {
+                  if (isDiscovery && nextValue === "conventional") {
+                    setFieldValue(
+                      "ast.astData.meter.remainingCredit",
+                      "",
+                      false,
+                    );
+                    setFieldValue(
+                      "ast.astData.meter.remainingCreditComment",
+                      "",
+                      false,
+                    );
+                    setFieldValue(
+                      "ast.astData.meter.remainingCreditCommentOther",
+                      "",
+                      false,
+                    );
+                    setFieldValue(
+                      "media",
+                      removeRemainingCreditPhoto(values?.media || []),
+                      false,
+                    );
+                  }
+                }}
               />
             </View>
           </View>
@@ -182,6 +208,17 @@ export const ElectricitySections = ({
           />
         </Surface>
       </FormSection>
+
+      <RemainingCreditSection
+        values={values}
+        setFieldValue={setFieldValue}
+        getOptions={getOptions}
+        disabled={disabled}
+        agentName={agentName}
+        agentUid={agentUid}
+        landingPoint={landingPoint}
+        isDiscovery={isDiscovery}
+      />
 
       {/* ⌨️ SECTION 2: INFRASTRUCTURE */}
       <FormSection title="Infrastructure">

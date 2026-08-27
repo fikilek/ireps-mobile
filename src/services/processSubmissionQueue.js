@@ -2,6 +2,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { functions } from "../firebase";
+import { getMediaExtension } from "../utils/getMediaExtension";
 import { cleanupNoAccessMeterDiscoveryMedia } from "../utils/persistNoAccessMeterDiscoveryMedia";
 
 import {
@@ -14,6 +15,27 @@ import {
 } from "../utils/submissionQueue";
 
 let isQueueProcessing = false;
+
+function isStandardMeterDiscoveryQueueItem(item = {}) {
+  const formType = String(item?.formType || "")
+    .trim()
+    .toUpperCase();
+
+  if (formType === "SALES_TARGETED_BATCH_NO_ACCESS") return false;
+  if (formType === "METER_DISCOVERY") return true;
+  if (formType) return false;
+
+  const trnType = String(
+    item?.context?.trnType ||
+      item?.payload?.accessData?.trnType ||
+      item?.payload?.trnType ||
+      "",
+  )
+    .trim()
+    .toUpperCase();
+
+  return trnType === "METER_DISCOVERY";
+}
 
 export const processSubmissionQueue = async ({
   agentUid = "SYSTEM",
@@ -126,7 +148,10 @@ export const processSubmissionQueue = async ({
                   : "no_access";
 
               const stableId = payload?.trnId || payload?.id || item?.id;
-              const fileName = `${stableId}_${mediaItem?.tag}.jpg`;
+              const extension = isStandardMeterDiscoveryQueueItem(item)
+                ? getMediaExtension(mediaItem)
+                : "jpg";
+              const fileName = `${stableId}_${mediaItem?.tag}.${extension}`;
 
               const storageRef = ref(storage, `meters/${folder}/${fileName}`);
 

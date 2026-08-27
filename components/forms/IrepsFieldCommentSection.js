@@ -12,9 +12,10 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Location from "expo-location";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { getIn, useFormikContext } from "formik";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
+  AppState,
   Modal,
   Platform,
   Pressable,
@@ -68,64 +69,212 @@ function formatCaptureTime(item = {}) {
   }
 }
 
-function FieldCommentVideoPreview({ uri }) {
-  const player = useVideoPlayer(uri ? { uri } : null, (videoPlayer) => {
-    videoPlayer.loop = false;
-  });
+function formatSeconds(secondsValue) {
+  const value = Number(secondsValue || 0);
+  if (!Number.isFinite(value) || value <= 0) return "0:00";
 
-  if (!uri) {
-    return (
-      <View style={styles.mediaFallback}>
-        <MaterialCommunityIcons name="video-outline" size={28} color="#34D399" />
-      </View>
-    );
-  }
+  const totalSeconds = Math.max(0, Math.floor(value));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
 
-  return (
-    <VideoView
-      style={styles.forensicPreviewMedia}
-      player={player}
-      nativeControls
-      allowsFullscreen
-      contentFit="cover"
-      surfaceType="textureView"
-    />
-  );
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-function FieldCommentVoicePreview({ item }) {
+function FieldCommentAudioPreviewModal({ item, onClose }) {
   const uri = getMediaUri(item);
   const player = useAudioPlayer(uri ? { uri } : null);
   const status = useAudioPlayerStatus(player);
   const isPlaying = Boolean(status?.playing);
+  const currentTime = Number(status?.currentTime || 0);
+  const duration = Number(status?.duration || 0);
 
-  function togglePlayback() {
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active") {
+        try {
+          player.pause();
+        } catch (_error) {
+          // Hook unmount will release the player.
+        }
+      }
+    });
+
+    return () => subscription.remove();
+  }, [player]);
+
+  useEffect(
+    () => () => {
+      try {
+        player.pause();
+      } catch (_error) {
+        // Hook unmount will release the player.
+      }
+    },
+    [player],
+  );
+
+  const closePreview = () => {
+    try {
+      player.pause();
+      Promise.resolve(player.seekTo(0)).catch(() => {});
+    } catch (_error) {
+      // Best-effort reset before hook unmount releases the player.
+    }
+
+    onClose?.();
+  };
+
+  const togglePlayback = () => {
     try {
       if (!uri) return;
 
       if (isPlaying) {
         player.pause();
-        player.seekTo(0);
         return;
       }
 
-      player.seekTo(0);
+      if (duration > 0 && currentTime >= Math.max(0, duration - 0.05)) {
+        Promise.resolve(player.seekTo(0))
+          .then(() => player.play())
+          .catch((error) => {
+            console.log("IrepsFieldCommentSection voice replay error", error);
+          });
+        return;
+      }
+
       player.play();
     } catch (error) {
       console.log("IrepsFieldCommentSection voice playback error", error);
       Alert.alert("Playback Failed", error?.message || "Could not play voice clip.");
     }
-  }
+  };
+
+  const restartPlayback = () => {
+    if (!uri) return;
+
+    Promise.resolve(player.seekTo(0))
+      .then(() => player.play())
+      .catch((error) => {
+        console.log("IrepsFieldCommentSection voice restart error", error);
+        Alert.alert("Playback Failed", error?.message || "Could not replay voice clip.");
+      });
+  };
 
   return (
-    <Pressable style={styles.voicePreview} onPress={togglePlayback}>
-      <MaterialCommunityIcons
-        name={isPlaying ? "stop-circle-outline" : "microphone-outline"}
-        size={28}
-        color="#34D399"
-      />
-      <Text style={styles.voicePreviewText}>{isPlaying ? "STOP" : "PLAY"}</Text>
-    </Pressable>
+    <Modal
+      visible
+      transparent={false}
+      animationType="fade"
+      onRequestClose={closePreview}
+    >
+      <View style={styles.fullScreenPreview}>
+        <Pressable style={styles.previewCloseButton} onPress={closePreview}>
+          <MaterialCommunityIcons name="close" size={34} color="#FFFFFF" />
+          <Text style={styles.previewCloseText}>CLOSE</Text>
+        </Pressable>
+
+        <View style={styles.audioPreviewBody}>
+          <MaterialCommunityIcons name="microphone" size={74} color="#34D399" />
+          <Text style={styles.previewTitle}>FIELD COMMENT VOICE</Text>
+          <Text style={styles.audioTimeText}>
+            {formatSeconds(currentTime)} / {formatSeconds(duration)}
+          </Text>
+
+          <View style={styles.audioControlsRow}>
+            <Pressable style={styles.audioControlButton} onPress={togglePlayback}>
+              <MaterialCommunityIcons
+                name={isPlaying ? "pause" : "play"}
+                size={34}
+                color="#FFFFFF"
+              />
+              <Text style={styles.audioControlText}>
+                {isPlaying ? "PAUSE" : "PLAY"}
+              </Text>
+            </Pressable>
+
+            <Pressable style={styles.audioControlButton} onPress={restartPlayback}>
+              <MaterialCommunityIcons name="replay" size={34} color="#FFFFFF" />
+              <Text style={styles.audioControlText}>REPLAY</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function FieldCommentVideoPreviewModal({ item, onClose }) {
+  const uri = getMediaUri(item);
+  const player = useVideoPlayer(uri ? { uri } : null, (videoPlayer) => {
+    videoPlayer.loop = false;
+  });
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active") {
+        try {
+          player.pause();
+        } catch (_error) {
+          // Hook unmount will release the player.
+        }
+      }
+    });
+
+    return () => subscription.remove();
+  }, [player]);
+
+  useEffect(
+    () => () => {
+      try {
+        player.pause();
+      } catch (_error) {
+        // Hook unmount will release the player.
+      }
+    },
+    [player],
+  );
+
+  const closePreview = () => {
+    try {
+      player.pause();
+      player.currentTime = 0;
+    } catch (_error) {
+      // Best-effort reset before hook unmount releases the player.
+    }
+
+    onClose?.();
+  };
+
+  return (
+    <Modal
+      visible
+      transparent={false}
+      animationType="fade"
+      onRequestClose={closePreview}
+    >
+      <View style={styles.fullScreenPreview}>
+        {uri ? (
+          <VideoView
+            style={styles.fullScreenVideo}
+            player={player}
+            nativeControls
+            allowsFullscreen
+            contentFit="contain"
+            surfaceType="textureView"
+          />
+        ) : (
+          <View style={styles.audioPreviewBody}>
+            <MaterialCommunityIcons name="video-off-outline" size={74} color="#34D399" />
+            <Text style={styles.previewTitle}>VIDEO UNAVAILABLE</Text>
+          </View>
+        )}
+
+        <Pressable style={styles.previewCloseButton} onPress={closePreview}>
+          <MaterialCommunityIcons name="close" size={34} color="#FFFFFF" />
+          <Text style={styles.previewCloseText}>CLOSE</Text>
+        </Pressable>
+      </View>
+    </Modal>
   );
 }
 
@@ -136,6 +285,7 @@ function ForensicMediaSlot({
   item,
   onCapture,
   onRemove,
+  onPreview,
   disabled,
   recording = false,
   recordingDuration = 0,
@@ -178,13 +328,20 @@ function ForensicMediaSlot({
 
         <View style={styles.ribbonSlot}>
           {item ? (
-            <View style={styles.forensicMediaRow}>
+            <Pressable
+              style={styles.forensicMediaRow}
+              onPress={onPreview}
+              disabled={disabled || !uri}
+            >
               <View style={styles.forensicPreview}>
-                {type === "voice" ? (
-                  <FieldCommentVoicePreview item={item} />
-                ) : (
-                  <FieldCommentVideoPreview uri={uri} />
-                )}
+                <View style={styles.mediaFallback}>
+                  <MaterialCommunityIcons
+                    name={type === "voice" ? "microphone-outline" : "video-outline"}
+                    size={30}
+                    color="#34D399"
+                  />
+                  <Text style={styles.voicePreviewText}>TAP TO PREVIEW</Text>
+                </View>
               </View>
 
               <View style={styles.forensicInfo}>
@@ -203,7 +360,10 @@ function ForensicMediaSlot({
               </View>
 
               <Pressable
-                onPress={onRemove}
+                onPress={(event) => {
+                  event?.stopPropagation?.();
+                  onRemove?.();
+                }}
                 style={styles.deleteBtn}
                 disabled={disabled}
               >
@@ -213,7 +373,7 @@ function ForensicMediaSlot({
                   color="#EF4444"
                 />
               </Pressable>
-            </View>
+            </Pressable>
           ) : (
             <View style={styles.placeholder}>
               <Text style={styles.placeholderText}>
@@ -246,6 +406,7 @@ export function IrepsFieldCommentSection({
   const [processing, setProcessing] = useState(false);
   const [recordingVideo, setRecordingVideo] = useState(false);
   const [currentGps, setCurrentGps] = useState(null);
+  const [previewType, setPreviewType] = useState(null);
 
   const cameraRef = useRef(null);
 
@@ -566,7 +727,11 @@ export function IrepsFieldCommentSection({
         icon="microphone-outline"
         item={voice}
         onCapture={isRecordingAudio ? stopVoiceRecording : startVoiceRecording}
-        onRemove={() => replaceTaggedMedia(FIELD_COMMENT_MEDIA_TAGS.voice, null)}
+        onRemove={() => {
+          setPreviewType(null);
+          replaceTaggedMedia(FIELD_COMMENT_MEDIA_TAGS.voice, null);
+        }}
+        onPreview={() => setPreviewType("voice")}
         disabled={disabled}
         recording={isRecordingAudio}
         recordingDuration={audioRecorderState?.durationMillis}
@@ -579,11 +744,29 @@ export function IrepsFieldCommentSection({
         icon="video-outline"
         item={video}
         onCapture={openVideoCamera}
-        onRemove={() => replaceTaggedMedia(FIELD_COMMENT_MEDIA_TAGS.video, null)}
+        onRemove={() => {
+          setPreviewType(null);
+          replaceTaggedMedia(FIELD_COMMENT_MEDIA_TAGS.video, null);
+        }}
+        onPreview={() => setPreviewType("video")}
         disabled={disabled}
         recording={recordingVideo}
         type="video"
       />
+
+      {previewType === "voice" && voice ? (
+        <FieldCommentAudioPreviewModal
+          item={voice}
+          onClose={() => setPreviewType(null)}
+        />
+      ) : null}
+
+      {previewType === "video" && video ? (
+        <FieldCommentVideoPreviewModal
+          item={video}
+          onClose={() => setPreviewType(null)}
+        />
+      ) : null}
 
       <Modal
         visible={cameraVisible}
@@ -871,6 +1054,82 @@ const styles = StyleSheet.create({
     color: "#64748B",
     fontWeight: "bold",
     textAlign: "center",
+  },
+
+  fullScreenPreview: {
+    flex: 1,
+    backgroundColor: "#020617",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  fullScreenVideo: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#000000",
+  },
+
+  previewCloseButton: {
+    position: "absolute",
+    top: 48,
+    right: 18,
+    zIndex: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(15,23,42,0.78)",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+
+  previewCloseText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  previewTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "900",
+    marginTop: 18,
+  },
+
+  audioPreviewBody: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+
+  audioTimeText: {
+    color: "#CBD5E1",
+    fontSize: 18,
+    fontWeight: "800",
+    marginTop: 12,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+  },
+
+  audioControlsRow: {
+    flexDirection: "row",
+    gap: 18,
+    marginTop: 28,
+  },
+
+  audioControlButton: {
+    minWidth: 108,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#1E293B",
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+  },
+
+  audioControlText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "900",
+    marginTop: 3,
   },
 
   cameraScreen: {

@@ -17,6 +17,7 @@ import { ActivityIndicator, Surface, Text } from "react-native-paper";
 import QueueItemCard from "../../../../components/QueueItemCard";
 import { useGeo } from "../../../../src/context/GeoContext";
 import { functions } from "../../../../src/firebase";
+import { getMediaExtension } from "../../../../src/utils/getMediaExtension";
 import { useAuth } from "../../../../src/hooks/useAuth";
 import { processSubmissionQueue } from "../../../../src/services/processSubmissionQueue";
 import {
@@ -69,6 +70,18 @@ const getQueueTrnType = (item = {}) => {
   )
     .trim()
     .toUpperCase();
+};
+
+const isStandardMeterDiscoveryQueueItem = (item = {}) => {
+  const formType = String(item?.formType || "")
+    .trim()
+    .toUpperCase();
+
+  if (formType === "SALES_TARGETED_BATCH_NO_ACCESS") return false;
+  if (formType === "METER_DISCOVERY") return true;
+  if (formType) return false;
+
+  return getQueueTrnType(item) === "METER_DISCOVERY";
 };
 
 const getQueueInstructionTrnId = (item = {}) => {
@@ -154,7 +167,10 @@ const processSingleSubmissionQueueItem = async (
               ? `${payload?.meterType}_meters`
               : "no_access";
 
-          const fileName = `${payload?.accessData?.erfId}_${mediaItem?.tag}_${Date.now()}.jpg`;
+          const extension = isStandardMeterDiscoveryQueueItem(item)
+            ? getMediaExtension(mediaItem)
+            : "jpg";
+          const fileName = `${payload?.accessData?.erfId}_${mediaItem?.tag}_${Date.now()}.${extension}`;
 
           const storageRef = ref(storage, `meters/${folder}/${fileName}`);
 

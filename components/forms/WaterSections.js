@@ -1,11 +1,13 @@
 import { View } from "react-native";
 import FormInputMeterNo from "../../src/features/meters/FormInputMeterNo";
+import { removeRemainingCreditPhoto } from "../../src/features/meters/remainingCreditContract";
 import SovereignLocationPicker from "../maps/SovereignLocationPicker";
 import { IrepsMedia } from "../media/IrepsMedia";
 import { AnomalySection } from "./AnomalySection";
 import FormInput from "./FormInput";
 import { FormSection } from "./FormSection";
 import FormSelect from "./FormSelect";
+import { RemainingCreditSection } from "./RemainingCreditSection";
 import { OtherAnomalySection } from "./OtherAnomalySection";
 
 export const WaterSections = ({
@@ -23,9 +25,8 @@ export const WaterSections = ({
   nearbyErfs = [],
   nearbyPremises = [],
   nearbyMeters = [],
+  isDiscovery = false,
 }) => {
-  const trnId = values?.id || "";
-  const isDiscovery = trnId.startsWith("TRN_MDIS_");
   return (
     <View style={disabled && { opacity: 0.7 }}>
       <FormSection title="Water Meter Description">
@@ -58,6 +59,30 @@ export const WaterSections = ({
           }
           name="ast.astData.meter.type"
           disabled={disabled}
+          onValueChange={(nextValue) => {
+            if (isDiscovery && nextValue === "conventional") {
+              setFieldValue(
+                "ast.astData.meter.remainingCredit",
+                "",
+                false,
+              );
+              setFieldValue(
+                "ast.astData.meter.remainingCreditComment",
+                "",
+                false,
+              );
+              setFieldValue(
+                "ast.astData.meter.remainingCreditCommentOther",
+                "",
+                false,
+              );
+              setFieldValue(
+                "media",
+                removeRemainingCreditPhoto(values?.media || []),
+                false,
+              );
+            }
+          }}
         />
         <FormSelect
           label="Manufacture"
@@ -111,6 +136,17 @@ export const WaterSections = ({
           </>
         )}
       </FormSection>
+
+      <RemainingCreditSection
+        values={values}
+        setFieldValue={setFieldValue}
+        getOptions={getOptions}
+        disabled={disabled}
+        agentName={agentName}
+        agentUid={agentUid}
+        landingPoint={landingPoint}
+        isDiscovery={isDiscovery}
+      />
 
       <FormSection title="Meter Status">
         {isDiscovery && (
