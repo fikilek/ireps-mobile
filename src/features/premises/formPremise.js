@@ -1164,6 +1164,7 @@ export default function FormPremise() {
                     agentName={agentName}
                     agentUid={agentUid}
                     fallbackGps={values?.geometry?.centroid}
+                    acquireDeviceGps={false}
                   />
 
                   <Surface style={styles.card} elevation={1}>

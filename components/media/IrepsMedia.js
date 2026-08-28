@@ -87,6 +87,7 @@ export const IrepsMedia = ({
   agentName,
   agentUid,
   fallbackGps,
+  acquireDeviceGps = true,
   required = false,
 }) => {
   const { values, errors, setFieldValue } = useFormikContext();
@@ -127,6 +128,7 @@ export const IrepsMedia = ({
           agentName={agentName}
           agentUid={agentUid}
           fallbackGps={fallbackGps}
+          acquireDeviceGps={acquireDeviceGps}
         />
       </View>
 
