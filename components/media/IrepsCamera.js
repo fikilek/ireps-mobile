@@ -23,6 +23,7 @@ export const IrepsCamera = ({
   agentName,
   agentUid,
   fallbackGps = null,
+  acquireDeviceGps = true,
 }) => {
   const { values, setFieldValue } = useFormikContext();
 
@@ -44,6 +45,8 @@ export const IrepsCamera = ({
     ]);
 
   const resolveGpsInBackground = async () => {
+    if (!acquireDeviceGps) return;
+
     try {
       let permissionResult = await Location.getForegroundPermissionsAsync();
 
@@ -101,10 +104,12 @@ export const IrepsCamera = ({
     // Open camera immediately
     setIsVisible(true);
 
-    // Resolve GPS without blocking camera opening
-    setTimeout(() => {
-      resolveGpsInBackground();
-    }, 0);
+    // Resolve device GPS without blocking camera opening when enabled.
+    if (acquireDeviceGps) {
+      setTimeout(() => {
+        resolveGpsInBackground();
+      }, 0);
+    }
   };
 
   const handleCapture = async () => {
@@ -125,7 +130,7 @@ export const IrepsCamera = ({
   };
 
   const resolvedGps =
-    currentGps?.lat != null && currentGps?.lng != null
+    acquireDeviceGps && currentGps?.lat != null && currentGps?.lng != null
       ? { lat: currentGps.lat, lng: currentGps.lng }
       : fallbackGps?.lat != null && fallbackGps?.lng != null
         ? { lat: fallbackGps.lat, lng: fallbackGps.lng }
