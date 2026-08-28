@@ -92,6 +92,15 @@ function isFilled(value) {
   return String(value || "").trim().length > 0;
 }
 
+function formatStreetName(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(
+      /(^|[^\p{L}\p{M}\p{N}])(\p{L})/gu,
+      (_, boundary, letter) => `${boundary}${letter.toUpperCase()}`,
+    );
+}
+
 function isSamePoint(a, b, tolerance = 0.000001) {
   if (!a || !b) return false;
 
@@ -1133,6 +1142,12 @@ export default function FormPremise() {
                           name="address.strName"
                           placeholder="Str Name"
                           autoCapitalize="words" // 🏛️ Auto-Title Case for Street Names
+                          onChangeText={(text) =>
+                            setFieldValue(
+                              "address.strName",
+                              formatStreetName(text),
+                            )
+                          }
                         />
                       </View>
                     </View>
