@@ -11,6 +11,11 @@ import {
 } from "react-native";
 import { useGeo } from "../../context/GeoContext";
 import { useWarehouse } from "../../context/WarehouseContext";
+import {
+  formatRepeatablePremiseIdentity,
+  getDuplicateConfirmationMessage,
+  isRepeatablePropertyType,
+} from "./premiseRepeatability";
 
 // 🛰️ BEACON SELECTOR: Visualizes property types instantly
 const getPropertyBeacon = (type = "", occupancyStatus = "") => {
@@ -39,6 +44,10 @@ const getPropertyBeacon = (type = "", occupancyStatus = "") => {
 
   if (t.includes("suburb")) {
     return { name: "home-city", color: "#3b82f6" };
+  }
+
+  if (t.includes("townhouse complex") || t.includes("townhouse")) {
+    return { name: "home-group", color: "#94a3b8" };
   }
 
   if (t.includes("flat") || t.includes("sectional")) {
@@ -151,7 +160,9 @@ const PremiseCard = memo(
     onNaPress,
     onAccountPress,
   }) => {
-    const isFlat = item?.propertyType?.type === "Flats";
+    const isRepeatable = isRepeatablePropertyType(
+      item?.propertyType?.type,
+    );
     const erfId = item?.erfId; // 🎯 The link to the sovereign
 
     const { updateGeo, geoState } = useGeo(); // 🛰️ THE COMMANDER
@@ -164,23 +175,23 @@ const PremiseCard = memo(
       const name = item?.propertyType?.name || "";
       const unit = item?.propertyType?.unitNo || "";
 
-      // 🎯 Logic A: Flats / Sectional Title (Show Name + Unit)
-      if (
-        type === "Flats" ||
-        type === "Sectional Title" ||
-        type === "Industrial" ||
-        type === "Government"
-      ) {
-        return `${name}${unit ? ` | Unit ${unit}` : ""}`;
+      const repeatableIdentity = formatRepeatablePremiseIdentity(
+        item?.propertyType,
+      );
+      if (repeatableIdentity) return repeatableIdentity;
+
+      // Preserve existing named-entity identity outside repeatability scope.
+      if (type === "Government") {
+        if (name && unit) return `${name} | Unit ${unit}`;
+        if (name) return name;
+        if (unit) return `Unit ${unit}`;
+        return "";
       }
 
-      // 🎯 Logic B: Named Entities (Commercial, Church, School, Business)
-      if (["Commercial", "Church", "School", "Business"].includes(type)) {
-        return name || type; // Fallback to type if name is missing
+      if (["Church", "School", "Business"].includes(type)) {
+        return name || type;
       }
 
-      // 🎯 Logic C: Standard (Residential, Vacant Land, etc.)
-      // return type;
       return "";
     };
 
@@ -213,27 +224,9 @@ const PremiseCard = memo(
 
     // 🏛️ THE DUPLICATE TRIGGER
     const handleDuplicate = () => {
-      const selectedErf = geoState?.selectedErf || null;
-
-      if (!selectedErf?.id) {
-        Alert.alert(
-          "Select Erf First",
-          "To duplicate this premise, first select the destination Erf. You can go to the Erfs screen now or cancel.",
-          [
-            { text: "CANCEL", style: "cancel" },
-            {
-              text: "SELECT ERF",
-              style: "default",
-              onPress: () => router.push("/(tabs)/erfs"),
-            },
-          ],
-        );
-        return;
-      }
-
       Alert.alert(
-        "Duplicate Unit",
-        "This will create a new Flat Unit using this unit as a template. All data except the Unit Number, No Access and Services will be copied.",
+        "Duplicate Premise",
+        getDuplicateConfirmationMessage(item?.propertyType?.type),
         [
           { text: "CANCEL", style: "cancel" },
           {
@@ -384,7 +377,7 @@ const PremiseCard = memo(
                 </View>
 
                 {/* Ptoperty type name */}
-                {item?.propertyType?.name && (
+                {identityLabel && (
                   <View style={{}}>
                     <Text
                       style={[styles.propertyTypeText, { color: beacon.color }]}
@@ -477,11 +470,10 @@ const PremiseCard = memo(
                 </TouchableOpacity>
               </View>
 
-              {/* 👯 THE DUPLICATE Btn: ONLY AND ONLY FOR FLATS */}
-              {isFlat && (
+              {/* 👯 THE DUPLICATE Btn: APPROVED REPEATABLE TYPES ONLY */}
+              {isRepeatable && (
                 <TouchableOpacity
                   onPress={handleDuplicate}
-                  delayLongPress={1000} // 🎯 Must hold for 1 second
                   style={styles.duplicateIconBtn}
                 >
                   <MaterialCommunityIcons

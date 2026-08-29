@@ -2,9 +2,10 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
-import { Formik } from "formik";
-import { useEffect, useMemo, useState } from "react";
+import { Formik, useFormikContext } from "formik";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,6 +26,7 @@ import { useWarehouse } from "../../context/WarehouseContext";
 import { useAuth } from "../../hooks/useAuth";
 import {
   useCreatePremiseMutation,
+  useGetPremiseByIdQuery,
   useUpdatePremiseMutation,
 } from "../../redux/premisesApi";
 
@@ -41,6 +43,17 @@ import {
   parseTargetedBatchAddress,
   parseTargetedBatchContextRouteParam,
 } from "./targetedBatchPremiseContext";
+import {
+  DUPLICATE_CAPTURE_STATUSES,
+  getDuplicateInitialStatus,
+  getDuplicatePropertyTypeTemplate,
+  isRepeatablePropertyType,
+  reconcilePropertyTypeChange,
+  requiresPropertyName,
+  requiresUnitNo,
+  sanitizePropertyTypeForSubmission,
+  supportsUnitNo,
+} from "./premiseRepeatability";
 
 const streetTypeOptions = [
   "Select...",
@@ -72,12 +85,178 @@ const propertyTypeOptions = [
 
 const premiseOccupancySatusOptions = [
   "Select...",
-  `Occupied`,
-  `Unoccupied`,
-  `Vandalised`,
-  `Under Construction`,
-  `Dilapidated`,
+  ...DUPLICATE_CAPTURE_STATUSES,
 ];
+
+const GENERIC_ERF_CENTROID = { lat: -34.035, lng: 23.048 };
+
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object || {}, key);
+}
+
+function normalizeStrictRouteId(value) {
+  if (typeof value !== "string") return null;
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeRequiredSourceString(value) {
+  if (typeof value !== "string") return null;
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function resolveErfResetCentroid(erfGeo) {
+  const lat = erfGeo?.centroid?.lat;
+  const lng = erfGeo?.centroid?.lng;
+
+  if (
+    typeof lat === "number" &&
+    Number.isFinite(lat) &&
+    typeof lng === "number" &&
+    Number.isFinite(lng)
+  ) {
+    return { lat, lng };
+  }
+
+  return { ...GENERIC_ERF_CENTROID };
+}
+
+function validateCanonicalDuplicateSource(
+  source,
+  normalizedRouteId,
+  normalizedDuplicateId,
+) {
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    return { source: null, error: "The source Premise is invalid." };
+  }
+
+  const sourceId = normalizeRequiredSourceString(source.id);
+  const sourceErfId = normalizeRequiredSourceString(source.erfId);
+  const sourceErfNo = normalizeRequiredSourceString(source.erfNo);
+  const countryPcode = normalizeRequiredSourceString(
+    source?.parents?.countryPcode,
+  );
+  const provincePcode = normalizeRequiredSourceString(
+    source?.parents?.provincePcode,
+  );
+  const dmPcode = normalizeRequiredSourceString(source?.parents?.dmPcode);
+  const lmPcode = normalizeRequiredSourceString(source?.parents?.lmPcode);
+  const wardPcode = normalizeRequiredSourceString(source?.parents?.wardPcode);
+  const sourceContext = source.context;
+
+  if (
+    !sourceId ||
+    !sourceErfId ||
+    !sourceErfNo ||
+    !countryPcode ||
+    !provincePcode ||
+    !dmPcode ||
+    !lmPcode ||
+    !wardPcode
+  ) {
+    return {
+      source: null,
+      error: "The source Premise has incomplete relationship data.",
+    };
+  }
+
+  if (sourceId !== normalizedDuplicateId) {
+    return { source: null, error: "The source Premise ID does not match." };
+  }
+
+  if (sourceErfId !== normalizedRouteId) {
+    return { source: null, error: "The source Premise is on another Erf." };
+  }
+
+  const duplicatePropertyType = getDuplicatePropertyTypeTemplate(
+    source?.propertyType,
+  );
+
+  if (
+    !duplicatePropertyType ||
+    !isRepeatablePropertyType(duplicatePropertyType.type)
+  ) {
+    return {
+      source: null,
+      error: "The source Premise Property Type is not repeatable.",
+    };
+  }
+
+  if (sourceContext !== "Township" && sourceContext !== "Suburb") {
+    return {
+      source: null,
+      error: "The source Premise has invalid Property Context.",
+    };
+  }
+
+  return {
+    error: null,
+    source: {
+      id: sourceId,
+      erfId: sourceErfId,
+      erfNo: sourceErfNo,
+      parents: {
+        countryPcode,
+        provincePcode,
+        dmPcode,
+        lmPcode,
+        wardPcode,
+      },
+      context: sourceContext,
+      address: {
+        suburbName: source?.address?.suburbName,
+        strNo: source?.address?.strNo,
+        strName: source?.address?.strName,
+        strType: source?.address?.strType,
+      },
+      propertyType: duplicatePropertyType,
+      occupancy: {
+        status: getDuplicateInitialStatus(source?.occupancy?.status),
+      },
+    },
+  };
+}
+
+function getDuplicateIntegrityError({
+  hasDuplicateIntent,
+  hasPremiseIdKey,
+  hasQueueItemIdKey,
+  normalizedRouteId,
+  normalizedDuplicateId,
+  duplicateRouteKey,
+  duplicateLatch,
+}) {
+  if (!hasDuplicateIntent) {
+    return "Duplicate intent is no longer present.";
+  }
+
+  if (hasPremiseIdKey || hasQueueItemIdKey) {
+    return "Duplicate mode conflicts with another Premise mode.";
+  }
+
+  if (!normalizedRouteId || !normalizedDuplicateId || !duplicateRouteKey) {
+    return "Duplicate route IDs are invalid.";
+  }
+
+  if (!duplicateLatch || duplicateLatch.key !== duplicateRouteKey) {
+    return "The current Duplicate source is not available.";
+  }
+
+  const validation = validateCanonicalDuplicateSource(
+    duplicateLatch.source,
+    normalizedRouteId,
+    normalizedDuplicateId,
+  );
+
+  if (!validation.source) {
+    return validation.error || "The current Duplicate source is invalid.";
+  }
+
+  return null;
+}
 
 function hasTaggedMedia(media, tag) {
   if (!Array.isArray(media)) return false;
@@ -121,21 +300,31 @@ function isSamePoint(a, b, tolerance = 0.000001) {
   return Math.abs(aLat - bLat) < tolerance && Math.abs(aLng - bLng) < tolerance;
 }
 
-function requiresPropertyName(type) {
-  return (
-    type !== "Select..." &&
-    type !== "Residential" &&
-    type !== "Vacant Land" &&
-    !!String(type || "").trim()
-  );
-}
+function DuplicateGpsResetHydrator({
+  enabled,
+  initialResetCentroid,
+  resetCentroid,
+}) {
+  const { setFieldValue, values } = useFormikContext();
+  const previousResetCentroidRef = useRef(initialResetCentroid);
+  const currentCentroid = values?.geometry?.centroid;
 
-function requiresUnitNo(type) {
-  return (
-    type === "Flats" ||
-    type === "Sectional Title" ||
-    type === "Townhouse Complex"
-  );
+  useEffect(() => {
+    const previousResetCentroid = previousResetCentroidRef.current;
+    previousResetCentroidRef.current = resetCentroid;
+
+    if (
+      !enabled ||
+      !isSamePoint(currentCentroid, previousResetCentroid) ||
+      isSamePoint(currentCentroid, resetCentroid)
+    ) {
+      return;
+    }
+
+    setFieldValue("geometry.centroid", { ...resetCentroid }, false);
+  }, [currentCentroid, enabled, resetCentroid, setFieldValue]);
+
+  return null;
 }
 
 export default function FormPremise() {
@@ -147,34 +336,307 @@ export default function FormPremise() {
 
   const router = useRouter();
 
+  const params = useLocalSearchParams();
   const {
     id,
     premiseId,
     duplicateId,
     queueItemId,
     targetedBatchContext: routeTargetedBatchContext,
-  } = useLocalSearchParams();
+  } = params;
 
-  const isEdit = !!premiseId;
+  const hasDuplicateIntent = hasOwn(params, "duplicateId");
+  const hasPremiseIdKey = hasOwn(params, "premiseId");
+  const hasQueueItemIdKey = hasOwn(params, "queueItemId");
+  const duplicateModeConflict = Boolean(
+    hasDuplicateIntent && (hasPremiseIdKey || hasQueueItemIdKey),
+  );
+  const normalizedRouteId = normalizeStrictRouteId(id);
+  const normalizedDuplicateId = normalizeStrictRouteId(duplicateId);
+  const duplicateRouteKey =
+    normalizedRouteId && normalizedDuplicateId
+      ? JSON.stringify([normalizedRouteId, normalizedDuplicateId])
+      : null;
 
-  const isDuplicate = !!duplicateId;
+  const isDuplicate = hasDuplicateIntent;
+  const isEdit = !hasDuplicateIntent && !!premiseId;
+  const isQueueEdit = !hasDuplicateIntent && !!queueItemId;
+  const isEditLike = isEdit || isQueueEdit;
 
   const sourcePremise = useMemo(() => {
-    const targetId = premiseId || duplicateId;
+    if (!isEdit) return null;
+
+    const targetId = premiseId;
     if (!targetId) return null;
     return all?.prems?.find((p) => p.id === targetId);
-  }, [premiseId, duplicateId, all?.prems]);
+  }, [all?.prems, isEdit, premiseId]);
+
+  const localDuplicateCandidate = useMemo(() => {
+    if (
+      !hasDuplicateIntent ||
+      duplicateModeConflict ||
+      !normalizedRouteId ||
+      !normalizedDuplicateId ||
+      !Array.isArray(all?.prems)
+    ) {
+      return null;
+    }
+
+    return (
+      all.prems.find(
+        (premise) =>
+          normalizeStrictRouteId(premise?.id) === normalizedDuplicateId,
+      ) || null
+    );
+  }, [
+    all?.prems,
+    duplicateModeConflict,
+    hasDuplicateIntent,
+    normalizedDuplicateId,
+    normalizedRouteId,
+  ]);
+
+  const localDuplicateResolution = useMemo(() => {
+    if (!localDuplicateCandidate) return null;
+
+    return validateCanonicalDuplicateSource(
+      localDuplicateCandidate,
+      normalizedRouteId,
+      normalizedDuplicateId,
+    );
+  }, [localDuplicateCandidate, normalizedDuplicateId, normalizedRouteId]);
+
+  const [duplicateLatch, setDuplicateLatch] = useState(null);
+  const [duplicateCentroidSeed, setDuplicateCentroidSeed] = useState(null);
+
+  useEffect(() => {
+    const latchIsEffective = Boolean(
+      hasDuplicateIntent && !duplicateModeConflict && duplicateRouteKey,
+    );
+
+    setDuplicateLatch((currentLatch) => {
+      if (
+        !currentLatch ||
+        (latchIsEffective && currentLatch.key === duplicateRouteKey)
+      ) {
+        return currentLatch;
+      }
+
+      return null;
+    });
+
+    setDuplicateCentroidSeed((currentSeed) => {
+      if (
+        !currentSeed ||
+        (latchIsEffective && currentSeed.key === duplicateRouteKey)
+      ) {
+        return currentSeed;
+      }
+
+      return null;
+    });
+  }, [duplicateModeConflict, duplicateRouteKey, hasDuplicateIntent]);
+
+  const currentDuplicateLatchResolution = useMemo(() => {
+    if (!duplicateRouteKey || duplicateLatch?.key !== duplicateRouteKey) {
+      return null;
+    }
+
+    return validateCanonicalDuplicateSource(
+      duplicateLatch.source,
+      normalizedRouteId,
+      normalizedDuplicateId,
+    );
+  }, [
+    duplicateLatch,
+    duplicateRouteKey,
+    normalizedDuplicateId,
+    normalizedRouteId,
+  ]);
+  const hasValidCurrentDuplicateLatch = Boolean(
+    hasDuplicateIntent &&
+      !duplicateModeConflict &&
+      duplicateRouteKey &&
+      duplicateLatch?.key === duplicateRouteKey &&
+      currentDuplicateLatchResolution?.source,
+  );
+  const canonicalDuplicateSource = hasValidCurrentDuplicateLatch
+    ? currentDuplicateLatchResolution.source
+    : null;
+  const duplicateErfGeo =
+    normalizedRouteId && all?.geoLibrary
+      ? all.geoLibrary[normalizedRouteId] || null
+      : null;
+  const skipDuplicateResolver = !(
+    hasDuplicateIntent &&
+    !duplicateModeConflict &&
+    normalizedRouteId &&
+    normalizedDuplicateId &&
+    !localDuplicateCandidate &&
+    !hasValidCurrentDuplicateLatch
+  );
+
+  const {
+    data: duplicateResolverData,
+    error: duplicateResolverError,
+    isError: isDuplicateResolverError,
+    isFetching: isDuplicateResolverFetching,
+    isLoading: isDuplicateResolverLoading,
+    refetch: refetchDuplicateSource,
+  } = useGetPremiseByIdQuery(normalizedDuplicateId || "", {
+    skip: skipDuplicateResolver,
+    refetchOnMountOrArgChange: true,
+  });
+
+  const serverDuplicateResolution = useMemo(() => {
+    if (duplicateResolverData?.status !== "found") return null;
+
+    return validateCanonicalDuplicateSource(
+      duplicateResolverData.premise,
+      normalizedRouteId,
+      normalizedDuplicateId,
+    );
+  }, [duplicateResolverData, normalizedDuplicateId, normalizedRouteId]);
+
+  useEffect(() => {
+    if (
+      !hasDuplicateIntent ||
+      duplicateModeConflict ||
+      !duplicateRouteKey ||
+      hasValidCurrentDuplicateLatch
+    ) {
+      return;
+    }
+
+    const resolvedSource = localDuplicateCandidate
+      ? localDuplicateResolution?.source
+      : !isDuplicateResolverLoading && !isDuplicateResolverFetching
+        ? serverDuplicateResolution?.source
+        : null;
+
+    if (!resolvedSource) return;
+
+    setDuplicateCentroidSeed({
+      key: duplicateRouteKey,
+      centroid: resolveErfResetCentroid(duplicateErfGeo),
+    });
+    setDuplicateLatch({ key: duplicateRouteKey, source: resolvedSource });
+  }, [
+    duplicateErfGeo,
+    duplicateModeConflict,
+    duplicateRouteKey,
+    hasDuplicateIntent,
+    hasValidCurrentDuplicateLatch,
+    isDuplicateResolverFetching,
+    isDuplicateResolverLoading,
+    localDuplicateCandidate,
+    localDuplicateResolution?.source,
+    serverDuplicateResolution?.source,
+  ]);
+
+  const duplicateResolution = useMemo(() => {
+    if (!hasDuplicateIntent) return null;
+
+    if (duplicateModeConflict) {
+      return {
+        state: "MODE CONFLICT",
+        message: "Duplicate cannot be combined with Edit or Queue Edit.",
+      };
+    }
+
+    if (!normalizedRouteId || !normalizedDuplicateId) {
+      return {
+        state: "INVALID ROUTE",
+        message: "The Duplicate route contains invalid Premise or Erf IDs.",
+      };
+    }
+
+    if (hasValidCurrentDuplicateLatch) {
+      return { state: "VALID DUPLICATE", message: null };
+    }
+
+    if (localDuplicateCandidate) {
+      if (!localDuplicateResolution?.source) {
+        return {
+          state: "INVALID SOURCE",
+          message:
+            localDuplicateResolution?.error ||
+            "The local source Premise is invalid.",
+        };
+      }
+
+      return {
+        state: "PENDING SOURCE",
+        message: "Preparing the local Premise source.",
+      };
+    }
+
+    if (isDuplicateResolverLoading || isDuplicateResolverFetching) {
+      return {
+        state: "PENDING SOURCE",
+        message: "Resolving the Premise source from the server.",
+      };
+    }
+
+    if (isDuplicateResolverError) {
+      return {
+        state: "SOURCE ERROR",
+        message:
+          duplicateResolverError?.message ||
+          "The Premise source could not be resolved from the server.",
+      };
+    }
+
+    if (duplicateResolverData?.status === "missing") {
+      return {
+        state: "SOURCE MISSING",
+        message: "The Premise source does not exist on the server.",
+      };
+    }
+
+    if (duplicateResolverData?.status === "found") {
+      if (!serverDuplicateResolution?.source) {
+        return {
+          state: "INVALID SOURCE",
+          message:
+            serverDuplicateResolution?.error ||
+            "The server source Premise is invalid.",
+        };
+      }
+
+      return {
+        state: "PENDING SOURCE",
+        message: "Preparing the server Premise source.",
+      };
+    }
+
+    return {
+      state: "PENDING SOURCE",
+      message: "Resolving the Premise source.",
+    };
+  }, [
+    duplicateModeConflict,
+    duplicateResolverData,
+    duplicateResolverError?.message,
+    hasDuplicateIntent,
+    hasValidCurrentDuplicateLatch,
+    isDuplicateResolverError,
+    isDuplicateResolverFetching,
+    isDuplicateResolverLoading,
+    localDuplicateCandidate,
+    localDuplicateResolution,
+    normalizedDuplicateId,
+    normalizedRouteId,
+    serverDuplicateResolution,
+  ]);
 
   const [queueItem, setQueueItem] = useState(null);
-
-  const isQueueEdit = !!queueItemId;
-  const isEditLike = isEdit || isQueueEdit;
 
   useEffect(() => {
     let mounted = true;
 
     async function loadQueueItem() {
-      if (!queueItemId) {
+      if (!isQueueEdit) {
         if (mounted) setQueueItem(null);
         return;
       }
@@ -188,7 +650,7 @@ export default function FormPremise() {
     return () => {
       mounted = false;
     };
-  }, [queueItemId]);
+  }, [isQueueEdit, queueItemId]);
 
   const { profile, user } = useAuth();
 
@@ -203,52 +665,68 @@ export default function FormPremise() {
   const selectedErf = geoState?.selectedErf || null;
 
   const routeContext = useMemo(
-    () => parseTargetedBatchContextRouteParam(routeTargetedBatchContext),
-    [routeTargetedBatchContext],
+    () =>
+      isDuplicate
+        ? null
+        : parseTargetedBatchContextRouteParam(routeTargetedBatchContext),
+    [isDuplicate, routeTargetedBatchContext],
   );
 
+  const selectedErfTargetedBatchContext = isDuplicate
+    ? undefined
+    : selectedErf?.targetedBatchContext;
+  const queueTargetedBatchContext = isDuplicate
+    ? undefined
+    : queueItem?.payload?.targetedBatchContext;
+
   const originatedFromTargetedBatch = Boolean(
-    routeTargetedBatchContext !== undefined ||
-      Object.prototype.hasOwnProperty.call(
-        selectedErf || {},
-        "targetedBatchContext",
-      ) ||
-      (isQueueEdit &&
-        Object.prototype.hasOwnProperty.call(
-          queueItem?.payload || {},
-          "targetedBatchContext",
-        )),
+    !isDuplicate &&
+      (routeTargetedBatchContext !== undefined ||
+        hasOwn(selectedErf, "targetedBatchContext") ||
+        (isQueueEdit && hasOwn(queueItem?.payload, "targetedBatchContext"))),
   );
 
   const targetedBatchContext = useMemo(() => {
+    if (isDuplicate) return null;
+
     if (isQueueEdit) {
-      return normalizeTargetedBatchContext(
-        queueItem?.payload?.targetedBatchContext,
-      );
+      return normalizeTargetedBatchContext(queueTargetedBatchContext);
     }
 
     return (
-      normalizeTargetedBatchContext(selectedErf?.targetedBatchContext) ||
+      normalizeTargetedBatchContext(selectedErfTargetedBatchContext) ||
       routeContext
     );
   }, [
+    isDuplicate,
     isQueueEdit,
-    queueItem?.payload?.targetedBatchContext,
-    selectedErf?.targetedBatchContext,
+    queueTargetedBatchContext,
     routeContext,
+    selectedErfTargetedBatchContext,
   ]);
 
-  const targetGeo =
-    all?.geoLibrary?.[id] || all?.geoLibrary?.[selectedErf?.erfId] || null;
+  const targetGeo = isDuplicate
+    ? null
+    : all?.geoLibrary?.[id] || all?.geoLibrary?.[selectedErf?.erfId] || null;
 
-  const erfNo =
-    queueItem?.payload?.erfNo ||
-    sourcePremise?.erfNo ||
-    selectedErf?.erfNo ||
-    targetGeo?.erfNo ||
-    "NAv";
+  const erfNo = isDuplicate
+    ? canonicalDuplicateSource?.erfNo || "NAv"
+    : queueItem?.payload?.erfNo ||
+      sourcePremise?.erfNo ||
+      selectedErf?.erfNo ||
+      targetGeo?.erfNo ||
+      "NAv";
+
+  const duplicateResetCentroid = useMemo(
+    () => resolveErfResetCentroid(duplicateErfGeo),
+    [duplicateErfGeo],
+  );
 
   const erfCentroid = useMemo(() => {
+    if (hasValidCurrentDuplicateLatch) {
+      return duplicateResetCentroid;
+    }
+
     if (targetGeo?.centroid?.lat != null && targetGeo?.centroid?.lng != null) {
       return {
         lat: targetGeo.centroid.lat,
@@ -256,14 +734,46 @@ export default function FormPremise() {
       };
     }
 
-    return { lat: -34.035, lng: 23.048 };
-  }, [targetGeo]);
+    return { ...GENERIC_ERF_CENTROID };
+  }, [duplicateResetCentroid, hasValidCurrentDuplicateLatch, targetGeo]);
 
-  const admin =
-    String(selectedErf?.id || selectedErf?.erfId || "").trim() ===
-    String(id || "").trim()
+  const initialErfCentroid =
+    isDuplicate && duplicateCentroidSeed?.key === duplicateRouteKey
+      ? duplicateCentroidSeed.centroid
+      : erfCentroid;
+
+  const admin = isDuplicate
+    ? null
+    : String(selectedErf?.id || selectedErf?.erfId || "").trim() ===
+        String(id || "").trim()
       ? selectedErf?.admin
       : targetGeo?.admin;
+
+  const unitNoValidationContext = useMemo(() => {
+    const originalPropertyType = isQueueEdit
+      ? queueItem?.payload?.propertyType
+      : isEdit
+        ? sourcePremise?.propertyType
+        : null;
+
+    return {
+      mode: isQueueEdit
+        ? "QUEUE_EDIT"
+        : isEdit
+          ? "EDIT"
+          : isDuplicate
+            ? "DUPLICATE"
+            : "NEW",
+      originalType: originalPropertyType?.type || "",
+      originalUnitNo: originalPropertyType?.unitNo || "",
+    };
+  }, [
+    isDuplicate,
+    isEdit,
+    isQueueEdit,
+    queueItem?.payload?.propertyType,
+    sourcePremise?.propertyType,
+  ]);
 
   const premiseSchema = useMemo(() => {
     return Yup.object().shape({
@@ -288,7 +798,7 @@ export default function FormPremise() {
         }),
 
         unitNo: Yup.string().when("type", {
-          is: (val) => requiresUnitNo(val),
+          is: (val) => requiresUnitNo(val, unitNoValidationContext),
           then: (schema) => schema.trim().required("Unit No is mandatory"),
           otherwise: (schema) => schema.optional(),
         }),
@@ -360,17 +870,21 @@ export default function FormPremise() {
           },
         ),
     });
-  }, [erfCentroid, isEditLike]);
+  }, [erfCentroid, isEditLike, unitNoValidationContext]);
+
+  const selectedErfIsTownship = isDuplicate
+    ? null
+    : selectedErf?.isTownship;
 
   const initialValues = useMemo(() => {
     const baseGeometry = {
       centroid: {
-        lat: erfCentroid?.lat,
-        lng: erfCentroid?.lng,
+        lat: initialErfCentroid?.lat,
+        lng: initialErfCentroid?.lng,
       },
     };
 
-    const baseContext = selectedErf?.isTownship ? "Township" : "Suburb";
+    const baseContext = selectedErfIsTownship ? "Township" : "Suburb";
 
     // QUEUE EDIT
     if (isQueueEdit && queueItem?.payload) {
@@ -445,25 +959,26 @@ export default function FormPremise() {
     }
 
     // DUPLICATE
-    if (isDuplicate && sourcePremise) {
+    if (isDuplicate && canonicalDuplicateSource) {
       return {
-        context: sourcePremise?.context || baseContext,
+        context: canonicalDuplicateSource.context,
 
         address: {
-          suburbName: sourcePremise?.address?.suburbName || "",
-          strNo: sourcePremise?.address?.strNo || "",
-          strName: sourcePremise?.address?.strName || "",
-          strType: sourcePremise?.address?.strType || "Select...",
+          suburbName: canonicalDuplicateSource?.address?.suburbName || "",
+          strNo: canonicalDuplicateSource?.address?.strNo || "",
+          strName: canonicalDuplicateSource?.address?.strName || "",
+          strType:
+            canonicalDuplicateSource?.address?.strType || "Select...",
         },
 
         propertyType: {
-          type: sourcePremise?.propertyType?.type || "Select...",
-          name: sourcePremise?.propertyType?.name || "",
+          type: canonicalDuplicateSource?.propertyType?.type || "Select...",
+          name: canonicalDuplicateSource?.propertyType?.name || "",
           unitNo: "",
         },
 
         occupancy: {
-          status: sourcePremise?.occupancy?.status || "Occupied",
+          status: canonicalDuplicateSource?.occupancy?.status || "Select...",
         },
 
         geometry: baseGeometry,
@@ -504,9 +1019,10 @@ export default function FormPremise() {
   }, [
     isEdit,
     isDuplicate,
+    canonicalDuplicateSource,
     sourcePremise,
-    erfCentroid,
-    selectedErf?.isTownship,
+    initialErfCentroid,
+    selectedErfIsTownship,
     isQueueEdit,
     queueItem,
     targetedBatchContext,
@@ -528,16 +1044,46 @@ export default function FormPremise() {
       wardPcode: admin?.ward?.pcode || null,
     };
 
-    const wardNo =
-      admin?.ward?.name?.match(/\d+/)?.[0] ||
-      admin?.ward?.pcode?.slice(-3) ||
-      "UNK";
+    const wardNo = isDuplicate
+      ? canonicalDuplicateSource?.parents?.wardPcode?.slice(-3) || "UNK"
+      : admin?.ward?.name?.match(/\d+/)?.[0] ||
+        admin?.ward?.pcode?.slice(-3) ||
+        "UNK";
 
     const safeErfNo = String(erfNo || "N-A").replace(/\//g, "-");
 
     const generatedId = `PRM_${Date.now()}_${Math.floor(
       Math.random() * 1000,
     )}_W${wardNo}_${safeErfNo}`;
+
+    if (isDuplicate) {
+      return {
+        id: generatedId,
+        schemaVersion: "1.0.0",
+        erfId: canonicalDuplicateSource.erfId,
+        erfNo: canonicalDuplicateSource.erfNo,
+        parents: {
+          countryPcode: canonicalDuplicateSource.parents.countryPcode,
+          provincePcode: canonicalDuplicateSource.parents.provincePcode,
+          dmPcode: canonicalDuplicateSource.parents.dmPcode,
+          lmPcode: canonicalDuplicateSource.parents.lmPcode,
+          wardPcode: canonicalDuplicateSource.parents.wardPcode,
+        },
+        services: {
+          electricityMeters: [],
+          waterMeters: [],
+        },
+        metadata: {
+          createdAt: timestamp,
+          createdByUid: agentUid || "unknown_uid",
+          createdByUser: agentName || "Field Agent",
+          updatedAt: timestamp,
+          updatedByUid: agentUid || "unknown_uid",
+          updatedByUser: agentName || "Field Agent",
+        },
+        noAccessTrnIds: [],
+      };
+    }
 
     if (isEdit || isQueueEdit) {
       const sourceData = isQueueEdit ? queueItem?.payload : sourcePremise;
@@ -625,6 +1171,23 @@ export default function FormPremise() {
   }
 
   const handleSubmit = async (values, { setSubmitting }) => {
+    if (isDuplicate) {
+      const integrityError = getDuplicateIntegrityError({
+        hasDuplicateIntent,
+        hasPremiseIdKey,
+        hasQueueItemIdKey,
+        normalizedRouteId,
+        normalizedDuplicateId,
+        duplicateRouteKey,
+        duplicateLatch,
+      });
+
+      if (integrityError) {
+        ToastAndroid.show(integrityError, ToastAndroid.LONG);
+        return;
+      }
+    }
+
     // console.log(` `);
     // console.log(` `);
     // console.log(` `);
@@ -690,6 +1253,20 @@ export default function FormPremise() {
      1. BUILD BASE PAYLOAD FIRST
      This is what we save offline OR sync online
      ------------------------------------------------ */
+      const originalPropertyTypeForSubmission = isQueueEdit
+        ? queueItem?.payload?.propertyType
+        : isEdit
+          ? sourcePremise?.propertyType
+          : null;
+
+      const submittedPropertyType = sanitizePropertyTypeForSubmission(
+        values?.propertyType,
+        {
+          mode: unitNoValidationContext.mode,
+          originalPropertyType: originalPropertyTypeForSubmission,
+        },
+      );
+
       const basePayload = JSON.parse(
         JSON.stringify(
           {
@@ -704,11 +1281,7 @@ export default function FormPremise() {
               strType: values?.address?.strType || "Select...",
             },
 
-            propertyType: {
-              type: values?.propertyType?.type || "Select...",
-              name: String(values?.propertyType?.name || "").trim(),
-              unitNo: String(values?.propertyType?.unitNo || "").trim(),
-            },
+            propertyType: submittedPropertyType,
 
             occupancy: {
               status: values?.occupancy?.status || "Occupied",
@@ -956,7 +1529,11 @@ export default function FormPremise() {
 
       ToastAndroid.show("Premise saved.", ToastAndroid.LONG);
 
-      router.replace(successRoute);
+      if (originatedFromTargetedBatch || isQueueEdit) {
+        router.replace(successRoute);
+      } else {
+        router.back();
+      }
       // logSubmitTime("SUCCESS END");
     } catch (err) {
       // logSubmitTime("ERROR END");
@@ -974,6 +1551,57 @@ export default function FormPremise() {
     }
   };
 
+  if (
+    isDuplicate &&
+    duplicateResolution?.state !== "VALID DUPLICATE"
+  ) {
+    const isPending = duplicateResolution?.state === "PENDING SOURCE";
+    const canRetry = duplicateResolution?.state === "SOURCE ERROR";
+
+    return (
+      <View style={styles.resolutionContainer}>
+        <Stack.Screen
+          options={{
+            title: "Duplicate Premise",
+            headerLeft: () => (
+              <Pressable onPress={() => router.back()} style={styles.backBtn}>
+                <Ionicons name="chevron-back" size={28} color="#1e293b" />
+              </Pressable>
+            ),
+          }}
+        />
+
+        {isPending && <ActivityIndicator size="large" color="#2563eb" />}
+
+        <Text style={styles.resolutionTitle}>
+          {duplicateResolution?.state || "INVALID SOURCE"}
+        </Text>
+        <Text style={styles.resolutionMessage}>
+          {duplicateResolution?.message ||
+            "The Duplicate request cannot be opened safely."}
+        </Text>
+
+        <View style={styles.resolutionActions}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.resolutionBackButton}
+          >
+            <Text style={styles.resolutionBackButtonText}>Back</Text>
+          </TouchableOpacity>
+
+          {canRetry && (
+            <TouchableOpacity
+              onPress={() => refetchDuplicateSource()}
+              style={styles.resolutionRetryButton}
+            >
+              <Text style={styles.resolutionRetryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
+  }
+
   return (
     <>
       <ScreenLock
@@ -989,11 +1617,18 @@ export default function FormPremise() {
         onSubmit={handleSubmit}
         enableReinitialize={true}
       >
-        {({ setFieldValue, values, isSubmitting, errors }) => {
+        {({ setFieldValue, setValues, values, isSubmitting, errors }) => {
           // console.log(`FormPremise --errors`, errors);
           // console.log(`FormPremise --values`, values);
           return (
             <View style={styles.container}>
+              <DuplicateGpsResetHydrator
+                key={duplicateRouteKey || "non-duplicate"}
+                enabled={hasValidCurrentDuplicateLatch}
+                initialResetCentroid={initialErfCentroid}
+                resetCentroid={erfCentroid}
+              />
+
               <Stack.Screen
                 options={{
                   title: isEditLike ? "Edit Premise" : "New Premise",
@@ -1078,6 +1713,23 @@ export default function FormPremise() {
                       name="propertyType.type"
                       options={propertyTypeOptions}
                       icon="office-building-marker"
+                      onValueChange={(nextType) => {
+                        if (nextType === values?.propertyType?.type) return;
+
+                        const reconciled = reconcilePropertyTypeChange(nextType);
+                        setValues(
+                          {
+                            ...values,
+                            propertyType: {
+                              ...values.propertyType,
+                              type: nextType,
+                              name: reconciled.name,
+                              unitNo: reconciled.unitNo,
+                            },
+                          },
+                          true,
+                        );
+                      }}
                     />
 
                     <Divider style={styles.divider} />
@@ -1094,7 +1746,7 @@ export default function FormPremise() {
                       </>
                     )}
 
-                    {requiresUnitNo(values?.propertyType?.type) && (
+                    {supportsUnitNo(values?.propertyType?.type) && (
                       <FormInput
                         label="Unit Number"
                         name="propertyType.unitNo"
@@ -1171,7 +1823,7 @@ export default function FormPremise() {
                     <FormMapPositioner
                       label="Physical Premise Location"
                       name="geometry.centroid"
-                      erfId={id}
+                      erfId={isDuplicate ? normalizedRouteId : id}
                       defaultLocation={erfCentroid}
                     />
                   </Surface>
@@ -1193,6 +1845,63 @@ export default function FormPremise() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f1f5f9" },
+
+  resolutionContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "#f1f5f9",
+  },
+
+  resolutionTitle: {
+    marginTop: 16,
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#0f172a",
+    textAlign: "center",
+  },
+
+  resolutionMessage: {
+    marginTop: 10,
+    maxWidth: 420,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#475569",
+    textAlign: "center",
+  },
+
+  resolutionActions: {
+    flexDirection: "row",
+    marginTop: 24,
+  },
+
+  resolutionBackButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#94a3b8",
+    backgroundColor: "#fff",
+  },
+
+  resolutionBackButtonText: {
+    color: "#334155",
+    fontWeight: "800",
+  },
+
+  resolutionRetryButton: {
+    marginLeft: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: "#2563eb",
+  },
+
+  resolutionRetryButtonText: {
+    color: "#fff",
+    fontWeight: "800",
+  },
 
   formScroll: { padding: 16 },
 

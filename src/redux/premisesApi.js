@@ -2,6 +2,7 @@ import { createApi, fakeBaseQuery } from "@reduxjs/toolkit/query/react";
 import {
   collection,
   doc,
+  getDocFromServer,
   onSnapshot,
   orderBy,
   query,
@@ -140,8 +141,8 @@ export const premisesApi = createApi({
               if (snapshot.docChanges().length === snapshot.docs.length) {
                 return sortPremisesByUpdatedAt(
                   snapshot.docs.map((snap) => ({
-                    id: snap.id,
                     ...snap.data(),
+                    id: snap.id,
                   })),
                 );
               }
@@ -149,8 +150,8 @@ export const premisesApi = createApi({
               // Incremental updates
               snapshot.docChanges().forEach((change) => {
                 const premise = {
-                  id: change.doc.id,
                   ...change.doc.data(),
+                  id: change.doc.id,
                 };
 
                 const index = draft.findIndex((item) => item.id === premise.id);
@@ -182,6 +183,44 @@ export const premisesApi = createApi({
         await cacheEntryRemoved;
         unsubscribe();
       },
+    }),
+
+    getPremiseById: builder.query({
+      async queryFn(premiseId) {
+        try {
+          const snapshot = await getDocFromServer(
+            doc(db, "premises", premiseId),
+          );
+
+          if (!snapshot.exists()) {
+            return {
+              data: {
+                status: "missing",
+                premise: null,
+              },
+            };
+          }
+
+          return {
+            data: {
+              status: "found",
+              premise: {
+                ...snapshot.data(),
+                id: snapshot.id,
+              },
+            },
+          };
+        } catch (error) {
+          return {
+            error: {
+              code: error?.code || "PREMISE_RESOLUTION_FAILED",
+              message:
+                error?.message || "Could not resolve the source Premise",
+            },
+          };
+        }
+      },
+      keepUnusedDataFor: 0,
     }),
 
     addPremise: builder.mutation({
@@ -432,6 +471,7 @@ export const premisesApi = createApi({
 export const {
   useGetPremisesByLmPcodeQuery,
   useGetPremisesByLmPcodeWardPcodeQuery,
+  useGetPremiseByIdQuery,
   useGetPremisesByCountryCodeQuery,
   useAddPremiseMutation,
   useCreatePremiseMutation,
