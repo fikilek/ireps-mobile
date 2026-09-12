@@ -1,0 +1,1817 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="IREPS Meter Discovery - complete field inventory, validation rules, submit behaviour and offline design.">
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin: 0; }
+  body { font: 14px system-ui, sans-serif; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<title>IREPS Meter Discovery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root {
+  --ground: #F6F7F9;
+  --surface: #FFFFFF;
+  --surface-2: #EEF1F5;
+  --ink: #101828;
+  --ink-2: #3C4757;
+  --muted: #667284;
+  --line: #DDE3EA;
+  --line-strong: #C3CCD7;
+
+  --accent: #1E40AF;
+  --accent-soft: #E7ECFA;
+
+  --na: #B91C1C;
+  --na-soft: #FBEAEA;
+  --water: #0F766E;
+  --water-soft: #E2F2F0;
+  --elec: #A16207;
+  --elec-soft: #F8EFDC;
+
+  --ok: #15803D;
+  --warn: #B45309;
+
+  --shadow: 0 1px 2px rgba(16,24,40,.05), 0 8px 24px -16px rgba(16,24,40,.28);
+
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0B1018;
+    --surface: #131A24;
+    --surface-2: #1B2430;
+    --ink: #E7EDF5;
+    --ink-2: #C3CCD8;
+    --muted: #8D9AAB;
+    --line: #263140;
+    --line-strong: #354356;
+
+    --accent: #9DB8FF;
+    --accent-soft: #1A2540;
+
+    --na: #F2A0A0;
+    --na-soft: #2E1719;
+    --water: #6FE0D2;
+    --water-soft: #102725;
+    --elec: #F3C969;
+    --elec-soft: #2C2313;
+
+    --ok: #6EE7A0;
+    --warn: #F0B45E;
+
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground: #0B1018;
+  --surface: #131A24;
+  --surface-2: #1B2430;
+  --ink: #E7EDF5;
+  --ink-2: #C3CCD8;
+  --muted: #8D9AAB;
+  --line: #263140;
+  --line-strong: #354356;
+
+  --accent: #9DB8FF;
+  --accent-soft: #1A2540;
+
+  --na: #F2A0A0;
+  --na-soft: #2E1719;
+  --water: #6FE0D2;
+  --water-soft: #102725;
+  --elec: #F3C969;
+  --elec-soft: #2C2313;
+
+  --ok: #6EE7A0;
+  --warn: #F0B45E;
+
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 28px 96px;
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 44px;
+  align-items: start;
+}
+
+/* ---------- masthead ---------- */
+
+.masthead {
+  grid-column: 1 / -1;
+  border-bottom: 2px solid var(--ink);
+  padding: 44px 0 22px;
+  margin-bottom: 34px;
+}
+
+.eyebrow {
+  font-family: var(--f-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+}
+
+.eyebrow .dot { color: var(--line-strong); }
+
+h1 {
+  font-family: var(--f-display);
+  font-size: clamp(38px, 6vw, 62px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -.025em;
+  margin: 16px 0 12px;
+  text-wrap: balance;
+}
+
+.standfirst {
+  font-size: 20px;
+  color: var(--ink-2);
+  max-width: 60ch;
+  margin: 0 0 22px;
+}
+
+.mastfacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.mastfact {
+  padding: 12px 20px;
+  border-right: 1px solid var(--line);
+  flex: 1 1 auto;
+}
+.mastfact:last-child { border-right: 0; }
+
+.mastfact b {
+  display: block;
+  font-family: var(--f-display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mastfact span {
+  font-family: var(--f-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---------- nav ---------- */
+
+nav {
+  position: sticky;
+  top: 20px;
+  font-family: var(--f-display);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+nav ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-left: 2px solid var(--line);
+}
+
+nav a {
+  display: flex;
+  gap: 9px;
+  padding: 6px 0 6px 13px;
+  margin-left: -2px;
+  border-left: 2px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+nav a:hover { color: var(--accent); border-left-color: var(--accent); }
+nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+nav .n {
+  font-variant-numeric: tabular-nums;
+  color: var(--line-strong);
+  font-weight: 600;
+}
+
+/* ---------- sections ---------- */
+
+main { min-width: 0; }
+
+section { margin-bottom: 64px; scroll-margin-top: 20px; }
+
+h2 {
+  font-family: var(--f-display);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.12;
+  margin: 0 0 6px;
+  text-wrap: balance;
+}
+
+.h2num {
+  font-family: var(--f-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: .08em;
+  display: block;
+  margin-bottom: 8px;
+}
+
+h3 {
+  font-family: var(--f-display);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  margin: 38px 0 10px;
+}
+
+h4 {
+  font-family: var(--f-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 26px 0 8px;
+}
+
+p { margin: 0 0 15px; max-width: 68ch; }
+.lede { font-size: 19px; color: var(--ink-2); max-width: 62ch; }
+
+ul, ol.body { max-width: 66ch; padding-left: 22px; margin: 0 0 15px; }
+li { margin-bottom: 7px; }
+
+code {
+  font-family: var(--f-mono);
+  font-size: .84em;
+  background: var(--surface-2);
+  padding: 1.5px 5px;
+  border-radius: 3px;
+  color: var(--ink-2);
+  word-break: break-word;
+}
+
+a.ref { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+/* ---------- mission chips ---------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--f-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.chip.na   { background: var(--na-soft);    color: var(--na); }
+.chip.wtr  { background: var(--water-soft); color: var(--water); }
+.chip.elc  { background: var(--elec-soft);  color: var(--elec); }
+.chip.req  { background: var(--surface-2);  color: var(--ink-2); }
+.chip.cond { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+
+/* ---------- mission cards ---------- */
+
+.missions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin: 22px 0;
+}
+
+.mission {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--mc);
+  border-radius: 3px;
+  padding: 16px 18px 18px;
+  box-shadow: var(--shadow);
+}
+
+.mission.na  { --mc: var(--na); }
+.mission.wtr { --mc: var(--water); }
+.mission.elc { --mc: var(--elec); }
+
+.mission h5 {
+  font-family: var(--f-display);
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 3px;
+  color: var(--mc);
+  letter-spacing: -.01em;
+}
+
+.mission .sub {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 11px;
+}
+
+.mission p { font-size: 14.5px; margin: 0; color: var(--ink-2); }
+
+/* ---------- tables ---------- */
+
+.tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+  margin: 16px 0 8px;
+  box-shadow: var(--shadow);
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 760px;
+  font-size: 14px;
+  font-family: var(--f-display);
+}
+
+thead th {
+  background: var(--surface-2);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  padding: 9px 13px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+}
+
+tbody td {
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover td { background: var(--surface-2); }
+
+td.f { color: var(--ink); font-weight: 600; white-space: nowrap; }
+
+td .path {
+  font-family: var(--f-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  display: block;
+  font-weight: 400;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.grouprow td {
+  background: var(--surface-2);
+  font-family: var(--f-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 7px 13px;
+}
+.grouprow:hover td { background: var(--surface-2); }
+
+.opts { font-size: 13px; }
+.opts em { font-style: normal; color: var(--muted); }
+
+/* ---------- callouts ---------- */
+
+.note {
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  padding: 14px 18px;
+  margin: 20px 0;
+  border-radius: 0 3px 3px 0;
+  max-width: 72ch;
+}
+
+.note.warn { border-left-color: var(--warn); }
+.note.bug  { border-left-color: var(--na); }
+
+.note h4 { margin: 0 0 5px; color: var(--ink); }
+.note.warn h4 { color: var(--warn); }
+.note.bug h4  { color: var(--na); }
+.note p:last-child { margin-bottom: 0; }
+.note p { font-size: 15.5px; }
+
+/* ---------- figures ---------- */
+
+figure {
+  margin: 26px 0;
+  padding: 22px 22px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow-x: auto;
+  box-shadow: var(--shadow);
+}
+
+figure svg {
+  display: block;
+  width: 100%;
+  min-width: 560px;
+  max-width: 100%;
+  height: auto;
+  color: var(--ink-2);
+}
+
+figcaption {
+  font-family: var(--f-display);
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 14px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+  line-height: 1.45;
+}
+
+figcaption b { color: var(--ink-2); font-weight: 600; }
+
+/* ---------- outcome list ---------- */
+
+.outcomes {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 18px 0;
+}
+
+.outcome {
+  background: var(--surface);
+  padding: 13px 17px;
+  display: grid;
+  grid-template-columns: 165px minmax(0,1fr);
+  gap: 18px;
+  align-items: baseline;
+}
+
+.outcome .t {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.outcome .d { font-size: 15px; color: var(--ink-2); }
+.outcome .d code { font-size: 12.5px; }
+
+/* ---------- file map ---------- */
+
+.files {
+  font-family: var(--f-mono);
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 16px 18px;
+  overflow-x: auto;
+  line-height: 1.85;
+  box-shadow: var(--shadow);
+}
+
+.files .p { color: var(--ink); }
+.files .c { color: var(--muted); }
+.files .h {
+  color: var(--accent);
+  font-family: var(--f-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  display: block;
+  margin: 14px 0 4px;
+}
+.files .h:first-child { margin-top: 0; }
+
+/* ---------- codes ---------- */
+
+.codes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 7px 22px;
+  margin: 14px 0;
+  font-size: 13.5px;
+}
+
+.codes div {
+  font-family: var(--f-mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+footer {
+  grid-column: 1 / -1;
+  border-top: 2px solid var(--ink);
+  padding-top: 18px;
+  font-family: var(--f-display);
+  font-size: 12.5px;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 26px;
+}
+
+@media (max-width: 900px) {
+  .wrap { grid-template-columns: 1fr; gap: 0; padding: 0 20px 70px; }
+  nav { position: static; margin-bottom: 40px; }
+  nav ol { flex-direction: row; flex-wrap: wrap; border-left: 0; gap: 6px 4px; }
+  nav a { border: 1px solid var(--line); border-radius: 3px; padding: 5px 10px; margin: 0; }
+  .outcome { grid-template-columns: 1fr; gap: 3px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <div class="eyebrow">
+    <span>IREPS</span><span class="dot">/</span>
+    <span>Field Operations</span><span class="dot">/</span>
+    <span>Mobile</span><span class="dot">/</span>
+    <span>Contract v2</span>
+  </div>
+  <h1>Meter Discovery</h1>
+  <p class="standfirst">
+    How a field agent turns an unrecorded meter on a municipal erf into a verified,
+    photographed, GPS-anchored asset record &mdash; and what the system does with it.
+    Written for the agents who fill the form in and the developers who maintain it.
+  </p>
+
+  <div class="mastfacts">
+    <div class="mastfact"><b>3</b><span>Missions</span></div>
+    <div class="mastfact"><b>40</b><span>Input fields</span></div>
+    <div class="mastfact"><b>11</b><span>Evidence slots</span></div>
+    <div class="mastfact"><b>2</b><span>Validation layers</span></div>
+    <div class="mastfact"><b>15s</b><span>Submit deadline</span></div>
+  </div>
+</header>
+
+<nav aria-label="Contents">
+  <ol>
+    <li><a href="#what"><span class="n">01</span> What it is</a></li>
+    <li><a href="#missions"><span class="n">02</span> Three missions</a></li>
+    <li><a href="#open"><span class="n">03</span> Before it opens</a></li>
+    <li><a href="#fields-na"><span class="n">04</span> Fields &middot; No Access</a></li>
+    <li><a href="#fields-water"><span class="n">05</span> Fields &middot; Water</a></li>
+    <li><a href="#fields-elec"><span class="n">06</span> Fields &middot; Electricity</a></li>
+    <li><a href="#contract"><span class="n">07</span> Value-or-excuse</a></li>
+    <li><a href="#evidence"><span class="n">08</span> Evidence</a></li>
+    <li><a href="#validation"><span class="n">09</span> Validation</a></li>
+    <li><a href="#submit"><span class="n">10</span> Submitting</a></li>
+    <li><a href="#offline"><span class="n">11</span> Online &amp; offline</a></li>
+    <li><a href="#after"><span class="n">12</span> After submit</a></li>
+    <li><a href="#gaps"><span class="n">13</span> Known gaps</a></li>
+    <li><a href="#dev"><span class="n">14</span> Developer notes</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ============ 01 ============ -->
+<section id="what">
+  <span class="h2num">01</span>
+  <h2>What Meter Discovery is, and why it exists</h2>
+
+  <p class="lede">
+    A municipality bills for electricity and water it can only partly see. Meters get
+    installed, replaced, bypassed and forgotten; the registry drifts from reality.
+    Meter Discovery is the fieldwork that closes that gap, one premise at a time.
+  </p>
+
+  <p>
+    An agent stands at a property, finds the meter, and records what is physically there:
+    its number, make, model, phase, category, seal, keypad, circuit breaker, reading, credit,
+    condition and exact position. Every claim that matters is backed by a photograph stamped
+    with GPS coordinates, the agent's name and the moment of capture.
+  </p>
+
+  <p>
+    That last part is the whole point. The output of this form is not a data entry &mdash; it is
+    <strong>evidence</strong>. A discovered meter can trigger a bill, a disconnection, or a tamper
+    investigation, and any of those can be disputed. So the form is built to make an unsupported
+    claim difficult to submit: if you say the seal is broken, the form wants the photograph before
+    it will let you go.
+  </p>
+
+  <p>
+    Every submission becomes a transaction &mdash; a <code>TRN</code> &mdash; with an id shaped like
+    <code>TRN_MDIS_1725712800000_ELC_WD52001_14302</code>: the prefix, the timestamp, the meter type,
+    the ward, the erf. That id is generated on the device the moment the form opens, and it is what
+    makes the whole offline story possible.
+  </p>
+
+  <h3>What a discovery is not</h3>
+  <p>
+    It is not <em>Meter Installation</em> (that is <code>TRN_MINST_</code>, a separate form for meters
+    the agent puts in themselves), and it is not a meter reading round. Discovery answers one question:
+    <em>what is here right now, and can you prove it?</em>
+  </p>
+</section>
+
+<!-- ============ 02 ============ -->
+<section id="missions">
+  <span class="h2num">02</span>
+  <h2>One form, three missions</h2>
+
+  <p class="lede">
+    Meter Discovery looks like a single screen, but it is three different forms sharing one file.
+    Which one you get is decided before the screen opens, and cannot be changed afterwards.
+  </p>
+
+  <p>
+    Tapping a premise raises the <strong>Mission Discovery</strong> modal with three buttons. The choice
+    writes an <code>action</code> parameter into the route, and the form reads that parameter to pick its
+    field set, its validation schema and its entire behaviour.
+  </p>
+
+  <div class="missions">
+    <div class="mission na">
+      <h5>NO ACCESS</h5>
+      <span class="sub">meterType: "NA"</span>
+      <p>The agent could not reach the meter. Records why, with a photograph proving they were there. Four inputs.</p>
+    </div>
+    <div class="mission wtr">
+      <h5>WATER</h5>
+      <span class="sub">meterType: "water"</span>
+      <p>A water meter was found. Adds readings and credit, but no seal, keypad, breaker or placement.</p>
+    </div>
+    <div class="mission elc">
+      <h5>ELECTRICITY</h5>
+      <span class="sub">meterType: "electricity"</span>
+      <p>The heaviest set. Adds phase, seal, keypad, circuit breaker, placement, off-grid supply and normalisation.</p>
+    </div>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 860 320" role="img" aria-label="The Mission Discovery modal writes an action parameter into the route, which selects one of three validation schemas and one of three rendered field sets inside a single form file.">
+      <defs>
+        <marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+          <polygon points="0,0.5 8.5,4.5 0,8.5" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- modal -->
+      <rect x="14" y="112" width="132" height="96" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <text x="80" y="140" font-size="12.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">Mission</text>
+      <text x="80" y="156" font-size="12.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">Discovery</text>
+      <text x="80" y="176" font-size="10.5" text-anchor="middle" fill="currentColor" opacity=".62" font-family="Archivo, sans-serif">modal</text>
+      <text x="80" y="192" font-size="10.5" text-anchor="middle" fill="currentColor" opacity=".62" font-family="Archivo, sans-serif">3 buttons</text>
+
+      <!-- route -->
+      <line x1="146" y1="160" x2="196" y2="160" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+      <rect x="198" y="126" width="128" height="68" rx="3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <text x="262" y="150" font-size="11" text-anchor="middle" fill="currentColor" font-family="IBM Plex Mono, monospace">action =</text>
+      <text x="262" y="166" font-size="10" text-anchor="middle" fill="currentColor" opacity=".72" font-family="IBM Plex Mono, monospace">{access,</text>
+      <text x="262" y="180" font-size="10" text-anchor="middle" fill="currentColor" opacity=".72" font-family="IBM Plex Mono, monospace">meterType}</text>
+      <text x="262" y="115" font-size="10" text-anchor="middle" fill="currentColor" opacity=".62" font-family="Archivo, sans-serif">route param</text>
+
+      <!-- three branches -->
+      <line x1="326" y1="160" x2="372" y2="52"  stroke="#B91C1C" stroke-width="1.6" marker-end="url(#ar)"/>
+      <line x1="326" y1="160" x2="372" y2="160" stroke="#0F766E" stroke-width="1.6" marker-end="url(#ar)"/>
+      <line x1="326" y1="160" x2="372" y2="268" stroke="#A16207" stroke-width="1.6" marker-end="url(#ar)"/>
+
+      <rect x="376" y="22" width="196" height="60" rx="3" fill="none" stroke="#B91C1C" stroke-width="1.5"/>
+      <text x="392" y="45" font-size="12" font-weight="700" fill="#B91C1C" font-family="Archivo, sans-serif">accessSchema</text>
+      <text x="392" y="64" font-size="10.5" fill="#B91C1C" opacity=".85" font-family="Archivo, sans-serif">IrepsNoAccessSection</text>
+
+      <rect x="376" y="130" width="196" height="60" rx="3" fill="none" stroke="#0F766E" stroke-width="1.5"/>
+      <text x="392" y="153" font-size="12" font-weight="700" fill="#0F766E" font-family="Archivo, sans-serif">WaterDiscoverySchema</text>
+      <text x="392" y="172" font-size="10.5" fill="#0F766E" opacity=".85" font-family="Archivo, sans-serif">WaterSections</text>
+
+      <rect x="376" y="238" width="196" height="60" rx="3" fill="none" stroke="#A16207" stroke-width="1.5"/>
+      <text x="392" y="261" font-size="12" font-weight="700" fill="#A16207" font-family="Archivo, sans-serif">ElecDiscoverySchema</text>
+      <text x="392" y="280" font-size="10.5" fill="#A16207" opacity=".85" font-family="Archivo, sans-serif">ElectricitySections</text>
+
+      <!-- converge -->
+      <line x1="572" y1="52"  x2="646" y2="146" stroke="currentColor" stroke-width="1.3" opacity=".55" marker-end="url(#ar)"/>
+      <line x1="572" y1="160" x2="646" y2="160" stroke="currentColor" stroke-width="1.3" opacity=".55" marker-end="url(#ar)"/>
+      <line x1="572" y1="268" x2="646" y2="174" stroke="currentColor" stroke-width="1.3" opacity=".55" marker-end="url(#ar)"/>
+
+      <rect x="650" y="112" width="196" height="96" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
+      <text x="748" y="140" font-size="12.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">One Formik form</text>
+      <text x="748" y="160" font-size="10.5" text-anchor="middle" fill="currentColor" opacity=".68" font-family="IBM Plex Mono, monospace">FormMeterDiscovery</text>
+      <text x="748" y="180" font-size="10.5" text-anchor="middle" fill="currentColor" opacity=".68" font-family="Archivo, sans-serif">+ field comment</text>
+      <text x="748" y="196" font-size="10.5" text-anchor="middle" fill="currentColor" opacity=".68" font-family="Archivo, sans-serif">+ forensic footer</text>
+    </svg>
+    <figcaption>
+      <b>The mission is chosen before the form renders.</b> One route parameter selects the validation
+      schema and the section component together &mdash; there is no in-form toggle between water and
+      electricity, and no way to convert a No Access into a capture. Backing out and re-entering
+      through the modal is the only way to change mission.
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ============ 03 ============ -->
+<section id="open">
+  <span class="h2num">03</span>
+  <h2>What must be true before the form opens</h2>
+
+  <p>
+    Four preconditions. If any fails the agent sees a spinner or an alert rather than a form.
+  </p>
+
+  <h4>1 &middot; A premise must resolve</h4>
+  <p>
+    The form is handed a <code>premiseId</code> and looks it up in the offline warehouse first. If the
+    premise is not there &mdash; typically because it was captured minutes ago and has not synced &mdash;
+    it falls back to the MMKV premise draft queue. If neither returns anything, the screen holds on
+    <em>&ldquo;Loading premise&hellip;&rdquo;</em>. The premise supplies the erf number, address, property
+    type and the full geographic parent chain (country, province, district, local municipality, ward),
+    all of which are stamped onto the transaction.
+  </p>
+
+  <h4>2 &middot; Location permission must be granted</h4>
+  <p>
+    On mount the form requests foreground location and starts a continuous watch &mdash; updating every
+    metre of movement or every five seconds. Refusing permission raises
+    <em>&ldquo;Location is required for forensic evidence&rdquo;</em>. Without it, photographs cannot be
+    stamped and the GPS field cannot be satisfied.
+  </p>
+
+  <h4>3 &middot; A mission must be selected</h4>
+  <p>As described above &mdash; the modal, not the form, makes this choice.</p>
+
+  <h4>4 &middot; In edit mode, the draft must load</h4>
+  <p>
+    Re-opening a queued draft passes a <code>queueItemId</code>. The form shows
+    <em>&ldquo;Loading draft&hellip;&rdquo;</em> and then either rehydrates the saved values or reports
+    <em>&ldquo;Draft not found.&rdquo;</em> Rehydration is not a plain load: stored canonical values are
+    unpacked back into their editable form, so a manufacturer saved as <code>"Siemens"</code> reappears as
+    <em>Other</em> plus a text box containing <em>Siemens</em>.
+  </p>
+
+  <div class="note warn">
+    <h4>The premise gate is checked again at submit</h4>
+    <p>
+      Opening the form does not mean you can submit it. If the parent premise is still an unsynced local
+      draft, the meter transaction is refused at submit time and saved as a draft instead &mdash; a meter
+      cannot exist before the property it sits on. The work is never discarded, only deferred.
+    </p>
+  </div>
+</section>
+
+<!-- ============ 04 ============ -->
+<section id="fields-na">
+  <span class="h2num">04</span>
+  <h2>Field inventory &middot; <span class="chip na">No Access</span></h2>
+
+  <p class="lede">
+    The smallest mission. The agent is proving a negative &mdash; that they attended and could not
+    reach the meter &mdash; so the evidence requirement matters more than the data.
+  </p>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>Field</th><th>Control</th><th>Options &amp; rules</th><th>Required</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="f">NA Reason<span class="path">accessData.access.reason</span></td>
+          <td>Modal radio list</td>
+          <td class="opts">Property Locked &middot; Access Refused by Occupant &middot; Unsafe / Dangerous Environment &middot; Meter Box Inaccessible &middot; Meter Obstructed &middot; Property Demolished &middot; Property Vacant &middot; Other</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Other reason<span class="path">stored as "Other: &lt;text&gt;"</span></td>
+          <td>Text input</td>
+          <td class="opts">Free text. A bare <code>Other</code> with no detail is rejected &mdash; the reason is only complete once the text is filled in.</td>
+          <td><span class="chip cond">If reason = Other</span></td>
+        </tr>
+        <tr>
+          <td class="f">No Access photo<span class="path">media[tag=noAccessPhoto]</span></td>
+          <td>Camera</td>
+          <td class="opts">GPS + agent + timestamp stamped into the image at capture.</td>
+          <td><span class="chip req">Once reason set</span></td>
+        </tr>
+        <tr>
+          <td class="f">Field comment<span class="path">fieldComment.text</span></td>
+          <td>Text area</td>
+          <td class="opts">Free text, plus optional photo, voice note or video.</td>
+          <td><span class="chip cond">Optional</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p style="font-size:14.5px;color:var(--muted);max-width:72ch">
+    Everything else is system-set: <code>hasAccess: "no"</code>, <code>meterType: "NA"</code>,
+    <code>ast: null</code>, and a generated <code>TRN_MDIS_&hellip;_NA_&hellip;</code> id. There is no
+    asset record, because no asset was seen.
+  </p>
+</section>
+
+<!-- ============ 05 ============ -->
+<section id="fields-water">
+  <span class="h2num">05</span>
+  <h2>Field inventory &middot; <span class="chip wtr">Water</span></h2>
+
+  <p class="lede">
+    Water records the meter, one reading, and its condition. It has no seal, keypad, circuit breaker,
+    phase, placement or normalisation &mdash; those are electricity concerns.
+  </p>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>Field</th><th>Control</th><th>Options &amp; rules</th><th>Required</th></tr>
+      </thead>
+      <tbody>
+        <tr class="grouprow"><td colspan="4">Meter description</td></tr>
+        <tr>
+          <td class="f">Meter Number<span class="path">ast.astData.astNo</span></td>
+          <td>Text + barcode scan</td>
+          <td class="opts">Trimmed and upper-cased on entry. Above 3 characters the app checks the offline warehouse and raises <em>&ldquo;Duplicate meter detected&rdquo;</em> naming the address it is already linked to, then clears the field.</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Category<span class="path">…meter.category</span></td>
+          <td>Select</td>
+          <td class="opts">Normal &middot; Bulk <em>(defaults to Normal)</em></td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Type<span class="path">…meter.type</span></td>
+          <td>Select</td>
+          <td class="opts">Prepaid &middot; Conventional <em>(defaults to Conventional)</em>. Switching to Conventional clears any captured Remaining Credit and deletes its photo.</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Manufacturer<span class="path">ast.astData.astManufacturer</span></td>
+          <td>Select</td>
+          <td class="opts">Conlog &middot; Sensus &middot; Elster Kent &middot; Itron &middot; Kamstrup &middot; Lesira Teq &middot; Aqua Loc &middot; Reonet &middot; Other</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Model Name<span class="path">ast.astData.astName</span></td>
+          <td>Text</td>
+          <td class="opts">Free text.</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+
+        <tr class="grouprow"><td colspan="4">Reading &mdash; one or the other, never both</td></tr>
+        <tr>
+          <td class="f">Meter Reading<span class="path">ast.meterReading</span></td>
+          <td>Numeric</td>
+          <td class="opts">Digits only. Becomes an <code>mreadings[]</code> entry tagged <code>AST_CREATION</code> on submit.</td>
+          <td><span class="chip cond">If Conventional</span></td>
+        </tr>
+        <tr>
+          <td class="f">Token Reading<span class="path">ast.tokenReading</span></td>
+          <td>Numeric</td>
+          <td class="opts">Digits only. Becomes a <code>treadings[]</code> entry tagged <code>AST_CREATION</code>.</td>
+          <td><span class="chip cond">If Prepaid</span></td>
+        </tr>
+        <tr>
+          <td class="f">Reading photo<span class="path">meterReadingPhoto / tokenReadingPhoto</span></td>
+          <td>Camera</td>
+          <td class="opts">Appears as soon as a reading is typed. The server requires it unconditionally.</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+
+        <tr class="grouprow"><td colspan="4">Remaining credit &mdash; prepaid only</td></tr>
+        <tr>
+          <td class="f">Remaining Credit<span class="path">…meter.remainingCredit</span></td>
+          <td>Numeric</td>
+          <td class="opts">Signed decimal, <code>/^[+-]?\d+(\.\d+)?$/</code>. Negative values are legitimate.</td>
+          <td><span class="chip cond">Value or reason</span></td>
+        </tr>
+        <tr>
+          <td class="f">Reason not captured<span class="path">…remainingCreditComment</span></td>
+          <td>Select</td>
+          <td class="opts">Display blank / no reading &middot; Display damaged &middot; Display unreadable &middot; Unable to obtain balance &middot; Meter not responding &middot; Other</td>
+          <td><span class="chip cond">If no value</span></td>
+        </tr>
+        <tr>
+          <td class="f">Other reason<span class="path">…remainingCreditCommentOther</span></td>
+          <td>Text</td>
+          <td class="opts">Merged to <code>"Other: &lt;text&gt;"</code> before transmission.</td>
+          <td><span class="chip cond">If reason = Other</span></td>
+        </tr>
+        <tr>
+          <td class="f">Credit photo<span class="path">media[remainingCreditPhoto]</span></td>
+          <td>Camera</td>
+          <td class="opts">Required when a value is captured; automatically deleted if the value is cleared.</td>
+          <td><span class="chip cond">If value captured</span></td>
+        </tr>
+
+        <tr class="grouprow"><td colspan="4">Status, condition and position</td></tr>
+        <tr>
+          <td class="f">Meter Status<span class="path">status.state</span></td>
+          <td>Select</td>
+          <td class="opts">Connected &middot; Disconnected</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Anomaly<span class="path">ast.anomalies.anomaly</span></td>
+          <td>Select</td>
+          <td class="opts">Meter Ok &middot; Meter Faulty &middot; Meter Damaged &middot; Illegally Connected</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Anomaly Detail<span class="path">ast.anomalies.anomalyDetail</span></td>
+          <td>Dependent select</td>
+          <td class="opts">Options are filtered by the anomaly chosen. Selecting <em>Meter Ok</em> auto-fills <em>Operationally Ok</em> and locks the control.</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Anomaly photo<span class="path">media[anomalyPhoto]</span></td>
+          <td>Camera</td>
+          <td class="opts">Demanded for every anomaly except <em>Meter Ok</em>.</td>
+          <td><span class="chip cond">If not Meter Ok</span></td>
+        </tr>
+        <tr>
+          <td class="f">Other Anomaly<span class="path">…anomalies.otherAnomalies</span></td>
+          <td>Checkboxes</td>
+          <td class="opts">Meter Blocked (By Munic) &middot; Meter Bridged (By Munic) &middot; Incomplete Service Points &middot; Meter Not Registered &middot; Keypad Faulty. Duplicates rejected.</td>
+          <td><span class="chip cond">Optional</span></td>
+        </tr>
+        <tr>
+          <td class="f">Meter GPS<span class="path">ast.location.gps</span></td>
+          <td>Map picker</td>
+          <td class="opts">Opens on the erf boundary with nearby erfs, premises and meters drawn within 120&nbsp;m. Must be finite, in range, and not <code>0,0</code>.</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Field comment<span class="path">fieldComment.text</span></td>
+          <td>Text area</td>
+          <td class="opts">Free text, plus optional photo, voice or video.</td>
+          <td><span class="chip cond">Optional</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 06 ============ -->
+<section id="fields-elec">
+  <span class="h2num">06</span>
+  <h2>Field inventory &middot; <span class="chip elc">Electricity</span></h2>
+
+  <p class="lede">
+    The full set. Everything water has, minus the readings, plus phase, the three infrastructure
+    blocks, placement, off-grid supply and normalisation.
+  </p>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>Field</th><th>Control</th><th>Options &amp; rules</th><th>Required</th></tr>
+      </thead>
+      <tbody>
+        <tr class="grouprow"><td colspan="4">Core meter data</td></tr>
+        <tr>
+          <td class="f">Meter Number<span class="path">ast.astData.astNo</span></td>
+          <td>Text + barcode scan</td>
+          <td class="opts">Upper-cased, duplicate-checked against the warehouse. Pre-filled when the agent arrives from a targeted batch.</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Manufacturer<span class="path">ast.astData.astManufacturer</span></td>
+          <td>Select</td>
+          <td class="opts">Conlog &middot; Landis+gyr &middot; Cashpower &middot; Hexing &middot; Powercom &middot; Itron &middot; Other</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Other Manufacturer<span class="path">…astManufacturerOther</span></td>
+          <td>Text</td>
+          <td class="opts">Appears only when <em>Other</em> is chosen. Replaces the manufacturer value entirely before transmission.</td>
+          <td><span class="chip cond">If Other</span></td>
+        </tr>
+        <tr>
+          <td class="f">Model (Name)<span class="path">ast.astData.astName</span></td>
+          <td>Text</td>
+          <td class="opts">Becomes required as soon as a manufacturer is chosen.</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Phase<span class="path">…meter.phase</span></td>
+          <td>Select</td>
+          <td class="opts">Single &middot; Three</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Type<span class="path">…meter.type</span></td>
+          <td>Select</td>
+          <td class="opts">Prepaid &middot; Conventional. This is the master switch: it reveals the keypad block and the remaining-credit block, and switching away clears both.</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Category<span class="path">…meter.category</span></td>
+          <td>Select</td>
+          <td class="opts">Normal &middot; Bulk</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+
+        <tr class="grouprow"><td colspan="4">Remaining credit &mdash; prepaid only</td></tr>
+        <tr>
+          <td class="f">Remaining Credit<span class="path">…meter.remainingCredit</span></td>
+          <td>Numeric</td>
+          <td class="opts">Signed decimal. Identical contract to water: a value plus a photo, or a reason.</td>
+          <td><span class="chip cond">Value or reason</span></td>
+        </tr>
+        <tr>
+          <td class="f">Reason / Other / photo<span class="path">…remainingCreditComment(Other)</span></td>
+          <td>Select + text + camera</td>
+          <td class="opts">Same six reasons as water. Capturing a value clears the reason; clearing the value deletes the photo.</td>
+          <td><span class="chip cond">Mirror of above</span></td>
+        </tr>
+
+        <tr class="grouprow"><td colspan="4">Infrastructure &mdash; each is a value-or-excuse block</td></tr>
+        <tr>
+          <td class="f">Seal No<span class="path">…meter.seal.sealNo</span></td>
+          <td>Text + barcode scan</td>
+          <td class="opts">Scanning prompt: <em>&ldquo;Align Seal Barcode&rdquo;</em>.</td>
+          <td><span class="chip req">Number or comment</span></td>
+        </tr>
+        <tr>
+          <td class="f">Seal Comment<span class="path">…seal.comment</span></td>
+          <td>Select</td>
+          <td class="opts">Seal Missing &middot; <b>Seal Broken</b> &middot; <b>Seal Damaged</b> &middot; <b>Seal Number Not Visible</b> &middot; <b>Seal Number Unreadable</b> &middot; Seal Removed &middot; <b>Meter Not Sealed</b> &middot; Other. <em>Bold reasons force a photo.</em></td>
+          <td><span class="chip cond">If no number</span></td>
+        </tr>
+        <tr>
+          <td class="f">Seal Other reason<span class="path">…seal.commentOther</span></td>
+          <td>Text</td>
+          <td class="opts">Replaces the comment value before transmission.</td>
+          <td><span class="chip cond">If comment = Other</span></td>
+        </tr>
+        <tr>
+          <td class="f">Keypad Serial No<span class="path">…meter.keypad.serialNo</span></td>
+          <td>Text + barcode scan</td>
+          <td class="opts">Whole block appears only for prepaid meters.</td>
+          <td><span class="chip cond">Prepaid, optional</span></td>
+        </tr>
+        <tr>
+          <td class="f">Keypad Comment<span class="path">…keypad.comment</span></td>
+          <td>Select</td>
+          <td class="opts">Keypad Missing &middot; Keypad Not Installed &middot; <b>Keypad Integrated With Meter</b> &middot; <b>Serial Number Not Visible</b> &middot; <b>Serial Number Unreadable</b> &middot; <b>Keypad Damaged</b> &middot; Keypad Inaccessible &middot; Other</td>
+          <td><span class="chip cond">If no serial</span></td>
+        </tr>
+        <tr>
+          <td class="f">Keypad Other reason<span class="path">…keypad.commentOther</span></td>
+          <td>Text</td>
+          <td class="opts">Free text.</td>
+          <td><span class="chip cond">If comment = Other</span></td>
+        </tr>
+        <tr>
+          <td class="f">CB Size (Amps)<span class="path">…meter.cb.size</span></td>
+          <td>Numeric</td>
+          <td class="opts">Circuit breaker rating.</td>
+          <td><span class="chip cond">Optional</span></td>
+        </tr>
+        <tr>
+          <td class="f">CB Comment<span class="path">…cb.comment</span></td>
+          <td>Select</td>
+          <td class="opts">Circuit Breaker Missing &middot; <b>Size Not Visible</b> &middot; <b>Size Unreadable</b> &middot; <b>Circuit Breaker Damaged</b> &middot; Circuit Breaker Inaccessible &middot; No Dedicated Circuit Breaker &middot; Distribution Board Inaccessible &middot; Other</td>
+          <td><span class="chip cond">If no size</span></td>
+        </tr>
+        <tr>
+          <td class="f">CB Other reason<span class="path">…cb.commentOther</span></td>
+          <td>Text</td>
+          <td class="opts">Free text.</td>
+          <td><span class="chip cond">If comment = Other</span></td>
+        </tr>
+
+        <tr class="grouprow"><td colspan="4">Location</td></tr>
+        <tr>
+          <td class="f">Meter Placement<span class="path">ast.location.placement</span></td>
+          <td>Select</td>
+          <td class="opts">Kiosk &middot; Pole Top &middot; Pole Bottom &middot; Boundary Wall &middot; Meter Room &middot; Wall Indoors &middot; Inside Property &middot; Other</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Meter GPS<span class="path">ast.location.gps</span></td>
+          <td>Map picker</td>
+          <td class="opts">Erf boundary with 120&nbsp;m neighbourhood context. Rejects <code>0,0</code> and out-of-range coordinates.</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+
+        <tr class="grouprow"><td colspan="4">Status and supply</td></tr>
+        <tr>
+          <td class="f">Meter Status<span class="path">status.state</span></td>
+          <td>Select</td>
+          <td class="opts">Connected &middot; Disconnected</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Off-Grid Supply?<span class="path">ast.ogs.hasOffGridSupply</span></td>
+          <td>Select</td>
+          <td class="opts">Yes &middot; No <em>(defaults to No)</em>. Solar or generator supply at the property.</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Off-grid photo<span class="path">media[ogsPhoto]</span></td>
+          <td>Camera</td>
+          <td class="opts">Appears and is demanded when Yes is selected.</td>
+          <td><span class="chip cond">If Yes</span></td>
+        </tr>
+
+        <tr class="grouprow"><td colspan="4">Condition</td></tr>
+        <tr>
+          <td class="f">Anomaly + Detail + photo<span class="path">ast.anomalies.*</span></td>
+          <td>Select &times; 2 + camera</td>
+          <td class="opts">Identical to water. Meter Ok &rarr; Operationally Ok, auto-filled and locked. Any other anomaly demands a photo.</td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Other Anomaly<span class="path">…otherAnomalies</span></td>
+          <td>Checkboxes</td>
+          <td class="opts">Same five options as water.</td>
+          <td><span class="chip cond">Optional</span></td>
+        </tr>
+
+        <tr class="grouprow"><td colspan="4">Normalisation &mdash; what the agent fixed on site</td></tr>
+        <tr>
+          <td class="f">Actions Taken<span class="path">ast.normalisation.actionTaken</span></td>
+          <td>Checkboxes (multi)</td>
+          <td class="opts">None &middot; New Meter Installed &middot; Meter Removed &middot; Illegal connection &ndash; meter disconnected &middot; Illegal connection &ndash; meter reconnected &middot; Meter faulty &ndash; meter replaced &middot; Meter damaged &ndash; meter replaced &middot; Tamper Removed &middot; Keypad Normalised &middot; Service Point Completed / Cable Installed &middot; Meter Registered. <em>At least one. <b>None</b> is exclusive &mdash; ticking it clears everything else, and unticking the last real action forces it back.</em></td>
+          <td><span class="chip req">Always</span></td>
+        </tr>
+        <tr>
+          <td class="f">Normalisation photo<span class="path">media[normalisationPhoto]</span></td>
+          <td>Camera</td>
+          <td class="opts">Demanded as soon as any action other than <em>None</em> is ticked.</td>
+          <td><span class="chip cond">If any action</span></td>
+        </tr>
+        <tr>
+          <td class="f">Field comment<span class="path">fieldComment.text</span></td>
+          <td>Text area</td>
+          <td class="opts">Free text, plus optional photo, voice or video.</td>
+          <td><span class="chip cond">Optional</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 07 ============ -->
+<section id="contract">
+  <span class="h2num">07</span>
+  <h2>The value-or-excuse contract</h2>
+
+  <p class="lede">
+    This one pattern governs the seal, the keypad, the circuit breaker and the remaining credit.
+    Understand it once and four sections of the form become obvious.
+  </p>
+
+  <p>
+    The problem it solves: a field agent genuinely cannot always read a seal number. The seal may be
+    missing, painted over, behind a locked box. A form that simply demands the number invites invention.
+    A form that accepts a blank invites laziness. So the form accepts either &mdash; but never nothing.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 800 340" role="img" aria-label="Decision flow: capturing an infrastructure value requires either the value plus a photo, or an approved reason; reasons implying visible damage additionally require a photo, and Other requires typed detail.">
+      <defs>
+        <marker id="ar2" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+          <polygon points="0,0.5 8.5,4.5 0,8.5" fill="currentColor"/>
+        </marker>
+        <marker id="ar2g" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+          <polygon points="0,0.5 8.5,4.5 0,8.5" fill="#15803D"/>
+        </marker>
+      </defs>
+
+      <!-- start -->
+      <rect x="10" y="140" width="128" height="58" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <text x="74" y="165" font-size="12" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">Seal No</text>
+      <text x="74" y="182" font-size="10.5" text-anchor="middle" fill="currentColor" opacity=".62" font-family="Archivo, sans-serif">field</text>
+
+      <!-- diamond -->
+      <polygon points="200,169 250,131 300,169 250,207" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <text x="250" y="166" font-size="11" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">Captured</text>
+      <text x="250" y="181" font-size="11" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">a number?</text>
+      <line x1="138" y1="169" x2="196" y2="169" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar2)"/>
+
+      <!-- YES up -->
+      <polyline points="250,131 250,64 342,64" fill="none" stroke="#15803D" stroke-width="1.6" marker-end="url(#ar2g)"/>
+      <text x="262" y="100" font-size="11" font-weight="700" fill="#15803D" font-family="Archivo, sans-serif">YES</text>
+      <rect x="346" y="38" width="164" height="52" rx="3" fill="none" stroke="#15803D" stroke-width="1.5"/>
+      <text x="428" y="60" font-size="11.5" font-weight="700" text-anchor="middle" fill="#15803D" font-family="Archivo, sans-serif">Photo required</text>
+      <text x="428" y="77" font-size="10.5" text-anchor="middle" fill="#15803D" opacity=".85" font-family="IBM Plex Mono, monospace">sealPhoto</text>
+      <text x="428" y="26" font-size="10" text-anchor="middle" fill="currentColor" opacity=".6" font-family="Archivo, sans-serif">comment field disappears</text>
+
+      <!-- NO down -->
+      <polyline points="250,207 250,274 342,274" fill="none" stroke="currentColor" stroke-width="1.6" marker-end="url(#ar2)"/>
+      <text x="262" y="242" font-size="11" font-weight="700" fill="currentColor" font-family="Archivo, sans-serif">NO</text>
+      <rect x="346" y="248" width="164" height="52" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <text x="428" y="270" font-size="11.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">Pick a reason</text>
+      <text x="428" y="287" font-size="10.5" text-anchor="middle" fill="currentColor" opacity=".68" font-family="Archivo, sans-serif">8 approved options</text>
+
+      <!-- reason branches -->
+      <line x1="510" y1="262" x2="566" y2="212" stroke="currentColor" stroke-width="1.4" marker-end="url(#ar2)"/>
+      <line x1="510" y1="286" x2="566" y2="316" stroke="currentColor" stroke-width="1.4" marker-end="url(#ar2)"/>
+
+      <rect x="570" y="186" width="218" height="52" rx="3" fill="none" stroke="#15803D" stroke-width="1.5"/>
+      <text x="584" y="207" font-size="11" font-weight="700" fill="#15803D" font-family="Archivo, sans-serif">Reason implies damage</text>
+      <text x="584" y="224" font-size="10.5" fill="#15803D" opacity=".9" font-family="Archivo, sans-serif">&ldquo;Seal Broken&rdquo; &rarr; photo required</text>
+
+      <rect x="570" y="290" width="218" height="46" rx="3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <text x="584" y="309" font-size="11" font-weight="700" fill="currentColor" font-family="Archivo, sans-serif">Reason is absence</text>
+      <text x="584" y="325" font-size="10.5" fill="currentColor" opacity=".68" font-family="Archivo, sans-serif">&ldquo;Seal Missing&rdquo; &rarr; no photo</text>
+
+      <!-- other -->
+      <rect x="570" y="118" width="218" height="46" rx="3" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <text x="584" y="137" font-size="11" font-weight="700" fill="currentColor" font-family="Archivo, sans-serif">&ldquo;Other&rdquo; selected</text>
+      <text x="584" y="153" font-size="10.5" fill="currentColor" opacity=".68" font-family="Archivo, sans-serif">typed text replaces it before sending</text>
+      <line x1="510" y1="252" x2="566" y2="160" stroke="currentColor" stroke-width="1.2" opacity=".5" marker-end="url(#ar2)"/>
+    </svg>
+    <figcaption>
+      <b>Either the value or an approved reason &mdash; and the reason decides whether a photo follows.</b>
+      Which reasons demand evidence is data, not code: each option carries a <code>photoRequired</code> flag,
+      and the same flags are re-declared on the server. Reasons describing damage need proof; reasons
+      describing absence do not.
+    </figcaption>
+  </figure>
+
+  <h3>The three blocks are not equally strict</h3>
+  <ul>
+    <li><strong>Seal</strong> is mandatory &mdash; a number or a comment, one of them, always.</li>
+    <li><strong>Keypad</strong> and <strong>circuit breaker</strong> are optional: leaving both blank passes.
+    But if you start answering, you must answer properly.</li>
+  </ul>
+
+  <h3>&ldquo;Other&rdquo; never reaches the database</h3>
+  <p>
+    On submit, every <code>Other</code> plus its free text collapses into a single canonical value. A seal
+    comment of <em>Other</em> with the text <em>&ldquo;welded shut&rdquo;</em> is transmitted as
+    <code>"welded shut"</code>; the helper field is deleted. Remaining credit is the exception &mdash; it keeps
+    an <code>"Other: "</code> prefix so the reason stays distinguishable from the approved list. The server
+    rejects a literal <code>"Other"</code> outright.
+  </p>
+</section>
+
+<!-- ============ 08 ============ -->
+<section id="evidence">
+  <span class="h2num">08</span>
+  <h2>Evidence: what a photograph carries</h2>
+
+  <p>
+    Photographs are not attachments. Each one is captured through the app's own camera, which renders a
+    watermark into the image and records a structured object alongside it:
+  </p>
+
+  <div class="files">
+    <span class="p">{ tag: "sealPhoto",</span> <span class="c">// which requirement it satisfies</span><br>
+    <span class="p">&nbsp;&nbsp;uri: "file:///…",</span> <span class="c">// local until uploaded</span><br>
+    <span class="p">&nbsp;&nbsp;url: null,</span> <span class="c">// Firebase Storage URL after sync</span><br>
+    <span class="p">&nbsp;&nbsp;type: "image",</span><br>
+    <span class="p">&nbsp;&nbsp;gps: { lat, lng },</span> <span class="c">// live device fix, falling back to the erf centroid</span><br>
+    <span class="p">&nbsp;&nbsp;created: { at, byUser, byUid },</span><br>
+    <span class="p">&nbsp;&nbsp;updated: { at, byUser, byUid } }</span>
+  </div>
+
+  <p>
+    The <code>tag</code> is what validation looks for &mdash; rules never ask &ldquo;is there a photo&rdquo;,
+    they ask &ldquo;is there a photo tagged <code>sealPhoto</code> with a usable URI&rdquo;. One photo per tag:
+    re-shooting replaces rather than appends.
+  </p>
+
+  <h4>The eleven evidence slots</h4>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Tag</th><th>Mission</th><th>Demanded when</th></tr></thead>
+      <tbody>
+        <tr><td class="f">noAccessPhoto</td><td><span class="chip na">NA</span></td><td>A no-access reason has been chosen</td></tr>
+        <tr><td class="f">astNoPhoto</td><td><span class="chip wtr">Water</span> <span class="chip elc">Elec</span></td><td>A meter number has been entered</td></tr>
+        <tr><td class="f">meterReadingPhoto</td><td><span class="chip wtr">Water</span></td><td>Conventional, reading entered</td></tr>
+        <tr><td class="f">tokenReadingPhoto</td><td><span class="chip wtr">Water</span></td><td>Prepaid, token reading entered</td></tr>
+        <tr><td class="f">remainingCreditPhoto</td><td><span class="chip wtr">Water</span> <span class="chip elc">Elec</span></td><td>Prepaid, a credit value was captured</td></tr>
+        <tr><td class="f">sealPhoto</td><td><span class="chip elc">Elec</span></td><td>Seal number entered, or a damage reason chosen</td></tr>
+        <tr><td class="f">keypadPhoto</td><td><span class="chip elc">Elec</span></td><td>Prepaid, serial entered or a damage reason chosen</td></tr>
+        <tr><td class="f">astCbPhoto</td><td><span class="chip elc">Elec</span></td><td>CB size entered, or a damage reason chosen</td></tr>
+        <tr><td class="f">ogsPhoto</td><td><span class="chip elc">Elec</span></td><td>Off-grid supply is Yes</td></tr>
+        <tr><td class="f">anomalyPhoto</td><td><span class="chip wtr">Water</span> <span class="chip elc">Elec</span></td><td>Any anomaly other than Meter Ok</td></tr>
+        <tr><td class="f">normalisationPhoto</td><td><span class="chip elc">Elec</span></td><td>Any normalisation action other than None</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p style="font-size:14.5px;color:var(--muted);max-width:72ch">
+    The field comment carries three more optional slots &mdash; <code>fieldCommentPhoto</code>,
+    <code>fieldCommentVoice</code> and <code>fieldCommentVideo</code> &mdash; which are never required.
+  </p>
+</section>
+
+<!-- ============ 09 ============ -->
+<section id="validation">
+  <span class="h2num">09</span>
+  <h2>Validation happens twice, deliberately</h2>
+
+  <p class="lede">
+    Every rule in the form is written twice: once in the app so the agent gets an immediate red field,
+    and once on the server so a modified or stale client cannot bypass it.
+  </p>
+
+  <h3>Layer 1 &mdash; on the device</h3>
+  <p>
+    Yup schemas, validated on mount and on every change, so the form is red from the moment it opens and
+    turns green only when genuinely complete. The submit button is the status display: <span
+    style="color:var(--na);font-weight:600">red cross</span> while anything is outstanding,
+    <span style="color:var(--ok);font-weight:600">green tick</span> when the form is valid <em>and</em>
+    has been touched.
+  </p>
+
+  <div class="note">
+    <h4>A quirk worth knowing</h4>
+    <p>
+      The button requires Formik's <code>dirty</code> flag, so a rehydrated draft that is already complete
+      still shows red until something is changed. Touch any field to release it.
+    </p>
+  </div>
+
+  <h3>Layer 2 &mdash; on the server</h3>
+  <p>
+    The <code>onMeterDiscoveryCallable</code> function re-runs the whole rule set from its own module,
+    keyed to <code>meterDiscoveryContractVersion: 2</code>. It returns a structured failure rather than
+    throwing &mdash; a code and a message the app shows directly.
+  </p>
+
+  <p>Beyond mirroring the client, the server adds four gates the device cannot enforce:</p>
+
+  <div class="outcomes">
+    <div class="outcome">
+      <div class="t">Authentication</div>
+      <div class="d">Unsigned callers are rejected outright. The server overwrites the submitted metadata with its own view of who the caller is.</div>
+    </div>
+    <div class="outcome">
+      <div class="t">Premise existence</div>
+      <div class="d">The parent premise must exist in Firestore. <code>INVALID_PREMISE_ID</code> or <code>PREMISE_NOT_FOUND</code>.</div>
+    </div>
+    <div class="outcome">
+      <div class="t">Idempotency</div>
+      <div class="d">If the transaction id already exists it returns <em>success</em>, not an error &mdash; so a retry after a lost response can never double-write.</div>
+    </div>
+    <div class="outcome">
+      <div class="t">Duplicate meter</div>
+      <div class="d">The meter number is normalised and checked against <code>meter_master</code>. A genuine clash returns a conflict code the agent sees as <em>&ldquo;Duplicate Meter&rdquo;</em>.</div>
+    </div>
+  </div>
+
+  <p>
+    That duplicate check is the second of two. The app already warns locally the moment a meter number is
+    typed, comparing against the offline warehouse &mdash; but the warehouse may be hours stale, so the
+    server holds the authoritative answer.
+  </p>
+</section>
+
+<!-- ============ 10 ============ -->
+<section id="submit">
+  <span class="h2num">10</span>
+  <h2>What happens when the agent taps Submit</h2>
+
+  <p class="lede">
+    Two different journeys with two different guarantees. No Access is protected before anything else
+    happens; a captured meter follows the conventional path.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 860 400" role="img" aria-label="Sequence diagram contrasting the No Access submit path, which persists to the local queue before any network work, with the accessed path, which checks connectivity, uploads media and then calls the backend under a fifteen second deadline.">
+      <defs>
+        <marker id="ar3" markerWidth="8" markerHeight="8" refX="7.5" refY="4" orient="auto">
+          <polygon points="0,0.5 7.5,4 0,7.5" fill="currentColor"/>
+        </marker>
+        <marker id="ar3r" markerWidth="8" markerHeight="8" refX="7.5" refY="4" orient="auto">
+          <polygon points="0,0.5 7.5,4 0,7.5" fill="#B91C1C"/>
+        </marker>
+      </defs>
+
+      <!-- lifelines -->
+      <text x="70"  y="22" font-size="11.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">Form</text>
+      <text x="270" y="22" font-size="11.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">Local queue</text>
+      <text x="480" y="22" font-size="11.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">Storage</text>
+      <text x="690" y="22" font-size="11.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">Callable</text>
+
+      <line x1="70"  y1="32" x2="70"  y2="384" stroke="currentColor" stroke-width="1" opacity=".3" stroke-dasharray="3 4"/>
+      <line x1="270" y1="32" x2="270" y2="384" stroke="currentColor" stroke-width="1" opacity=".3" stroke-dasharray="3 4"/>
+      <line x1="480" y1="32" x2="480" y2="384" stroke="currentColor" stroke-width="1" opacity=".3" stroke-dasharray="3 4"/>
+      <line x1="690" y1="32" x2="690" y2="384" stroke="currentColor" stroke-width="1" opacity=".3" stroke-dasharray="3 4"/>
+
+      <!-- NA band -->
+      <rect x="8" y="44" width="844" height="150" rx="3" fill="#B91C1C" opacity=".05"/>
+      <text x="20" y="62" font-size="10.5" font-weight="700" letter-spacing="1.4" fill="#B91C1C" font-family="Archivo, sans-serif">NO ACCESS</text>
+
+      <line x1="70" y1="82" x2="264" y2="82" stroke="#B91C1C" stroke-width="1.5" marker-end="url(#ar3r)"/>
+      <text x="80" y="76" font-size="10.5" fill="#B91C1C" font-family="Archivo, sans-serif">copy photo to durable storage, then save</text>
+
+      <line x1="70" y1="112" x2="264" y2="112" stroke="#B91C1C" stroke-width="1.5" marker-end="url(#ar3r)"/>
+      <text x="80" y="106" font-size="10.5" fill="#B91C1C" font-family="Archivo, sans-serif">hand queue item to processor</text>
+
+      <line x1="276" y1="140" x2="474" y2="140" stroke="currentColor" stroke-width="1.4" marker-end="url(#ar3)"/>
+      <text x="286" y="134" font-size="10.5" fill="currentColor" font-family="Archivo, sans-serif">upload evidence</text>
+
+      <line x1="276" y1="170" x2="684" y2="170" stroke="currentColor" stroke-width="1.4" marker-end="url(#ar3)"/>
+      <text x="286" y="164" font-size="10.5" fill="currentColor" font-family="Archivo, sans-serif">submit &mdash; connectivity + upload + call share one 15s deadline</text>
+
+      <!-- accessed band -->
+      <rect x="8" y="206" width="844" height="186" rx="3" fill="#1E40AF" opacity=".05"/>
+      <text x="20" y="224" font-size="10.5" font-weight="700" letter-spacing="1.4" fill="#1E40AF" font-family="Archivo, sans-serif">WATER &amp; ELECTRICITY</text>
+
+      <line x1="70" y1="248" x2="264" y2="248" stroke="currentColor" stroke-width="1.4" marker-end="url(#ar3)"/>
+      <text x="80" y="242" font-size="10.5" fill="currentColor" font-family="Archivo, sans-serif">check connectivity first &mdash; if offline, save here and stop</text>
+
+      <line x1="70" y1="286" x2="474" y2="286" stroke="currentColor" stroke-width="1.4" marker-end="url(#ar3)"/>
+      <text x="80" y="280" font-size="10.5" fill="currentColor" font-family="Archivo, sans-serif">upload each photo, swap local uri for download url</text>
+
+      <line x1="70" y1="324" x2="684" y2="324" stroke="currentColor" stroke-width="1.4" marker-end="url(#ar3)"/>
+      <text x="80" y="318" font-size="10.5" fill="currentColor" font-family="Archivo, sans-serif">call onMeterDiscoveryCallable &mdash; 15s deadline starts here only</text>
+
+      <line x1="684" y1="358" x2="76" y2="358" stroke="currentColor" stroke-width="1.4" marker-end="url(#ar3)"/>
+      <text x="90" y="352" font-size="10.5" fill="currentColor" font-family="Archivo, sans-serif">success &rarr; drop the draft &nbsp;&middot;&nbsp; failure &rarr; show the code &nbsp;&middot;&nbsp; timeout &rarr; save locally</text>
+    </svg>
+    <figcaption>
+      <b>The difference is what the deadline covers.</b> A No Access is written to the local queue with its
+      evidence copied to durable storage <em>before</em> any network attempt, so the fifteen seconds cover
+      connectivity, upload and call together &mdash; nothing is lost if the clock runs out. A captured meter
+      uploads first and starts its deadline only at the backend call, so a slow upload cannot trip it.
+    </figcaption>
+  </figure>
+
+  <h3>The outcomes an agent can see</h3>
+
+  <div class="outcomes">
+    <div class="outcome"><div class="t">MISSION SUCCESS</div><div class="d">Confirmed by the server. A green tick modal, then back to the premise list after two seconds.</div></div>
+    <div class="outcome"><div class="t">Saved as Draft</div><div class="d">The parent premise has not synced yet. Held locally until it does.</div></div>
+    <div class="outcome"><div class="t">Saved Offline</div><div class="d">No connection. Queued and synced automatically later.</div></div>
+    <div class="outcome"><div class="t">Saved Locally</div><div class="d">Online, but no answer within fifteen seconds. Queued for retry.</div></div>
+    <div class="outcome"><div class="t">Duplicate Meter</div><div class="d">The meter number already belongs to another record. Nothing is saved &mdash; correct the number.</div></div>
+    <div class="outcome"><div class="t">Submission Failed</div><div class="d">A validation code from the server, shown verbatim. Nothing is saved.</div></div>
+    <div class="outcome"><div class="t">Draft Save Failed</div><div class="d">Local storage itself failed. Rare and serious &mdash; the work is at risk.</div></div>
+  </div>
+
+  <div class="note warn">
+    <h4>Failure and offline are treated differently on purpose</h4>
+    <p>
+      A <em>rejection</em> means the data is wrong, so queueing it would only replay the same rejection
+      forever &mdash; the agent must fix it now. A <em>timeout</em> or a missing connection says nothing
+      about the data, so it is kept and retried. Only the No Access path is persisted before the attempt;
+      that mission is the one most often captured in exactly the places with no signal.
+    </p>
+  </div>
+</section>
+
+<!-- ============ 11 ============ -->
+<section id="offline">
+  <span class="h2num">11</span>
+  <h2>Online and offline</h2>
+
+  <p class="lede">
+    Agents work in basements, rural wards and steel meter rooms. The form assumes the network is absent
+    and treats every successful sync as a bonus.
+  </p>
+
+  <p>
+    Three things make this work. The <strong>transaction id is generated on the device</strong> when the form
+    opens, so an offline submission already owns its final identity &mdash; which is what lets the server
+    treat a replay as success rather than a duplicate. The <strong>warehouse</strong> holds premises, erfs,
+    meters and boundaries locally, so the map, the neighbourhood context and the duplicate warning all work
+    with no signal. And the <strong>submission queue</strong> in MMKV holds anything that could not be sent.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 800 250" role="img" aria-label="State machine for a queued submission: PENDING moves to SYNCING on a sync attempt, then to SUCCESS and removal, or back to FAILED and PENDING for retry.">
+      <defs>
+        <marker id="ar4" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+          <polygon points="0,0.5 8.5,4.5 0,8.5" fill="currentColor"/>
+        </marker>
+        <marker id="ar4g" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+          <polygon points="0,0.5 8.5,4.5 0,8.5" fill="#15803D"/>
+        </marker>
+      </defs>
+
+      <rect x="16" y="96" width="128" height="54" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <text x="80" y="120" font-size="12.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="IBM Plex Mono, monospace">PENDING</text>
+      <text x="80" y="138" font-size="10" text-anchor="middle" fill="currentColor" opacity=".6" font-family="Archivo, sans-serif">saved on device</text>
+
+      <line x1="144" y1="123" x2="212" y2="123" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar4)"/>
+      <text x="178" y="115" font-size="10" text-anchor="middle" fill="currentColor" opacity=".72" font-family="Archivo, sans-serif">sync</text>
+      <text x="178" y="140" font-size="10" text-anchor="middle" fill="currentColor" opacity=".72" font-family="Archivo, sans-serif">attempt</text>
+
+      <rect x="216" y="96" width="128" height="54" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <text x="280" y="120" font-size="12.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="IBM Plex Mono, monospace">SYNCING</text>
+      <text x="280" y="138" font-size="10" text-anchor="middle" fill="currentColor" opacity=".6" font-family="Archivo, sans-serif">uploading + calling</text>
+
+      <!-- success -->
+      <polyline points="344,110 400,110 400,54 452,54" fill="none" stroke="#15803D" stroke-width="1.6" marker-end="url(#ar4g)"/>
+      <text x="404" y="44" font-size="10.5" font-weight="700" fill="#15803D" font-family="Archivo, sans-serif">server confirms</text>
+      <rect x="456" y="28" width="128" height="52" rx="3" fill="none" stroke="#15803D" stroke-width="1.6"/>
+      <text x="520" y="51" font-size="12.5" font-weight="700" text-anchor="middle" fill="#15803D" font-family="IBM Plex Mono, monospace">SUCCESS</text>
+      <text x="520" y="68" font-size="10" text-anchor="middle" fill="#15803D" opacity=".8" font-family="Archivo, sans-serif">evidence cleaned up</text>
+
+      <line x1="584" y1="54" x2="640" y2="54" stroke="#15803D" stroke-width="1.5" marker-end="url(#ar4g)"/>
+      <rect x="644" y="28" width="140" height="52" rx="3" fill="none" stroke="#15803D" stroke-width="1.6" stroke-dasharray="4 3"/>
+      <text x="714" y="51" font-size="11.5" font-weight="700" text-anchor="middle" fill="#15803D" font-family="Archivo, sans-serif">removed</text>
+      <text x="714" y="68" font-size="10" text-anchor="middle" fill="#15803D" opacity=".8" font-family="Archivo, sans-serif">from the queue</text>
+
+      <!-- failure -->
+      <polyline points="344,136 400,136 400,196 452,196" fill="none" stroke="currentColor" stroke-width="1.6" marker-end="url(#ar4)"/>
+      <text x="404" y="186" font-size="10.5" font-weight="700" fill="currentColor" font-family="Archivo, sans-serif">offline, timeout or error</text>
+      <rect x="456" y="170" width="128" height="52" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <text x="520" y="193" font-size="12.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="IBM Plex Mono, monospace">FAILED</text>
+      <text x="520" y="210" font-size="10" text-anchor="middle" fill="currentColor" opacity=".62" font-family="Archivo, sans-serif">attempt count kept</text>
+
+      <!-- retry loop -->
+      <polyline points="456,196 80,196 80,150" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".7" marker-end="url(#ar4)"/>
+      <text x="268" y="212" font-size="10.5" text-anchor="middle" fill="currentColor" opacity=".7" font-family="Archivo, sans-serif">retried automatically, or edited and resubmitted by the agent</text>
+    </svg>
+    <figcaption>
+      <b>Nothing leaves the queue until the server has confirmed it.</b> Only a genuine success removes the
+      item and cleans up its stored evidence; every other ending keeps the work on the device with its
+      attempt history intact. The agent can reopen any queued draft, correct it, and submit again.
+    </figcaption>
+  </figure>
+
+  <h3>What differs offline</h3>
+  <ul>
+    <li><strong>Photographs stay on the device</strong> as local file URIs and upload only at sync time. No Access evidence is additionally copied into a dedicated app directory so it survives the OS clearing its caches.</li>
+    <li><strong>The duplicate check is local only</strong> &mdash; the authoritative check runs when the queue drains, so a duplicate can surface hours after capture.</li>
+    <li><strong>The map still works.</strong> Boundaries and neighbourhood context come from the warehouse.</li>
+    <li><strong>One sync at a time.</strong> A second attempt while one is running is refused with <code>QUEUE_BUSY</code> and rescheduled.</li>
+  </ul>
+</section>
+
+<!-- ============ 12 ============ -->
+<section id="after">
+  <span class="h2num">12</span>
+  <h2>After submit: how it becomes a registry asset</h2>
+
+  <p>
+    A successful submission writes a document to <code>trns</code>. That write fires a trigger, and the
+    trigger is what turns a transaction into a meter the rest of the system can see.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 840 210" role="img" aria-label="Data flow after submission: the form calls the callable, which validates and writes a transaction document; a create trigger then normalises the meter number and upserts the meter master registry, which feeds dashboards and reports.">
+      <defs>
+        <marker id="ar5" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+          <polygon points="0,0.5 8.5,4.5 0,8.5" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <rect x="10" y="72" width="126" height="60" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <text x="73" y="97" font-size="12" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">Device</text>
+      <text x="73" y="114" font-size="10" text-anchor="middle" fill="currentColor" opacity=".6" font-family="Archivo, sans-serif">payload + urls</text>
+
+      <line x1="136" y1="102" x2="186" y2="102" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar5)"/>
+
+      <rect x="190" y="72" width="150" height="60" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <text x="265" y="90" font-size="11.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">Callable</text>
+      <text x="265" y="107" font-size="10" text-anchor="middle" fill="currentColor" opacity=".64" font-family="Archivo, sans-serif">validate &middot; premise</text>
+      <text x="265" y="122" font-size="10" text-anchor="middle" fill="currentColor" opacity=".64" font-family="Archivo, sans-serif">idempotency &middot; duplicate</text>
+
+      <line x1="340" y1="102" x2="390" y2="102" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar5)"/>
+      <text x="365" y="94" font-size="10" text-anchor="middle" fill="currentColor" opacity=".7" font-family="Archivo, sans-serif">writes</text>
+
+      <rect x="394" y="72" width="126" height="60" rx="3" fill="none" stroke="#1E40AF" stroke-width="1.8"/>
+      <text x="457" y="97" font-size="12" font-weight="700" text-anchor="middle" fill="#1E40AF" font-family="IBM Plex Mono, monospace">trns/{id}</text>
+      <text x="457" y="114" font-size="10" text-anchor="middle" fill="#1E40AF" opacity=".8" font-family="Archivo, sans-serif">the evidence record</text>
+
+      <line x1="520" y1="102" x2="570" y2="102" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar5)"/>
+      <text x="545" y="94" font-size="10" text-anchor="middle" fill="currentColor" opacity=".7" font-family="Archivo, sans-serif">on create</text>
+
+      <rect x="574" y="72" width="150" height="60" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <text x="649" y="90" font-size="11.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Archivo, sans-serif">Trigger</text>
+      <text x="649" y="107" font-size="10" text-anchor="middle" fill="currentColor" opacity=".64" font-family="Archivo, sans-serif">normalise meter no,</text>
+      <text x="649" y="122" font-size="10" text-anchor="middle" fill="currentColor" opacity=".64" font-family="Archivo, sans-serif">re-validate, upsert</text>
+
+      <polyline points="649,132 649,176 460,176" fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar5)"/>
+      <rect x="300" y="152" width="156" height="48" rx="3" fill="none" stroke="#15803D" stroke-width="1.7"/>
+      <text x="378" y="172" font-size="11.5" font-weight="700" text-anchor="middle" fill="#15803D" font-family="IBM Plex Mono, monospace">meter_master</text>
+      <text x="378" y="189" font-size="10" text-anchor="middle" fill="#15803D" opacity=".8" font-family="Archivo, sans-serif">the registry asset</text>
+
+      <line x1="300" y1="176" x2="196" y2="176" stroke="currentColor" stroke-width="1.4" opacity=".75" marker-end="url(#ar5)"/>
+      <text x="150" y="172" font-size="10.5" text-anchor="middle" fill="currentColor" opacity=".75" font-family="Archivo, sans-serif">dashboards,</text>
+      <text x="150" y="187" font-size="10.5" text-anchor="middle" fill="currentColor" opacity=".75" font-family="Archivo, sans-serif">reports, next sync</text>
+
+      <text x="649" y="46" font-size="10" text-anchor="middle" fill="currentColor" opacity=".55" font-family="Archivo, sans-serif">skipped for No Access &mdash; no asset was seen</text>
+      <line x1="649" y1="52" x2="649" y2="68" stroke="currentColor" stroke-width="1" opacity=".35" stroke-dasharray="3 3"/>
+    </svg>
+    <figcaption>
+      <b>The transaction is the evidence; the master record is the asset.</b> The trigger only runs for
+      submissions with access and a real asset, so a No Access transaction is preserved as proof of the
+      visit without ever creating a meter.
+    </figcaption>
+  </figure>
+
+  <h3>How the agent gets the information back</h3>
+  <ul>
+    <li><strong>Immediately</strong> &mdash; the success modal, or a named failure. The queue screen shows anything still outstanding, with its status and attempt count.</li>
+    <li><strong>On the next warehouse sync</strong> &mdash; the discovered meter appears in the local dataset, so it shows on the map, counts toward premise statistics, and will itself trigger the duplicate warning for anyone who tries to discover it again.</li>
+    <li><strong>In the back office</strong> &mdash; the web application reads the same transactions for registries, dashboards and activity reports, where discoveries are counted per agent.</li>
+  </ul>
+</section>
+
+<!-- ============ 13 ============ -->
+<section id="gaps">
+  <span class="h2num">13</span>
+  <h2>Known gaps</h2>
+
+  <p class="lede">
+    Two things found while documenting the form that are worth acting on rather than describing.
+  </p>
+
+  <div class="note bug">
+    <h4>A water meter with an &ldquo;Other&rdquo; manufacturer cannot be submitted</h4>
+    <p>
+      The water manufacturer list offers <em>Other</em>, but the water section renders no follow-up text
+      box, and the submit-time canonicalisation that converts <em>Other</em> into typed text runs only for
+      electricity. The literal string <code>"Other"</code> is therefore transmitted &mdash; and the server
+      rejects exactly that with <code>NON_CANONICAL_MANUFACTURER_OTHER</code>.
+    </p>
+    <p>
+      An agent who meets a water meter from an unlisted manufacturer has no way through: the field passes
+      client validation and fails on the server every time, including on retry from the queue. The fix is
+      to give water the same <em>Other</em> text input and canonicalisation electricity already has.
+    </p>
+  </div>
+
+  <div class="note warn">
+    <h4>The submit-timeout comment does not match the code</h4>
+    <p>
+      The block comment above the submit path describes a thirty-second fallback, while the implementation
+      passes fifteen seconds throughout. The behaviour is fifteen; the comment is stale. Worth correcting
+      before someone tunes the wrong number.
+    </p>
+  </div>
+</section>
+
+<!-- ============ 14 ============ -->
+<section id="dev">
+  <span class="h2num">14</span>
+  <h2>Developer notes</h2>
+
+  <h3>Where the code lives</h3>
+  <div class="files">
+    <span class="h">Mobile &mdash; the form</span>
+    <span class="p">src/features/meters/FormMeterDiscovery.js</span> <span class="c">&mdash; schemas, initial values, submit, 2,528 lines</span><br>
+    <span class="p">src/features/meters/formOptions.js</span> <span class="c">&mdash; every option list and photoRequired flag</span><br>
+    <span class="p">src/features/meters/noAccessReasons.js</span> <span class="c">&mdash; the eight NA reasons</span><br>
+    <span class="p">src/features/meters/remainingCreditContract.js</span> <span class="c">&mdash; hydrate / canonicalise / validate</span><br>
+    <span class="p">src/features/meters/FormInputMeterNo.js</span> <span class="c">&mdash; scanner + local duplicate warning</span><br>
+    <span class="p">src/features/meters/ForensicFooter.js</span> <span class="c">&mdash; submit state, reset guard</span>
+
+    <span class="h">Mobile &mdash; sections and controls</span>
+    <span class="p">components/forms/ElectricitySections.js</span> <span class="c">&mdash; shared with Meter Installation</span><br>
+    <span class="p">components/forms/WaterSections.js</span><br>
+    <span class="p">components/forms/IrepsNoAccessSection.js</span><br>
+    <span class="p">components/forms/RemainingCreditSection.js</span><br>
+    <span class="p">components/forms/AnomalySelect.js</span> <span class="c">&middot; AnomalyDetailSelect.js &middot; OtherAnomalySection.js</span><br>
+    <span class="p">components/media/IrepsCamera.js</span> <span class="c">&mdash; where the forensic media object is built</span>
+
+    <span class="h">Mobile &mdash; entry and queue</span>
+    <span class="p">components/MissionDiscoveryModal.js</span> <span class="c">&mdash; the three-button gate</span><br>
+    <span class="p">app/(tabs)/premises/form.js</span> <span class="c">&mdash; route shell</span><br>
+    <span class="p">src/services/processSubmissionQueue.js</span><br>
+    <span class="p">src/utils/persistNoAccessMeterDiscoveryMedia.js</span>
+
+    <span class="h">Backend</span>
+    <span class="p">functions/meterDiscovery/validation.js</span> <span class="c">&mdash; the mirrored rule set</span><br>
+    <span class="p">functions/index.js</span> <span class="c">&mdash; onMeterDiscoveryCallable, onMeterDiscoveryCreated</span>
+  </div>
+
+  <h3>Payload shape</h3>
+  <p>
+    The transmitted document is not the form state. Before sending, the form canonicalises
+    <em>Other</em> values, strips helper fields, moves water readings into <code>mreadings[]</code> or
+    <code>treadings[]</code>, converts every <code>undefined</code> to <code>null</code>, and stamps
+    <code>meterDiscoveryContractVersion: 2</code>.
+  </p>
+
+  <div class="files">
+    <span class="p">{ id, meterType, meterDiscoveryContractVersion: 2,</span><br>
+    <span class="p">&nbsp;&nbsp;accessData: { trnType, erfId, erfNo, parents{…}, premise{…}, access{…} },</span><br>
+    <span class="p">&nbsp;&nbsp;ast: { astData{…}, anomalies{…}, location{…}, ogs{…}, normalisation{…} } | null,</span><br>
+    <span class="p">&nbsp;&nbsp;mreadings: [], treadings: [],</span> <span class="c">// water only</span><br>
+    <span class="p">&nbsp;&nbsp;media: [ … ], status: { state, id, detail },</span><br>
+    <span class="p">&nbsp;&nbsp;fieldComment: { text }, serviceProvider: { id, name }, metadata: {…} }</span>
+  </div>
+
+  <p>
+    The service provider is resolved by walking subcontractor relationships upward until the managing
+    contractor is found, so work is always attributed to the accountable party rather than whichever
+    subcontractor employed the agent.
+  </p>
+
+  <h3>Server failure codes</h3>
+  <p>Returned as <code>{ success: false, code, message, trnId: "NAv" }</code> &mdash; never thrown.</p>
+  <div class="codes">
+    <div>INVALID_TRN_ID</div><div>INVALID_TRN_TYPE</div>
+    <div>INVALID_ACCESS_VALUE</div><div>INVALID_METER_TYPE</div>
+    <div>INVALID_NO_ACCESS_METER_TYPE</div><div>NO_ACCESS_REASON_REQUIRED</div>
+    <div>NO_ACCESS_PHOTO_REQUIRED</div><div>MISSING_REQUIRED_FIELD</div>
+    <div>MISSING_REQUIRED_PARENT</div><div>INVALID_PREMISE_ID</div>
+    <div>PREMISE_NOT_FOUND</div><div>INVALID_METER_GPS</div>
+    <div>INVALID_METER_CATEGORY</div><div>INVALID_METER_SUBTYPE</div>
+    <div>INVALID_METER_STATUS</div><div>INVALID_METER_PHASE</div>
+    <div>METER_PLACEMENT_REQUIRED</div><div>INVALID_METER_PLACEMENT</div>
+    <div>METER_PHOTO_REQUIRED</div><div>ANOMALY_PHOTO_REQUIRED</div>
+    <div>INVALID_OTHER_ANOMALY</div><div>DUPLICATE_OTHER_ANOMALY</div>
+    <div>METER_READING_REQUIRED</div><div>METER_READING_PHOTO_REQUIRED</div>
+    <div>TOKEN_READING_REQUIRED</div><div>TOKEN_READING_PHOTO_REQUIRED</div>
+    <div>INVALID_REMAINING_CREDIT</div><div>REMAINING_CREDIT_PHOTO_REQUIRED</div>
+    <div>REMAINING_CREDIT_COMMENT_REQUIRED</div><div>REMAINING_CREDIT_COMMENT_NOT_ALLOWED</div>
+    <div>SEAL_NUMBER_OR_COMMENT_REQUIRED</div><div>SEAL_PHOTO_REQUIRED</div>
+    <div>KEYPAD_SERIAL_OR_COMMENT_REQUIRED</div><div>KEYPAD_PHOTO_REQUIRED</div>
+    <div>CB_SIZE_OR_COMMENT_REQUIRED</div><div>CB_PHOTO_REQUIRED</div>
+    <div>OFF_GRID_STATUS_REQUIRED</div><div>OFF_GRID_PHOTO_REQUIRED</div>
+    <div>NORMALISATION_ACTIONS_REQUIRED</div><div>INVALID_NORMALISATION_ACTION</div>
+    <div>DUPLICATE_NORMALISATION_ACTION</div><div>NORMALISATION_NONE_NOT_EXCLUSIVE</div>
+    <div>NON_CANONICAL_MANUFACTURER_OTHER</div><div>NON_CANONICAL_SEAL_COMMENT_OTHER</div>
+    <div>NON_CANONICAL_KEYPAD_COMMENT_OTHER</div><div>NON_CANONICAL_CB_COMMENT_OTHER</div>
+  </div>
+
+  <h3>Two compatibility notes</h3>
+  <ul>
+    <li>The server still accepts two retired normalisation actions &mdash; <em>Meter Disconnected</em> and
+    <em>Meter Reconnected</em> &mdash; so submissions queued on older builds can still drain. They are not
+    offered in the app.</li>
+    <li><code>ElectricitySections</code> is shared with Meter Installation and branches on the transaction id
+    prefix. Changes there affect both forms; the <code>isDiscovery</code> prop gates the discovery-only
+    fields.</li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <span>IREPS &middot; Meter Discovery</span>
+  <span>Contract version 2</span>
+  <span>Compiled from source, September 2026</span>
+</footer>
+
+</div>
+
+</body>
+</html>
