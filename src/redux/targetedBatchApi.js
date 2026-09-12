@@ -319,18 +319,29 @@ function normalizeTargetedBatchRow(row = {}) {
   };
 }
 
+// Sales tbRefs entries carry the batch ID in `id`; the legacy `tbId` key is still read (Sales schema TB8).
+function readTbRefBatchId(reference) {
+  if (!reference || typeof reference !== "object" || Array.isArray(reference)) return "";
+  return normalizeUpper(readFirstString(reference.id, reference.tbId));
+}
+
 export function enrichTargetedBatchRowFromSales(row = {}, sales = null) {
   const salesDocId = cleanText(row?.salesAllMeterId);
+  const rowTbId = normalizeUpper(row?.tbId);
   let noAccessSourceStatus = "OK";
   let noAccessCount = 0;
   let fieldWorkMeterId = null;
   if (!salesDocId) noAccessSourceStatus = "SALES_DOCUMENT_ID_MISSING";
   else if (!sales) noAccessSourceStatus = "SALES_DOCUMENT_MISSING";
+  else if (sales.tbRefs != null && !Array.isArray(sales.tbRefs)) noAccessSourceStatus = "TB_REFERENCES_INVALID";
   else {
-    const tbRef = Array.isArray(sales?.tbRefs)
-      ? sales.tbRefs.find((item) => cleanText(item?.id) === cleanText(row?.tbId))
-      : null;
-    if (!tbRef) noAccessSourceStatus = "TB_REFERENCE_MISSING";
+    // Exactly one entry may link this meter to the row's batch; never pick a winner among several (TB-R037).
+    const matches = rowTbId
+      ? (sales.tbRefs || []).filter((item) => readTbRefBatchId(item) === rowTbId)
+      : [];
+    const tbRef = matches.length === 1 ? matches[0] : null;
+    if (matches.length > 1) noAccessSourceStatus = "TB_REFERENCE_AMBIGUOUS";
+    else if (!tbRef) noAccessSourceStatus = "TB_REFERENCE_MISSING";
     else if (tbRef.fieldWork != null && (typeof tbRef.fieldWork !== "object" || Array.isArray(tbRef.fieldWork))) {
       noAccessSourceStatus = "FIELDWORK_INVALID";
     } else {
