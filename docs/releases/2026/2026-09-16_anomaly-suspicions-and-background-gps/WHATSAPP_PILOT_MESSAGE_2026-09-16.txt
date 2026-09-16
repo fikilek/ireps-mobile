@@ -1,0 +1,48 @@
+*iREPS MOBILE — NEW RELEASE*
+*16 September 2026*
+
+A new iREPS Mobile release is ready. Please install it before you start work.
+
+*WHAT'S NEW*
+
+• *Meter Ok now has three choices*
+When you select *Meter Ok*, you now choose what kind of Ok it is:
+
+→ *Operationally Ok* — the meter is fine, nothing suspicious. Nothing changes for you here.
+→ *Bridge Suspicion* — the meter works, but you believe it has been bridged.
+→ *Bypass Suspicion* — the meter works, but you believe it has been bypassed.
+
+Until now Meter Ok had only one option, so there was no way to report a meter that works but looks interfered with.
+
+• *A suspicion needs a photo*
+If you choose *Bridge Suspicion* or *Bypass Suspicion*, iREPS will ask for an anomaly photo and *will not let you submit without it*.
+
+Please take a clear picture of whatever made you suspicious. A suspicion with no picture cannot be acted on later, and the app will not accept it.
+
+*Operationally Ok does not need a photo.* Nothing has changed there.
+
+• *Suspicions show in orange*
+A Meter Ok carrying a suspicion now shows in *orange* instead of green, so the office sees it immediately.
+
+• *Background location fix*
+On some phones the app was crashing while tracking your location in the background, and on those phones your location may not have been reaching the office at all. This has been repaired in this version.
+
+*PLEASE TEST AND REPORT*
+
+Please use the app normally and report anything that behaves differently from the previous version — crashes, freezing, slow performance, media problems, GPS problems or failed submissions.
+
+Two things in particular:
+
+• Try *Bridge Suspicion* or *Bypass Suspicion* and confirm the app asks you for the photo.
+• Leave your phone locked for a while during the day with the app running, then tell us whether your location kept reaching the office.
+
+*IMPORTANT*
+
+This update only reaches your phone *if you install it*. There is no automatic update for this version.
+
+If you do not install it, you will still see only *Operationally Ok* under Meter Ok and you will not be able to report a suspicion at all.
+
+Please confirm once you have installed it.
+
+*DOWNLOAD:*
+https://expo.dev/accounts/ireps/projects/maps1/builds/fdd0d2e6-3a32-4daf-b121-aa25c3ea0101

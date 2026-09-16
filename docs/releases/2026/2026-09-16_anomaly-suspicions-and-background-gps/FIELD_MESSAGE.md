@@ -32,6 +32,8 @@
 
 ---
 
+The ready-to-paste WhatsApp version of this message, with the download link, is in `WHATSAPP_PILOT_MESSAGE_2026-09-16.txt` alongside this file.
+
 ## Notes for whoever sends this
 
 - Send only after the device verification in `VERIFICATION.md` passes, especially the background GPS checks.
