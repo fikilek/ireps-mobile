@@ -1,0 +1,66 @@
+*iREPS MOBILE — UPDATED PILOT RELEASE*
+*27 August 2026*
+
+A new updated iREPS Mobile Release Candidate is ready for pilot testing.
+
+This release includes the previous pilot changes plus the latest Meter Discovery improvements.
+
+*WHAT’S NEW*
+
+• *Disconnection & Reconnection*
+Improved DCN/RCN workflow and lifecycle handling. Please make sure both are tested in this pilot.
+
+• *No Access*
+Standardised No Access reasons across the relevant field workflows.
+
+• *Ward ERF Sync*
+Ward ERF Sync is available again from the Admin menu.
+
+• *Meter Discovery — Normalisation*
+Simplified the Normalisation options and removed redundant choices.
+
+• *TRNS*
+Improved meter identification so the correct transactions are shown for the selected meter.
+
+• *Meter Discovery — General Comment*
+You can now add an optional written comment, photo, voice clip or video clip.
+
+• *Voice & Video Preview*
+Voice and video evidence can now be opened in full-screen preview. This also applies to Disconnection and Reconnection.
+
+• *Prepaid Remaining Credit*
+Remaining Credit is now captured for prepaid electricity and water meters.
+
+If the balance is visible:
+→ enter the Remaining Credit
+→ capture a photo
+
+If the balance cannot be obtained:
+→ select a reason
+
+If *Other* is selected:
+→ enter an explanation
+
+A balance of *0* is valid and still requires a photo.
+
+*IMPORTANT — PILOT ONLY*
+
+This version is *not yet approved for general field rollout*.
+
+Please test normal field work thoroughly, especially:
+
+• Disconnection
+• Reconnection
+• Prepaid Meter Discovery
+• Remaining Credit
+• General Comment photo/voice/video
+• No Access
+• TRN submissions
+• Ward ERF Sync
+
+Please report any crashes, freezing, slow performance, media problems, GPS problems, failed submissions, or anything behaving differently from the previous version.
+
+*Do not share this APK with other field users until the pilot has been approved.*
+
+*DOWNLOAD:*
+https://expo.dev/accounts/ireps/projects/maps1/builds/70f9892e-ab30-4458-9c30-3bf6595d3cb9
