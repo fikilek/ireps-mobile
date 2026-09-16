@@ -16,8 +16,11 @@ export const AnomalyDetailSelect = ({ anomalies, disabled }) => {
     return selectedAnomalyData?.anomalyDetails || [];
   }, [anomalies, currentAnomaly]);
 
-  const isMeterOk = currentAnomaly === "Meter Ok";
-  const meterOkDetail = isMeterOk ? options[0] || "" : "";
+  // An anomaly with a single detail is system-populated; one with a real choice
+  // (Meter Ok now has three) must be left to the user, or the picker would lock
+  // on the first option and the suspicions could never be selected.
+  const isSingleDetail = options.length === 1;
+  const onlyDetail = isSingleDetail ? options[0] || "" : "";
 
   useEffect(() => {
     if (!currentAnomaly) {
@@ -29,10 +32,10 @@ export const AnomalyDetailSelect = ({ anomalies, disabled }) => {
     }
 
     // Safety net for edit mode, late lookup hydration, or cached forms:
-    // if Meter Ok is selected, the detail must be system-populated.
-    if (isMeterOk) {
-      if (meterOkDetail && currentDetail !== meterOkDetail) {
-        setFieldValue("ast.anomalies.anomalyDetail", meterOkDetail, true);
+    // where there is only one detail, it is system-populated.
+    if (isSingleDetail) {
+      if (onlyDetail && currentDetail !== onlyDetail) {
+        setFieldValue("ast.anomalies.anomalyDetail", onlyDetail, true);
       }
 
       return;
@@ -46,21 +49,21 @@ export const AnomalyDetailSelect = ({ anomalies, disabled }) => {
   }, [
     currentAnomaly,
     currentDetail,
-    isMeterOk,
-    meterOkDetail,
+    isSingleDetail,
+    onlyDetail,
     options,
     setFieldValue,
   ]);
 
-  const isSystemControlledMeterOkDetail =
-    isMeterOk && !!meterOkDetail && currentDetail === meterOkDetail;
+  const isSystemControlledDetail =
+    isSingleDetail && !!onlyDetail && currentDetail === onlyDetail;
 
   return (
     <FormSelect
       label="ANOMALY DETAIL"
       name="ast.anomalies.anomalyDetail"
       options={options}
-      disabled={disabled || isSystemControlledMeterOkDetail}
+      disabled={disabled || isSystemControlledDetail}
     />
   );
 };

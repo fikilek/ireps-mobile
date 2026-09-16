@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { anomalyTone } from "../meters/formOptions";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
@@ -578,6 +579,16 @@ const AstItem = ({ item }) => {
   const meterNo = item.ast?.astData?.astNo || "NO METER NO";
   const manufacturer = item.ast?.astData?.astManufacturer || "Unknown";
   const anomaly = item.ast?.anomalies?.anomaly || "Meter Ok";
+  // A Meter Ok with a bridge or bypass suspicion reads amber, not green.
+  const anomalyState = anomalyTone(anomaly, item.ast?.anomalies?.anomalyDetail);
+  const anomalyIcon =
+    anomalyState === "ok" ? "check-circle" : "alert-circle";
+  const anomalyColor =
+    anomalyState === "ok"
+      ? "#10B981"
+      : anomalyState === "suspicion"
+        ? "#F59E0B"
+        : "#EF4444";
 
   const meterStatusState = item?.status?.state || "UNKNOWN";
   const meterStatusConfig = getMeterStatusConfig(meterStatusState);
@@ -1282,14 +1293,14 @@ const AstItem = ({ item }) => {
           <View style={styles.statusStack}>
             <View style={styles.statusLine}>
               <MaterialCommunityIcons
-                name={anomaly === "Meter Ok" ? "check-circle" : "alert-circle"}
+                name={anomalyIcon}
                 size={14}
-                color={anomaly === "Meter Ok" ? "#10B981" : "#EF4444"}
+                color={anomalyColor}
               />
               <Text
                 style={[
                   styles.statusLabel,
-                  { color: anomaly === "Meter Ok" ? "#10B981" : "#EF4444" },
+                  { color: anomalyColor },
                 ]}
                 numberOfLines={1}
               >

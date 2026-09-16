@@ -45,6 +45,7 @@ import {
 import { ForensicFooter } from "./ForensicFooter";
 import { isCompleteNoAccessReason } from "./noAccessReasons";
 import {
+  anomalyPhotoRequired,
   getFormOptionValues,
   isFormOptionPhotoRequired,
 } from "./formOptions";
@@ -626,10 +627,9 @@ export default function FormMeterInstallation() {
           return this.createError({ message: "Token reading photo required" });
         }
 
-        // 🚩 Rule 3: Anomaly Photo (Only trigger if an actual anomaly is selected)
+        // 🚩 Rule 3: Anomaly Photo — every detail except Operationally Ok.
         if (
-          anomaly &&
-          anomaly !== "Meter Ok" &&
+          anomalyPhotoRequired(anomaly, ast?.anomalies?.anomalyDetail) &&
           !value?.some((m) => m.tag === "anomalyPhoto")
         ) {
           return this.createError({ message: "Anomaly photo required" });
@@ -899,8 +899,7 @@ export default function FormMeterInstallation() {
           }
 
           if (
-            anomaly &&
-            anomaly !== "Meter Ok" &&
+            anomalyPhotoRequired(anomaly, ast?.anomalies?.anomalyDetail) &&
             !value?.some((m) => m.tag === "anomalyPhoto")
           ) {
             return this.createError({ message: "Anomaly photo required" });

@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { anomalyTone } from "../meters/formOptions";
 import { StyleSheet, Text, View } from "react-native";
 import { Chip, Divider } from "react-native-paper";
 import { TrnMiniMap } from "../../../components/maps/TrnMiniMap";
@@ -9,6 +10,8 @@ export default function TrnReportElec({ data }) {
   const normalisationActions = ast?.normalisation?.actionTaken || [];
   const anomaly = ast?.anomalies?.anomaly;
   const anomalyDetail = ast?.anomalies?.anomalyDetail;
+  // Meter Ok with a bridge or bypass suspicion reads amber, not green.
+  const tone = anomalyTone(anomaly, anomalyDetail);
   const gps = ast?.location?.gps;
 
   return (
@@ -76,19 +79,19 @@ export default function TrnReportElec({ data }) {
         style={[
           styles.section,
           styles.anomalyBox,
-          { borderColor: anomaly === "Meter Ok" ? "#E2E8F0" : "#FECACA" },
+          { borderColor: tone === "ok" ? "#E2E8F0" : tone === "suspicion" ? "#FDE68A" : "#FECACA" },
         ]}
       >
         <View style={styles.row}>
           <MaterialCommunityIcons
-            name={anomaly === "Meter Ok" ? "check-decagram" : "alert-octagon"}
+            name={tone === "ok" ? "check-decagram" : "alert-octagon"}
             size={20}
-            color={anomaly === "Meter Ok" ? "#10B981" : "#EF4444"}
+            color={tone === "ok" ? "#10B981" : tone === "suspicion" ? "#F59E0B" : "#EF4444"}
           />
           <Text
             style={[
               styles.anomalyTitle,
-              { color: anomaly === "Meter Ok" ? "#10B981" : "#B91C1C" },
+              { color: tone === "ok" ? "#10B981" : tone === "suspicion" ? "#B45309" : "#B91C1C" },
             ]}
           >
             {anomaly}

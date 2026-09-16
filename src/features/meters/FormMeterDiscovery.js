@@ -58,6 +58,7 @@ import {
   hydrateRemainingCreditMeter,
 } from "./remainingCreditContract";
 import {
+  anomalyPhotoRequired,
   getFormOptionValues,
   getFormOptions,
   isFormOptionPhotoRequired,
@@ -764,10 +765,11 @@ export default function FormMeterDiscovery() {
           return this.createError({ message: "Token reading photo required" });
         }
 
-        // 🚩 Rule 3: Anomaly Photo (Only trigger if an actual anomaly is selected)
+        // 🚩 Rule 3: Anomaly Photo — required for every detail except
+        // Operationally Ok, so a Meter Ok bridge or bypass suspicion still
+        // carries the picture that proves it.
         if (
-          anomaly &&
-          anomaly !== "Meter Ok" &&
+          anomalyPhotoRequired(anomaly, ast?.anomalies?.anomalyDetail) &&
           !value?.some((m) => m.tag === "anomalyPhoto")
         ) {
           return this.createError({ message: "Anomaly photo required" });
@@ -1085,8 +1087,7 @@ export default function FormMeterDiscovery() {
           }
 
           if (
-            anomaly &&
-            anomaly !== "Meter Ok" &&
+            anomalyPhotoRequired(anomaly, ast?.anomalies?.anomalyDetail) &&
             !value?.some((m) => m.tag === "anomalyPhoto")
           ) {
             return this.createError({ message: "Anomaly photo required" });

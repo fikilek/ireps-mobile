@@ -102,8 +102,15 @@ const FORM_OPTIONS = Object.freeze({
 
   anomalies: Object.freeze([
     Object.freeze({
+      // Meter Ok carries three details: the meter works, but it may still be
+      // interfered with. The two suspicions need an anomaly photo (see
+      // anomalyPhotoRequired) — a suspicion without a picture proves nothing.
       anomaly: "Meter Ok",
-      anomalyDetails: Object.freeze(["Operationally Ok"]),
+      anomalyDetails: Object.freeze([
+        "Operationally Ok",
+        "Bridge Suspicion",
+        "Bypass Suspicion",
+      ]),
     }),
     Object.freeze({
       anomaly: "Meter Faulty",
@@ -168,6 +175,39 @@ export function getFormOptionValues(name) {
       return entry?.value;
     })
     .filter((value) => value !== undefined && value !== null && value !== "");
+}
+
+// The anomaly details that need no photo. Everything else does — including the
+// Meter Ok suspicions. The server keeps the same list in
+// functions/meterDiscovery/validation.js; the two must agree or a submission
+// that passes on the phone is refused at the back.
+export const ANOMALY_DETAILS_WITHOUT_PHOTO = Object.freeze(["Operationally Ok"]);
+
+// A Meter Ok carrying a suspicion is not a healthy meter: it reads amber, not
+// the green tick, wherever an anomaly is shown.
+export const METER_OK_SUSPICION_DETAILS = Object.freeze([
+  "Bridge Suspicion",
+  "Bypass Suspicion",
+]);
+
+export function anomalyTone(anomaly, anomalyDetail) {
+  const name = String(anomaly || "").trim();
+  if (name !== "Meter Ok") return name ? "alert" : "ok";
+  return METER_OK_SUSPICION_DETAILS.includes(String(anomalyDetail || "").trim())
+    ? "suspicion"
+    : "ok";
+}
+
+export function anomalyPhotoRequired(anomaly, anomalyDetail) {
+  const name = String(anomaly || "").trim();
+  if (!name) return false;
+
+  const detail = String(anomalyDetail || "").trim();
+  // No detail: keep the old anomaly-only rule, so a queued or legacy
+  // submission captured before this change is not refused for want of a photo.
+  if (!detail) return name !== "Meter Ok";
+
+  return !ANOMALY_DETAILS_WITHOUT_PHOTO.includes(detail);
 }
 
 export function isFormOptionPhotoRequired(name, value) {

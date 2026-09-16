@@ -14,9 +14,10 @@ export const AnomalySelect = ({ anomalies, disabled }) => {
 
   const handleAnomalyChange = (selectedAnomaly) => {
     const details = getDetailsForAnomaly(selectedAnomaly);
-    const isMeterOk = selectedAnomaly === "Meter Ok";
 
-    const nextAnomalyDetail = isMeterOk ? details[0] || "" : "";
+    // Only fill the detail in when there is nothing to choose. Meter Ok now
+    // offers Operationally Ok and the two suspicions, so the user picks.
+    const nextAnomalyDetail = details.length === 1 ? details[0] || "" : "";
 
     setValues(
       {
