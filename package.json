@@ -9,7 +9,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "ci:verify-mobile-env": "node scripts/ci/verify-mobile-env.cjs"
+    "ci:verify-mobile-env": "node scripts/ci/verify-mobile-env.cjs",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -44,6 +45,7 @@
     "expo-symbols": "~1.0.8",
     "expo-system-ui": "~6.0.9",
     "expo-task-manager": "~14.0.9",
+    "expo-updates": "~29.0.20",
     "expo-video": "~3.0.16",
     "expo-web-browser": "~15.0.11",
     "firebase": "^12.7.0",
@@ -74,6 +76,8 @@
     "@types/react": "~19.1.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
+    "patch-package": "^8.0.1",
+    "postinstall-postinstall": "^2.1.0",
     "typescript": "~5.9.2"
   },
   "private": true

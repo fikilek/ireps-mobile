@@ -1,0 +1,194 @@
+diff --git a/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskManagerUtils.java b/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskManagerUtils.java
+index c54fb7d..2bca1e4 100644
+--- a/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskManagerUtils.java
++++ b/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskManagerUtils.java
+@@ -15,15 +15,11 @@ import android.os.PersistableBundle;
+ import android.util.Log;
+ 
+ import java.util.ArrayList;
+-import java.util.Collections;
+-import java.util.Comparator;
+ import java.util.List;
+ import java.util.Map;
+-import java.util.Set;
+ 
+ import androidx.annotation.NonNull;
+ import androidx.annotation.Nullable;
+-import androidx.collection.ArraySet;
+ 
+ import expo.modules.interfaces.taskManager.TaskExecutionCallback;
+ import expo.modules.interfaces.taskManager.TaskInterface;
+@@ -40,7 +36,13 @@ public class TaskManagerUtils implements TaskManagerUtilsInterface {
+ 
+   private static final int DEFAULT_OVERRIDE_DEADLINE = 60 * 1000; // 1 minute
+ 
+-  private static final Set<TaskInterface> sTasksReschedulingJob = new ArraySet<>();
++  // Leave buffer before Android's job limit to avoid edge cases.
++  private static final int JOB_LIMIT_BUFFER = 10;
++
++  private static int getJobLimit() {
++    // Android 12 (API 31+) increased limit from 100 to 150
++    return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? 150 : 100;
++  }
+ 
+   //region TaskManagerUtilsInterface
+ 
+@@ -100,18 +102,6 @@ public class TaskManagerUtils implements TaskManagerUtilsInterface {
+   }
+ 
+   //endregion TaskManagerUtilsInterface
+-  //region static helpers
+-
+-  static boolean notifyTaskJobCancelled(TaskInterface task) {
+-    boolean isRescheduled = sTasksReschedulingJob.contains(task);
+-
+-    if (isRescheduled) {
+-      sTasksReschedulingJob.remove(task);
+-    }
+-    return isRescheduled;
+-  }
+-
+-  //endregion static helpers
+   //region private helpers
+ 
+   private void updateOrScheduleJob(Context context, TaskInterface task, List<PersistableBundle> data) {
+@@ -129,47 +119,41 @@ public class TaskManagerUtils implements TaskManagerUtilsInterface {
+       pendingJobs = new ArrayList<>();
+     }
+ 
+-    Collections.sort(pendingJobs, new Comparator<JobInfo>() {
+-      @Override
+-      public int compare(JobInfo a, JobInfo b) {
+-        return Integer.compare(a.getId(), b.getId());
+-      }
+-    });
+-
+-    // We will be looking for the lowest number that is not being used yet.
++    // Find the newest job for this task (for merging if needed) and the next free ID.
+     int newJobId = 0;
++    JobInfo newestJob = null;
+ 
+     for (JobInfo jobInfo : pendingJobs) {
+       int jobId = jobInfo.getId();
+-
++      if (jobId >= newJobId) {
++        newJobId = jobId + 1;
++      }
+       if (isJobInfoRelatedToTask(jobInfo, task)) {
+-        JobInfo mergedJobInfo = createJobInfoByAddingData(jobInfo, data);
+-
+-        // Add the task to the list of rescheduled tasks.
+-        sTasksReschedulingJob.add(task);
+-
+-        try {
+-          // Cancel jobs with the same ID to let them be rescheduled.
+-          jobScheduler.cancel(jobId);
+-
+-          // Reschedule job for given task.
+-          jobScheduler.schedule(mergedJobInfo);
+-        } catch (IllegalStateException e) {
+-          Log.e(this.getClass().getName(), "Unable to reschedule a job: " + e.getMessage());
++        if (newestJob == null || jobId > newestJob.getId()) {
++          newestJob = jobInfo;
+         }
+-        return;
+       }
+-      if (newJobId == jobId) {
+-        newJobId++;
++    }
++
++    // At Android's job limit? Merge into the newest job for this task.
++    if (pendingJobs.size() >= getJobLimit() - JOB_LIMIT_BUFFER && newestJob != null) {
++      Log.i(TAG, "Approaching job limit (" + pendingJobs.size() + "). Merging data for task '" + task.getName() + "'.");
++      try {
++        JobInfo mergedJobInfo = createJobInfoByAddingData(newestJob, data);
++        jobScheduler.cancel(newestJob.getId());
++        jobScheduler.schedule(mergedJobInfo);
++      } catch (IllegalStateException e) {
++        Log.e(this.getClass().getName(), "Unable to merge job: " + e.getMessage());
+       }
++      return;
+     }
+ 
++    // Under the limit: schedule a new job. Don't touch the jobs already pending.
+     try {
+-      // Given task doesn't have any pending jobs yet, create a new JobInfo and schedule it then.
+       JobInfo jobInfo = createJobInfo(context, task, newJobId, data);
+       jobScheduler.schedule(jobInfo);
+     } catch (IllegalStateException e) {
+-      Log.e(this.getClass().getName(), "Unable to schedule a new job: " + e.getMessage());
++      Log.e(this.getClass().getName(), "Unable to schedule job: " + e.getMessage());
+     }
+   }
+ 
+diff --git a/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskService.java b/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskService.java
+index 2b6c2fa..009225e 100644
+--- a/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskService.java
++++ b/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/TaskService.java
+@@ -220,7 +220,7 @@ public class TaskService implements SingletonModule, TaskServiceInterface {
+     }
+ 
+     // Invoke task callback
+-    TaskExecutionCallback taskCallback = sTaskCallbacks.get(eventId);
++    TaskExecutionCallback taskCallback = sTaskCallbacks.remove(eventId);
+ 
+     if (taskCallback != null) {
+       taskCallback.onFinished(response);
+@@ -232,6 +232,7 @@ public class TaskService implements SingletonModule, TaskServiceInterface {
+     // It may be called with null when the host activity is destroyed.
+     if (taskManager == null) {
+       sTaskManagers.remove(appScopeKey);
++      sHeadlessTaskManagers.remove(appScopeKey);
+       return;
+     }
+ 
+@@ -349,10 +350,7 @@ public class TaskService implements SingletonModule, TaskServiceInterface {
+ 
+     TaskInterface task = getTask(taskName, appScopeKey);
+ 
+-    // `notifyTaskJobCancelled` notifies TaskManagerUtils about a job for task being cancelled.
+-    // It returns `true` if the job has been intentionally cancelled to be rescheduled,
+-    // in that case we don't want to inform the consumer about cancellation.
+-    if (task != null && !TaskManagerUtils.notifyTaskJobCancelled(task)) {
++    if (task != null) {
+       TaskConsumerInterface consumer = task.getConsumer();
+ 
+       if (consumer == null) {
+@@ -603,9 +601,7 @@ public class TaskService implements SingletonModule, TaskServiceInterface {
+   private void invalidateAppRecord(String appScopeKey) {
+     HeadlessAppLoader appLoader = getAppLoader();
+     if (appLoader != null) {
+-      if (getAppLoader().invalidateApp(appScopeKey)) {
+-        sHeadlessTaskManagers.remove(appScopeKey);
+-      }
++      appLoader.invalidateApp(appScopeKey);
+     }
+   }
+ 
+diff --git a/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/Utils.java b/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/Utils.java
+index 36b4e57..92e8cf0 100644
+--- a/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/Utils.java
++++ b/node_modules/expo-task-manager/android/src/main/java/expo/modules/taskManager/Utils.java
+@@ -103,7 +103,10 @@ public class Utils {
+       for (int i = 0; i < json.length(); i++) {
+         Object value = json.get(i);
+ 
+-        if (value instanceof JSONArray) {
++        // Handle JSONObject.NULL - convert to actual Java null
++        if (value == JSONObject.NULL) {
++          value = null;
++        } else if (value instanceof JSONArray) {
+           value = jsonToList((JSONArray) value);
+         } else if (value instanceof JSONObject) {
+           value = jsonToMap((JSONObject) value);
+@@ -117,6 +120,10 @@ public class Utils {
+   }
+ 
+   public static Object jsonObjectToObject(Object json) {
++    // Handle JSONObject.NULL - convert to actual Java null
++    if (json == null || json == JSONObject.NULL) {
++      return null;
++    }
+     if (json instanceof JSONObject) {
+       return jsonToMap((JSONObject) json);
+     }
