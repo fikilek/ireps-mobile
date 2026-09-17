@@ -5,11 +5,13 @@ import {
   onSnapshot,
   orderBy,
   query,
+  snapshotEqual,
   where,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 
 import { db, functions } from "../firebase";
+import { resolveTargetedBatchSalesPoint } from "../features/targetedBatches/targetedBatchMapPoints";
 
 const EMPTY_TARGETED_BATCH_BUCKET_DATA = {
   buckets: [],
@@ -193,6 +195,9 @@ function normalizeTargetedBatchBucket(batch = {}) {
       : selectionReason,
 
     status: normalizeUpper(batch?.status),
+    schemaVersion: cleanText(batch?.schemaVersion) || null,
+    // TB-R051, TB-R043: the batch map draws this geofence, or "No geofence" when there is none.
+    geofenceId: cleanText(batch?.geofenceId) || null,
     acceptanceStatus,
     allocationStatus,
     executionStatus,
@@ -259,11 +264,26 @@ function buildTargetedBatchBucketData({ batches = [] }) {
   };
 }
 
-function normalizeTargetedBatchRow(row = {}) {
+// TB-R051: whether the row's Sales record has been read: LOADING (no snapshot yet), LOADED (it exists),
+// MISSING (it does not exist, or the row has no Sales ID) or ERROR (the Sales listener failed).
+// Only LOADED may be trusted as checked; an unknown value fails closed as ERROR.
+function readSalesLoadState(value, fallback) {
+  const state = normalizeUpper(value);
+  if (!state) return fallback;
+  return ["LOADING", "LOADED", "MISSING", "ERROR"].includes(state) ? state : "ERROR";
+}
+
+export function normalizeTargetedBatchRow(row = {}) {
   const refs = row?.refs || {};
   const executionStatus = normalizeUpper(
     row?.execution?.status || "NOT_STARTED",
   );
+  const salesVisibility = normalizeUpper(row?.salesVisibility) || null;
+  // TB-R051: a meter is Completed on the phone when its Sales record is VISIBLE or its row is COMPLETED.
+  const displayStatus =
+    salesVisibility === "VISIBLE" || executionStatus === "COMPLETED"
+      ? "COMPLETED"
+      : executionStatus;
 
   return {
     id: cleanText(row?.id, "NAv"),
@@ -274,6 +294,7 @@ function normalizeTargetedBatchRow(row = {}) {
       row?.property?.erfNo,
       row?.erf?.erfNo,
       row?.erfNo,
+      row?.location?.erfNo,
     ),
     premiseId: cleanText(refs?.premiseId),
     meterId: cleanText(refs?.meterId),
@@ -303,6 +324,7 @@ function normalizeTargetedBatchRow(row = {}) {
       row?.location?.town,
       "NAv",
     ),
+    addressLine1: cleanText(row?.location?.addressLine1) || null,
     town: readFirstString(row?.location?.town, "NAv"),
     sgCode: readFirstString(row?.location?.sgCode, "NAv"),
     wardNumberLabel: readFirstString(
@@ -312,6 +334,14 @@ function normalizeTargetedBatchRow(row = {}) {
 
     allocationStatus: normalizeUpper(row?.allocation?.status),
     executionStatus,
+    displayStatus,
+    salesVisibility,
+    // TB-R051: a row that was never joined to Sales has not loaded its Sales record.
+    salesLoadState: readSalesLoadState(
+      row?.salesLoadState,
+      cleanText(row?.salesDocId || row?.salesAllMeterId) ? "LOADING" : "MISSING",
+    ),
+    salesPoint: row?.salesPoint || null,
     executionOutcome: cleanText(row?.execution?.outcome),
     scope: row?.scope || {},
     refs,
@@ -325,7 +355,7 @@ function readTbRefBatchId(reference) {
   return normalizeUpper(readFirstString(reference.id, reference.tbId));
 }
 
-export function enrichTargetedBatchRowFromSales(row = {}, sales = null) {
+export function enrichTargetedBatchRowFromSales(row = {}, sales = null, salesLoadState = sales ? "LOADED" : "MISSING") {
   const salesDocId = cleanText(row?.salesAllMeterId);
   const rowTbId = normalizeUpper(row?.tbId);
   let noAccessSourceStatus = "OK";
@@ -351,7 +381,15 @@ export function enrichTargetedBatchRowFromSales(row = {}, sales = null) {
       else noAccessCount = fieldWork.noAccess?.length || 0;
     }
   }
-  return { ...row, salesDocId: salesDocId || null, noAccessCount, fieldWorkMeterId, noAccessSourceStatus };
+  // TB-R051: Sales visibility sets the phone status; the Sales point is for the batch map only (never evidence).
+  const linkedSales = salesDocId && sales ? sales : null;
+  const visibility = linkedSales?.master?.visibility;
+  const salesVisibility = typeof visibility === "string" ? normalizeUpper(visibility) || null : null;
+  const salesPoint = resolveTargetedBatchSalesPoint(linkedSales);
+  // TB-R051: a row with no Sales ID has nothing to load, and LOADED needs the Sales record itself.
+  const loadState = readSalesLoadState(salesLoadState, sales ? "LOADED" : "MISSING");
+  const resolvedSalesLoadState = !salesDocId || (loadState === "LOADED" && !sales) ? "MISSING" : loadState;
+  return { ...row, salesDocId: salesDocId || null, noAccessCount, fieldWorkMeterId, noAccessSourceStatus, salesVisibility, salesPoint, salesLoadState: resolvedSalesLoadState };
 }
 
 export function buildTargetedBatchRowsData({
@@ -374,9 +412,10 @@ export function buildTargetedBatchRowsData({
     (acc, row) => {
       acc.total += 1;
 
-      if (row.executionStatus === "COMPLETED") {
+      // TB-R051: the header counts use the status the phone shows.
+      if (row.displayStatus === "COMPLETED") {
         acc.completed += 1;
-      } else if (row.executionStatus === "IN_PROGRESS") {
+      } else if (row.displayStatus === "IN_PROGRESS") {
         acc.inProgress += 1;
       } else {
         acc.notStarted += 1;
@@ -477,37 +516,91 @@ export const targetedBatchApi = createApi({
         args = {},
         { updateCachedData, cacheDataLoaded, cacheEntryRemoved },
       ) {
+        // TB-R051: a failed Sales listener is subscribed again after this wait while the batch stays open.
+        const SALES_LISTENER_RETRY_MS = 15000;
         let unsubscribeRows = () => {};
         const salesListeners = new Map();
         const salesDocuments = new Map();
+        // TB-R051: the last Sales snapshot per Sales ID, to skip an event that changes nothing on the phone.
+        const salesSnapshots = new Map();
+        // TB-R051: per Sales ID, LOADED or MISSING once a snapshot has said so, ERROR once its listener failed.
+        const salesLoadStates = new Map();
         let currentRows = [];
         let active = true;
+        let publishTimer = null;
+        let salesRetryTimer = null;
 
         const publish = () => {
           if (!active) return;
-          const rows = currentRows.map((row) =>
-            enrichTargetedBatchRowFromSales(row, salesDocuments.get(cleanText(row?.salesAllMeterId)) || null));
+          const rows = currentRows.map((row) => {
+            const salesId = cleanText(row?.salesAllMeterId);
+            // TB-R051: until its Sales snapshot arrives a row is LOADING, never read as open or missing.
+            const salesLoadState = salesId ? salesLoadStates.get(salesId) || "LOADING" : "MISSING";
+            return enrichTargetedBatchRowFromSales(row, salesDocuments.get(salesId) || null, salesLoadState);
+          });
           updateCachedData(() => buildTargetedBatchRowsData({ tbId: cleanText(args?.tbId), rows }));
+        };
+
+        // TB-R051: listener events publish once per burst. Firestore runs each listener callback in its own
+        // setTimeout(0), so a microtask would still publish per event; this timer runs after the whole burst.
+        const schedulePublish = () => {
+          if (!active || publishTimer !== null) return;
+          publishTimer = setTimeout(() => {
+            publishTimer = null;
+            publish();
+          }, 0);
+        };
+
+        const scheduleSalesRetry = () => {
+          if (!active || salesRetryTimer !== null) return;
+          salesRetryTimer = setTimeout(() => {
+            salesRetryTimer = null;
+            if (active) reconcileSalesListeners();
+          }, SALES_LISTENER_RETRY_MS);
         };
 
         const reconcileSalesListeners = () => {
           const requiredIds = new Set(currentRows.map((row) => cleanText(row?.salesAllMeterId)).filter(Boolean));
-          for (const [id, unsubscribe] of salesListeners) {
-            if (!requiredIds.has(id)) {
-              unsubscribe();
-              salesListeners.delete(id);
-              salesDocuments.delete(id);
-            }
+          // A failed Sales ID has no listener but keeps its state, so both are forgotten when its rows leave.
+          for (const id of new Set([...salesListeners.keys(), ...salesLoadStates.keys()])) {
+            if (requiredIds.has(id)) continue;
+            const unsubscribe = salesListeners.get(id);
+            if (unsubscribe) unsubscribe();
+            salesListeners.delete(id);
+            salesDocuments.delete(id);
+            salesSnapshots.delete(id);
+            salesLoadStates.delete(id);
           }
           for (const id of requiredIds) {
             if (salesListeners.has(id)) continue;
-            const unsubscribe = onSnapshot(doc(db, "sales-all-meters", id), (snapshot) => {
-              if (!active) return;
-              if (snapshot.exists()) salesDocuments.set(id, snapshot.data() || {});
+            let unsubscribe = null;
+            // TB-R051: a callback from a listener that no longer holds its Sales ID (removed or failed) is ignored.
+            const isCurrent = () => active && salesListeners.get(id) === unsubscribe;
+            // Metadata changes are included so a cache-only "does not exist" is confirmed or replaced once the server answers.
+            unsubscribe = onSnapshot(doc(db, "sales-all-meters", id), { includeMetadataChanges: true }, (snapshot) => {
+              if (!isCurrent()) return;
+              const exists = snapshot.exists();
+              // TB-R051: offline, the cache cannot say a Sales record does not exist; it has not loaded yet.
+              const loadState = exists ? "LOADED" : snapshot.metadata?.fromCache ? "LOADING" : "MISSING";
+              const previous = salesSnapshots.get(id);
+              salesSnapshots.set(id, snapshot);
+              // TB-R051: an event that changes neither the record nor its load state (going offline or online) publishes nothing.
+              if (previous && snapshotEqual(previous, snapshot) && salesLoadStates.get(id) === loadState) return;
+              if (exists) salesDocuments.set(id, snapshot.data() || {});
               else salesDocuments.delete(id);
-              publish();
+              salesLoadStates.set(id, loadState);
+              schedulePublish();
             }, (error) => {
               console.error("[TARGETED_BATCH_SALES_STREAM_ERROR]", { id, error });
+              if (!isCurrent()) return;
+              // TB-R051: the failed listener is ended and forgotten, so the next rows snapshot or the retry subscribes again.
+              unsubscribe();
+              salesListeners.delete(id);
+              scheduleSalesRetry();
+              // TB-R051: a failed Sales listener fails closed; the last Sales data read, if any, is kept for the status.
+              if (salesLoadStates.get(id) === "ERROR") return;
+              salesLoadStates.set(id, "ERROR");
+              schedulePublish();
             });
             salesListeners.set(id, unsubscribe);
           }
@@ -527,12 +620,14 @@ export const targetedBatchApi = createApi({
           unsubscribeRows = onSnapshot(
             rowsQuery,
             (snapshot) => {
+              // TB-R051: after the entry is removed a late rows event opens no Sales listener.
+              if (!active) return;
               currentRows = snapshot.docs.map((docSnap) => ({
                 id: docSnap.id,
                 ...docSnap.data(),
               }));
               reconcileSalesListeners();
-              publish();
+              schedulePublish();
             },
             (error) => {
               console.error(
@@ -550,6 +645,8 @@ export const targetedBatchApi = createApi({
 
         await cacheEntryRemoved;
         active = false;
+        clearTimeout(publishTimer);
+        clearTimeout(salesRetryTimer);
         unsubscribeRows();
         for (const unsubscribe of salesListeners.values()) unsubscribe();
         salesListeners.clear();

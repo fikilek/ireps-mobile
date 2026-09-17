@@ -664,26 +664,48 @@ export default function FormPremise() {
 
   const selectedErf = geoState?.selectedErf || null;
 
-  const routeContext = useMemo(
-    () =>
-      isDuplicate
-        ? null
-        : parseTargetedBatchContextRouteParam(routeTargetedBatchContext),
-    [isDuplicate, routeTargetedBatchContext],
-  );
+  // TB-R051: the batch goes with the work. The form keeps the batch it opened with: the route param is the
+  // checked context and wins over the selected ERF's; without it, the selected ERF's context when the form
+  // opened. A later change of the selected ERF neither drops nor swaps it, and an ordinary form ignores a
+  // context that appears on the selected ERF after it opened. When the router reuses this open form with
+  // new params (e.g. "Ordinary premise" chosen from the Maps tab), the batch is captured again for them.
+  const openedRouteKey = JSON.stringify([
+    id ?? null,
+    premiseId ?? null,
+    duplicateId ?? null,
+    queueItemId ?? null,
+    routeTargetedBatchContext === undefined ? "__no_batch_param__" : routeTargetedBatchContext,
+  ]);
+  const captureOpenedTargetedBatch = () => {
+    const routeCarriesBatch = routeTargetedBatchContext !== undefined;
 
-  const selectedErfTargetedBatchContext = isDuplicate
-    ? undefined
-    : selectedErf?.targetedBatchContext;
+    return {
+      key: openedRouteKey,
+      originated:
+        routeCarriesBatch || hasOwn(selectedErf, "targetedBatchContext"),
+      context: routeCarriesBatch
+        ? parseTargetedBatchContextRouteParam(routeTargetedBatchContext)
+        : normalizeTargetedBatchContext(selectedErf?.targetedBatchContext),
+    };
+  };
+  const [openedTargetedBatch, setOpenedTargetedBatch] = useState(captureOpenedTargetedBatch);
+  // Set while rendering (React's pattern for state derived from changed props), so no render uses the old batch.
+  if (openedTargetedBatch.key !== openedRouteKey) {
+    setOpenedTargetedBatch(captureOpenedTargetedBatch());
+  }
+
   const queueTargetedBatchContext = isDuplicate
     ? undefined
     : queueItem?.payload?.targetedBatchContext;
 
+  // An offline queue edit reads its batch from the queue item, as before.
   const originatedFromTargetedBatch = Boolean(
     !isDuplicate &&
-      (routeTargetedBatchContext !== undefined ||
-        hasOwn(selectedErf, "targetedBatchContext") ||
-        (isQueueEdit && hasOwn(queueItem?.payload, "targetedBatchContext"))),
+      (isQueueEdit
+        ? routeTargetedBatchContext !== undefined ||
+          hasOwn(selectedErf, "targetedBatchContext") ||
+          hasOwn(queueItem?.payload, "targetedBatchContext")
+        : openedTargetedBatch.originated),
   );
 
   const targetedBatchContext = useMemo(() => {
@@ -693,16 +715,12 @@ export default function FormPremise() {
       return normalizeTargetedBatchContext(queueTargetedBatchContext);
     }
 
-    return (
-      normalizeTargetedBatchContext(selectedErfTargetedBatchContext) ||
-      routeContext
-    );
+    return openedTargetedBatch.context;
   }, [
     isDuplicate,
     isQueueEdit,
     queueTargetedBatchContext,
-    routeContext,
-    selectedErfTargetedBatchContext,
+    openedTargetedBatch,
   ]);
 
   const targetGeo = isDuplicate
@@ -1212,6 +1230,25 @@ export default function FormPremise() {
       const premiseDocId = systemFields.id;
       const linkedTargetedBatchContext =
         !isEdit && !isDuplicate ? targetedBatchContext : null;
+
+      // TB-R051: a batch row selected elsewhere after the form opened never replaces the form's batch.
+      const laterSelectedErfContext = normalizeTargetedBatchContext(
+        selectedErf?.targetedBatchContext,
+      );
+
+      if (
+        linkedTargetedBatchContext &&
+        laterSelectedErfContext &&
+        (laterSelectedErfContext.tbId !== linkedTargetedBatchContext.tbId ||
+          laterSelectedErfContext.rowId !== linkedTargetedBatchContext.rowId)
+      ) {
+        console.log("[FORM PREMISE][TB CONTEXT KEPT]", {
+          tbId: linkedTargetedBatchContext.tbId,
+          rowId: linkedTargetedBatchContext.rowId,
+          selectedErfTbId: laterSelectedErfContext.tbId,
+          selectedErfRowId: laterSelectedErfContext.rowId,
+        });
+      }
 
       if (!isEdit && !isDuplicate && originatedFromTargetedBatch) {
         const missingContextFields = getMissingTargetedBatchContextFields(

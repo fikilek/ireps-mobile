@@ -74,3 +74,43 @@ test("reference snapshots detect stale row changes", () => {
   assert.equal(targetedBatchRefsMatch(original, snapshot), true);
   assert.equal(targetedBatchRefsMatch(row({ erfId: "E1", premiseId: "P1", meterId: "A1" }), snapshot), false);
 });
+
+test("TB-R051 a Completed meter locks all four buttons and reads COMPLETED", () => {
+  for (const refs of [{}, { premiseId: "P1" }, { premiseId: "P1", meterId: "A1" }, { meterId: "A1" }]) {
+    const state = getTargetedBatchRowActionState({ ...row(refs, 2, null), displayStatus: "COMPLETED" });
+    assert.equal(state.completed, true);
+    for (const tile of [state.premise, state.ast, state.noAccess, state.erf]) {
+      assert.equal(tile.disabled, true);
+      assert.equal(tile.helperText, "COMPLETED");
+    }
+    assert.equal(state.premise.value, refs.premiseId ? 1 : 0);
+    assert.equal(state.ast.value, refs.meterId ? 1 : 0);
+    assert.equal(state.noAccess.value, 2);
+    assert.equal(state.erf.value, "1138");
+    assert.equal(state.ast.intent, refs.meterId ? TARGETED_BATCH_INTENTS.OPEN_AST : TARGETED_BATCH_INTENTS.START_METER_DISCOVERY);
+  }
+});
+
+test("TB-R051 a VISIBLE meter whose row is not completed is locked through its display status", () => {
+  const state = getTargetedBatchRowActionState({ ...row({ premiseId: "P1" }), executionStatus: "IN_PROGRESS", salesVisibility: "VISIBLE", displayStatus: "COMPLETED" });
+  assert.equal(state.completed, true);
+  assert.equal(state.ast.disabled, true);
+  assert.equal(state.ast.helperText, "COMPLETED");
+});
+
+test("TB-R051 open meters keep the existing button rules and are not locked", () => {
+  for (const displayStatus of [undefined, null, "", "NOT_STARTED", "IN_PROGRESS"]) {
+    const state = getTargetedBatchRowActionState({ ...row({ premiseId: "P1" }, 1), displayStatus });
+    assert.equal(state.completed, false);
+    assert.equal(state.premise.disabled, false);
+    assert.equal(state.premise.helperText, undefined);
+    assert.equal(state.ast.disabled, false);
+    assert.equal(state.ast.helperText, "DISCOVER");
+    assert.equal(state.noAccess.disabled, false);
+    assert.equal(state.noAccess.helperText, null);
+    assert.equal(state.erf.disabled, false);
+    assert.equal(state.erf.helperText, undefined);
+  }
+  // Only the display status locks; a raw executionStatus alone does not (the row API derives displayStatus).
+  assert.equal(getTargetedBatchRowActionState({ ...row(), executionStatus: "COMPLETED" }).completed, false);
+});

@@ -20,6 +20,19 @@ export function getTargetedBatchRowActionState(row = {}) {
     ? Math.max(0, Math.trunc(noAccessCount))
     : 0;
 
+  // TB-R051: a Completed meter is locked; all four buttons are disabled and read Completed.
+  if (clean(row?.displayStatus).toUpperCase() === "COMPLETED") {
+    const locked = { disabled: true, helperText: "COMPLETED" };
+    return {
+      premise: { value: premiseId ? 1 : 0, ...locked, intent: TARGETED_BATCH_INTENTS.OPEN_PREMISE },
+      ast: { value: meterId ? 1 : 0, ...locked, intent: meterId ? TARGETED_BATCH_INTENTS.OPEN_AST : TARGETED_BATCH_INTENTS.START_METER_DISCOVERY },
+      noAccess: { value: safeNoAccessCount, ...locked, intent: TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS },
+      erf: { value: clean(row?.erfNo) || "—", ...locked, intent: TARGETED_BATCH_INTENTS.OPEN_ERF },
+      invalidLinkage,
+      completed: true,
+    };
+  }
+
   return {
     premise: { value: premiseId ? 1 : 0, disabled: false, intent: TARGETED_BATCH_INTENTS.OPEN_PREMISE },
     ast: {
@@ -36,6 +49,7 @@ export function getTargetedBatchRowActionState(row = {}) {
     },
     erf: { value: clean(row?.erfNo) || "—", disabled: !clean(row?.refs?.erfId), intent: TARGETED_BATCH_INTENTS.OPEN_ERF },
     invalidLinkage,
+    completed: false,
   };
 }
 

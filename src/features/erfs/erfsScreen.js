@@ -1,11 +1,12 @@
 import { FlashList } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSelector } from "react-redux";
 
 import { useGeo } from "../../context/GeoContext";
 import { useWarehouse } from "../../context/WarehouseContext";
+import { erfWithCarriedBatchContext } from "../targetedBatches/targetedBatchContextCarry";
 import ErfFilterHeader from "./erfFilterHeader";
 import { ErfItem } from "./erfItem";
 import ErfsBottomSearch from "./ErfsBottomSearch";
@@ -83,6 +84,12 @@ export default function ErfsScreen() {
   const wardPcode = getWardPcode(geoState?.selectedWard);
 
   const wardsCount = all?.wards?.length ?? 0;
+
+  // TB-R051: an ERF opened from this list keeps the batch only for the same ERF.
+  // ErfItem is memoised and keeps old handlers, so they read the batch from this
+  // ref when pressed, never from the render they were created in.
+  const batchContextRef = useRef(null);
+  batchContextRef.current = geoState?.selectedErf?.targetedBatchContext;
 
   /* ================= RTK CACHE ================= */
 
@@ -259,17 +266,31 @@ export default function ErfsScreen() {
             onSelect={() => {
               const isSame = geoState?.selectedErf?.id === item.id;
               updateGeo({
-                selectedErf: isSame ? null : item,
+                selectedErf: isSame
+                  ? null
+                  : erfWithCarriedBatchContext({
+                      erf: item,
+                      selectedErfContext: batchContextRef.current,
+                    }),
                 lastSelectionType: isSame ? null : "ERF",
               });
             }}
             onMapPress={() => {
-              updateGeo({ selectedErf: item, lastSelectionType: "ERF" });
+              updateGeo({
+                selectedErf: erfWithCarriedBatchContext({
+                  erf: item,
+                  selectedErfContext: batchContextRef.current,
+                }),
+                lastSelectionType: "ERF",
+              });
               router.push("/(tabs)/maps");
             }}
             onErfDetailPress={(item) => {
               updateGeo({
-                selectedErf: item,
+                selectedErf: erfWithCarriedBatchContext({
+                  erf: item,
+                  selectedErfContext: batchContextRef.current,
+                }),
                 lastSelectionType: "ERF",
               });
               router.push("/(tabs)/premises");

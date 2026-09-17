@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useGeo } from "../../context/GeoContext";
 import { useWarehouse } from "../../context/WarehouseContext";
+import { erfWithCarriedBatchContext } from "../targetedBatches/targetedBatchContextCarry";
 import {
   formatRepeatablePremiseIdentity,
   getDuplicateConfirmationMessage,
@@ -241,14 +242,20 @@ const PremiseCard = memo(
     const handleBeaconPress = () => {
       // 🕵️ 1. Find the parent Erf in the Warehouse
       const parentErf = all?.erfs?.find((e) => e.id === erfId);
+      // TB-R051: read the batch before the selection changes.
+      const selectedErfContext = geoState?.selectedErf?.targetedBatchContext;
 
       console.log(
         `📡 [Beacon Strike]: Locking GeoContext and Jumping to Erf: ${erfId}`,
       );
 
       // 🎯 TAP 1: Select the Erf (The Sovereign)
+      // TB-R051: the batch stays only for the same ERF.
       updateGeo({
-        selectedErf: parentErf || null,
+        selectedErf: erfWithCarriedBatchContext({
+          erf: parentErf || null,
+          selectedErfContext,
+        }),
         lastSelectionType: "ERF",
       });
 

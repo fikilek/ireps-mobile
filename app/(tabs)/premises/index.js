@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { FlashList } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ActivityIndicator, Surface } from "react-native-paper";
 
@@ -14,7 +14,13 @@ import { usePremiseFilter } from "../../../src/context/PremiseFilterContext";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
 import PremiseCard from "../../../src/features/premises/PremiseCard";
 import { filterPremises } from "../../../src/features/premises/filterPremises";
-import { serializeTargetedBatchContext } from "../../../src/features/premises/targetedBatchPremiseContext";
+import BatchCheckOverlay, {
+  BATCH_CHECK_MESSAGES,
+} from "../../../src/features/targetedBatches/BatchCheckOverlay";
+import { askBatchOrOrdinaryPremise } from "../../../src/features/targetedBatches/askBatchOrOrdinaryPremise";
+import { askBatchOrOtherDiscovery } from "../../../src/features/targetedBatches/askBatchOrOtherDiscovery";
+import { erfWithCarriedBatchContext } from "../../../src/features/targetedBatches/targetedBatchContextCarry";
+import { useAuth } from "../../../src/hooks/useAuth";
 
 export default function PremisesScreen() {
   const router = useRouter();
@@ -27,9 +33,31 @@ export default function PremisesScreen() {
   const { selectedLm, selectedWard, selectedErf, selectedPremise } = geoState;
 
   const { filterState } = usePremiseFilter();
-  const targetedBatchContextParam = useMemo(
-    () => serializeTargetedBatchContext(selectedErf?.targetedBatchContext),
-    [selectedErf?.targetedBatchContext],
+
+  // TB-R051: the batch checks run for this worker, read the same way as My Work
+  // Orders; role and profile feed its actor gate (FWR, or SPV not MNC-side).
+  const { user, profile } = useAuth();
+  const actorUid = user?.uid || profile?.uid || null;
+  const actorSpId = profile?.employment?.serviceProvider?.id || null;
+  const actorRole = profile?.employment?.role || profile?.role || "NAv";
+  const batchActor = useMemo(
+    () => ({ uid: actorUid, spId: actorSpId, role: actorRole, profile }),
+    [actorUid, actorSpId, actorRole, profile],
+  );
+
+  // TB-R051: progress for the whole live batch check (null when not checking).
+  const [batchCheckMessage, setBatchCheckMessage] = useState(null);
+  const showBatchMeterCheck = useCallback((checking) => {
+    setBatchCheckMessage(checking ? BATCH_CHECK_MESSAGES.METER : null);
+  }, []);
+  const showBatchPremiseCheck = useCallback((checking) => {
+    setBatchCheckMessage(checking ? BATCH_CHECK_MESSAGES.PREMISE : null);
+  }, []);
+  const batchCheckOverlay = (
+    <BatchCheckOverlay
+      visible={!!batchCheckMessage}
+      message={batchCheckMessage}
+    />
   );
 
   const erfById = useMemo(() => {
@@ -61,7 +89,11 @@ export default function PremisesScreen() {
 
   const handleMapPress = useCallback(
     (p) => {
-      const parentErf = erfById[p?.erfId] || null;
+      // TB-R051: the batch stays only for the same ERF.
+      const parentErf = erfWithCarriedBatchContext({
+        erf: erfById[p?.erfId] || null,
+        selectedErfContext: selectedErf?.targetedBatchContext,
+      });
 
       updateGeo({
         selectedErf: parentErf,
@@ -71,7 +103,7 @@ export default function PremisesScreen() {
 
       router.replace("/(tabs)/maps");
     },
-    [erfById, router, updateGeo],
+    [erfById, router, selectedErf?.targetedBatchContext, updateGeo],
   );
 
   const handleEditPremise = useCallback(
@@ -106,19 +138,47 @@ export default function PremisesScreen() {
     (p) => {
       const parentErf = erfById[p?.erfId] || null;
 
-      updateGeo({
-        selectedErf: parentErf || null,
-        selectedPremise: p,
-        lastSelectionType: "PREMISE",
-      });
-
-      openMissionDiscovery({
-        premiseId: p?.id,
+      // TB-R051: read the batch before the selection changes.
+      askBatchOrOtherDiscovery({
         premise: p,
+        parentErf,
+        selectedErfContext: selectedErf?.targetedBatchContext,
+        updateGeo,
+        router,
+        openMissionDiscovery,
+        actor: batchActor,
+        onCheckingChange: showBatchMeterCheck,
       });
     },
-    [erfById, updateGeo, openMissionDiscovery],
+    [
+      erfById,
+      selectedErf?.targetedBatchContext,
+      updateGeo,
+      router,
+      openMissionDiscovery,
+      batchActor,
+      showBatchMeterCheck,
+    ],
   );
+
+  // TB-R051: a new premise on an ERF selected with a batch is checked live first.
+  const handleAddPremise = useCallback(() => {
+    askBatchOrOrdinaryPremise({
+      erf: selectedErf,
+      updateGeo,
+      actor: batchActor,
+      onCheckingChange: showBatchPremiseCheck,
+      openPremiseForm: ({ erfId, targetedBatchContext }) => {
+        router.push({
+          pathname: "/premises/formPremise",
+          params: {
+            id: erfId,
+            ...(targetedBatchContext ? { targetedBatchContext } : {}),
+          },
+        });
+      },
+    });
+  }, [selectedErf, updateGeo, batchActor, showBatchPremiseCheck, router]);
 
   const handleNaPress = useCallback(
     (p) => {
@@ -209,6 +269,7 @@ export default function PremisesScreen() {
           color="#CBD5E1"
         />
         <Text style={styles.emptyText}>No municipality selected.</Text>
+        {batchCheckOverlay}
       </View>
     );
   }
@@ -222,6 +283,7 @@ export default function PremisesScreen() {
           color="#CBD5E1"
         />
         <Text style={styles.emptyText}>Select a ward to view premises.</Text>
+        {batchCheckOverlay}
       </View>
     );
   }
@@ -237,6 +299,7 @@ export default function PremisesScreen() {
         <Text style={styles.emptyText}>
           Selected ward is invalid for this municipality.
         </Text>
+        {batchCheckOverlay}
       </View>
     );
   }
@@ -246,6 +309,8 @@ export default function PremisesScreen() {
       <View style={styles.centered}>
         <ActivityIndicator color="#2563eb" />
         <Text style={styles.loadingText}>Loading premises...</Text>
+        {/* TB-R051: a check started before the reload keeps its progress. */}
+        {batchCheckOverlay}
       </View>
     );
   }
@@ -263,17 +328,7 @@ export default function PremisesScreen() {
         <View>
           {selectedErf ? (
             <TouchableOpacity
-              onPress={() =>
-                router.push({
-                  pathname: "/premises/formPremise",
-                  params: {
-                    id: selectedErf?.id,
-                    ...(targetedBatchContextParam
-                      ? { targetedBatchContext: targetedBatchContextParam }
-                      : {}),
-                  },
-                })
-              }
+              onPress={handleAddPremise}
               style={styles.addHeaderBtn}
             >
               <MaterialCommunityIcons
@@ -329,17 +384,7 @@ export default function PremisesScreen() {
                 </Text>
                 <TouchableOpacity
                   style={styles.initializeBtn}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/premises/formPremise",
-                      params: {
-                        id: selectedErf?.id,
-                        ...(targetedBatchContextParam
-                          ? { targetedBatchContext: targetedBatchContextParam }
-                          : {}),
-                      },
-                    })
-                  }
+                  onPress={handleAddPremise}
                 >
                   <Text style={styles.initializeBtnText}>
                     ADD FIRST PREMISE
@@ -381,6 +426,7 @@ export default function PremisesScreen() {
 
       <MissionDiscoveryModal />
       <MissionInstallationModal />
+      {batchCheckOverlay}
     </View>
   );
 }

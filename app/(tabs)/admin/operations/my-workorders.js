@@ -1,11 +1,14 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useNetInfo } from "@react-native-community/netinfo";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { Formik } from "formik";
 import { FlashList } from "@shopify/flash-list";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  BackHandler,
   Image,
+  Keyboard,
   Modal,
   Pressable,
   ScrollView,
@@ -26,13 +29,20 @@ import {
   serializeTargetedBatchContext,
 } from "../../../../src/features/premises/targetedBatchPremiseContext";
 import TargetedBatchActionTile from "../../../../src/features/targetedBatches/TargetedBatchActionTile";
+import TargetedBatchMapModal from "../../../../src/features/targetedBatches/TargetedBatchMapModal";
+import { isFieldWorkorderActor } from "../../../../src/features/targetedBatches/fieldWorkorderActor";
 import {
   getTargetedBatchRowActionState,
   snapshotTargetedBatchRefs,
   targetedBatchRefsMatch,
   TARGETED_BATCH_INTENTS,
 } from "../../../../src/features/targetedBatches/targetedBatchActions";
+import { BATCH_DISCOVERY_REASONS } from "../../../../src/features/targetedBatches/targetedBatchContextCarry";
 import { buildTargetedBatchNoAccessContext } from "../../../../src/features/targetedBatches/targetedBatchNoAccess";
+import {
+  searchTargetedBatchRows,
+  sortTargetedBatchRowsOpenFirst,
+} from "../../../../src/features/targetedBatches/targetedBatchRowSearch";
 import {
   useAcceptRejectLifecycleInstructionMutation,
   useGetWmsLifecycleWorkItemsQuery,
@@ -101,6 +111,30 @@ const EXECUTION_ROUTES = {
   METER_RECONNECTION: "/asts/reconnection",
   METER_READING: "/asts/meter-reading",
 };
+
+// TB-R051: online only; with no connection the screen says so instead of saying there is no work.
+const WMS_OFFLINE_MESSAGE = "No connection — your work orders are not loaded";
+
+// TB-R051: a button preparing a batch action gives up after 30 seconds.
+const TARGETED_BATCH_ACTION_TIMEOUT_MS = 30000;
+
+// TB-R051: no false errors; a meter whose Sales record could not be read is refused in field language.
+const TARGETED_BATCH_SALES_NOT_READABLE_TITLE = "Sales record not readable";
+const TARGETED_BATCH_SALES_NOT_READABLE_MESSAGE =
+  "The meter's Sales record could not be read. Leave the batch and open it again; if it keeps failing, report it.";
+
+// TB-R051: a batch meter's buttons act only while it is still in this worker's work orders, the same as Discover.
+const TARGETED_BATCH_NOT_IN_WORK_ORDERS_TITLE = "Batch meter";
+const TARGETED_BATCH_NOT_IN_WORK_ORDERS_MESSAGE = `${BATCH_DISCOVERY_REASONS.NOT_IN_WORK_ORDERS}.`;
+
+// TB-R051: no silent waits; the banner names the button that is preparing.
+const TARGETED_BATCH_INTENT_LABELS = Object.freeze({
+  [TARGETED_BATCH_INTENTS.OPEN_PREMISE]: "Premise",
+  [TARGETED_BATCH_INTENTS.START_METER_DISCOVERY]: "Meter",
+  [TARGETED_BATCH_INTENTS.OPEN_AST]: "Meter",
+  [TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS]: "No Access",
+  [TARGETED_BATCH_INTENTS.OPEN_ERF]: "ERF",
+});
 
 const RejectSchema = object().shape({
   rejectReason: string()
@@ -875,33 +909,17 @@ function readFirstString(...values) {
   return "";
 }
 
-function getServiceProviderRelationshipType(profile = {}) {
-  return normalizeUpper(
-    readFirstString(
-      profile?.employment?.serviceProvider?.relationshipType,
-      profile?.employment?.serviceProvider?.clientRelationshipType,
-      profile?.employment?.relationshipType,
-      profile?.serviceProvider?.relationshipType,
-      profile?.serviceProvider?.clientRelationshipType,
-    ),
+// TB-R051: a batch meter's buttons act only while its row is allocated and its batch is in the live batch
+// list with its rows open (allocated and accepted for this worker), the same as Discover and a new batch premise.
+function isTargetedBatchRowInWorkOrders({ buckets, bucketId, row }) {
+  if (normalizeUpper(row?.allocationStatus) !== "ALLOCATED") return false;
+
+  return (Array.isArray(buckets) ? buckets : []).some(
+    (bucket) =>
+      Boolean(bucketId) &&
+      bucket?.id === bucketId &&
+      bucket?.permissions?.canViewRows === true,
   );
-}
-
-function isFieldWorkorderActor({ actorRole, profile }) {
-  const cleanRole = normalizeUpper(actorRole);
-
-  if (cleanRole === "FWR") return true;
-
-  if (cleanRole !== "SPV") return false;
-
-  const relationshipType = getServiceProviderRelationshipType(profile);
-
-  // If the app profile knows this SPV is MNC-side, block this field screen.
-  // Some current user profiles only carry role + serviceProvider id, so unknown
-  // relationship remains allowed and the backend still performs final authority.
-  if (relationshipType === "MNC") return false;
-
-  return true;
 }
 
 function getActionErrorMessage(error = {}, fallback = "Action failed.") {
@@ -967,10 +985,27 @@ export default function WorkorderManagementSystem() {
     pendingTargetedBatchAction,
     setPendingTargetedBatchAction,
   ] = useState(null);
+  const [targetedBatchSearchText, setTargetedBatchSearchText] = useState("");
+  const [targetedBatchMapOpen, setTargetedBatchMapOpen] = useState(false);
+  const netInfo = useNetInfo();
+  // TB-R051: online only.
+  const offline =
+    netInfo.isConnected === false || netInfo.isInternetReachable === false;
+  const targetedBatchPendingWaitRef = useRef(null);
+  const hardwareBackHandlerRef = useRef(null);
+  // TB-R051: the row-card handlers stay stable across live updates and read these when tapped.
+  const prepareTargetedBatchActionRef = useRef(null);
+  const targetedBatchRowsRef = useRef([]);
+  const selectedBucketRef = useRef(null);
   const openingTargetedBatchIdRef = useRef(null);
   const targetedBatchCardOpenPaintFrameRef = useRef(null);
   const targetedBatchCardOpenPreparationFrameRef = useRef(null);
   const targetedBatchBucketsRef = useRef([]);
+  // TB-R051: the open batch last seen with its rows open in the live batch list, and whether the
+  // "not in your work orders" message still has to be shown when this screen is next in front.
+  const targetedBatchSeenOpenIdRef = useRef(null);
+  const targetedBatchClosedNoticeRef = useRef(false);
+  const workordersScreenFocusedRef = useRef(false);
   const targetedBatchRequestSequence = useRef(0);
   const targetedBatchRequestKeyRef = useRef(null);
   const targetedBatchPaintFrameRef = useRef(null);
@@ -1087,6 +1122,11 @@ export default function WorkorderManagementSystem() {
       return () => {
         clearOpeningTargetedBatch();
         clearPendingTargetedBatchAction();
+        // TB-R051: the batch map closes whenever the screen loses focus. A detached tab dismisses the
+        // map's Modal on Android, and a map still marked open would swallow back and never show again.
+        if (targetedBatchScreenMountedRef.current) {
+          setTargetedBatchMapOpen(false);
+        }
       };
     }, [clearOpeningTargetedBatch, clearPendingTargetedBatchAction]),
   );
@@ -1275,6 +1315,12 @@ export default function WorkorderManagementSystem() {
     clearPendingTargetedBatchAction();
   }, [selectedTargetedBatchId, clearPendingTargetedBatchAction]);
 
+  // TB-R051: another batch starts with an empty search and the map closed.
+  useEffect(() => {
+    setTargetedBatchSearchText("");
+    setTargetedBatchMapOpen(false);
+  }, [selectedTargetedBatchId]);
+
   const { data: teamsData = [] } = useGetTeamsQuery(undefined, {
     skip: !fieldWorkorderActor,
   });
@@ -1342,6 +1388,39 @@ export default function WorkorderManagementSystem() {
     all?.geoLibrary,
   ]);
 
+  // TB-R051: search by meter number, ERF number or street address; open work is listed first.
+  const visibleTargetedBatchRows = useMemo(
+    () =>
+      sortTargetedBatchRowsOpenFirst(
+        searchTargetedBatchRows(targetedBatchRows, targetedBatchSearchText),
+      ),
+    [targetedBatchRows, targetedBatchSearchText],
+  );
+
+  const targetedBatchErfIdsKey = useMemo(
+    () =>
+      JSON.stringify(
+        [
+          ...new Set(
+            targetedBatchRows
+              .map((row) => cleanId(row?.erfId || row?.refs?.erfId))
+              .filter(Boolean),
+          ),
+        ].sort(),
+      ),
+    [targetedBatchRows],
+  );
+
+  // TB-R051: ERF centres (E) for the batch map, from the phone's geoLibrary.
+  const targetedBatchErfCentroidById = useMemo(() => {
+    const geoLibrary = all?.geoLibrary || {};
+
+    return JSON.parse(targetedBatchErfIdsKey).reduce((acc, erfId) => {
+      if (geoLibrary[erfId]) acc[erfId] = geoLibrary[erfId];
+      return acc;
+    }, {});
+  }, [targetedBatchErfIdsKey, all?.geoLibrary]);
+
   useEffect(() => {
     if (!selectedTargetedBatchId && targetedBatchRows.length === 0) return;
 
@@ -1380,6 +1459,14 @@ export default function WorkorderManagementSystem() {
     const pending = pendingTargetedBatchAction;
     if (!pending || pending.preparationStarted !== true) return;
 
+    // TB-R051: record what the action is waiting for (null = the Ward's ERFs) for the 30-second message.
+    const waitFor = (what = null) => {
+      targetedBatchPendingWaitRef.current = {
+        requestKey: pending.requestKey,
+        what,
+      };
+    };
+
     const activeLmPcode = getGeoPcode(geoState?.selectedLm);
     const activeWardPcode = getGeoPcode(geoState?.selectedWard);
 
@@ -1387,6 +1474,7 @@ export default function WorkorderManagementSystem() {
       activeLmPcode !== pending.lmPcode ||
       activeWardPcode !== pending.wardPcode
     ) {
+      waitFor();
       return;
     }
 
@@ -1404,7 +1492,10 @@ export default function WorkorderManagementSystem() {
       syncWardPcode === pending.wardPcode &&
       (!syncPackKey || syncPackKey === expectedPackKey);
 
-    if (!targetWarehouseMatches) return;
+    if (!targetWarehouseMatches) {
+      waitFor();
+      return;
+    }
 
     const warehouseErf = findWarehouseErfById(
       all?.erfs,
@@ -1422,6 +1513,60 @@ export default function WorkorderManagementSystem() {
       if (!targetedBatchRefsMatch(currentRow, pending.refsSnapshot)) {
         clearPendingTargetedBatchAction(pending.requestKey);
         Alert.alert("Targeted Batch row changed", "The row linkage changed while the action was preparing. Please try again.");
+        return;
+      }
+      // TB-R051: a Completed meter is locked, also when it became Completed while the action was waiting.
+      if (getTargetedBatchRowActionState(currentRow).completed) {
+        console.log("[MY WORKORDERS][TB ACTION LOCKED]", {
+          requestKey: pending.requestKey,
+          rowId: pending.rowId,
+          intent: pending.intent,
+          displayStatus: currentRow?.displayStatus || null,
+          salesLoadState: currentRow?.salesLoadState || null,
+        });
+        clearPendingTargetedBatchAction(pending.requestKey);
+        Alert.alert("Meter completed", "This meter is Completed and locked.");
+        return;
+      }
+      // TB-R051: also when the row was unallocated or the batch left this worker's work orders while waiting.
+      if (
+        !isTargetedBatchRowInWorkOrders({
+          buckets: targetedBatchBucketsRef.current,
+          bucketId: pending.bucketId,
+          row: currentRow,
+        })
+      ) {
+        console.log("[MY WORKORDERS][TB ACTION NOT IN WORK ORDERS]", {
+          requestKey: pending.requestKey,
+          rowId: pending.rowId,
+          intent: pending.intent,
+          allocationStatus: currentRow?.allocationStatus || null,
+        });
+        clearPendingTargetedBatchAction(pending.requestKey);
+        Alert.alert(
+          TARGETED_BATCH_NOT_IN_WORK_ORDERS_TITLE,
+          TARGETED_BATCH_NOT_IN_WORK_ORDERS_MESSAGE,
+        );
+        return;
+      }
+      // TB-R051: the lock is only known once the meter's Sales record is read; never assume the meter is open.
+      if (currentRow?.salesLoadState === "LOADING") {
+        waitFor("the meter's Sales record");
+        return;
+      }
+      if (currentRow?.salesLoadState === "ERROR") {
+        console.log("[MY WORKORDERS][TB ACTION SALES NOT CHECKED]", {
+          requestKey: pending.requestKey,
+          rowId: pending.rowId,
+          intent: pending.intent,
+          salesDocId: currentRow?.salesDocId || null,
+        });
+        clearPendingTargetedBatchAction(pending.requestKey);
+        // TB-R051: no false errors; a Sales listener error is not a lost connection, so never blame it.
+        Alert.alert(
+          TARGETED_BATCH_SALES_NOT_READABLE_TITLE,
+          TARGETED_BATCH_SALES_NOT_READABLE_MESSAGE,
+        );
         return;
       }
       const canonicalErf = {
@@ -1451,13 +1596,23 @@ export default function WorkorderManagementSystem() {
         return;
       }
       const premise = premiseId ? (all?.prems || []).find((item) => getPremiseId(item) === premiseId) : null;
-      if (premiseId && (!premise || getPremiseErfId(premise) !== pending.erfId)) {
+      // TB-R051: a linked premise that has not reached the phone yet is waited for, not a linkage error.
+      if (premiseId && !premise) {
+        waitFor("the linked premise");
+        return;
+      }
+      if (premiseId && getPremiseErfId(premise) !== pending.erfId) {
         clearPendingTargetedBatchAction(pending.requestKey);
-        Alert.alert("Premise Linkage Error", "The exact linked premise is missing or belongs to another ERF.");
+        Alert.alert("Premise Linkage Error", "The exact linked premise belongs to another ERF.");
         return;
       }
       const meter = meterId ? (all?.meters || []).find((item) => cleanId(item?.ast?.astData?.astId || item?.id) === meterId) : null;
       if (pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST) {
+        // TB-R051: the same for a linked meter that has not reached the phone yet.
+        if (meterId && !meter) {
+          waitFor("the linked meter");
+          return;
+        }
         const premiseErfs = new Map((all?.prems || []).map((item) => [getPremiseId(item), getPremiseErfId(item)]));
         if (!meter || getMeterErfId(meter, premiseErfs) !== pending.erfId || (premiseId && getMeterPremiseId(meter) !== premiseId)) {
           clearPendingTargetedBatchAction(pending.requestKey);
@@ -1553,6 +1708,8 @@ export default function WorkorderManagementSystem() {
                 : "ERF",
         });
 
+        // TB-R051: the batch map never stays marked open behind the screen the action opens.
+        setTargetedBatchMapOpen(false);
         router.push(navigationTarget);
       } catch (error) {
         clearPendingTargetedBatchAction(pending.requestKey);
@@ -1589,6 +1746,7 @@ export default function WorkorderManagementSystem() {
       syncStatus !== "READY" ||
       targetWarehouseRefreshing
     ) {
+      waitFor();
       return;
     }
 
@@ -1613,6 +1771,60 @@ export default function WorkorderManagementSystem() {
     warehouseSync?.erfs,
     router,
     updateGeo,
+    clearPendingTargetedBatchAction,
+  ]);
+
+  const pendingTargetedBatchRequestKey =
+    pendingTargetedBatchAction?.requestKey || null;
+  const pendingTargetedBatchStartedAt =
+    pendingTargetedBatchAction?.startedAt || null;
+  const pendingTargetedBatchWardName =
+    pendingTargetedBatchAction?.wardName || null;
+
+  // TB-R051: no silent waits; the action gives up after 30 seconds and says what did not load.
+  useEffect(() => {
+    if (!pendingTargetedBatchRequestKey) return;
+
+    const requestKey = pendingTargetedBatchRequestKey;
+    const startedAt = Number(pendingTargetedBatchStartedAt) || Date.now();
+    const remainingMs = Math.max(
+      TARGETED_BATCH_ACTION_TIMEOUT_MS - (Date.now() - startedAt),
+      0,
+    );
+
+    const timer = setTimeout(() => {
+      if (
+        !targetedBatchScreenMountedRef.current ||
+        targetedBatchRequestKeyRef.current !== requestKey
+      ) {
+        return;
+      }
+
+      const wait = targetedBatchPendingWaitRef.current;
+      const waitingFor =
+        wait?.requestKey === requestKey && wait?.what
+          ? wait.what
+          : `The ERFs for ward ${pendingTargetedBatchWardName || "NAv"}`;
+      const what = `${waitingFor.charAt(0).toUpperCase()}${waitingFor.slice(1)}`;
+
+      console.log("[MY WORKORDERS][TB ACTION TIMEOUT]", {
+        requestKey,
+        waitingFor,
+        elapsedMs: Date.now() - startedAt,
+      });
+
+      clearPendingTargetedBatchAction(requestKey);
+      Alert.alert(
+        "Could not open the batch action",
+        `${what} did not load within 30 seconds. Check your connection and try again.`,
+      );
+    }, remainingMs);
+
+    return () => clearTimeout(timer);
+  }, [
+    pendingTargetedBatchRequestKey,
+    pendingTargetedBatchStartedAt,
+    pendingTargetedBatchWardName,
     clearPendingTargetedBatchAction,
   ]);
 
@@ -1689,8 +1901,6 @@ export default function WorkorderManagementSystem() {
   ]);
 
   useEffect(() => {
-    targetedBatchBucketsRef.current = targetedBatchBuckets;
-
     const openingId = openingTargetedBatchIdRef.current;
 
     if (!openingId) return;
@@ -1830,9 +2040,48 @@ export default function WorkorderManagementSystem() {
   const bgoBucketReady = Boolean(bgoData?.meta?.updatedAt);
 
   useEffect(() => {
-    if (!selectedBucket?.id) return;
+    if (!selectedBucket?.id) {
+      targetedBatchSeenOpenIdRef.current = null;
+      return;
+    }
 
     const freshBucket = bucketCards.find((bucket) => bucket?.id === selectedBucket.id);
+
+    // TB-R051: a batch that leaves this worker's work orders (unallocated, or no longer accepted) closes its
+    // rows screen back to the batch list with the reason, instead of keeping the old batch open. Only once its
+    // rows were seen open in the live list, so a just-accepted batch is kept until the list catches up.
+    if (selectedBucket.bucketType === "TBB" && targetedBatchBucketReady) {
+      if (freshBucket?.permissions?.canViewRows === true) {
+        targetedBatchSeenOpenIdRef.current = selectedBucket.id;
+      } else if (targetedBatchSeenOpenIdRef.current === selectedBucket.id) {
+        console.log("[MY WORKORDERS][TB BATCH LEFT WORK ORDERS]", {
+          bucketId: selectedBucket.id,
+          listed: Boolean(freshBucket),
+          allocationStatus: freshBucket?.allocationStatus || null,
+          acceptanceStatus: freshBucket?.acceptanceStatus || null,
+        });
+        targetedBatchSeenOpenIdRef.current = null;
+        // The same as the rows screen's back button (backToBuckets).
+        setPreparingBgoDetail(false);
+        clearOpeningTargetedBatch();
+        clearPendingTargetedBatchAction();
+        setSelectedBucket(null);
+        setSelectedGroup(null);
+        setStateFilter("ALL");
+
+        // Shown now, or when My Work Orders is next in front if the worker is on another screen.
+        if (workordersScreenFocusedRef.current) {
+          Alert.alert(
+            TARGETED_BATCH_NOT_IN_WORK_ORDERS_TITLE,
+            TARGETED_BATCH_NOT_IN_WORK_ORDERS_MESSAGE,
+          );
+        } else {
+          targetedBatchClosedNoticeRef.current = true;
+        }
+        return;
+      }
+    }
+
     if (!freshBucket || freshBucket === selectedBucket) return;
 
     const selectedAcceptanceStatus = normalizeUpper(
@@ -1851,7 +2100,13 @@ export default function WorkorderManagementSystem() {
     }
 
     setSelectedBucket(freshBucket);
-  }, [bucketCards, selectedBucket]);
+  }, [
+    bucketCards,
+    selectedBucket,
+    targetedBatchBucketReady,
+    clearOpeningTargetedBatch,
+    clearPendingTargetedBatchAction,
+  ]);
 
   const visibleItems = useMemo(() => {
     let baseItems = [];
@@ -2612,6 +2867,7 @@ export default function WorkorderManagementSystem() {
     router.push("/(tabs)/premises");
   }
 
+  // TB-R051: returns true only when the action is now pending (preparing); false when it was refused.
   function prepareTargetedBatchAction({ bucket, row, intent }) {
     const erfId = cleanId(row?.erfId || row?.refs?.erfId);
     const scope = getTargetedBatchWardScope({ bucket, row });
@@ -2632,6 +2888,47 @@ export default function WorkorderManagementSystem() {
       scope,
     });
 
+    // TB-R051: a Completed meter is locked.
+    if (actions.completed) return false;
+
+    // TB-R051: refused at once, before any Ward switch, when the row is no longer allocated or its batch is no
+    // longer in this worker's work orders (unallocated, or no longer accepted); the map stays open under the message.
+    if (
+      !isTargetedBatchRowInWorkOrders({
+        buckets: targetedBatchBucketsRef.current,
+        bucketId: bucket?.id,
+        row,
+      })
+    ) {
+      console.log("[MY WORKORDERS][TB ACTION NOT IN WORK ORDERS]", {
+        bucketId: bucket?.id || null,
+        rowId: row?.id || null,
+        intent,
+        allocationStatus: row?.allocationStatus || null,
+      });
+      Alert.alert(
+        TARGETED_BATCH_NOT_IN_WORK_ORDERS_TITLE,
+        TARGETED_BATCH_NOT_IN_WORK_ORDERS_MESSAGE,
+      );
+      return false;
+    }
+
+    // TB-R051: no false errors; a meter whose Sales record could not be read is refused at once,
+    // before any Ward switch, because waiting or trying again cannot read it.
+    if (row?.salesLoadState === "ERROR") {
+      console.log("[MY WORKORDERS][TB ACTION SALES NOT CHECKED]", {
+        bucketId: bucket?.id || null,
+        rowId: row?.id || null,
+        intent,
+        salesDocId: row?.salesDocId || null,
+      });
+      Alert.alert(
+        TARGETED_BATCH_SALES_NOT_READABLE_TITLE,
+        TARGETED_BATCH_SALES_NOT_READABLE_MESSAGE,
+      );
+      return false;
+    }
+
     if (
       intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS &&
       actions.noAccess.disabled
@@ -2640,7 +2937,7 @@ export default function WorkorderManagementSystem() {
         "Discovery Complete",
         "A meter is already linked. No Access cannot be recorded.",
       );
-      return;
+      return false;
     }
 
     if (!bucket?.id || !row?.id || !erfId) {
@@ -2648,7 +2945,7 @@ export default function WorkorderManagementSystem() {
         "Targeted Batch Row Not Ready",
         "This row is missing its Targeted Batch or ERF reference.",
       );
-      return;
+      return false;
     }
 
     if (!scope.lmPcode || !scope.wardPcode) {
@@ -2656,7 +2953,7 @@ export default function WorkorderManagementSystem() {
         "Targeted Batch Ward Scope Missing",
         "This Targeted Batch does not carry its required LM and ward scope.",
       );
-      return;
+      return false;
     }
 
     if (
@@ -2667,7 +2964,7 @@ export default function WorkorderManagementSystem() {
         "Targeted Batch LM Scope Conflict",
         "This row does not match the Targeted Batch municipality scope.",
       );
-      return;
+      return false;
     }
 
     if (
@@ -2678,7 +2975,7 @@ export default function WorkorderManagementSystem() {
         "Targeted Batch Ward Scope Conflict",
         "This row does not match the Targeted Batch ward scope.",
       );
-      return;
+      return false;
     }
 
     const activeLmPcode = getGeoPcode(geoState?.selectedLm);
@@ -2688,7 +2985,7 @@ export default function WorkorderManagementSystem() {
         "Targeted Batch Workbase Mismatch",
         `This batch belongs to ${scope.lmPcode}, but the active workbase is ${activeLmPcode || "NAv"}.`,
       );
-      return;
+      return false;
     }
 
     const targetWard = findWardByPcode(
@@ -2701,15 +2998,18 @@ export default function WorkorderManagementSystem() {
         "Targeted Batch Ward Not Available",
         `Ward ${scope.wardPcode} is not available in the active ${scope.lmPcode} workbase.`,
       );
-      return;
+      return false;
     }
 
     cancelTargetedBatchPreparationFrames();
 
     const requestKey = `${bucket.id}__${row.id}__${++targetedBatchRequestSequence.current}`;
     targetedBatchRequestKeyRef.current = requestKey;
+    targetedBatchPendingWaitRef.current = null;
     setPendingTargetedBatchAction({
       requestKey,
+      // TB-R051: the 30-second limit counts from the tap.
+      startedAt: Date.now(),
       bucketId: bucket.id,
       rowId: row.id,
       refsSnapshot: snapshotTargetedBatchRefs(row),
@@ -2761,6 +3061,8 @@ export default function WorkorderManagementSystem() {
         });
       });
     });
+
+    return true;
   }
 
   const showBmdErfWorklist =
@@ -2783,6 +3085,145 @@ export default function WorkorderManagementSystem() {
 
   const detailBackLabel =
     selectedBucket?.bucketType === "BGOB" ? "Buckets" : "Types";
+
+  const targetedBatchMapVisible =
+    targetedBatchMapOpen && showTargetedBatchRows;
+
+  // TB-R051: the phone's back button goes up one level (map, rows, batches, work types) before leaving the screen.
+  // Mirrors the render below: each level runs the same handler as its on-screen back button.
+  hardwareBackHandlerRef.current = () => {
+    if (targetedBatchMapVisible) {
+      setTargetedBatchMapOpen(false);
+      return true;
+    }
+
+    if (!selectedBucket && !selectedBucketCategory) return false;
+
+    if (
+      !selectedBucket &&
+      (selectedBucketCategory === "TBB" || selectedBucketCategory === "BGOB")
+    ) {
+      backToBucketCategories();
+      return true;
+    }
+
+    if (showIndividualGroups || showBmdErfWorklist || showTargetedBatchRows) {
+      backToBuckets();
+      return true;
+    }
+
+    if (showTrnDetail) {
+      if (selectedBucket?.bucketType === "BGOB") {
+        backToBuckets();
+      } else {
+        backToIndividualGroups();
+      }
+      return true;
+    }
+
+    return false;
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener(
+        "hardwareBackPress",
+        () => hardwareBackHandlerRef.current?.() === true,
+      );
+
+      return () => subscription.remove();
+    }, []),
+  );
+
+  // TB-R051: the "not in your work orders" message deferred while the worker was on another screen.
+  useFocusEffect(
+    useCallback(() => {
+      workordersScreenFocusedRef.current = true;
+
+      if (targetedBatchClosedNoticeRef.current) {
+        targetedBatchClosedNoticeRef.current = false;
+        Alert.alert(
+          TARGETED_BATCH_NOT_IN_WORK_ORDERS_TITLE,
+          TARGETED_BATCH_NOT_IN_WORK_ORDERS_MESSAGE,
+        );
+      }
+
+      return () => {
+        workordersScreenFocusedRef.current = false;
+      };
+    }, []),
+  );
+
+  prepareTargetedBatchActionRef.current = prepareTargetedBatchAction;
+  targetedBatchRowsRef.current = targetedBatchRows;
+  selectedBucketRef.current = selectedBucket;
+  // TB-R051: set while rendering, so the action checks in the effects of this render read this batch list.
+  targetedBatchBucketsRef.current = targetedBatchBuckets;
+
+  // TB-R051: one stable handler for every row card, so a live Sales or row update re-renders only the cards
+  // whose shown fields changed. A memoised card can hold an older row object, so the tap acts on the latest
+  // row and batch, as a re-rendered card would have passed.
+  const handleTargetedBatchRowAction = useCallback((args = {}) => {
+    const rowId = args?.row?.id;
+    const latestRow =
+      (rowId &&
+        targetedBatchRowsRef.current.find((item) => item?.id === rowId)) ||
+      args?.row;
+    const latestBucket =
+      args?.bucket?.id && selectedBucketRef.current?.id === args.bucket.id
+        ? selectedBucketRef.current
+        : args?.bucket;
+
+    return (
+      prepareTargetedBatchActionRef.current?.({
+        ...args,
+        bucket: latestBucket,
+        row: latestRow,
+      }) === true
+    );
+  }, []);
+
+  const handleTargetedBatchMapRowAction = useCallback(
+    (args) => {
+      // TB-R051: the map stays open when the action is refused, so the message shows over the map.
+      if (!handleTargetedBatchRowAction(args)) return false;
+
+      // The map is a Modal and would cover the screen the action opens.
+      setTargetedBatchMapOpen(false);
+      // TB-R051: no silent waits; the banner under the search box says what is opening, and an empty
+      // search keeps the row's tile spinner in the list.
+      setTargetedBatchSearchText("");
+      return true;
+    },
+    [handleTargetedBatchRowAction],
+  );
+
+  const pendingTargetedBatchRowId = pendingTargetedBatchAction?.rowId || null;
+  const pendingTargetedBatchIntent = pendingTargetedBatchAction?.intent || null;
+
+  const renderTargetedBatchMapRowCard = useCallback(
+    (row) => (
+      <TargetedBatchRowCard
+        row={row}
+        bucket={selectedBucket}
+        openingIntent={
+          pendingTargetedBatchRowId && pendingTargetedBatchRowId === row?.id
+            ? pendingTargetedBatchIntent
+            : null
+        }
+        onAction={handleTargetedBatchMapRowAction}
+      />
+    ),
+    [
+      selectedBucket,
+      pendingTargetedBatchRowId,
+      pendingTargetedBatchIntent,
+      handleTargetedBatchMapRowAction,
+    ],
+  );
+
+  const targetedBatchRowsLoading =
+    isLoadingTargetedBatchRows && !targetedBatchRowsData;
 
   if (!fieldWorkorderActor) {
     return (
@@ -2825,6 +3266,13 @@ export default function WorkorderManagementSystem() {
         </View>
       </View>
 
+      {offline ? (
+        <View style={styles.wmsOfflineBanner} accessibilityRole="alert">
+          <MaterialCommunityIcons name="wifi-off" size={16} color="#991b1b" />
+          <Text style={styles.wmsOfflineBannerText}>{WMS_OFFLINE_MESSAGE}</Text>
+        </View>
+      ) : null}
+
       {!selectedBucket && !selectedBucketCategory ? (
         <BucketTypeLanding
           individualReady={individualBucketReady}
@@ -2852,6 +3300,7 @@ export default function WorkorderManagementSystem() {
           processingTargetedBatchAction={processingTargetedBatchAction}
           openingTargetedBatchId={openingTargetedBatchId}
           fieldWorkorderActor={fieldWorkorderActor}
+          offline={offline}
           onBack={backToBucketCategories}
           onOpenBucket={openBucket}
           onAcceptTargetedBatch={handleAcceptTargetedBatch}
@@ -2866,6 +3315,7 @@ export default function WorkorderManagementSystem() {
           processingBgoBucketAction={processingBgoBucketAction}
           managerActor={managerActor}
           fieldWorkorderActor={fieldWorkorderActor}
+          offline={offline}
           onBack={backToBucketCategories}
           onOpenBucket={openBucket}
           onAcceptBgoBucket={handleAcceptBgoBucket}
@@ -2877,6 +3327,7 @@ export default function WorkorderManagementSystem() {
           isLoading={isLoading}
           error={error}
           groups={groups}
+          offline={offline}
           onOpenGroup={openGroup}
           onBack={backToBuckets}
         />
@@ -2889,14 +3340,23 @@ export default function WorkorderManagementSystem() {
       ) : showTargetedBatchRows ? (
         <TargetedBatchRowsWorklist
           bucket={selectedBucket}
-          rows={targetedBatchRows}
+          rows={visibleTargetedBatchRows}
+          allRows={targetedBatchRows}
+          totalRowCount={targetedBatchRows.length}
           summary={targetedBatchRowsData?.summary}
-          isLoading={
-            isLoadingTargetedBatchRows && !targetedBatchRowsData
-          }
+          isLoading={targetedBatchRowsLoading}
           error={targetedBatchRowsError}
+          searchText={targetedBatchSearchText}
+          onSearchTextChange={setTargetedBatchSearchText}
+          offline={offline}
+          onOpenMap={() => {
+            // TB-R051: the map does not open while a batch action is preparing.
+            if (pendingTargetedBatchAction) return;
+            Keyboard.dismiss();
+            setTargetedBatchMapOpen(true);
+          }}
           onBack={backToBuckets}
-          onAction={prepareTargetedBatchAction}
+          onAction={handleTargetedBatchRowAction}
           openingAction={pendingTargetedBatchAction}
           hasMore={false}
         />
@@ -2912,6 +3372,7 @@ export default function WorkorderManagementSystem() {
           isBgoBucketView={selectedBucket?.bucketType === "BGOB"}
           isPreparingBgoDetail={isPreparingBgoDetail}
           detailError={selectedBucket?.bucketType === "BGOB" ? bgoDetailError : null}
+          offline={offline}
           onBack={
             selectedBucket?.bucketType === "BGOB"
               ? backToBuckets
@@ -2929,6 +3390,18 @@ export default function WorkorderManagementSystem() {
         busy={actionBusy}
         onClose={() => setRejectItem(null)}
         onSubmit={handleReject}
+      />
+
+      <TargetedBatchMapModal
+        visible={targetedBatchMapVisible}
+        bucket={selectedBucket}
+        rows={targetedBatchRows}
+        erfCentroidById={targetedBatchErfCentroidById}
+        offline={offline}
+        loading={targetedBatchRowsLoading}
+        error={targetedBatchRowsError}
+        onClose={() => setTargetedBatchMapOpen(false)}
+        renderRowCard={renderTargetedBatchMapRowCard}
       />
     </SafeAreaView>
   );
@@ -3131,6 +3604,7 @@ function TargetedBatchBucketLanding({
   processingTargetedBatchAction,
   openingTargetedBatchId,
   fieldWorkorderActor,
+  offline = false,
   onBack,
   onOpenBucket,
   onAcceptTargetedBatch,
@@ -3173,11 +3647,16 @@ function TargetedBatchBucketLanding({
         ) : null}
 
         {!isLoading && !error && buckets.length === 0 ? (
-          <InlineStatusCard
-            icon="target-variant"
-            title="No Targeted Batches available"
-            text="There are no Targeted Batches allocated to your team or service provider right now."
-          />
+          offline ? (
+            // TB-R051: with no connection, never say there is no work.
+            <InlineStatusCard icon="wifi-off" title={WMS_OFFLINE_MESSAGE} />
+          ) : (
+            <InlineStatusCard
+              icon="target-variant"
+              title="No Targeted Batches available"
+              text="There are no Targeted Batches allocated to your team or service provider right now."
+            />
+          )
         ) : null}
 
         {buckets.map((bucket) => (
@@ -3206,6 +3685,7 @@ function BgoBucketLanding({
   processingBgoBucketAction,
   managerActor,
   fieldWorkorderActor,
+  offline = false,
   onBack,
   onOpenBucket,
   onAcceptBgoBucket,
@@ -3249,11 +3729,16 @@ function BgoBucketLanding({
         ) : null}
 
         {!isLoading && !error && buckets.length === 0 ? (
-          <InlineStatusCard
-            icon="playlist-remove"
-            title="No BGO buckets available"
-            text="There are no BGO buckets assigned to you right now. New BGO batches will appear here after they are created for your user, team, or service provider."
-          />
+          offline ? (
+            // TB-R051: with no connection, never say there is no work.
+            <InlineStatusCard icon="wifi-off" title={WMS_OFFLINE_MESSAGE} />
+          ) : (
+            <InlineStatusCard
+              icon="playlist-remove"
+              title="No BGO buckets available"
+              text="There are no BGO buckets assigned to you right now. New BGO batches will appear here after they are created for your user, team, or service provider."
+            />
+          )
         ) : null}
 
         {buckets.map((bucket) => (
@@ -3264,6 +3749,7 @@ function BgoBucketLanding({
             processingBgoBucketAction={processingBgoBucketAction}
             managerActor={managerActor}
             fieldWorkorderActor={fieldWorkorderActor}
+            offline={offline}
             onOpenBucket={onOpenBucket}
             onAcceptBgoBucket={onAcceptBgoBucket}
             onRejectBgoBucket={onRejectBgoBucket}
@@ -3368,6 +3854,10 @@ function TargetedBatchCard({
         />
       </View>
 
+      {/* TB-R051: these counts are the batch record's own counts, not the status on the phone (a Sales
+          VISIBLE meter is Completed only in the batch rows header), so they carry their own caption.
+          The card does not load the batch rows. */}
+      <Text style={styles.tbCountsCaption}>Batch record</Text>
       <View style={styles.groupCounts}>
         <MiniCount
           label="Not Started"
@@ -3499,7 +3989,7 @@ function InlineStatusCard({
         <Text style={[styles.inlineStatusTitle, isError && styles.inlineStatusTitleError]}>
           {title}
         </Text>
-        <Text style={styles.inlineStatusText}>{text}</Text>
+        {text ? <Text style={styles.inlineStatusText}>{text}</Text> : null}
       </View>
     </View>
   );
@@ -3511,6 +4001,7 @@ function BucketCard({
   processingBgoBucketAction,
   managerActor,
   fieldWorkorderActor,
+  offline = false,
   onOpenBucket,
   onAcceptBgoBucket,
   onRejectBgoBucket,
@@ -3734,7 +4225,10 @@ function BucketCard({
                 ? isBmd && statusText === "Accepted"
                   ? "MD-BGO accepted. ERF worklist is ready."
                   : "Bucket not open for execution."
-                : "No TRNs in this bucket yet."}
+                : offline
+                  ? // TB-R051: with no connection, never say there is no work.
+                    WMS_OFFLINE_MESSAGE
+                  : "No TRNs in this bucket yet."}
             </Text>
           </View>
         ) : null}
@@ -3892,9 +4386,15 @@ function MdBgoErfCard({ erf, bucket, onOpenErf }) {
 function TargetedBatchRowsWorklist({
   bucket,
   rows = [],
+  allRows,
+  totalRowCount,
   summary = {},
   isLoading,
   error,
+  searchText = "",
+  onSearchTextChange,
+  offline = false,
+  onOpenMap,
   onBack,
   onAction,
   openingAction,
@@ -3903,6 +4403,37 @@ function TargetedBatchRowsWorklist({
   onLoadMore,
   onReload,
 }) {
+  const allRowCount = Number.isFinite(Number(totalRowCount))
+    ? Number(totalRowCount)
+    : rows.length;
+  const searchQuery = String(searchText || "").trim();
+  const searchActive = searchQuery.length > 0;
+  // TB-R051: no false "no position" map; the map opens only once the batch rows are on the phone,
+  // and not while a batch action is preparing (the action's screen would open behind it).
+  const mapUnavailable =
+    Boolean(isLoading) ||
+    Boolean(error) ||
+    allRowCount === 0 ||
+    Boolean(openingAction);
+
+  // TB-R051: no silent waits; an action started from the map, or from a row now scrolled away,
+  // shows what is opening under the search box. The row is looked up in all rows, not only the matches.
+  const openingRowId = openingAction?.rowId || null;
+  const openingRow = openingRowId
+    ? (Array.isArray(allRows) ? allRows : rows).find(
+        (item) => item?.id === openingRowId,
+      ) || null
+    : null;
+  const openingLabel = openingAction
+    ? TARGETED_BATCH_INTENT_LABELS[openingAction?.intent] || "the batch action"
+    : null;
+  const openingMeterNo = readFirstString(openingRow?.meterNo);
+  const openingText = openingAction
+    ? openingMeterNo
+      ? `Opening ${openingLabel} for meter ${openingMeterNo}…`
+      : `Opening ${openingLabel}…`
+    : null;
+
   const renderRow = ({ item }) => (
     <TargetedBatchRowCard
       row={item}
@@ -3928,26 +4459,107 @@ function TargetedBatchRowsWorklist({
           {bucket?.id || "Targeted Batch"}
         </Text>
 
-        <View style={styles.mdBgoCompactStat}>
-          <Text style={styles.mdBgoCompactStatLabel}>Rows</Text>
-          <Text style={styles.mdBgoCompactStatValue}>
-            {summary?.total ?? rows.length}
-          </Text>
+        <Pressable
+          style={({ pressed }) => [
+            styles.tbMapButton,
+            mapUnavailable && styles.tbMapButtonDisabled,
+            pressed && !mapUnavailable && styles.tbMapButtonPressed,
+          ]}
+          onPress={onOpenMap}
+          disabled={mapUnavailable || typeof onOpenMap !== "function"}
+          accessibilityRole="button"
+          accessibilityLabel="Map of this batch"
+          accessibilityState={{ disabled: mapUnavailable }}
+          hitSlop={6}
+        >
+          <MaterialCommunityIcons
+            name="map-marker-radius"
+            size={18}
+            color={mapUnavailable ? "#94a3b8" : "#2563eb"}
+          />
+        </Pressable>
+
+        {/* TB-R051: the header counts use the status on the phone (Sales VISIBLE counts as Completed);
+            the batch list card shows the batch record's counts under its own caption. */}
+        <View style={styles.tbPhoneStatusGroup}>
+          <Text style={styles.tbCountsCaption}>Status on the phone</Text>
+
+          <View style={styles.tbPhoneStatusRow}>
+            <View style={styles.mdBgoCompactStat}>
+              <Text style={styles.mdBgoCompactStatLabel}>Rows</Text>
+              <Text style={styles.mdBgoCompactStatValue}>
+                {summary?.total ?? allRowCount}
+              </Text>
+            </View>
+
+            <View style={styles.mdBgoCompactStat}>
+              <Text style={styles.mdBgoCompactStatLabel}>Started</Text>
+              <Text style={styles.mdBgoCompactStatValue}>
+                {summary?.inProgress ?? 0}
+              </Text>
+            </View>
+
+            <View style={styles.mdBgoCompactStat}>
+              <Text style={styles.mdBgoCompactStatLabel}>Done</Text>
+              <Text style={styles.mdBgoCompactStatValue}>
+                {summary?.completed ?? 0}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* TB-R051: search by meter number, ERF number or street address. */}
+      <View style={styles.tbSearchWrap}>
+        <View style={styles.tbSearchBox}>
+          <MaterialCommunityIcons name="magnify" size={18} color="#64748b" />
+          <TextInput
+            style={styles.tbSearchInput}
+            value={searchText}
+            onChangeText={onSearchTextChange}
+            placeholder="Search meter no., ERF or street"
+            placeholderTextColor="#94a3b8"
+            accessibilityLabel="Search meter no., ERF or street"
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+          {searchText ? (
+            <Pressable
+              style={styles.tbSearchClear}
+              onPress={() => onSearchTextChange?.("")}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+              hitSlop={8}
+            >
+              <MaterialCommunityIcons
+                name="close-circle"
+                size={18}
+                color="#64748b"
+              />
+            </Pressable>
+          ) : null}
         </View>
 
-        <View style={styles.mdBgoCompactStat}>
-          <Text style={styles.mdBgoCompactStatLabel}>Started</Text>
-          <Text style={styles.mdBgoCompactStatValue}>
-            {summary?.inProgress ?? 0}
+        {searchActive ? (
+          <Text style={styles.tbSearchCount}>
+            Showing {rows.length} of {allRowCount}
           </Text>
-        </View>
+        ) : null}
 
-        <View style={styles.mdBgoCompactStat}>
-          <Text style={styles.mdBgoCompactStatLabel}>Done</Text>
-          <Text style={styles.mdBgoCompactStatValue}>
-            {summary?.completed ?? 0}
-          </Text>
-        </View>
+        {openingText ? (
+          <View
+            style={styles.tbOpeningBanner}
+            accessibilityRole="progressbar"
+            accessibilityLiveRegion="polite"
+            accessibilityLabel={openingText}
+          >
+            <ActivityIndicator size="small" color="#2563eb" />
+            <Text style={styles.tbOpeningBannerText} numberOfLines={2}>
+              {openingText}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       {isLoading ? (
@@ -3983,20 +4595,44 @@ function TargetedBatchRowsWorklist({
           estimatedItemSize={122}
           style={styles.scroll}
           contentContainerStyle={styles.flashListContent}
+          keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
-            <View style={styles.emptyListCard}>
-              <MaterialCommunityIcons
-                name="playlist-remove"
-                size={35}
-                color="#94a3b8"
-              />
-              <Text style={styles.stateTitle}>
-                No Targeted Batch rows
-              </Text>
-              <Text style={styles.stateText}>
-                This accepted Targeted Batch does not contain any rows.
-              </Text>
-            </View>
+            searchActive && allRowCount > 0 ? (
+              <View style={styles.emptyListCard}>
+                <MaterialCommunityIcons
+                  name="magnify-close"
+                  size={35}
+                  color="#94a3b8"
+                />
+                <Text style={styles.stateTitle}>
+                  No meter matches {searchQuery}
+                </Text>
+              </View>
+            ) : offline ? (
+              // TB-R051: with no connection, never say there is no work.
+              <View style={styles.emptyListCard}>
+                <MaterialCommunityIcons
+                  name="wifi-off"
+                  size={35}
+                  color="#94a3b8"
+                />
+                <Text style={styles.stateTitle}>{WMS_OFFLINE_MESSAGE}</Text>
+              </View>
+            ) : (
+              <View style={styles.emptyListCard}>
+                <MaterialCommunityIcons
+                  name="playlist-remove"
+                  size={35}
+                  color="#94a3b8"
+                />
+                <Text style={styles.stateTitle}>
+                  No Targeted Batch rows
+                </Text>
+                <Text style={styles.stateText}>
+                  This accepted Targeted Batch does not contain any rows.
+                </Text>
+              </View>
+            )
           }
           ListFooterComponent={hasMore ? (
             <Pressable style={[styles.mdBgoOpenErfBtn, loadingMore && styles.actionDisabled]} disabled={loadingMore} onPress={onLoadMore}>
@@ -4009,14 +4645,27 @@ function TargetedBatchRowsWorklist({
   );
 }
 
-function TargetedBatchRowCard({
+function TargetedBatchRowCardBase({
   row,
   bucket,
   onAction,
   openingIntent = null,
 }) {
-  const executionStatus =
-    normalizeUpper(row?.executionStatus) || "NOT_STARTED";
+  // TB-R051: the status the phone shows (Sales VISIBLE or a completed row is Completed).
+  const displayStatus =
+    normalizeUpper(row?.displayStatus || row?.executionStatus) || "NOT_STARTED";
+  const statusBadgeStyle =
+    displayStatus === "COMPLETED"
+      ? styles.badgeGreen
+      : displayStatus === "IN_PROGRESS"
+        ? styles.badgeOrange
+        : null;
+  const statusBadgeTextStyle =
+    displayStatus === "COMPLETED"
+      ? styles.badgeGreenText
+      : displayStatus === "IN_PROGRESS"
+        ? styles.badgeOrangeText
+        : null;
   const erfId = cleanId(row?.erfId || row?.refs?.erfId);
   const erfNo = readFirstString(
     row?.erfNo,
@@ -4049,15 +4698,16 @@ function TargetedBatchRowCard({
           </Text>
         </View>
 
-        <View style={styles.mdBgoErfStatusBadge}>
-          <Text style={styles.mdBgoErfStatusText}>
-            {executionStatus.replace(/_/g, " ")}
+        <View style={[styles.mdBgoErfStatusBadge, statusBadgeStyle]}>
+          <Text style={[styles.mdBgoErfStatusText, statusBadgeTextStyle]}>
+            {displayStatus.replace(/_/g, " ")}
           </Text>
         </View>
       </View>
 
       <View style={styles.mdBgoErfFooterRow}>
-        <TargetedBatchActionTile label="PREMISE" value={actions.premise.value} icon="home-outline"
+        <TargetedBatchActionTile label="PREMISE" value={actions.premise.value} helperText={actions.premise.helperText} icon="home-outline"
+          disabled={actions.premise.disabled}
           opening={openingIntent === actions.premise.intent} onPress={() => onAction({ bucket, row, intent: actions.premise.intent })} />
         <TargetedBatchActionTile label="AST" value={actions.ast.value} helperText={actions.ast.helperText} icon="meter-electric-outline"
           tone={actions.invalidLinkage ? "issue" : "default"} disabled={actions.ast.disabled}
@@ -4065,7 +4715,7 @@ function TargetedBatchRowCard({
         <TargetedBatchActionTile label="NA" value={actions.noAccess.value} helperText={actions.noAccess.helperText} icon="account-cancel-outline"
           tone={actions.noAccess.value === null ? "issue" : "default"} disabled={actions.noAccess.disabled}
           opening={openingIntent === actions.noAccess.intent} onPress={() => onAction({ bucket, row, intent: actions.noAccess.intent })} />
-        <TargetedBatchActionTile label={`ERF ${hasErf ? erfNo : ""}`} value="OPEN" icon="vector-square"
+        <TargetedBatchActionTile label={`ERF ${hasErf ? erfNo : ""}`} value="OPEN" helperText={actions.erf.helperText} icon="vector-square"
           disabled={actions.erf.disabled} opening={openingIntent === actions.erf.intent}
           onPress={() => onAction({ bucket, row, intent: actions.erf.intent })} />
       </View>
@@ -4073,7 +4723,59 @@ function TargetedBatchRowCard({
   );
 }
 
-function GroupLanding({ isLoading, error, groups, onOpenGroup, onBack }) {
+// TB-R051: every live Sales or row update rebuilds all row objects, so the card compares what it shows.
+// This list must hold every row field the card and getTargetedBatchRowActionState read.
+const TARGETED_BATCH_ROW_CARD_FIELDS = [
+  (row) => row?.id,
+  (row) => row?.displayStatus,
+  (row) => row?.executionStatus,
+  (row) => row?.erfId,
+  (row) => row?.erfNo,
+  (row) => row?.raw?.property?.erfNo,
+  (row) => row?.refs?.erfId,
+  (row) => row?.refs?.premiseId,
+  (row) => row?.refs?.meterId,
+  (row) => row?.meterNo,
+  (row) => row?.accountNumber,
+  (row) => row?.customerName,
+  (row) => row?.address,
+  (row) => row?.town,
+  (row) => row?.fieldWorkMeterId,
+  (row) => row?.raw?.fieldWorkMeterId,
+  (row) => row?.noAccessCount,
+];
+
+// The batch is compared by id only: the card shows nothing of it, and the stable onAction
+// (handleTargetedBatchRowAction) acts on the latest row and batch when tapped.
+function targetedBatchRowCardPropsEqual(prev, next) {
+  if (prev.onAction !== next.onAction) return false;
+  if ((prev.openingIntent ?? null) !== (next.openingIntent ?? null)) return false;
+  if ((prev.bucket?.id || null) !== (next.bucket?.id || null)) return false;
+  if (prev.row === next.row) return true;
+
+  return TARGETED_BATCH_ROW_CARD_FIELDS.every((read) =>
+    Object.is(read(prev.row), read(next.row)),
+  );
+}
+
+const TargetedBatchRowCard = memo(
+  TargetedBatchRowCardBase,
+  targetedBatchRowCardPropsEqual,
+);
+TargetedBatchRowCard.displayName = "TargetedBatchRowCard";
+
+function GroupLanding({
+  isLoading,
+  error,
+  groups,
+  offline = false,
+  onOpenGroup,
+  onBack,
+}) {
+  // TB-R051: with no connection, empty groups are not loaded work, not "no work".
+  const offlineWithoutWork =
+    offline && groups.every((group) => Number(group?.total || 0) === 0);
+
   if (isLoading) {
     return (
       <View style={styles.stateWrap}>
@@ -4115,6 +4817,12 @@ function GroupLanding({ isLoading, error, groups, onOpenGroup, onBack }) {
 
       <Text style={[styles.sectionEyebrow, { marginTop: 10 }]}>Individual Work</Text>
       <Text style={styles.sectionTitle}>Select TRN Type</Text>
+
+      {offlineWithoutWork ? (
+        <View style={[styles.bucketList, { marginBottom: 10 }]}>
+          <InlineStatusCard icon="wifi-off" title={WMS_OFFLINE_MESSAGE} />
+        </View>
+      ) : null}
 
       <View style={styles.groupGrid}>
         {groups.map((group) => (
@@ -4172,11 +4880,16 @@ function GroupDetail({
   isBgoBucketView = false,
   isPreparingBgoDetail = false,
   detailError = null,
+  offline = false,
   onBack,
   onAccept,
   onReject,
   onExecute,
 }) {
+  // TB-R051: with no connection and nothing on the phone, say so instead of "No allocated TRNs".
+  const offlineWithoutItems =
+    offline && (Array.isArray(allGroupItems) ? allGroupItems.length : 0) === 0;
+
   const renderWorkItem = ({ item }) => (
     <WorkItemCard
       item={item}
@@ -4272,17 +4985,28 @@ function GroupDetail({
           style={styles.scroll}
           contentContainerStyle={styles.flashListContent}
           ListEmptyComponent={
-            <View style={styles.emptyListCard}>
-              <MaterialCommunityIcons
-                name="clipboard-check-outline"
-                size={35}
-                color="#94a3b8"
-              />
-              <Text style={styles.stateTitle}>No allocated TRNs</Text>
-              <Text style={styles.stateText}>
-                Change filters or issue work directly to this FWR.
-              </Text>
-            </View>
+            offlineWithoutItems ? (
+              <View style={styles.emptyListCard}>
+                <MaterialCommunityIcons
+                  name="wifi-off"
+                  size={35}
+                  color="#94a3b8"
+                />
+                <Text style={styles.stateTitle}>{WMS_OFFLINE_MESSAGE}</Text>
+              </View>
+            ) : (
+              <View style={styles.emptyListCard}>
+                <MaterialCommunityIcons
+                  name="clipboard-check-outline"
+                  size={35}
+                  color="#94a3b8"
+                />
+                <Text style={styles.stateTitle}>No allocated TRNs</Text>
+                <Text style={styles.stateText}>
+                  Change filters or issue work directly to this FWR.
+                </Text>
+              </View>
+            )
           }
         />
       )}
@@ -6175,5 +6899,126 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 12,
     fontWeight: "900",
+  },
+
+  wmsOfflineBanner: {
+    marginHorizontal: 12,
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    backgroundColor: "#fee2e2",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+
+  wmsOfflineBannerText: {
+    flex: 1,
+    color: "#991b1b",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  tbMapButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  tbMapButtonPressed: {
+    backgroundColor: "#dbeafe",
+  },
+
+  tbMapButtonDisabled: {
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f1f5f9",
+  },
+
+  tbSearchWrap: {
+    marginHorizontal: 12,
+    marginBottom: 4,
+  },
+
+  tbSearchBox: {
+    minHeight: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#ffffff",
+    paddingLeft: 10,
+    paddingRight: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  tbSearchInput: {
+    flex: 1,
+    minHeight: 38,
+    paddingVertical: 6,
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  tbSearchClear: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  tbSearchCount: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 4,
+    marginLeft: 4,
+  },
+
+  tbCountsCaption: {
+    color: "#64748b",
+    fontSize: 8,
+    fontWeight: "900",
+    textTransform: "uppercase",
+    marginBottom: 3,
+  },
+
+  tbPhoneStatusGroup: {
+    alignItems: "center",
+  },
+
+  tbPhoneStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+
+  tbOpeningBanner: {
+    marginTop: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  tbOpeningBannerText: {
+    flex: 1,
+    color: "#1d4ed8",
+    fontSize: 12,
+    fontWeight: "800",
   },
 });

@@ -33,6 +33,13 @@ import {
   useMap,
 } from "../../../src/context/MapContext";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
+import BatchCheckOverlay, {
+  BATCH_CHECK_MESSAGES,
+} from "../../../src/features/targetedBatches/BatchCheckOverlay";
+import { askBatchOrOrdinaryPremise } from "../../../src/features/targetedBatches/askBatchOrOrdinaryPremise";
+import { askBatchOrOtherDiscovery } from "../../../src/features/targetedBatches/askBatchOrOtherDiscovery";
+import { erfWithCarriedBatchContext } from "../../../src/features/targetedBatches/targetedBatchContextCarry";
+import { useAuth } from "../../../src/hooks/useAuth";
 import { useUpdatePremiseMutation } from "../../../src/redux/premisesApi";
 import { cutLastWord } from "../../../src/utils/stringsUtils";
 
@@ -54,6 +61,26 @@ export default function MapsScreen() {
   const { openMissionDiscovery } = useDiscovery();
   const router = useRouter();
   const [updatePremise] = useUpdatePremiseMutation();
+
+  // TB-R051: the batch checks run for this worker, read the same way as My Work
+  // Orders; role and profile feed its actor gate (FWR, or SPV not MNC-side).
+  const { user, profile } = useAuth();
+  const actorUid = user?.uid || profile?.uid || null;
+  const actorSpId = profile?.employment?.serviceProvider?.id || null;
+  const actorRole = profile?.employment?.role || profile?.role || "NAv";
+  const batchActor = useMemo(
+    () => ({ uid: actorUid, spId: actorSpId, role: actorRole, profile }),
+    [actorUid, actorSpId, actorRole, profile],
+  );
+
+  // TB-R051: progress for the whole live batch check (null when not checking).
+  const [batchCheckMessage, setBatchCheckMessage] = useState(null);
+  const showBatchMeterCheck = useCallback((checking) => {
+    setBatchCheckMessage(checking ? BATCH_CHECK_MESSAGES.METER : null);
+  }, []);
+  const showBatchPremiseCheck = useCallback((checking) => {
+    setBatchCheckMessage(checking ? BATCH_CHECK_MESSAGES.PREMISE : null);
+  }, []);
 
   const lastSignalRef = useRef(null);
   const geoLibraryRef = useRef({});
@@ -329,22 +356,33 @@ export default function MapsScreen() {
     if (!prem?.id) return;
 
     const parentErf = all?.erfs?.find((erf) => erf?.id === prem?.erfId) || null;
+    // TB-R051: read the batch before the selection changes.
+    const selectedErfContext = geoState?.selectedErf?.targetedBatchContext;
     console.log(`Map - parenErf`, parentErf);
     console.log(`Map - premise`, prem);
 
-    updateGeo({
-      selectedErf: parentErf || null,
-      selectedPremise: prem,
-      lastSelectionType: "PREMISE",
-    });
-
     setPremiseActionPrem(null);
 
-    openMissionDiscovery({
-      premiseId: prem.id,
+    askBatchOrOtherDiscovery({
       premise: prem,
+      parentErf,
+      selectedErfContext,
+      updateGeo,
+      router,
+      openMissionDiscovery,
+      actor: batchActor,
+      onCheckingChange: showBatchMeterCheck,
     });
-  }, [premiseActionPrem, all?.erfs, updateGeo, openMissionDiscovery]);
+  }, [
+    premiseActionPrem,
+    all?.erfs,
+    geoState?.selectedErf?.targetedBatchContext,
+    updateGeo,
+    router,
+    openMissionDiscovery,
+    batchActor,
+    showBatchMeterCheck,
+  ]);
 
   const handleAdjustPremisePositionFromModal = useCallback(() => {
     const prem = premiseActionPrem;
@@ -363,13 +401,30 @@ export default function MapsScreen() {
     const selectedErf = geoState?.selectedErf;
     if (!selectedErf?.id) return;
 
-    router.push({
-      pathname: "/(tabs)/premises/formPremise",
-      params: {
-        id: selectedErf.id,
+    // TB-R051: a new premise on an ERF selected with a batch is checked live
+    // first; the checked batch goes to the form, the same as the Premises tab.
+    askBatchOrOrdinaryPremise({
+      erf: selectedErf,
+      updateGeo,
+      actor: batchActor,
+      onCheckingChange: showBatchPremiseCheck,
+      openPremiseForm: ({ erfId, targetedBatchContext }) => {
+        router.push({
+          pathname: "/(tabs)/premises/formPremise",
+          params: {
+            id: erfId,
+            ...(targetedBatchContext ? { targetedBatchContext } : {}),
+          },
+        });
       },
     });
-  }, [geoState?.selectedErf, router]);
+  }, [
+    geoState?.selectedErf,
+    updateGeo,
+    batchActor,
+    showBatchPremiseCheck,
+    router,
+  ]);
 
   const handleMapUserLocationChange = useCallback((event) => {
     const coordinate = event?.nativeEvent?.coordinate;
@@ -924,7 +979,15 @@ export default function MapsScreen() {
               erfNo={erf?.erfNo}
               onPress={(e) => {
                 // e?.stopPropagation?.();
-                updateGeo({ selectedErf: erf, lastSelectionType: "ERF" });
+                // TB-R051: the batch stays only for the same ERF.
+                updateGeo({
+                  selectedErf: erfWithCarriedBatchContext({
+                    erf,
+                    selectedErfContext:
+                      geoState?.selectedErf?.targetedBatchContext,
+                  }),
+                  lastSelectionType: "ERF",
+                });
               }}
             />
           </React.Fragment>
@@ -1293,6 +1356,11 @@ export default function MapsScreen() {
         onClose={handleClosePremiseActionModal}
         onOpenMeterDiscovery={handleOpenMeterDiscoveryFromModal}
         onAdjustPosition={handleAdjustPremisePositionFromModal}
+      />
+
+      <BatchCheckOverlay
+        visible={!!batchCheckMessage}
+        message={batchCheckMessage}
       />
     </View>
   );
