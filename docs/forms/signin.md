@@ -56,3 +56,7 @@ Everything you can be told after tapping Signin.
 - It does not create accounts. That is Sign up.
 - It does not change your password. That is Password reset, or Change password once you are in.
 - It does not decide whether you may work. Your manager authorises you.
+
+---
+
+**The web console works the same way.** Its sign-in, password reset and change-password screens follow this same form and this same Error Register (AU-R001 10).

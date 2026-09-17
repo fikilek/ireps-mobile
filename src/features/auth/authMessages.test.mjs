@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   PASSWORD_MIN_LENGTH,
   changePasswordMessage,
+  invitationSentMessage,
   passwordProblem,
   passwordResetMessage,
   passwordResetSentMessage,
@@ -116,6 +117,31 @@ test("sign up keeps the reason the back end gave", () => {
   );
 
   assert.match(signupMessage(fbError("functions/internal")).message, /tell your manager/);
+});
+
+test("an invitation hands over its one-time password, once", () => {
+  const sent = invitationSentMessage({
+    role: "Supervisor",
+    name: "Thabo",
+    email: "thabo@example.com",
+    oneTimePassword: "K7RM-4TQD-9XBV",
+  });
+
+  assert.equal(sent.title, "Supervisor invited");
+  assert.match(sent.message, /K7RM-4TQD-9XBV/);
+  assert.match(sent.message, /thabo@example\.com/);
+  assert.match(sent.message, /never show it again/);
+  assert.match(sent.message, /must set their own password/);
+
+  // If the back end gives nothing back, the person is not told a password that does not exist.
+  const missing = invitationSentMessage({
+    role: "Manager",
+    name: "Thabo",
+    email: "thabo@example.com",
+  });
+
+  assert.match(missing.message, /Lost access\?/);
+  assert.doesNotMatch(missing.message, /undefined/);
 });
 
 test("a picker that could not load says so", () => {

@@ -15,6 +15,11 @@ const selectWorkbaseSource = await read("../../../app/onboarding/select-workbase
 const invitedProfileSource = await read("../../../app/onboarding/complete-invited-profile.js");
 const confirmAdminSource = await read("../../../app/onboarding/confirm-admin.js");
 const authApiSource = await read("../../redux/authApi.js");
+const inviteSources = await Promise.all(
+  ["create-admin", "create-manager", "create-supervisor"].map((screen) =>
+    read(`../../../app/(tabs)/admin/users/${screen}.js`),
+  ),
+);
 
 test("a demanded password change stops everybody, not only users being onboarded", () => {
   assert.doesNotMatch(
@@ -48,6 +53,21 @@ test("an invited admin is not left on a screen that never moves", () => {
   // AWAITING_INITIAL_SIGNUP is the status inviteAdminUser writes. It used to route nowhere.
   assert.match(layoutSource, /case "AWAITING_INITIAL_SIGNUP":/);
   assert.match(layoutSource, /status === "AWAITING_INITIAL_SIGNUP"/);
+});
+
+test("no screen knows an invited person's password in advance", () => {
+  for (const source of [...inviteSources, invitedProfileSource, confirmAdminSource]) {
+    assert.doesNotMatch(source, /"password",/);
+    assert.doesNotMatch(source, /Default password/i);
+    assert.doesNotMatch(source, /reauthenticateWithCredential/);
+  }
+
+  // Each invite hands the one-time password over, and waits to be told it was written down.
+  for (const source of inviteSources) {
+    assert.match(source, /invitationSentMessage\(/);
+    assert.match(source, /oneTimePassword: result\?\.oneTimePassword/);
+    assert.match(source, /I have written it down/);
+  }
 });
 
 test("nothing but a password change clears the demand", () => {

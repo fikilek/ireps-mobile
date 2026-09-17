@@ -21,6 +21,7 @@ import {
 } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { invitationSentMessage } from "../../../../src/features/auth/authMessages";
 import { useInviteMngMutation } from "../../../../src/redux/authApi";
 import { useGetServiceProvidersQuery } from "../../../../src/redux/spApi";
 
@@ -74,8 +75,10 @@ export default function CreateManagerScreen() {
     }
 
     try {
-      await inviteMng({
-        email: values.email.toLowerCase().trim(),
+      const email = values.email.toLowerCase().trim();
+
+      const result = await inviteMng({
+        email,
         name: values.name.trim(),
         surname: values.surname.trim(),
         mnc: {
@@ -84,11 +87,18 @@ export default function CreateManagerScreen() {
         },
       }).unwrap();
 
-      Alert.alert(
-        "Mission Confirmed",
-        `Manager ${values.name.trim()} invited successfully.`,
-      );
-      router.back();
+      // AU-R001 9: the one-time password is shown once, now, and the screen stays put until it has
+      // been read.
+      const { title, message } = invitationSentMessage({
+        role: "Manager",
+        name: values.name.trim(),
+        email,
+        oneTimePassword: result?.oneTimePassword,
+      });
+
+      Alert.alert(title, message, [
+        { text: "I have written it down", onPress: () => router.back() },
+      ]);
     } catch (err) {
       Alert.alert(
         "Command Error",

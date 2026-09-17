@@ -142,6 +142,28 @@ export function serviceProviderListMessage() {
 }
 
 /* =====================================================
+   AN INVITATION  (AU-R001 9)
+   ===================================================== */
+
+// The one-time password is shown once, here, to whoever sent the invitation. iREPS cannot email it,
+// so this window is the only place it ever appears.
+export function invitationSentMessage({ role, name, email, oneTimePassword }) {
+  const who = String(name || "").trim() || "They";
+
+  if (!oneTimePassword) {
+    return {
+      title: `${role} invited`,
+      message: `${who} can sign in as ${email}, but iREPS did not give back a one-time password. Ask them to use Lost access? on the sign-in screen to set one.`,
+    };
+  }
+
+  return {
+    title: `${role} invited`,
+    message: `${who} signs in as ${email} with this one-time password:\n\n${oneTimePassword}\n\nWrite it down or send it to them now — iREPS cannot email it and will never show it again. They must set their own password the first time they sign in.`,
+  };
+}
+
+/* =====================================================
    PASSWORD RESET  (AU-R001 7.3)
    ===================================================== */
 

@@ -4,6 +4,7 @@ import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button, Divider, TextInput } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { invitationSentMessage } from "../../../../src/features/auth/authMessages";
 // 🎯 Using the specific ADM mutation
 import { useInviteAdminMutation } from "../../../../src/redux/authApi";
 
@@ -20,17 +21,26 @@ export default function CreateAdminScreen() {
     try {
       // 🚀 THE SOVEREIGN STRIKE
       // Cloud function handles 'smars' and 'ALL' assignment behind the scenes
-      await inviteAdmin({
-        email: values.email.toLowerCase().trim(),
+      const email = values.email.toLowerCase().trim();
+
+      const result = await inviteAdmin({
+        email,
         name: values.name,
         surname: values.surname,
       }).unwrap();
 
-      Alert.alert(
-        "Mission Confirmed",
-        `Administrator ${values.name} appointed to smars.`,
-      );
-      router.back();
+      // AU-R001 9: the one-time password is shown once, now, and the screen stays put until it has
+      // been read.
+      const { title, message } = invitationSentMessage({
+        role: "Administrator",
+        name: values.name,
+        email,
+        oneTimePassword: result?.oneTimePassword,
+      });
+
+      Alert.alert(title, message, [
+        { text: "I have written it down", onPress: () => router.back() },
+      ]);
     } catch (err) {
       Alert.alert(
         "Command Error",

@@ -47,3 +47,7 @@ Changing the password clears the demand **and nothing else**. Your role, your au
 - It does not change your email.
 - It does not move you backwards or forwards in onboarding.
 - It does not tell your manager what your password is. Nobody at iREPS can see it.
+
+---
+
+**The web console works the same way.** Its sign-in, password reset and change-password screens follow this same form and this same Error Register (AU-R001 10).

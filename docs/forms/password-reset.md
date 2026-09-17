@@ -48,3 +48,7 @@ The link works for a limited time. If it has expired, come back to this screen a
 - It does not change anything about your account: not your role, not your authorisation, not your workbase.
 - It does not tell your manager.
 - It does not let you set the password inside the app. That happens on the page the link opens.
+
+---
+
+**The web console works the same way.** Its sign-in, password reset and change-password screens follow this same form and this same Error Register (AU-R001 10).
