@@ -19,6 +19,10 @@ import {
   Text,
 } from "react-native-paper";
 import { array, object, string } from "yup";
+import {
+  METER_NUMBER_INVALID_MESSAGE,
+  METER_NUMBER_PATTERN,
+} from "./meterNumberRule";
 
 // Firebase & Redux
 import { httpsCallable } from "firebase/functions";
@@ -542,7 +546,9 @@ export default function FormMeterInstallation() {
     // --- SECTION 2: THE PHYSICAL ASSET ---
     ast: object().shape({
       astData: object().shape({
-        astNo: string().required("Meter number is required"),
+        astNo: string()
+          .required("Meter number is required")
+          .matches(METER_NUMBER_PATTERN, METER_NUMBER_INVALID_MESSAGE),
         astManufacturer: string().required("Manufacturer is required"),
         astName: string().required("Model is required"),
         meter: object().shape({
@@ -644,7 +650,9 @@ export default function FormMeterInstallation() {
 
     ast: object().shape({
       astData: object().shape({
-        astNo: string().required("Meter number is required"),
+        astNo: string()
+          .required("Meter number is required")
+          .matches(METER_NUMBER_PATTERN, METER_NUMBER_INVALID_MESSAGE),
 
         astManufacturer: string().required("Manufacturer is required"),
 
