@@ -21,6 +21,7 @@ import { array, object, string } from "yup";
 import {
   METER_NUMBER_INVALID_MESSAGE,
   METER_NUMBER_PATTERN,
+  cleanMeterNumberInput,
 } from "./meterNumberRule";
 
 // Firebase & Redux
@@ -1241,7 +1242,7 @@ export default function FormMeterDiscovery() {
         },
         ast: {
           astData: {
-            astNo: targetedBatchContext?.targetedMeterNo || "",
+            astNo: cleanMeterNumberInput(targetedBatchContext?.targetedMeterNo),
             astManufacturer: "",
             astManufacturerOther: "",
             astName: "",

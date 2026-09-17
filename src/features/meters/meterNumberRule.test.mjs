@@ -16,7 +16,7 @@ test("every space is removed and letters become capitals; leading zeros stay", (
 });
 
 test("dashes, slashes, dots and other symbols are kept so the form can refuse them", () => {
-  for (const bad of ["0429-769", "0429/769", "0429.769", "0429_769", "0429#"]) {
+  for (const bad of ["0429-769", "0429/769", "0429.769", "0429_769", "0429#", "straße1", "ıd1"]) {
     assert.equal(isValidMeterNumber(bad), false);
     assert.match(cleanMeterNumberInput(bad), /[^A-Z0-9]/);
   }
@@ -38,4 +38,7 @@ test("the meter number field and every meter form use the rule", async () => {
     assert.doesNotMatch(source, /astNo: string\(\)\.required\("Meter number is required"\),/);
   }
   assert.equal(METER_NUMBER_PATTERN.test("AB12"), true);
+
+  const discovery = await read("FormMeterDiscovery.js");
+  assert.match(discovery, /astNo: cleanMeterNumberInput\(targetedBatchContext\?\.targetedMeterNo\)/);
 });

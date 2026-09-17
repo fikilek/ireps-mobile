@@ -7,12 +7,13 @@ export const METER_NUMBER_PATTERN = /^[A-Z0-9]+$/;
 export const METER_NUMBER_INVALID_MESSAGE =
   "Meter number may only contain letters and digits. Remove dashes, slashes, dots or other symbols.";
 
-// Every space removed (start, middle and end) and capital letters. Any other character is
-// kept so the worker sees it and the form refuses it with a message.
+// Every space removed (start, middle and end) and a-z made capitals. Any other character,
+// including letters such as a German sharp s, is kept as typed so the form refuses it with a
+// message instead of converting it.
 export function cleanMeterNumberInput(value) {
   return String(value ?? "")
     .replace(/\s+/g, "")
-    .toUpperCase();
+    .replace(/[a-z]/g, (letter) => letter.toUpperCase());
 }
 
 export function isValidMeterNumber(value) {
