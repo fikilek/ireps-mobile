@@ -9,6 +9,7 @@ import {
   PhoneAuthProvider,
   reauthenticateWithCredential,
   sendEmailVerification,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
   updateEmail,
@@ -48,6 +49,15 @@ function tsToMs(ts) {
   }
 
   return null;
+}
+
+// A Firebase error is an Error object; Redux may only hold plain values. The code is what the
+// screens read to name the cause (AU-R001 7).
+function plainAuthError(error, fallbackMessage) {
+  return {
+    code: String(error?.code || ""),
+    message: String(error?.message || fallbackMessage || "").trim() || fallbackMessage,
+  };
 }
 
 function normalizeUserProfile(raw) {
@@ -189,11 +199,32 @@ export const authApi = createApi({
         } catch (error) {
           console.error("signup ----error", error);
 
-          return {
-            error: {
-              message: error?.message || "Could not complete signup.",
-            },
-          };
+          // AU-R001 7.2: the screen needs the back end's own reason, and the code that carries it.
+          return { error: plainAuthError(error, "Could not complete signup.") };
+        }
+      },
+    }),
+
+    /* =====================================================
+       SERVICE PROVIDERS FOR SIGN UP (AU-R001 2)
+       ===================================================== */
+    // The person is not signed in yet, so the records cannot be read directly. The back end hands
+    // out the active providers' names and nothing else.
+    getSignupServiceProviders: builder.query({
+      async queryFn() {
+        try {
+          const fn = httpsCallable(functions, "listSignupServiceProviders");
+          const res = await fn();
+
+          const serviceProviders = (res?.data?.serviceProviders || []).map((sp) => ({
+            id: String(sp?.id || ""),
+            name: String(sp?.name || "").trim(),
+          }));
+
+          return { data: serviceProviders.filter((sp) => sp.id && sp.name) };
+        } catch (error) {
+          console.log("getSignupServiceProviders ----error", error?.code);
+          return { error: plainAuthError(error, "Could not load the service providers.") };
         }
       },
     }),
@@ -213,8 +244,33 @@ export const authApi = createApi({
 
           return { data: true };
         } catch (error) {
-          console.log(`signin ----signn error`);
-          return { error };
+          // AU-R001 7.1: the code travels to the screen so it can name the cause. The Firebase error
+          // itself is an Error object and must not be put into Redux.
+          console.log(`signin ----error`, error?.code);
+          return { error: plainAuthError(error, "Sign in failed.") };
+        }
+      },
+    }),
+
+    /* =====================================================
+       PASSWORD RESET (AU-R001 4)
+       ===================================================== */
+    // One field, one button. An email with no account is answered exactly like one with an account,
+    // so nothing here tells a stranger who is on iREPS.
+    sendPasswordReset: builder.mutation({
+      async queryFn({ email }) {
+        try {
+          await sendPasswordResetEmail(auth, email);
+          return { data: true };
+        } catch (error) {
+          const code = String(error?.code || "");
+
+          if (code === "auth/user-not-found") {
+            return { data: true };
+          }
+
+          console.log("sendPasswordReset ----error", code);
+          return { error: plainAuthError(error, "Could not send the reset link.") };
         }
       },
     }),
@@ -654,8 +710,10 @@ export const authApi = createApi({
    ===================================================== */
 export const {
   useGetAuthStateQuery,
+  useGetSignupServiceProvidersQuery,
   useSignupMutation,
   useSigninMutation,
+  useSendPasswordResetMutation,
   useSignoutMutation,
   useUpdateProfileMutation,
   useSetActiveWorkbaseMutation,

@@ -33,6 +33,13 @@ export default function OnboardingLayout() {
         options={{ title: "PENDING APPROVAL" }}
       />
 
+      {/* AU-R001 5: this screen is shown to anybody the office demands a new password from, not
+          only to people being onboarded, so it needs its own title. */}
+      <Stack.Screen
+        name="change-password"
+        options={{ title: "CHANGE PASSWORD" }}
+      />
+
       <Stack.Screen
         name="select-workbase"
         options={{ title: "SELECT JURISDICTION" }}

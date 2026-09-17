@@ -2,7 +2,7 @@ import { Octicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { Formik } from "formik";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -19,7 +19,14 @@ import {
 import { object, string } from "yup";
 
 import { auth } from "../../src/firebase";
-import { useSigninMutation } from "../../src/redux/authApi";
+import {
+  PROFILE_WAIT_MS,
+  signinMessage,
+} from "../../src/features/auth/authMessages";
+import {
+  useSigninMutation,
+  useSignoutMutation,
+} from "../../src/redux/authApi";
 
 const initialValues = {
   email: "",
@@ -27,47 +34,68 @@ const initialValues = {
 };
 
 const validationSchema = object().shape({
-  email: string().email("Invalid email address").required("Email is required"),
+  email: string()
+    .email("That does not look like an email address")
+    .required("Email is required"),
   password: string().required("Password is required"),
 });
 
 const Signin = () => {
   const router = useRouter();
   const [signin, { isLoading: isMutationLoading }] = useSigninMutation();
+  const [signout] = useSignoutMutation();
   const [showPassword, setShowPassword] = useState(false);
-  const [isRedirecting, setIsRedirecting] = useState(false);
+  const [isWaitingForProfile, setIsWaitingForProfile] = useState(false);
 
-  const isLoading = isMutationLoading || isRedirecting;
+  const isLoading = isMutationLoading || isWaitingForProfile;
 
-  const handleSignin = async (values, { resetForm }) => {
+  // AU-R001 3: sign in never hangs. The wait starts when the password has been accepted, and it is
+  // the person's record we are waiting for. If it has not arrived, the screen stops waiting, says
+  // so, and gives them their screen back — with what they typed still in it.
+  useEffect(() => {
+    if (!isWaitingForProfile) return undefined;
+
+    const timer = setTimeout(() => {
+      setIsWaitingForProfile(false);
+
+      const { title, message } = signinMessage({ code: "auth/profile-wait" });
+
+      // Signed in with nowhere to go is a dead end, so sign out is offered here.
+      Alert.alert(title, message, [
+        { text: "Sign out", style: "cancel", onPress: () => signout() },
+        { text: "Try again" },
+      ]);
+    }, PROFILE_WAIT_MS);
+
+    return () => clearTimeout(timer);
+  }, [isWaitingForProfile, signout]);
+
+  const handleSignin = async (values) => {
     try {
-      setIsRedirecting(true);
-
-      const result = await signin({
+      await signin({
         email: values.email.toLowerCase().trim(),
         password: values.password.trim(),
       }).unwrap();
 
-      if (result) {
-        await auth.currentUser.getIdToken(true);
-        resetForm();
-        return;
+      setIsWaitingForProfile(true);
+
+      // Signed in. The token refresh is a convenience, not the sign-in: a failure here must not be
+      // reported as a failed sign-in, because the person is already through the door.
+      try {
+        await auth.currentUser?.getIdToken(true);
+      } catch (tokenError) {
+        console.log("handleSignin ---token refresh", tokenError?.code);
       }
 
-      setIsRedirecting(false);
-      console.log(`"Access Denied", "Invalid credentials."`);
-      Alert.alert("Access Denied", "Invalid credentials.");
+      // The screen stays in progress until the app moves the person on (AU-R001 3 and 6): success
+      // is the app opening, so there is no result window here. What they typed stays in the form in
+      // case the wait runs out.
     } catch (error) {
-      setIsRedirecting(false);
-      console.log(`handleSignin ---error`, error);
-      console.log("handleSignin ---error", {
-        code: error?.code,
-        message: error?.message,
-        name: error?.name,
-        stack: error?.stack,
-        raw: error,
-      });
-      Alert.alert("Signin failed", "Network error.");
+      setIsWaitingForProfile(false);
+      console.log("handleSignin ---error", error?.code, error?.message);
+
+      const { title, message } = signinMessage(error);
+      Alert.alert(title, message);
     }
   };
 

@@ -37,9 +37,10 @@ export default function SelectWorkbase() {
       }).unwrap();
 
       // 2. Mark onboarding complete
+      // AU-R001 5: only changing the password clears the demand. Choosing a workbase must never
+      // clear it, or a demanded change could be tapped past.
       await updateDoc(doc(db, "users", uid), {
         "onboarding.status": "COMPLETED",
-        "onboarding.mustChangePassword": false,
         "metadata.updatedAt": new Date().toISOString(),
         "metadata.updatedByUid": uid,
         "metadata.updatedByUser": updaterName,

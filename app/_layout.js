@@ -62,21 +62,25 @@ const AuthGate = memo(function AuthGate() {
       return;
     }
 
-    if (isAtWelcome) return;
-
-    if (status === "PENDING" && mustChangePassword) {
+    // AU-R001 5: a password change the office demands comes before everything else — whatever the
+    // person's onboarding status, role or workbase, and before the welcome screen. It used to catch
+    // only users still being onboarded, so a working field worker walked straight past it.
+    if (mustChangePassword) {
       if (rootSegment !== "onboarding" || segments[1] !== "change-password") {
         router.replace("/onboarding/change-password");
       }
       return;
     }
 
+    if (isAtWelcome) return;
+
     if (
       !mustChangePassword &&
       !activeWorkbase &&
       (status === "PENDING" ||
         status === "COMPLETED" ||
-        status === "WORKBASE_REQUIRED")
+        status === "WORKBASE_REQUIRED" ||
+        status === "AWAITING_INITIAL_SIGNUP")
     ) {
       if (rootSegment !== "onboarding" || segments[1] !== "select-workbase") {
         router.replace("/onboarding/select-workbase");
@@ -104,6 +108,11 @@ const AuthGate = memo(function AuthGate() {
         }
         return;
 
+      // An invited admin carries AWAITING_INITIAL_SIGNUP and every workbase from the moment they are
+      // invited. Nothing routed that status anywhere, so they signed in and sat on a screen that
+      // never moved. Now that they must set their own password first (AU-R001 5), they go on into
+      // the app once it is done.
+      case "AWAITING_INITIAL_SIGNUP":
       case "COMPLETE":
       case "COMPLETED":
         if (inAuthGroup || inOnboardingGroup || isAtWelcome) {

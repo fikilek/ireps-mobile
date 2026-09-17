@@ -13,6 +13,7 @@ import {
 import { Avatar, Button, Divider, TextInput } from "react-native-paper";
 
 import { auth } from "../../src/firebase";
+import { passwordProblem } from "../../src/features/auth/authMessages";
 import { useAuth } from "../../src/hooks/useAuth";
 import {
   useUpdatePasswordMutation,
@@ -41,14 +42,11 @@ export default function CompleteInvitedProfile() {
 
   const handleFinalize = async () => {
     // 🛡️ 1. VALIDATION
-    if (!form.password || form.password !== form.confirmPassword) {
-      return Alert.alert("Security Check", "Passwords must match.");
-    }
-    if (form.password.length < 6) {
-      return Alert.alert(
-        "Security Check",
-        "Password must be at least 6 characters.",
-      );
+    // AU-R001 1: one password standard, including the password an invited person sets here.
+    const problem = passwordProblem(form.password, form.confirmPassword);
+
+    if (problem) {
+      return Alert.alert(problem.title, problem.message);
     }
     if (!selectedWorkbase) {
       return Alert.alert("Jurisdiction", "Please select your active workbase.");
