@@ -2,7 +2,7 @@
 
 **Release:** My Work Orders search and map, faster returns, clearer sign in, meter-number rule
 **Release Date:** 18 September 2026
-**Status:** Both builds finished 18 September 2026. LIVE distribution waits for the TEST build check.
+**Status:** Both builds finished 18 September 2026. LIVE link sent to the field WhatsApp group by the owner on 18 September 2026.
 
 ---
 
@@ -53,9 +53,9 @@ https://expo.dev/accounts/ireps/projects/maps1/builds/513efa39-e2d8-4c5c-868c-59
 
 ## Distribution
 
-**Not yet distributed.**
+**Sent to the field WhatsApp group by the owner on 18 September 2026,** with `WHATSAPP_PILOT_MESSAGE_2026-09-18.txt`.
 
-The `live` link goes to the field group only after the TEST build check in `VERIFICATION.md` passes.
+The live build went out without the TEST build check in `VERIFICATION.md` being recorded first; the check stays open there.
 
 - Every field phone must install this APK. It is not being sent over the air.
 - Install over build 11. **Do not uninstall first**, because that deletes forms waiting on the phone.

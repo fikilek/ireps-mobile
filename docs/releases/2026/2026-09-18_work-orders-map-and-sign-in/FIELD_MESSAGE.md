@@ -2,7 +2,7 @@
 
 **Release:** My Work Orders search and map, faster returns, clearer sign in, meter-number rule
 **Release Date:** 18 September 2026
-**Status:** Hold until the TEST build check in `VERIFICATION.md` passes
+**Status:** Sent to the field WhatsApp group on 18 September 2026
 
 ---
 
