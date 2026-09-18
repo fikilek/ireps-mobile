@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { Button, Modal, Portal } from "react-native-paper";
 import { useWarehouse } from "../../context/WarehouseContext";
+import { cleanMeterNumberInput } from "./meterNumberRule";
 
 const FormInputMeterNo = ({ label, name, disabled }) => {
   const { setFieldValue, values, errors, handleBlur, isSubmitting } =
@@ -29,7 +30,7 @@ const FormInputMeterNo = ({ label, name, disabled }) => {
   const hasError = !!error;
 
   const validateMeterNo = (val) => {
-    const cleanedVal = val.trim().toUpperCase();
+    const cleanedVal = cleanMeterNumberInput(val);
     setFieldValue(name, cleanedVal);
 
     if (cleanedVal.length > 3) {
