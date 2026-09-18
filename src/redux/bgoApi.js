@@ -1,13 +1,18 @@
 import { createApi, fakeBaseQuery } from "@reduxjs/toolkit/query/react";
-import {
-  collection,
-  limit as firestoreLimit,
-  onSnapshot,
-  orderBy,
-  query,
-} from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
-import { db, functions } from "../firebase";
+import { functions } from "../firebase";
+import { listenActorTeams, listenWhereIn } from "./firestoreListeners";
+import {
+  LIVE_STREAM_STATUS,
+  MY_WORK_ORDERS_KEEP_SECONDS,
+  createLiveDataStore,
+  followActorAllocatedDocuments,
+} from "./liveSubscription";
+
+// TB-R052: one live BGO batch list per worker and service provider.
+const bgoBucketKey = (args = {}) =>
+  `${String(args?.actorUid || "").trim()}:${String(args?.actorSpId || "").trim()}`;
+const bgoBucketLiveData = createLiveDataStore();
 
 const BGO_STREAM_LIMIT = 200;
 
@@ -30,6 +35,8 @@ const EMPTY_BGO_BUCKET_DATA = {
     source: "BGO_BUCKET_STREAM",
     updatedAt: null,
     streamLimit: BGO_STREAM_LIMIT,
+    stream: LIVE_STREAM_STATUS.CONNECTING,
+    actorTeamIds: [],
   },
 };
 
@@ -649,7 +656,15 @@ function normalizeBgoBucket(batch = {}) {
   };
 }
 
-function buildBgoBucketData({ batches = [], streamLimit = BGO_STREAM_LIMIT }) {
+// TB-R052: updatedAt is set once the worker's BGO batches have been read; stream says whether the live list is
+// connecting, live or failed; actorTeamIds are the teams the batches were read for.
+function buildBgoBucketData({
+  batches = [],
+  streamLimit = BGO_STREAM_LIMIT,
+  loaded = true,
+  stream = LIVE_STREAM_STATUS.LIVE,
+  actorTeamIds = [],
+}) {
   const buckets = batches
     .map(normalizeBgoBucket)
     .sort(
@@ -688,8 +703,10 @@ function buildBgoBucketData({ batches = [], streamLimit = BGO_STREAM_LIMIT }) {
     summary,
     meta: {
       source: "BGO_BUCKET_STREAM",
-      updatedAt: new Date().toISOString(),
+      updatedAt: loaded ? new Date().toISOString() : null,
       streamLimit,
+      stream,
+      actorTeamIds,
     },
   };
 }
@@ -700,53 +717,62 @@ export const bgoApi = createApi({
   tagTypes: ["BGO"],
   endpoints: (builder) => ({
     getBgoBuckets: builder.query({
-      queryFn() {
-        return { data: EMPTY_BGO_BUCKET_DATA };
+      // TB-R052: a refetch answers with the live list's last data, never an empty list.
+      queryFn(args = {}) {
+        return { data: bgoBucketLiveData.read(bgoBucketKey(args), EMPTY_BGO_BUCKET_DATA) };
       },
 
+      // TB-R052: only the BGO batches assigned to the worker, their teams or their service provider are read,
+      // and the live list is kept for up to 24 hours after the worker leaves My Work Orders.
       async onCacheEntryAdded(
         args = {},
         { updateCachedData, cacheDataLoaded, cacheEntryRemoved },
       ) {
-        let unsubscribeBgoBatches = () => {};
+        let stopBgoBatches = () => {};
+        const liveData = bgoBucketLiveData.open(bgoBucketKey(args));
 
         try {
           await cacheDataLoaded;
 
-          const streamLimit = Number(args?.limit || BGO_STREAM_LIMIT);
-
-          const bgoBatchQuery = query(
-            collection(db, "bgo_batches"),
-            orderBy("metadata.createdAt", "desc"),
-            firestoreLimit(streamLimit),
-          );
-
-          unsubscribeBgoBatches = onSnapshot(
-            bgoBatchQuery,
-            (snapshot) => {
-              const batches = snapshot.docs.map((docSnap) => ({
-                id: docSnap.id,
-                ...docSnap.data(),
-              }));
-
-              updateCachedData(() =>
+          stopBgoBatches = followActorAllocatedDocuments({
+            uid: args?.actorUid,
+            spId: args?.actorSpId,
+            includeUid: true,
+            listenTeams: listenActorTeams,
+            listenAllocated: (values, onDocs, onError) =>
+              listenWhereIn(
+                {
+                  collectionName: "bgo_batches",
+                  field: "bgo.targetId",
+                  values,
+                  label: "BGO_BUCKET",
+                },
+                onDocs,
+                onError,
+              ),
+            onChange: ({ docs, loaded, stream, teamIds }) => {
+              const data = liveData.publish(
                 buildBgoBucketData({
-                  batches,
-                  streamLimit,
+                  batches: docs,
+                  loaded,
+                  stream,
+                  actorTeamIds: teamIds,
                 }),
               );
+              updateCachedData(() => data);
             },
-            (error) => {
-              console.error("❌ [BGO_BUCKET_STREAM_ERROR]:", error);
-            },
-          );
+          });
         } catch (error) {
           console.error("❌ [BGO_BUCKET_STREAM_SETUP_ERROR]:", error);
         }
 
         await cacheEntryRemoved;
-        unsubscribeBgoBatches();
+        stopBgoBatches();
+        liveData.close();
       },
+      serializeQueryArgs: ({ endpointName, queryArgs }) =>
+        `${endpointName}:${bgoBucketKey(queryArgs)}`,
+      keepUnusedDataFor: MY_WORK_ORDERS_KEEP_SECONDS,
       providesTags: ["BGO"],
     }),
 

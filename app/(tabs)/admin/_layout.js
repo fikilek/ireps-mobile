@@ -8,9 +8,10 @@ export default function AdminLayout() {
         name="index"
         options={{ title: "Admin", headerShown: true }}
       />
+      {/* TB-R051 (1.3.38): one title bar in Operations; each Operations screen shows its own. */}
       <Stack.Screen
         name="operations"
-        options={{ title: "Operations", headerShown: true }}
+        options={{ title: "Operations", headerShown: false }}
       />
       <Stack.Screen
         name="pendingUsers"

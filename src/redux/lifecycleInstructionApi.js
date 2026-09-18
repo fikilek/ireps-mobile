@@ -1,15 +1,28 @@
 import { createApi, fakeBaseQuery } from "@reduxjs/toolkit/query/react";
 import {
   collection,
+  documentId,
   limit as firestoreLimit,
-  onSnapshot,
-  orderBy,
   query,
   where,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../firebase";
-import { reconcileSubmissionQueueWithServerTrns } from "../utils/submissionQueue";
+import {
+  getPendingReconcilableTrnIds,
+  reconcileSubmissionQueueWithServerTrns,
+} from "../utils/submissionQueue";
+import { listenActorTeams, listenQuery } from "./firestoreListeners";
+import {
+  LIVE_STREAM_STATUS,
+  MY_WORK_ORDERS_KEEP_SECONDS,
+  combineLiveStatuses,
+  createFollowingSubscription,
+  createLiveDataStore,
+  idsFromKey,
+  idsKey,
+  listenInChunks,
+} from "./liveSubscription";
 
 const WMS_LCT_TYPES = [
   "METER_INSPECTION",
@@ -30,6 +43,31 @@ const WMS_WORKFLOW_STATES = [
 ];
 
 const WMS_DEMO_STREAM_LIMIT = 500;
+
+// TB-R052: office work orders are read by type and state, split so each query stays within Firestore's limit
+// of 30 combinations: open work orders (types × open states), and Completed or Cancelled ones from office
+// channels (types × channels).
+const WMS_OPEN_WORKFLOW_STATES = [
+  "ISSUED",
+  "REASSIGNED",
+  "ACCEPTED",
+  "REJECTED",
+  "IN_PROGRESS",
+];
+const WMS_FINISHED_WORKFLOW_STATES = ["COMPLETED", "CANCELLED"];
+
+// TB-R052: every channel the server gives a TRN except FIELD (a field form is never an office work order).
+const WMS_OFFICE_CHANNELS = ["OFFICE", "API", "AMI", "INTEGRATION"];
+
+// TB-R052: how often a kept list re-checks which finished work orders are still within 30 days.
+const WMS_LISTED_CHECK_MS = 60 * 60 * 1000;
+
+// TB-R052: a finished work order is listed for 30 days after it last changed.
+const WMS_FINISHED_LISTED_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// TB-R052: how often the phone's queue is checked for items waiting on the server.
+const WMS_QUEUE_CHECK_MS = 30000;
 
 const WMS_GROUPS = [
   {
@@ -87,6 +125,7 @@ const EMPTY_WMS_DATA = {
     source: "WMS_STREAM",
     updatedAt: null,
     streamLimit: WMS_DEMO_STREAM_LIMIT,
+    stream: LIVE_STREAM_STATUS.CONNECTING,
   },
 };
 
@@ -711,6 +750,17 @@ function normalizeWmsWorkItem({
   };
 }
 
+// TB-R052: a finished work order (Completed or Cancelled) is listed for 30 days after it last changed; an open
+// one is always listed.
+function isListedWorkOrder(trn = {}, nowMs = Date.now()) {
+  if (!WMS_FINISHED_WORKFLOW_STATES.includes(getWorkflowState(trn))) return true;
+
+  const changedAt = toMillis(getUpdatedAt(trn));
+  return changedAt > 0 && nowMs - changedAt <= WMS_FINISHED_LISTED_DAYS * DAY_MS;
+}
+
+// TB-R052: updatedAt is set once the work orders, teams and service providers have all been read; stream says
+// whether the live lists are connecting, live or failed.
 function buildWmsData({
   trns = [],
   teams = [],
@@ -718,6 +768,9 @@ function buildWmsData({
   actor,
   mode = "INDIVIDUAL",
   bgoBatchId = null,
+  loaded = true,
+  stream = LIVE_STREAM_STATUS.LIVE,
+  nowMs = Date.now(),
 }) {
   if (!actor?.uid) return EMPTY_WMS_DATA;
 
@@ -738,6 +791,7 @@ function buildWmsData({
   const items = trns
     .filter((trn) => WMS_LCT_TYPES.includes(getTrnType(trn)))
     .filter((trn) => WMS_WORKFLOW_STATES.includes(getWorkflowState(trn)))
+    .filter((trn) => cleanMode !== "INDIVIDUAL" || isListedWorkOrder(trn, nowMs))
     .filter((trn) => normalizeUpper(trn?.origin?.channel) !== "FIELD")
     .filter((trn) => {
       const trnBgoBatchId = getBgoBatchIdFromTrn(trn);
@@ -812,84 +866,175 @@ function buildWmsData({
         name: actor.name,
       },
       allowedSpIds,
-      updatedAt: new Date().toISOString(),
+      updatedAt: loaded ? new Date(nowMs).toISOString() : null,
       streamLimit: WMS_DEMO_STREAM_LIMIT,
+      stream,
       mode: cleanMode,
       bgoBatchId: selectedBgoBatchId || null,
     },
   };
 }
 
-export const lifecycleInstructionApi = createApi({
-  reducerPath: "lifecycleInstructionApi",
-  baseQuery: fakeBaseQuery(),
-  tagTypes: ["LifecycleInstruction", "WMS"],
-  endpoints: (builder) => ({
-    getWmsLifecycleWorkItems: builder.query({
-      queryFn() {
-        return { data: EMPTY_WMS_DATA };
+// TB-R052: one live work order list per worker, role, service provider, mode and BGO batch; the worker's name
+// never opens another.
+function wmsWorkItemsKey(args = {}) {
+  return [
+    readFirstString(args?.actorUid),
+    normalizeUpper(args?.actorRole),
+    readFirstString(args?.actorSpId),
+    normalizeUpper(args?.mode || "INDIVIDUAL"),
+    readFirstString(args?.bgoBatchId, args?.batchId),
+  ].join(":");
+}
+
+const wmsLiveData = createLiveDataStore();
+
+// TB-R052: a refetch (a mutation's tag invalidation, or a manual refetch) answers with the live list's last
+// data, never an empty list.
+const WMS_INDIVIDUAL_ENDPOINT = "getWmsLifecycleWorkItems";
+const WMS_BGO_BATCH_ENDPOINT = "getWmsBgoBatchWorkItems";
+
+// TB-R052: the cache key of a work order entry: the endpoint and its list, so the two endpoints never share one.
+export function wmsWorkItemsCacheKey(endpointName, args = {}) {
+  return `${endpointName}:${wmsWorkItemsKey(args)}`;
+}
+
+function readWmsWorkItemsFor(endpointName) {
+  return (args = {}) => ({
+    data: wmsLiveData.read(wmsWorkItemsCacheKey(endpointName, args), EMPTY_WMS_DATA),
+  });
+}
+
+// TB-R052: office work orders are read by type and state (never the newest TRNs of all workers), with the
+// worker's teams and the service providers; the phone keeps the worker's, their team's and their service
+// provider's. An opened BGO batch reads its own TRNs.
+async function streamWmsWorkItems(
+  args = {},
+  { updateCachedData, cacheDataLoaded, cacheEntryRemoved, getState },
+  endpointName = WMS_INDIVIDUAL_ENDPOINT,
+) {
+  const cleanMode = normalizeUpper(args?.mode || "INDIVIDUAL");
+  const selectedBgoBatchId = readFirstString(args?.bgoBatchId, args?.batchId);
+  const actorUid = readFirstString(args?.actorUid);
+  const liveData = wmsLiveData.open(wmsWorkItemsCacheKey(endpointName, args));
+
+  const latest = {
+    trns: { docs: [], loaded: false, status: LIVE_STREAM_STATUS.CONNECTING },
+    teams: { docs: [], loaded: false, status: LIVE_STREAM_STATUS.CONNECTING },
+    serviceProviders: { docs: [], loaded: false, status: LIVE_STREAM_STATUS.CONNECTING },
+  };
+  const subscriptions = [];
+  let active = true;
+  let queueTimer = null;
+  let listedTimer = null;
+
+  const rebuild = () => {
+    if (!active) return;
+    const actor = getActorFromArgsOrState(args, getState);
+    const parts = Object.values(latest);
+
+    const data = liveData.publish(
+      buildWmsData({
+        trns: latest.trns.docs,
+        teams: latest.teams.docs,
+        serviceProviders: latest.serviceProviders.docs,
+        actor,
+        mode: cleanMode,
+        bgoBatchId: selectedBgoBatchId || null,
+        loaded: parts.every((part) => part.loaded),
+        stream: combineLiveStatuses(parts.map((part) => part.status)),
+      }),
+    );
+    updateCachedData(() => data);
+  };
+
+  const listenTrns = (constraints, label, onDocs, onError) =>
+    listenQuery(query(collection(db, "trns"), ...constraints), label, onDocs, onError);
+
+  // One live part of the screen: its documents, whether the server has answered them, and its status.
+  const follow = (name, key, subscribe) => {
+    const subscription = createFollowingSubscription({
+      subscribe: (currentKey, handlers) =>
+        subscribe(
+          currentKey,
+          (docs, meta) => {
+            if (!handlers.isCurrent()) return;
+            latest[name].docs = docs;
+            if (meta?.fromCache !== true) latest[name].loaded = true;
+            handlers.live(meta);
+          },
+          handlers.fail,
+        ),
+      onStatus: (status) => {
+        latest[name].status = status;
+        rebuild();
       },
+    });
+    subscriptions.push(subscription);
+    subscription.setKey(key);
+  };
 
-      async onCacheEntryAdded(
-        args = {},
-        { updateCachedData, cacheDataLoaded, cacheEntryRemoved, getState },
-      ) {
-        let unsubscribeTrns = () => {};
-        let unsubscribeTeams = () => {};
-        let unsubscribeServiceProviders = () => {};
+  try {
+    await cacheDataLoaded;
 
-        let latestTrns = [];
-        let latestTeams = [];
-        let latestServiceProviders = [];
-
-        const rebuild = () => {
-          const actor = getActorFromArgsOrState(args, getState);
-
-          updateCachedData(() =>
-            buildWmsData({
-              trns: latestTrns,
-              teams: latestTeams,
-              serviceProviders: latestServiceProviders,
-              actor,
-              mode: args?.mode || "INDIVIDUAL",
-              bgoBatchId: args?.bgoBatchId || args?.batchId || null,
-            }),
-          );
+    if (cleanMode === "BGO_BUCKET" && selectedBgoBatchId) {
+      const streamLimit = Number(args?.limit || WMS_DEMO_STREAM_LIMIT);
+      follow("trns", `BGO:${selectedBgoBatchId}`, (_key, onDocs, onError) =>
+        listenTrns(
+          [
+            where("bgo.batchId", "==", selectedBgoBatchId),
+            firestoreLimit(streamLimit),
+          ],
+          "WMS_BGO_TRN",
+          onDocs,
+          onError,
+        ),
+      );
+    } else {
+      // Open office work orders, and finished ones from office channels only: a completed field form of the
+      // same type is not an office work order and is never read. The list is read when all three have answered.
+      follow("trns", "WORK_ORDERS", (_key, onDocs, onError) => {
+        const byType = where("accessData.trnType", "in", WMS_LCT_TYPES);
+        const fromOffice = where("origin.channel", "in", WMS_OFFICE_CHANNELS);
+        const groups = {
+          open: [byType, where("workflow.state", "in", WMS_OPEN_WORKFLOW_STATES)],
+          completed: [byType, where("workflow.state", "==", "COMPLETED"), fromOffice],
+          cancelled: [byType, where("workflow.state", "==", "CANCELLED"), fromOffice],
         };
+        const names = Object.keys(groups);
+        const answers = {};
+        const unsubscribes = names.map((group) =>
+          listenTrns(
+            groups[group],
+            `WMS_${group.toUpperCase()}_TRN`,
+            (docs, meta) => {
+              answers[group] = { docs, fromCache: meta?.fromCache === true };
+              if (!names.every((name) => answers[name])) return;
+              onDocs(
+                names.flatMap((name) => answers[name].docs),
+                { fromCache: names.some((name) => answers[name].fromCache) },
+              );
+            },
+            onError,
+          ),
+        );
+        return () => {
+          for (const unsubscribe of unsubscribes) unsubscribe();
+        };
+      });
 
-        try {
-          await cacheDataLoaded;
-
-          const streamLimit = Number(args?.limit || WMS_DEMO_STREAM_LIMIT);
-          const cleanMode = normalizeUpper(args?.mode || "INDIVIDUAL");
-          const selectedBgoBatchId = readFirstString(
-            args?.bgoBatchId,
-            args?.batchId,
-          );
-
-          const trnsQuery =
-            cleanMode === "BGO_BUCKET" && selectedBgoBatchId
-              ? query(
-                  collection(db, "trns"),
-                  where("bgo.batchId", "==", selectedBgoBatchId),
-                  firestoreLimit(streamLimit),
-                )
-              : query(
-                  collection(db, "trns"),
-                  orderBy("metadata.createdAt", "desc"),
-                  firestoreLimit(streamLimit),
-                );
-
-          unsubscribeTrns = onSnapshot(
-            trnsQuery,
-            (snapshot) => {
-              latestTrns = snapshot.docs.map((docSnap) => ({
-                id: docSnap.id,
-                ...docSnap.data(),
-              }));
-
+      // TB-R052: queued forms waiting on the server are confirmed from exactly their own TRNs.
+      const queueTrns = createFollowingSubscription({
+        subscribe: (key, handlers) =>
+          listenInChunks({
+            ids: idsFromKey(key),
+            listen: (values, onDocs, onError) =>
+              listenTrns([where(documentId(), "in", values)], "WMS_QUEUE_TRN", onDocs, onError),
+            next: (docs, meta) => {
+              if (!handlers.isCurrent()) return;
+              handlers.live(meta);
               reconcileSubmissionQueueWithServerTrns({
-                trns: latestTrns,
+                trns: docs,
                 updatedByUid: "WMS_TRN_STREAM",
                 updatedByUser: "WMS TRN Stream",
               })
@@ -901,53 +1046,66 @@ export const lifecycleInstructionApi = createApi({
                 .catch((error) => {
                   console.log("❌ [WMS_QUEUE_RECONCILE_ERROR]", error);
                 });
-
-              rebuild();
             },
-            (error) => {
-              console.error("❌ [WMS_TRN_STREAM_ERROR]:", error);
-            },
-          );
+            error: handlers.fail,
+          }),
+      });
+      subscriptions.push(queueTrns);
+      const followQueue = () => {
+        if (active) queueTrns.setKey(idsKey(getPendingReconcilableTrnIds()));
+      };
+      followQueue();
+      queueTimer = setInterval(followQueue, WMS_QUEUE_CHECK_MS);
 
-          unsubscribeTeams = onSnapshot(
-            query(collection(db, "teams")),
-            (snapshot) => {
-              latestTeams = snapshot.docs.map((docSnap) => ({
-                id: docSnap.id,
-                ...docSnap.data(),
-              }));
+      // TB-R052: a finished work order leaves the list 30 days after it last changed, even while nothing else changes.
+      listedTimer = setInterval(rebuild, WMS_LISTED_CHECK_MS);
+    }
 
-              rebuild();
-            },
-            (error) => {
-              console.error("❌ [WMS_TEAMS_STREAM_ERROR]:", error);
-            },
-          );
+    if (actorUid) {
+      follow("teams", actorUid, listenActorTeams);
+    } else {
+      latest.teams = { docs: [], loaded: true, status: LIVE_STREAM_STATUS.LIVE };
+    }
 
-          unsubscribeServiceProviders = onSnapshot(
-            query(collection(db, "serviceProviders")),
-            (snapshot) => {
-              latestServiceProviders = snapshot.docs.map((docSnap) => ({
-                id: docSnap.id,
-                ...docSnap.data(),
-              }));
+    follow("serviceProviders", "ALL", (_key, onDocs, onError) =>
+      listenQuery(query(collection(db, "serviceProviders")), "WMS_SP", onDocs, onError),
+    );
+  } catch (error) {
+    console.error("❌ [WMS_STREAM_SETUP_ERROR]:", error);
+  }
 
-              rebuild();
-            },
-            (error) => {
-              console.error("❌ [WMS_SP_STREAM_ERROR]:", error);
-            },
-          );
-        } catch (error) {
-          console.error("❌ [WMS_STREAM_SETUP_ERROR]:", error);
-        }
+  await cacheEntryRemoved;
+  active = false;
+  clearInterval(queueTimer);
+  clearInterval(listedTimer);
+  for (const subscription of subscriptions) subscription.stop();
+  liveData.close();
+}
 
-        await cacheEntryRemoved;
-        unsubscribeTrns();
-        unsubscribeTeams();
-        unsubscribeServiceProviders();
-      },
+export const lifecycleInstructionApi = createApi({
+  reducerPath: "lifecycleInstructionApi",
+  baseQuery: fakeBaseQuery(),
+  tagTypes: ["LifecycleInstruction", "WMS"],
+  endpoints: (builder) => ({
+    // TB-R052: the worker's office work orders stay live for up to 24 hours after the worker leaves My Work Orders.
+    getWmsLifecycleWorkItems: builder.query({
+      queryFn: readWmsWorkItemsFor(WMS_INDIVIDUAL_ENDPOINT),
+      onCacheEntryAdded: (args, lifecycleApi) =>
+        streamWmsWorkItems(args, lifecycleApi, WMS_INDIVIDUAL_ENDPOINT),
+      serializeQueryArgs: ({ endpointName, queryArgs }) =>
+        wmsWorkItemsCacheKey(endpointName, queryArgs),
+      keepUnusedDataFor: MY_WORK_ORDERS_KEEP_SECONDS,
+      providesTags: ["LifecycleInstruction", "WMS"],
+    }),
 
+    // TB-R052: the TRNs of an opened BGO batch. The three most recently opened BGO batches are kept live by
+    // workOrderKeepers.js; the entry itself keeps the default short wait.
+    getWmsBgoBatchWorkItems: builder.query({
+      queryFn: readWmsWorkItemsFor(WMS_BGO_BATCH_ENDPOINT),
+      onCacheEntryAdded: (args, lifecycleApi) =>
+        streamWmsWorkItems(args, lifecycleApi, WMS_BGO_BATCH_ENDPOINT),
+      serializeQueryArgs: ({ endpointName, queryArgs }) =>
+        wmsWorkItemsCacheKey(endpointName, queryArgs),
       providesTags: ["LifecycleInstruction", "WMS"],
     }),
 
@@ -1079,6 +1237,7 @@ export const lifecycleInstructionApi = createApi({
 
 export const {
   useGetWmsLifecycleWorkItemsQuery,
+  useGetWmsBgoBatchWorkItemsQuery,
   useCreateLifecycleInstructionMutation,
   useAcceptRejectLifecycleInstructionMutation,
   useManageLifecycleInstructionMutation,

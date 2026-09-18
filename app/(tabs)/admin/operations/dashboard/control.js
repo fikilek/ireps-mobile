@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { memo, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -497,7 +497,6 @@ function getStateBadgeTextStyle(state) {
 }
 
 export default function ManagerControlScreen() {
-  const router = useRouter();
   const params = useLocalSearchParams();
   const { profile } = useAuth();
   const { geoState } = useGeo();
@@ -734,21 +733,10 @@ export default function ManagerControlScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["left", "right"]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* TB-R051 (1.3.38): one title bar in Operations. The stack title bar ("Manager
+            Control") carries the only back arrow; this row keeps the Ward, LM and count. */}
         <View style={styles.headerRow}>
-          <Pressable
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.75}
-          >
-            <MaterialCommunityIcons
-              name="chevron-left"
-              size={26}
-              color="#0f172a"
-            />
-          </Pressable>
-
           <View style={styles.headerTextWrap}>
-            <Text style={styles.headerTitle}>Manager Control</Text>
             <Text style={styles.headerSubtitle}>
               {wardLabel} • {lmLabel}
             </Text>
@@ -1505,33 +1493,15 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
 
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-
   headerTextWrap: {
     flex: 1,
-  },
-
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#0f172a",
+    marginRight: 12,
   },
 
   headerSubtitle: {
     fontSize: 12,
     fontWeight: "700",
     color: "#64748b",
-    marginTop: 2,
   },
 
   headerCountBadge: {

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { resolveTargetedBatchSalesPoint } from "../features/targetedBatches/targetedBatchMapPoints.js";
+import { LIVE_STREAM_STATUS, createLiveDataStore, isDocumentId, readFromCache } from "./liveSubscription.js";
 
 const source = await readFile(new URL("./targetedBatchApi.js", import.meta.url), "utf8");
 
@@ -14,12 +15,12 @@ test("Targeted Batch rows use a live rows stream and no callable read", () => {
   assert.doesNotMatch(endpoint, /firestoreLimit/);
 });
 
-test("row stream dynamically joins and cleans Sales listeners", () => {
-  assert.match(source, /doc\(db, "sales-all-meters", id\)/);
+test("TB-R052 row stream reads Sales records in groups of up to 30 and cleans them up", () => {
+  assert.match(source, /query\(collection\(db, "sales-all-meters"\), where\(documentId\(\), "in", ids\)\)/);
+  assert.doesNotMatch(source, /doc\(db, "sales-all-meters"/);
   assert.doesNotMatch(source, /demo_sales_meters/);
-  assert.match(source, /salesListeners\.has\(id\)/);
-  assert.match(source, /salesListeners\.delete\(id\)/);
-  assert.match(source, /for \(const unsubscribe of salesListeners\.values\(\)\) unsubscribe\(\)/);
+  assert.match(source, /index \+= FIRESTORE_IN_LIMIT/);
+  assert.match(source, /for \(const group of \[\.\.\.salesGroups\]\) endSalesGroup\(group\)/);
   assert.match(source, /active = false/);
 });
 
@@ -45,7 +46,7 @@ function extractFunction(name) {
 }
 
 // Pure imports of the module are bound into the evaluated source under the names it imports them by.
-const pureImports = { resolveTargetedBatchSalesPoint };
+const pureImports = { resolveTargetedBatchSalesPoint, LIVE_STREAM_STATUS };
 function evaluateFunctions(names, returned) {
   const body = `${names.map(extractFunction).join("\n")}\nreturn ${returned};`;
   return new Function(...Object.keys(pureImports), body)(...Object.values(pureImports));
@@ -53,6 +54,9 @@ function evaluateFunctions(names, returned) {
 
 test("pure imports bound in the harness are the ones the module imports", () => {
   assert.match(source, /import \{ resolveTargetedBatchSalesPoint \} from "\.\.\/features\/targetedBatches\/targetedBatchMapPoints";/);
+  const live = source.match(/import \{([^}]+)\} from "\.\/liveSubscription";/);
+  assert.ok(live, "no liveSubscription import");
+  assert.ok(live[1].split(",").map((name) => name.trim()).includes("LIVE_STREAM_STATUS"));
 });
 
 const enrichNames = ["normalizeUpper", "cleanText", "readFirstString", "readTbRefBatchId", "readSalesLoadState", "enrichTargetedBatchRowFromSales"];
@@ -275,24 +279,21 @@ function evaluateRowsStream(bindings) {
   return new Function(...Object.keys(bound), body)(...Object.values(bound));
 }
 
-const salesSnapshot = (document, { fromCache = false } = {}) => ({
-  exists: () => document != null,
-  data: () => document,
-  metadata: { fromCache, hasPendingWrites: false },
-});
+const docSnapshot = (id, document) => ({ id, exists: () => true, data: () => document });
 
 // Like Firestore's snapshotEqual for documents: existence and data count, snapshot metadata does not.
 const fakeSnapshotEqual = (left, right) =>
   left.exists() === right.exists() && JSON.stringify(left.data() ?? null) === JSON.stringify(right.data() ?? null);
 
-async function startRowsStream(tbId = TB) {
+// TB-R052: groupSize is the stream's FIRESTORE_IN_LIMIT, made small where a test needs several groups.
+async function startRowsStream(tbId = TB, { groupSize = 30 } = {}) {
   const listeners = [];
   const firestore = {
     db: { name: "fake-db" },
     collection: (_db, path) => ({ path }),
+    documentId: () => "__name__",
     where: (field, op, value) => ({ field, op, value }),
     query: (reference, ...constraints) => ({ path: reference.path, constraints }),
-    doc: (_db, path, id) => ({ path: `${path}/${id}` }),
     snapshotEqual: fakeSnapshotEqual,
     onSnapshot: (reference, ...rest) => {
       const options = rest[0] && typeof rest[0] === "object" ? rest.shift() : {};
@@ -338,20 +339,24 @@ async function startRowsStream(tbId = TB) {
   const cacheEntryRemoved = new Promise((resolve) => {
     removeEntry = resolve;
   });
-  const running = evaluateRowsStream({ ...firestore, ...timers })(
+  const liveData = createLiveDataStore();
+  const running = evaluateRowsStream({ ...firestore, ...timers, FIRESTORE_IN_LIMIT: groupSize, targetedBatchRowsLiveData: liveData, isDocumentId, readFromCache })(
     { tbId },
     { updateCachedData: (recipe) => { publishCount += 1; data = recipe(data); }, cacheDataLoaded: Promise.resolve(), cacheEntryRemoved },
   );
   await new Promise((resolve) => setImmediate(resolve));
   const live = (path) => listeners.filter((listener) => listener.path === path && listener.active);
-  const salesListener = (id) => {
-    const [listener] = live(`sales-all-meters/${id}`);
-    assert.ok(listener, `no live Sales listener for ${id}`);
-    return listener;
+  const salesGroups = () => live("sales-all-meters");
+  const groupOf = (id) => {
+    const matches = salesGroups().filter((listener) => listener.constraints[0].value.includes(id));
+    assert.equal(matches.length, 1, `one live Sales group for ${id}`);
+    return matches[0];
   };
   return {
     listeners,
     live,
+    salesGroups,
+    groupOf,
     get data() {
       return data;
     },
@@ -374,16 +379,27 @@ async function startRowsStream(tbId = TB) {
     },
     state: (rowId) => data.rows.find((item) => item.id === rowId)?.salesLoadState,
     row: (rowId) => data.rows.find((item) => item.id === rowId),
-    rows: (docs) => {
-      live("tb_rows")[0].next({ docs: docs.map(({ id, ...fields }) => ({ id, data: () => fields })) });
+    liveData,
+    rows: (docs, { fromCache = false } = {}) => {
+      live("tb_rows")[0].next({ docs: docs.map(({ id, ...fields }) => ({ id, data: () => fields })), metadata: { fromCache, hasPendingWrites: false } });
       settle();
     },
-    sales: (id, document, options) => {
-      salesListener(id).next(salesSnapshot(document, options));
+    // One answer of the group holding the named Sales IDs: a document for every ID given one, none for the
+    // group's other IDs.
+    sales: (documents, { fromCache = false } = {}) => {
+      const ids = Object.keys(documents);
+      const group = groupOf(ids[0]);
+      for (const id of ids) assert.ok(group.constraints[0].value.includes(id), `${id} is not in the same group`);
+      const docs = ids.filter((id) => documents[id] != null).map((id) => docSnapshot(id, documents[id]));
+      group.next({ docs, metadata: { fromCache, hasPendingWrites: false } });
       settle();
     },
     salesError: (id) => {
-      salesListener(id).error(Object.assign(new Error("Missing or insufficient permissions."), { code: "permission-denied" }));
+      groupOf(id).error(Object.assign(new Error("Missing or insufficient permissions."), { code: "permission-denied" }));
+      settle();
+    },
+    rowsError: () => {
+      live("tb_rows")[0].error(Object.assign(new Error("The service is currently unavailable."), { code: "unavailable" }));
       settle();
     },
     remove: async () => {
@@ -397,7 +413,9 @@ test("TB-R051 rows stream: the Firestore functions bound in the harness are the 
   const imported = source.match(/import \{([^}]+)\} from "firebase\/firestore";/);
   assert.ok(imported, "no firebase/firestore import");
   const names = imported[1].split(",").map((name) => name.trim()).filter(Boolean);
-  for (const name of ["collection", "doc", "onSnapshot", "query", "snapshotEqual", "where"]) assert.ok(names.includes(name), name);
+  for (const name of ["collection", "documentId", "onSnapshot", "query", "snapshotEqual", "where"]) assert.ok(names.includes(name), name);
+  const live = source.match(/import \{([^}]+)\} from "\.\/liveSubscription";/);
+  assert.ok(live[1].split(",").map((name) => name.trim()).includes("FIRESTORE_IN_LIMIT"));
   // TB-R051: listener callbacks only schedule a publish; publish() itself is called in one place.
   const endpoint = source.slice(source.indexOf("getTargetedBatchRows: builder.query"), source.indexOf("acceptRejectTargetedBatch: builder.mutation"));
   assert.equal(endpoint.match(/\bpublish\(\)/g).length, 1);
@@ -405,28 +423,38 @@ test("TB-R051 rows stream: the Firestore functions bound in the harness are the 
 
 const streamRow = (id, rowNo, salesAllMeterId, extra = {}) => ({ ...tbRow(id, rowNo), salesAllMeterId, ...extra });
 
-test("TB-R051 rows stream: rows are LOADING until their Sales snapshot arrives", async () => {
+test("TB-R052 rows stream: one listener per group of Sales records, and rows are LOADING until their group answers", async () => {
   const stream = await startRowsStream();
   const [rowsListener] = stream.live("tb_rows");
   assert.deepEqual(rowsListener.constraints, [{ field: "tbId", op: "==", value: TB }]);
 
-  stream.rows([streamRow("R1", 1, "S1"), streamRow("R2", 2, "S2"), streamRow("R3", 3, "")]);
+  stream.rows([streamRow("R1", 1, "S1"), streamRow("R2", 2, "S2"), streamRow("R3", 3, ""), streamRow("R4", 4, "S1")]);
   assert.deepEqual(stream.data.rows.map((item) => [item.id, item.salesLoadState, item.displayStatus]), [
     ["R1", "LOADING", "NOT_STARTED"],
     ["R2", "LOADING", "NOT_STARTED"],
     ["R3", "MISSING", "NOT_STARTED"],
+    ["R4", "LOADING", "NOT_STARTED"],
   ]);
-  assert.deepEqual(stream.live("sales-all-meters/S1").map((listener) => listener.options), [{ includeMetadataChanges: true }]);
-  assert.equal(stream.live("sales-all-meters/").length, 0);
+  const groups = stream.salesGroups();
+  assert.equal(groups.length, 1, "one listener for the group, not one per meter");
+  assert.deepEqual(groups[0].constraints, [{ field: "__name__", op: "in", value: ["S1", "S2"] }], "a Sales ID shared by two rows is read once");
+  assert.deepEqual(groups[0].options, { includeMetadataChanges: true });
 
-  stream.sales("S1", linkedSales({ master: { visibility: "VISIBLE" } }));
+  stream.sales({ S1: linkedSales({ master: { visibility: "VISIBLE" } }), S2: null });
   assert.equal(stream.state("R1"), "LOADED");
   assert.equal(stream.row("R1").displayStatus, "COMPLETED");
-  assert.equal(stream.state("R2"), "LOADING");
-
-  stream.sales("S2", null);
+  assert.equal(stream.state("R4"), "LOADED");
   assert.equal(stream.state("R2"), "MISSING");
   assert.equal(stream.row("R2").noAccessSourceStatus, "SALES_DOCUMENT_MISSING");
+  await stream.remove();
+});
+
+test("TB-R052 rows stream: at most 30 Sales records per listener", async () => {
+  const stream = await startRowsStream();
+  const ids = Array.from({ length: 61 }, (_, index) => `S${String(index).padStart(2, "0")}`);
+  stream.rows(ids.map((id, index) => streamRow(`R${index}`, index, id)));
+  assert.deepEqual(stream.salesGroups().map((group) => group.constraints[0].value.length), [30, 30, 1]);
+  assert.deepEqual(stream.salesGroups().flatMap((group) => group.constraints[0].value), ids);
   await stream.remove();
 });
 
@@ -434,78 +462,81 @@ test("TB-R051 rows stream: a cache-only 'does not exist' stays LOADING until the
   const stream = await startRowsStream();
   stream.rows([streamRow("R1", 1, "S1"), streamRow("R2", 2, "S2")]);
 
-  stream.sales("S1", null, { fromCache: true });
+  stream.sales({ S1: null, S2: null }, { fromCache: true });
   assert.equal(stream.state("R1"), "LOADING");
-  stream.sales("S1", linkedSales({ master: { visibility: "INVISIBLE" } }));
-  assert.equal(stream.state("R1"), "LOADED");
-
-  stream.sales("S2", null, { fromCache: true });
   assert.equal(stream.state("R2"), "LOADING");
-  stream.sales("S2", null, { fromCache: false });
+  stream.sales({ S1: linkedSales({ master: { visibility: "INVISIBLE" } }), S2: null }, { fromCache: true });
+  assert.equal(stream.state("R1"), "LOADED");
+  assert.equal(stream.state("R2"), "LOADING");
+
+  stream.sales({ S1: linkedSales({ master: { visibility: "INVISIBLE" } }), S2: null });
   assert.equal(stream.state("R2"), "MISSING");
 
   // A cached Sales record that exists is read.
-  stream.sales("S2", linkedSales({ master: { visibility: "VISIBLE" } }), { fromCache: true });
+  stream.sales({ S1: linkedSales({ master: { visibility: "INVISIBLE" } }), S2: linkedSales({ master: { visibility: "VISIBLE" } }) }, { fromCache: true });
   assert.equal(stream.state("R2"), "LOADED");
   assert.equal(stream.row("R2").displayStatus, "COMPLETED");
   await stream.remove();
 });
 
-test("TB-R051 rows stream: a failed Sales listener marks its rows ERROR", async (t) => {
+test("TB-R051 rows stream: a failed Sales group marks its rows ERROR, and only its rows", async (t) => {
   const logged = t.mock.method(console, "error", () => {});
-  const stream = await startRowsStream();
-  stream.rows([streamRow("R1", 1, "S1"), streamRow("R2", 2, "S2"), streamRow("R3", 3, "S1")]);
-  assert.equal(stream.live("sales-all-meters/S1").length, 1, "one listener per Sales ID");
+  const stream = await startRowsStream(TB, { groupSize: 2 });
+  stream.rows([streamRow("R1", 1, "S1"), streamRow("R2", 2, "S3"), streamRow("R3", 3, "S1"), streamRow("R4", 4, "S2")]);
+  assert.deepEqual(stream.salesGroups().map((group) => group.constraints[0].value), [["S1", "S2"], ["S3"]]);
 
   stream.salesError("S1");
   assert.equal(stream.state("R1"), "ERROR");
   assert.equal(stream.state("R3"), "ERROR");
-  assert.equal(stream.state("R2"), "LOADING");
+  assert.equal(stream.state("R4"), "ERROR", "the whole group fails together");
+  assert.equal(stream.state("R2"), "LOADING", "another group is not touched");
   assert.equal(logged.mock.callCount(), 1);
   assert.equal(logged.mock.calls[0].arguments[0], "[TARGETED_BATCH_SALES_STREAM_ERROR]");
 
   // After data was read, an error keeps the last status but the row is no longer LOADED.
-  stream.sales("S2", linkedSales({ master: { visibility: "VISIBLE" } }));
+  stream.sales({ S3: linkedSales({ master: { visibility: "VISIBLE" } }) });
   assert.equal(stream.state("R2"), "LOADED");
-  stream.salesError("S2");
+  stream.salesError("S3");
   assert.equal(stream.state("R2"), "ERROR");
   assert.equal(stream.row("R2").displayStatus, "COMPLETED");
 
   // A new rows snapshot subscribes again, but does not bring an errored row back to LOADING or LOADED.
-  stream.rows([streamRow("R1", 1, "S1", { execution: { status: "IN_PROGRESS" } }), streamRow("R2", 2, "S2")]);
+  stream.rows([streamRow("R1", 1, "S1", { execution: { status: "IN_PROGRESS" } }), streamRow("R2", 2, "S3"), streamRow("R4", 4, "S2")]);
   assert.equal(stream.state("R1"), "ERROR");
   assert.equal(stream.state("R2"), "ERROR");
-  assert.equal(stream.listeners.filter((listener) => listener.path === "sales-all-meters/S1").length, 2);
-  assert.equal(stream.live("sales-all-meters/S1").length, 1);
+  assert.equal(stream.state("R4"), "ERROR");
+  assert.equal(stream.listeners.filter((listener) => listener.path === "sales-all-meters" && listener.constraints[0].value.includes("S1")).length, 2);
+  assert.ok(stream.groupOf("S1"));
+  assert.ok(stream.groupOf("S3"));
   await stream.remove();
 });
 
-test("TB-R051 rows stream: a failed Sales listener is ended and the next rows snapshot subscribes again", async (t) => {
+test("TB-R051 rows stream: a failed Sales group is ended and the next rows snapshot subscribes again", async (t) => {
   t.mock.method(console, "error", () => {});
   const stream = await startRowsStream();
   stream.rows([streamRow("R1", 1, "S1"), streamRow("R2", 2, "S2")]);
-  stream.sales("S1", linkedSales({ master: { visibility: "INVISIBLE" } }));
-  const [failed] = stream.live("sales-all-meters/S1");
+  stream.sales({ S1: linkedSales({ master: { visibility: "INVISIBLE" } }), S2: linkedSales() });
+  const failed = stream.groupOf("S1");
 
   stream.salesError("S1");
   assert.equal(failed.active, false, "the failed listener is unsubscribed");
-  assert.equal(stream.live("sales-all-meters/S1").length, 0);
+  assert.equal(stream.salesGroups().length, 0);
   assert.equal(stream.state("R1"), "ERROR");
 
   // A late event from the failed listener changes nothing.
   const count = stream.publishCount;
-  failed.next(salesSnapshot(linkedSales({ master: { visibility: "VISIBLE" } })));
+  failed.next({ docs: [docSnapshot("S1", linkedSales({ master: { visibility: "VISIBLE" } }))], metadata: { fromCache: false } });
   stream.flush();
   assert.equal(stream.publishCount, count);
   assert.equal(stream.row("R1").displayStatus, "NOT_STARTED");
 
   stream.rows([streamRow("R1", 1, "S1", { execution: { status: "IN_PROGRESS" } }), streamRow("R2", 2, "S2")]);
-  const [second] = stream.live("sales-all-meters/S1");
+  const second = stream.groupOf("S1");
   assert.notEqual(second, failed);
   assert.deepEqual(second.options, { includeMetadataChanges: true });
   assert.equal(stream.state("R1"), "ERROR", "ERROR until the new listener answers");
   // The same record as before the failure still clears ERROR.
-  stream.sales("S1", linkedSales({ master: { visibility: "INVISIBLE" } }));
+  stream.sales({ S1: linkedSales({ master: { visibility: "INVISIBLE" } }), S2: linkedSales() });
   assert.equal(stream.state("R1"), "LOADED");
   assert.equal(stream.row("R1").displayStatus, "IN_PROGRESS");
 
@@ -514,26 +545,26 @@ test("TB-R051 rows stream: a failed Sales listener is ended and the next rows sn
   stream.rows([streamRow("R1", 1, ""), streamRow("R2", 2, "S2")]);
   assert.equal(stream.state("R1"), "MISSING");
   stream.rows([streamRow("R1", 1, "S1"), streamRow("R2", 2, "S2")]);
-  assert.equal(stream.live("sales-all-meters/S1").length, 1);
+  assert.ok(stream.groupOf("S1"));
   assert.equal(stream.state("R1"), "LOADING");
   await stream.remove();
 });
 
-test("TB-R051 rows stream: failed Sales listeners are retried after 15 seconds while the entry is alive", async (t) => {
+test("TB-R051 rows stream: failed Sales groups are retried after 15 seconds while the entry is alive", async (t) => {
   t.mock.method(console, "error", () => {});
-  const stream = await startRowsStream();
+  const stream = await startRowsStream(TB, { groupSize: 1 });
   stream.rows([streamRow("R1", 1, "S1"), streamRow("R2", 2, "S2")]);
   stream.salesError("S1");
   stream.salesError("S2");
-  assert.equal(stream.pendingTimers, 1, "one retry for every failed Sales ID");
+  assert.equal(stream.pendingTimers, 1, "one retry for every failed group");
 
   stream.advance(14999);
-  assert.equal(stream.live("sales-all-meters/S1").length, 0);
+  assert.equal(stream.salesGroups().length, 0);
   stream.advance(1);
-  assert.equal(stream.live("sales-all-meters/S1").length, 1);
-  assert.equal(stream.live("sales-all-meters/S2").length, 1);
+  assert.ok(stream.groupOf("S1"));
+  assert.ok(stream.groupOf("S2"));
   assert.equal(stream.state("R1"), "ERROR");
-  stream.sales("S1", linkedSales());
+  stream.sales({ S1: linkedSales() });
   assert.equal(stream.state("R1"), "LOADED");
 
   // Failing again schedules another retry; a row already ERROR publishes nothing new.
@@ -542,7 +573,7 @@ test("TB-R051 rows stream: failed Sales listeners are retried after 15 seconds w
   assert.equal(stream.publishCount, count);
   assert.equal(stream.state("R2"), "ERROR");
   stream.advance(15000);
-  assert.equal(stream.live("sales-all-meters/S2").length, 1);
+  assert.ok(stream.groupOf("S2"));
 
   // Removing the entry cancels a pending retry.
   stream.salesError("S2");
@@ -550,7 +581,7 @@ test("TB-R051 rows stream: failed Sales listeners are retried after 15 seconds w
   await stream.remove();
   assert.equal(stream.pendingTimers, 0);
   stream.advance(60000);
-  assert.equal(stream.live("sales-all-meters/S2").length, 0);
+  assert.equal(stream.salesGroups().length, 0);
 });
 
 test("TB-R051 rows stream: the events of one burst publish once", async () => {
@@ -558,9 +589,7 @@ test("TB-R051 rows stream: the events of one burst publish once", async () => {
   const start = stream.publishCount;
   stream.burst(() => {
     stream.rows([streamRow("R1", 1, "S1"), streamRow("R2", 2, "S2"), streamRow("R3", 3, "S3")]);
-    stream.sales("S1", linkedSales({ master: { visibility: "VISIBLE" } }));
-    stream.sales("S2", null);
-    stream.sales("S3", linkedSales());
+    stream.sales({ S1: linkedSales({ master: { visibility: "VISIBLE" } }), S2: null, S3: linkedSales() });
   });
   assert.equal(stream.publishCount, start, "nothing is published inside the burst");
   stream.flush();
@@ -575,39 +604,35 @@ test("TB-R051 rows stream: the events of one burst publish once", async () => {
   await stream.remove();
 });
 
-test("TB-R051 rows stream: a Sales event that changes neither the record nor its load state publishes nothing", async () => {
+test("TB-R051 rows stream: a Sales event that changes neither the records nor their load states publishes nothing", async () => {
   const stream = await startRowsStream();
   stream.rows([streamRow("R1", 1, "S1"), streamRow("R2", 2, "S2")]);
-  stream.sales("S1", linkedSales({ master: { visibility: "INVISIBLE" } }));
-  stream.sales("S2", linkedSales());
+  const invisible = () => linkedSales({ master: { visibility: "INVISIBLE" } });
+  stream.sales({ S1: invisible(), S2: linkedSales() });
   const count = stream.publishCount;
 
   // Going offline and back online: the same records, only the snapshot metadata changes.
-  stream.burst(() => {
-    stream.sales("S1", linkedSales({ master: { visibility: "INVISIBLE" } }), { fromCache: true });
-    stream.sales("S2", linkedSales(), { fromCache: true });
-  });
-  stream.flush();
-  stream.sales("S1", linkedSales({ master: { visibility: "INVISIBLE" } }));
-  stream.sales("S2", linkedSales());
+  stream.sales({ S1: invisible(), S2: linkedSales() }, { fromCache: true });
+  stream.sales({ S1: invisible(), S2: linkedSales() });
   assert.equal(stream.publishCount, count);
   assert.equal(stream.pendingTimers, 0);
 
   // A data change publishes.
-  stream.sales("S1", linkedSales({ master: { visibility: "VISIBLE" } }));
+  const visible = () => linkedSales({ master: { visibility: "VISIBLE" } });
+  stream.sales({ S1: visible(), S2: linkedSales() });
   assert.equal(stream.publishCount, count + 1);
   assert.equal(stream.row("R1").displayStatus, "COMPLETED");
 
   // A change of existence publishes, and so does a load state change on its own.
-  stream.sales("S2", null, { fromCache: true });
+  stream.sales({ S1: visible(), S2: null }, { fromCache: true });
   assert.equal(stream.publishCount, count + 2);
   assert.equal(stream.state("R2"), "LOADING");
-  stream.sales("S2", null, { fromCache: true });
+  stream.sales({ S1: visible(), S2: null }, { fromCache: true });
   assert.equal(stream.publishCount, count + 2);
-  stream.sales("S2", null);
+  stream.sales({ S1: visible(), S2: null });
   assert.equal(stream.publishCount, count + 3);
   assert.equal(stream.state("R2"), "MISSING");
-  stream.sales("S2", null);
+  stream.sales({ S1: visible(), S2: null });
   assert.equal(stream.publishCount, count + 3);
   await stream.remove();
 });
@@ -615,42 +640,166 @@ test("TB-R051 rows stream: a Sales event that changes neither the record nor its
 test("TB-R051 rows stream: a Sales ID that leaves and returns starts LOADING again", async () => {
   const stream = await startRowsStream();
   stream.rows([streamRow("R1", 1, "S1")]);
-  stream.sales("S1", linkedSales());
+  stream.sales({ S1: linkedSales() });
   assert.equal(stream.state("R1"), "LOADED");
-  const [first] = stream.live("sales-all-meters/S1");
+  const first = stream.groupOf("S1");
 
   stream.rows([streamRow("R1", 1, "")]);
   assert.equal(first.active, false);
   assert.equal(stream.state("R1"), "MISSING");
 
   stream.rows([streamRow("R1", 1, "S1")]);
-  const [second] = stream.live("sales-all-meters/S1");
+  const second = stream.groupOf("S1");
   assert.notEqual(second, first);
   assert.equal(stream.state("R1"), "LOADING");
   await stream.remove();
+});
+
+test("TB-R052 rows stream: when a meter leaves its group, the group's other meters are read again and keep their status", async () => {
+  const stream = await startRowsStream();
+  stream.rows([streamRow("R1", 1, "S1"), streamRow("R2", 2, "S2")]);
+  stream.sales({ S1: linkedSales({ master: { visibility: "VISIBLE" } }), S2: linkedSales() });
+  const first = stream.groupOf("S1");
+  const count = stream.publishCount;
+
+  stream.rows([streamRow("R1", 1, "S1")]);
+  assert.equal(first.active, false);
+  const second = stream.groupOf("S1");
+  assert.deepEqual(second.constraints[0].value, ["S1"]);
+  assert.equal(stream.state("R1"), "LOADED", "no flicker back to LOADING");
+  assert.equal(stream.row("R1").displayStatus, "COMPLETED");
+  assert.equal(stream.publishCount, count + 1, "only the rows change publishes");
+
+  stream.sales({ S1: linkedSales({ master: { visibility: "VISIBLE" } }) });
+  assert.equal(stream.publishCount, count + 1, "the same record from the new group publishes nothing");
+  await stream.remove();
+});
+
+test("TB-R052 rows stream: a failed rows listener says ERROR, keeps the rows and reconnects after 15 seconds", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const stream = await startRowsStream();
+  stream.rows([streamRow("R1", 1, "S1")]);
+  stream.sales({ S1: linkedSales() });
+  assert.equal(stream.data.meta.stream, "LIVE");
+
+  const [first] = stream.live("tb_rows");
+  stream.rowsError();
+  assert.equal(first.active, false);
+  assert.equal(stream.data.meta.stream, "ERROR");
+  assert.equal(stream.state("R1"), "LOADED", "the rows stay while the list reconnects");
+
+  stream.advance(14999);
+  assert.equal(stream.live("tb_rows").length, 0);
+  stream.advance(1);
+  assert.equal(stream.live("tb_rows").length, 1);
+  assert.equal(stream.data.meta.stream, "ERROR", "ERROR until the new listener answers");
+  stream.rows([streamRow("R1", 1, "S1")]);
+  assert.equal(stream.data.meta.stream, "LIVE");
+
+  // A late failure of the ended listener changes nothing.
+  first.error(new Error("late"));
+  stream.flush();
+  assert.equal(stream.data.meta.stream, "LIVE");
+
+  // Removing the entry cancels a pending rows retry.
+  stream.rowsError();
+  assert.equal(stream.pendingTimers, 1);
+  await stream.remove();
+  assert.equal(stream.pendingTimers, 0);
+  stream.advance(60000);
+  assert.equal(stream.live("tb_rows").length, 0);
 });
 
 test("TB-R051 rows stream: removing the cache entry stops every listener and publish", async (t) => {
   t.mock.method(console, "error", () => {});
   const stream = await startRowsStream();
   stream.rows([streamRow("R1", 1, "S1"), streamRow("R2", 2, "S2")]);
-  const salesListeners = stream.listeners.filter((listener) => listener.path.startsWith("sales-all-meters/"));
+  const [salesGroup] = stream.salesGroups();
   const [rowsListener] = stream.live("tb_rows");
   const count = stream.publishCount;
   // A publish scheduled but not yet run when the entry is removed never runs.
-  stream.burst(() => stream.sales("S1", linkedSales()));
+  stream.burst(() => stream.sales({ S1: linkedSales() }));
   assert.equal(stream.pendingTimers, 1);
   await stream.remove();
   assert.equal(stream.listeners.every((listener) => !listener.active), true);
   assert.equal(stream.pendingTimers, 0);
-  salesListeners[0].next(salesSnapshot(linkedSales({ master: { visibility: "VISIBLE" } })));
-  salesListeners[1].error(new Error("late"));
+  salesGroup.next({ docs: [docSnapshot("S1", linkedSales({ master: { visibility: "VISIBLE" } }))], metadata: { fromCache: false } });
+  salesGroup.error(new Error("late"));
+  rowsListener.error(new Error("late"));
   const listenerCount = stream.listeners.length;
   rowsListener.next({ docs: [{ id: "R9", data: () => streamRow("R9", 9, "S9") }] });
   stream.advance(60000);
   assert.equal(stream.listeners.length, listenerCount, "a late rows event opens no Sales listener");
   assert.equal(stream.publishCount, count);
   assert.equal(stream.state("R1"), "LOADING");
+});
+
+test("TB-R052 rows stream: rows answered only from the phone's memory are loading until the server answers, then not up to date", async () => {
+  const stream = await startRowsStream();
+  assert.deepEqual(stream.live("tb_rows")[0].options, { includeMetadataChanges: true });
+
+  // Firestore cannot reach the server: an empty answer from memory is not "no rows".
+  stream.rows([], { fromCache: true });
+  assert.equal(stream.data.meta.updatedAt, null);
+  assert.equal(stream.data.meta.stream, "CONNECTING");
+
+  stream.rows([streamRow("R1", 1, "S1")]);
+  assert.ok(stream.data.meta.updatedAt, "loaded once the server answers");
+  assert.equal(stream.data.meta.stream, "LIVE");
+
+  // After the server has answered, a memory-only answer keeps the rows and says they may be out of date.
+  stream.rows([streamRow("R1", 1, "S1")], { fromCache: true });
+  assert.equal(stream.data.meta.stream, "NOT_UP_TO_DATE");
+  assert.ok(stream.data.meta.updatedAt);
+  assert.equal(stream.data.rows.length, 1);
+  stream.rows([streamRow("R1", 1, "S1")]);
+  assert.equal(stream.data.meta.stream, "LIVE");
+  await stream.remove();
+});
+
+test("TB-R052 rows stream: a Sales ID that cannot be read fails closed alone, never its group", async (t) => {
+  t.mock.method(console, "error", () => {});
+  const stream = await startRowsStream();
+  stream.rows([streamRow("R1", 1, "04/123"), streamRow("R2", 2, "S1"), streamRow("R3", 3, "S2")]);
+  assert.deepEqual(stream.salesGroups().map((group) => group.constraints[0].value), [["S1", "S2"]]);
+  assert.equal(stream.state("R1"), "ERROR");
+  assert.equal(stream.state("R2"), "LOADING");
+  stream.sales({ S1: linkedSales(), S2: null });
+  assert.equal(stream.state("R2"), "LOADED");
+  assert.equal(stream.state("R3"), "MISSING");
+  assert.equal(stream.pendingTimers, 0, "nothing retries a Sales ID that can never be read");
+
+  // Fixed on the row, it is read like any other.
+  stream.rows([streamRow("R1", 1, "S3"), streamRow("R2", 2, "S1"), streamRow("R3", 3, "S2")]);
+  assert.equal(stream.state("R1"), "LOADING");
+  assert.ok(stream.groupOf("S3"));
+  await stream.remove();
+});
+
+test("TB-R052 rows stream: a refetch answers with the rows last published; nothing is left after the entry is removed", async () => {
+  const stream = await startRowsStream();
+  const placeholder = { rows: [], meta: { updatedAt: null } };
+  assert.equal(stream.liveData.read(TB, placeholder), placeholder, "before any answer a refetch gets the loading placeholder");
+
+  stream.rows([streamRow("R1", 1, "S1")]);
+  stream.sales({ S1: linkedSales({ master: { visibility: "VISIBLE" } }) });
+  const published = stream.liveData.read(TB, placeholder);
+  assert.equal(published, stream.data);
+  assert.equal(published.rows[0].displayStatus, "COMPLETED");
+
+  await stream.remove();
+  assert.equal(stream.liveData.read(TB, placeholder), placeholder);
+});
+
+test("TB-R052 a refetch of rows or batches reads the live data, never a placeholder", () => {
+  const rows = source.slice(source.indexOf("getTargetedBatchRows: builder.query"), source.indexOf("async onCacheEntryAdded(", source.indexOf("getTargetedBatchRows: builder.query")));
+  assert.match(rows, /targetedBatchRowsLiveData\.read\(\s*tbId,/);
+  assert.match(rows, /loaded: false/);
+  const buckets = source.slice(source.indexOf("getTargetedBatchBuckets: builder.query"), source.indexOf("getTargetedBatchRows: builder.query"));
+  assert.match(buckets, /targetedBatchBucketLiveData\.read\(\s*targetedBatchBucketKey\(args\),/);
+  assert.match(buckets, /const data = liveData\.publish\(/);
+  assert.match(buckets, /liveData\.close\(\);/);
+  assert.match(buckets, /`\$\{endpointName\}:\$\{targetedBatchBucketKey\(queryArgs\)\}`/);
 });
 
 test("TB-R051 buckets carry the geofence link and schema version", () => {

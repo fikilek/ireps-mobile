@@ -1,9 +1,8 @@
 import { createApi, fakeBaseQuery } from "@reduxjs/toolkit/query/react";
 import {
   collection,
-  doc,
+  documentId,
   onSnapshot,
-  orderBy,
   query,
   snapshotEqual,
   where,
@@ -12,6 +11,16 @@ import { httpsCallable } from "firebase/functions";
 
 import { db, functions } from "../firebase";
 import { resolveTargetedBatchSalesPoint } from "../features/targetedBatches/targetedBatchMapPoints";
+import { listenActorTeams, listenWhereIn } from "./firestoreListeners";
+import {
+  FIRESTORE_IN_LIMIT,
+  LIVE_STREAM_STATUS,
+  MY_WORK_ORDERS_KEEP_SECONDS,
+  createLiveDataStore,
+  followActorAllocatedDocuments,
+  isDocumentId,
+  readFromCache,
+} from "./liveSubscription";
 
 const EMPTY_TARGETED_BATCH_BUCKET_DATA = {
   buckets: [],
@@ -24,6 +33,8 @@ const EMPTY_TARGETED_BATCH_BUCKET_DATA = {
   meta: {
     source: "TARGETED_BATCH_BUCKET_STREAM",
     updatedAt: null,
+    stream: LIVE_STREAM_STATUS.CONNECTING,
+    actorTeamIds: [],
   },
 };
 
@@ -226,7 +237,14 @@ function normalizeTargetedBatchBucket(batch = {}) {
   };
 }
 
-function buildTargetedBatchBucketData({ batches = [] }) {
+// TB-R052: updatedAt is set once the worker's batches have been read (the list is ready); stream says whether
+// the live list is connecting, live or failed; actorTeamIds are the teams the batches were read for.
+function buildTargetedBatchBucketData({
+  batches = [],
+  loaded = true,
+  stream = LIVE_STREAM_STATUS.LIVE,
+  actorTeamIds = [],
+}) {
   const buckets = batches
     .map(normalizeTargetedBatchBucket)
     .filter((bucket) => bucket?.allocationStatus === "ALLOCATED")
@@ -259,7 +277,9 @@ function buildTargetedBatchBucketData({ batches = [] }) {
     summary,
     meta: {
       source: "TARGETED_BATCH_BUCKET_STREAM",
-      updatedAt: new Date().toISOString(),
+      updatedAt: loaded ? new Date().toISOString() : null,
+      stream,
+      actorTeamIds,
     },
   };
 }
@@ -398,6 +418,8 @@ export function buildTargetedBatchRowsData({
   streamLimit = null,
   pagination = {},
   diagnostics = {},
+  stream = LIVE_STREAM_STATUS.LIVE,
+  loaded = true,
 }) {
   const normalizedRows = rows
     .map(normalizeTargetedBatchRow)
@@ -436,9 +458,12 @@ export function buildTargetedBatchRowsData({
     summary,
     meta: {
       source: "TARGETED_BATCH_ROWS_STREAM",
-      updatedAt: new Date().toISOString(),
+      // TB-R052: set once the server has answered the batch rows; before that the rows are loading, never "none".
+      updatedAt: loaded ? new Date().toISOString() : null,
       tbId,
       streamLimit,
+      // TB-R052: whether the batch rows are live, reconnecting after a failure, or still connecting.
+      stream,
     },
     pagination: {
       limit: Number(pagination?.limit || streamLimit || 0),
@@ -449,49 +474,67 @@ export function buildTargetedBatchRowsData({
   };
 }
 
+// TB-R052: one live batch list per worker and service provider; one live rows stream per batch.
+const targetedBatchBucketKey = (args = {}) =>
+  `${cleanText(args?.actorUid)}:${cleanText(args?.actorSpId)}`;
+const targetedBatchBucketLiveData = createLiveDataStore();
+const targetedBatchRowsLiveData = createLiveDataStore();
+
 export const targetedBatchApi = createApi({
   reducerPath: "targetedBatchApi",
   baseQuery: fakeBaseQuery(),
   tagTypes: ["TargetedBatch"],
   endpoints: (builder) => ({
     getTargetedBatchBuckets: builder.query({
-      queryFn() {
-        return { data: EMPTY_TARGETED_BATCH_BUCKET_DATA };
+      // TB-R052: a refetch answers with the live list's last data, never an empty list.
+      queryFn(args = {}) {
+        return {
+          data: targetedBatchBucketLiveData.read(
+            targetedBatchBucketKey(args),
+            EMPTY_TARGETED_BATCH_BUCKET_DATA,
+          ),
+        };
       },
 
+      // TB-R052: only the batches allocated to the worker's teams or service provider are read, and the live
+      // list is kept for up to 24 hours after the worker leaves My Work Orders.
       async onCacheEntryAdded(
         args = {},
         { updateCachedData, cacheDataLoaded, cacheEntryRemoved },
       ) {
-        let unsubscribeTargetedBatches = () => {};
+        let stopTargetedBatches = () => {};
+        const liveData = targetedBatchBucketLiveData.open(targetedBatchBucketKey(args));
 
         try {
           await cacheDataLoaded;
 
-          const targetedBatchQuery = query(
-            collection(db, "tb_uploads"),
-            orderBy("metadata.createdAt", "desc"),
-          );
-
-          unsubscribeTargetedBatches = onSnapshot(
-            targetedBatchQuery,
-            (snapshot) => {
-              const batches = snapshot.docs.map((docSnap) => ({
-                id: docSnap.id,
-                ...docSnap.data(),
-              }));
-
-              updateCachedData(() =>
-                buildTargetedBatchBucketData({ batches }),
+          stopTargetedBatches = followActorAllocatedDocuments({
+            uid: args?.actorUid,
+            spId: args?.actorSpId,
+            listenTeams: listenActorTeams,
+            listenAllocated: (values, onDocs, onError) =>
+              listenWhereIn(
+                {
+                  collectionName: "tb_uploads",
+                  field: "allocation.targetId",
+                  values,
+                  label: "TARGETED_BATCH_BUCKET",
+                },
+                onDocs,
+                onError,
+              ),
+            onChange: ({ docs, loaded, stream, teamIds }) => {
+              const data = liveData.publish(
+                buildTargetedBatchBucketData({
+                  batches: docs,
+                  loaded,
+                  stream,
+                  actorTeamIds: teamIds,
+                }),
               );
+              updateCachedData(() => data);
             },
-            (error) => {
-              console.error(
-                "❌ [TARGETED_BATCH_BUCKET_STREAM_ERROR]:",
-                error,
-              );
-            },
-          );
+          });
         } catch (error) {
           console.error(
             "❌ [TARGETED_BATCH_BUCKET_STREAM_SETUP_ERROR]:",
@@ -500,8 +543,12 @@ export const targetedBatchApi = createApi({
         }
 
         await cacheEntryRemoved;
-        unsubscribeTargetedBatches();
+        stopTargetedBatches();
+        liveData.close();
       },
+      serializeQueryArgs: ({ endpointName, queryArgs }) =>
+        `${endpointName}:${targetedBatchBucketKey(queryArgs)}`,
+      keepUnusedDataFor: MY_WORK_ORDERS_KEEP_SECONDS,
       providesTags: ["TargetedBatch"],
     }),
 
@@ -509,21 +556,36 @@ export const targetedBatchApi = createApi({
       queryFn(args = {}) {
         const tbId = cleanText(args?.tbId);
         if (!tbId) return { error: { code: "TARGETED_BATCH_ID_REQUIRED", message: "Targeted Batch is required." } };
-        return { data: buildTargetedBatchRowsData({ tbId, rows: [] }) };
+        // TB-R052: a refetch answers with the live rows' last data, never an empty batch.
+        return {
+          data: targetedBatchRowsLiveData.read(
+            tbId,
+            buildTargetedBatchRowsData({ tbId, rows: [], stream: LIVE_STREAM_STATUS.CONNECTING, loaded: false }),
+          ),
+        };
       },
 
       async onCacheEntryAdded(
         args = {},
         { updateCachedData, cacheDataLoaded, cacheEntryRemoved },
       ) {
-        // TB-R051: a failed Sales listener is subscribed again after this wait while the batch stays open.
+        // TB-R051: a failed Sales group (and, TB-R052, a failed rows listener) is subscribed again after this wait
+        // while the batch stays open.
         const SALES_LISTENER_RETRY_MS = 15000;
         let unsubscribeRows = () => {};
-        const salesListeners = new Map();
+        let rowsGeneration = 0;
+        let rowsStatus = LIVE_STREAM_STATUS.CONNECTING;
+        // TB-R052: whether the server has answered the batch rows at least once.
+        let rowsFromServer = false;
+        let rowsRetryTimer = null;
+        const liveData = targetedBatchRowsLiveData.open(cleanText(args?.tbId));
+        // TB-R052: Sales records are read in groups of up to 30 meters per listener instead of one listener per meter.
+        const salesGroups = new Set();
         const salesDocuments = new Map();
-        // TB-R051: the last Sales snapshot per Sales ID, to skip an event that changes nothing on the phone.
+        // TB-R051: the last Sales document per Sales ID (null when the server or cache said it does not exist), to
+        // skip an event that changes nothing on the phone.
         const salesSnapshots = new Map();
-        // TB-R051: per Sales ID, LOADED or MISSING once a snapshot has said so, ERROR once its listener failed.
+        // TB-R051: per Sales ID, LOADED or MISSING once a snapshot has said so, ERROR once its group failed.
         const salesLoadStates = new Map();
         let currentRows = [];
         let active = true;
@@ -538,7 +600,10 @@ export const targetedBatchApi = createApi({
             const salesLoadState = salesId ? salesLoadStates.get(salesId) || "LOADING" : "MISSING";
             return enrichTargetedBatchRowFromSales(row, salesDocuments.get(salesId) || null, salesLoadState);
           });
-          updateCachedData(() => buildTargetedBatchRowsData({ tbId: cleanText(args?.tbId), rows }));
+          const data = liveData.publish(
+            buildTargetedBatchRowsData({ tbId: cleanText(args?.tbId), rows, stream: rowsStatus, loaded: rowsFromServer }),
+          );
+          updateCachedData(() => data);
         };
 
         // TB-R051: listener events publish once per burst. Firestore runs each listener callback in its own
@@ -559,69 +624,113 @@ export const targetedBatchApi = createApi({
           }, SALES_LISTENER_RETRY_MS);
         };
 
+        const endSalesGroup = (group) => {
+          salesGroups.delete(group);
+          group.unsubscribe();
+        };
+
+        // TB-R052: one listener for up to 30 Sales IDs. Each ID keeps its own TB-R051 load state.
+        const openSalesGroup = (ids) => {
+          const group = { ids, unsubscribe: () => {} };
+          // TB-R051: a callback from a group that no longer listens (ended or failed) is ignored.
+          const isCurrent = () => active && salesGroups.has(group);
+
+          const fail = (error) => {
+            console.error("[TARGETED_BATCH_SALES_STREAM_ERROR]", { ids, error });
+            if (!isCurrent()) return;
+            // TB-R051: the failed group is ended and forgotten, so the next rows snapshot or the retry subscribes again.
+            endSalesGroup(group);
+            scheduleSalesRetry();
+            // TB-R051: a failed group fails closed; the last Sales data read, if any, is kept for the status.
+            let changed = false;
+            for (const id of ids) {
+              if (salesLoadStates.get(id) === "ERROR") continue;
+              salesLoadStates.set(id, "ERROR");
+              changed = true;
+            }
+            if (changed) schedulePublish();
+          };
+
+          salesGroups.add(group);
+          try {
+            // Metadata changes are included so a cache-only "does not exist" is confirmed or replaced once the server answers.
+            group.unsubscribe = onSnapshot(
+              query(collection(db, "sales-all-meters"), where(documentId(), "in", ids)),
+              { includeMetadataChanges: true },
+              (snapshot) => {
+                if (!isCurrent()) return;
+                const fromCache = readFromCache(snapshot);
+                const found = new Map(snapshot.docs.map((docSnap) => [docSnap.id, docSnap]));
+                let changed = false;
+                for (const id of ids) {
+                  const docSnap = found.get(id) || null;
+                  // TB-R051: offline, the cache cannot say a Sales record does not exist; it has not loaded yet.
+                  const loadState = docSnap ? "LOADED" : fromCache ? "LOADING" : "MISSING";
+                  const previous = salesSnapshots.get(id);
+                  const sameRecord =
+                    previous !== undefined &&
+                    (previous === null ? docSnap === null : docSnap !== null && snapshotEqual(previous, docSnap));
+                  // TB-R051: an event that changes neither the record nor its load state (going offline or online) publishes nothing.
+                  if (sameRecord && salesLoadStates.get(id) === loadState) continue;
+                  salesSnapshots.set(id, docSnap);
+                  if (docSnap) salesDocuments.set(id, docSnap.data() || {});
+                  else salesDocuments.delete(id);
+                  salesLoadStates.set(id, loadState);
+                  changed = true;
+                }
+                if (changed) schedulePublish();
+              },
+              fail,
+            );
+          } catch (error) {
+            fail(error);
+          }
+        };
+
         const reconcileSalesListeners = () => {
           const requiredIds = new Set(currentRows.map((row) => cleanText(row?.salesAllMeterId)).filter(Boolean));
-          // A failed Sales ID has no listener but keeps its state, so both are forgotten when its rows leave.
-          for (const id of new Set([...salesListeners.keys(), ...salesLoadStates.keys()])) {
+          // TB-R052: a group holding a Sales ID whose rows left is ended; its other IDs are grouped again below and keep their state.
+          for (const group of [...salesGroups]) {
+            if (group.ids.every((id) => requiredIds.has(id))) continue;
+            endSalesGroup(group);
+          }
+          // A Sales ID whose rows left is forgotten, a failed one too, so if it returns it starts LOADING.
+          for (const id of [...salesLoadStates.keys()]) {
             if (requiredIds.has(id)) continue;
-            const unsubscribe = salesListeners.get(id);
-            if (unsubscribe) unsubscribe();
-            salesListeners.delete(id);
             salesDocuments.delete(id);
             salesSnapshots.delete(id);
             salesLoadStates.delete(id);
           }
+          // TB-R052: a Sales ID that cannot be a document ID cannot be read; only its own rows fail closed as ERROR,
+          // never the other meters of a group.
           for (const id of requiredIds) {
-            if (salesListeners.has(id)) continue;
-            let unsubscribe = null;
-            // TB-R051: a callback from a listener that no longer holds its Sales ID (removed or failed) is ignored.
-            const isCurrent = () => active && salesListeners.get(id) === unsubscribe;
-            // Metadata changes are included so a cache-only "does not exist" is confirmed or replaced once the server answers.
-            unsubscribe = onSnapshot(doc(db, "sales-all-meters", id), { includeMetadataChanges: true }, (snapshot) => {
-              if (!isCurrent()) return;
-              const exists = snapshot.exists();
-              // TB-R051: offline, the cache cannot say a Sales record does not exist; it has not loaded yet.
-              const loadState = exists ? "LOADED" : snapshot.metadata?.fromCache ? "LOADING" : "MISSING";
-              const previous = salesSnapshots.get(id);
-              salesSnapshots.set(id, snapshot);
-              // TB-R051: an event that changes neither the record nor its load state (going offline or online) publishes nothing.
-              if (previous && snapshotEqual(previous, snapshot) && salesLoadStates.get(id) === loadState) return;
-              if (exists) salesDocuments.set(id, snapshot.data() || {});
-              else salesDocuments.delete(id);
-              salesLoadStates.set(id, loadState);
-              schedulePublish();
-            }, (error) => {
-              console.error("[TARGETED_BATCH_SALES_STREAM_ERROR]", { id, error });
-              if (!isCurrent()) return;
-              // TB-R051: the failed listener is ended and forgotten, so the next rows snapshot or the retry subscribes again.
-              unsubscribe();
-              salesListeners.delete(id);
-              scheduleSalesRetry();
-              // TB-R051: a failed Sales listener fails closed; the last Sales data read, if any, is kept for the status.
-              if (salesLoadStates.get(id) === "ERROR") return;
-              salesLoadStates.set(id, "ERROR");
-              schedulePublish();
-            });
-            salesListeners.set(id, unsubscribe);
+            if (isDocumentId(id) || salesLoadStates.get(id) === "ERROR") continue;
+            salesLoadStates.set(id, "ERROR");
+          }
+          const grouped = new Set([...salesGroups].flatMap((group) => group.ids));
+          const ungrouped = [...requiredIds].filter((id) => isDocumentId(id) && !grouped.has(id)).sort();
+          for (let index = 0; index < ungrouped.length; index += FIRESTORE_IN_LIMIT) {
+            openSalesGroup(ungrouped.slice(index, index + FIRESTORE_IN_LIMIT));
           }
         };
 
-        try {
-          await cacheDataLoaded;
-
-          const tbId = cleanText(args?.tbId);
-          if (!tbId) {
-            await cacheEntryRemoved;
-            return;
-          }
-
-          const rowsQuery = query(collection(db, "tb_rows"), where("tbId", "==", tbId));
-
+        // TB-R052: a failed rows listener says so (the rows stream is ERROR) and is subscribed again after the wait.
+        // Metadata changes are included: rows answered only from the phone's memory are not loaded until the
+        // server has answered once, and after that they are not up to date.
+        const subscribeRows = (tbId) => {
+          const mine = ++rowsGeneration;
           unsubscribeRows = onSnapshot(
-            rowsQuery,
+            query(collection(db, "tb_rows"), where("tbId", "==", tbId)),
+            { includeMetadataChanges: true },
             (snapshot) => {
               // TB-R051: after the entry is removed a late rows event opens no Sales listener.
-              if (!active) return;
+              if (!active || mine !== rowsGeneration) return;
+              if (readFromCache(snapshot)) {
+                rowsStatus = rowsFromServer ? LIVE_STREAM_STATUS.NOT_UP_TO_DATE : LIVE_STREAM_STATUS.CONNECTING;
+              } else {
+                rowsFromServer = true;
+                rowsStatus = LIVE_STREAM_STATUS.LIVE;
+              }
               currentRows = snapshot.docs.map((docSnap) => ({
                 id: docSnap.id,
                 ...docSnap.data(),
@@ -634,8 +743,31 @@ export const targetedBatchApi = createApi({
                 "❌ [TARGETED_BATCH_ROWS_STREAM_ERROR]:",
                 error,
               );
+              if (!active || mine !== rowsGeneration) return;
+              rowsGeneration += 1;
+              unsubscribeRows();
+              unsubscribeRows = () => {};
+              rowsStatus = LIVE_STREAM_STATUS.ERROR;
+              schedulePublish();
+              rowsRetryTimer = setTimeout(() => {
+                rowsRetryTimer = null;
+                if (active) subscribeRows(tbId);
+              }, SALES_LISTENER_RETRY_MS);
             },
           );
+        };
+
+        try {
+          await cacheDataLoaded;
+
+          const tbId = cleanText(args?.tbId);
+          if (!tbId) {
+            await cacheEntryRemoved;
+            liveData.close();
+            return;
+          }
+
+          subscribeRows(tbId);
         } catch (error) {
           console.error(
             "❌ [TARGETED_BATCH_ROWS_STREAM_SETUP_ERROR]:",
@@ -647,9 +779,10 @@ export const targetedBatchApi = createApi({
         active = false;
         clearTimeout(publishTimer);
         clearTimeout(salesRetryTimer);
+        clearTimeout(rowsRetryTimer);
         unsubscribeRows();
-        for (const unsubscribe of salesListeners.values()) unsubscribe();
-        salesListeners.clear();
+        liveData.close();
+        for (const group of [...salesGroups]) endSalesGroup(group);
       },
       serializeQueryArgs: ({ endpointName, queryArgs }) =>
         `${endpointName}:${cleanText(queryArgs?.tbId)}`,

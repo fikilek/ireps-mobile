@@ -50,6 +50,15 @@ function tsToMs(ts) {
   return null;
 }
 
+// A Firebase error is an Error object; Redux may only hold plain values. The code is what the
+// Sign in screen reads to name the cause (AU-R001 7.1).
+function plainAuthError(error, fallbackMessage) {
+  return {
+    code: String(error?.code || ""),
+    message: String(error?.message || fallbackMessage || "").trim() || fallbackMessage,
+  };
+}
+
 function normalizeUserProfile(raw) {
   if (!raw) return null;
 
@@ -112,8 +121,10 @@ export const authApi = createApi({
         },
       }),
 
-      async onCacheEntryAdded(_, { updateCachedData, cacheEntryRemoved }) {
+      async onCacheEntryAdded(_, { updateCachedData, cacheEntryRemoved, dispatch }) {
         let profileUnsubscribe = null;
+        // TB-R052: whether a user was signed in, so a sign-out that did not come through Sign out is noticed.
+        let signedInUid = null;
 
         // console.log(` `);
         // console.log(`getAuthState ---onCacheEntryAdded started`);
@@ -123,13 +134,24 @@ export const authApi = createApi({
           if (profileUnsubscribe) profileUnsubscribe();
 
           if (!user) {
-            updateCachedData((draft) =>
-              signedOutAuthState({
-                logoutInProgress: draft?.logoutInProgress === true,
-              }),
-            );
+            const wasSignedIn = signedInUid !== null;
+            signedInUid = null;
+            let logoutInProgress = false;
+            updateCachedData((draft) => {
+              logoutInProgress = draft?.logoutInProgress === true;
+              return signedOutAuthState({ logoutInProgress });
+            });
+            // TB-R052: a session that ended without Sign out (expired or revoked) also ends the live streams My
+            // Work Orders keeps for 24 hours. Sign out does this itself before it signs out.
+            if (wasSignedIn && !logoutInProgress) {
+              resetAuthenticatedApiStates(dispatch).catch((error) => {
+                console.log("[AUTH] cleanup after an unexpected sign-out failed", error);
+              });
+            }
             return;
           }
+
+          signedInUid = user.uid;
 
           // 🛰️ 1. Start Profile Stream (Real-time)
           const userRef = doc(db, "users", user.uid);
@@ -213,8 +235,10 @@ export const authApi = createApi({
 
           return { data: true };
         } catch (error) {
-          console.log(`signin ----signn error`);
-          return { error };
+          // AU-R001 7.1: the code travels to the screen so it can name the cause. The Firebase error
+          // itself is an Error object and must not be put into Redux.
+          console.log(`signin ----error`, error?.code);
+          return { error: plainAuthError(error, "Sign in failed.") };
         }
       },
     }),

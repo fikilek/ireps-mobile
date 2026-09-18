@@ -19,6 +19,7 @@ import {
 } from "react-native";
 import { ActivityIndicator } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useDispatch } from "react-redux";
 import { object, string } from "yup";
 
 import { useGeo } from "../../../../src/context/GeoContext";
@@ -45,6 +46,7 @@ import {
 } from "../../../../src/features/targetedBatches/targetedBatchRowSearch";
 import {
   useAcceptRejectLifecycleInstructionMutation,
+  useGetWmsBgoBatchWorkItemsQuery,
   useGetWmsLifecycleWorkItemsQuery,
 } from "../../../../src/redux/lifecycleInstructionApi";
 import {
@@ -57,7 +59,11 @@ import {
   useGetTargetedBatchBucketsQuery,
   useGetTargetedBatchRowsQuery,
 } from "../../../../src/redux/targetedBatchApi";
-import { useGetTeamsQuery } from "../../../../src/redux/teamsApi";
+import { isLiveStreamOutOfDate } from "../../../../src/redux/liveSubscription";
+import {
+  keepBgoBatchWorkItems,
+  keepTargetedBatchRows,
+} from "../../../../src/redux/workOrderKeepers";
 import { removeSubmissionQueueItemsByInstructionTrnId } from "../../../../src/utils/submissionQueue";
 
 const WMS_GROUPS = [
@@ -114,6 +120,13 @@ const EXECUTION_ROUTES = {
 
 // TB-R051: online only; with no connection the screen says so instead of saying there is no work.
 const WMS_OFFLINE_MESSAGE = "No connection — your work orders are not loaded";
+
+// TB-R052: work already on the screen stays when the connection drops, and says it is from before.
+const WMS_OFFLINE_KEPT_MESSAGE =
+  "No connection — showing your work orders from before the connection was lost";
+
+// TB-R052: a live list that failed says so while it reconnects; its last copy is never shown as current.
+const WMS_NOT_UP_TO_DATE_MESSAGE = "Not up to date — reconnecting";
 
 // TB-R051: a button preparing a batch action gives up after 30 seconds.
 const TARGETED_BATCH_ACTION_TIMEOUT_MS = 30000;
@@ -318,69 +331,6 @@ function cleanId(value) {
   return String(value || "").trim();
 }
 
-function addCleanId(set, value) {
-  const id = cleanId(value);
-  if (id) set.add(id);
-}
-
-function getTeamMemberIds(team = {}) {
-  const ids = new Set();
-
-  if (Array.isArray(team?.memberUids)) {
-    team.memberUids.forEach((uid) => addCleanId(ids, uid));
-  }
-
-  if (Array.isArray(team?.memberIds)) {
-    team.memberIds.forEach((uid) => addCleanId(ids, uid));
-  }
-
-  if (Array.isArray(team?.userIds)) {
-    team.userIds.forEach((uid) => addCleanId(ids, uid));
-  }
-
-  if (Array.isArray(team?.scope?.memberUserIds)) {
-    team.scope.memberUserIds.forEach((uid) => addCleanId(ids, uid));
-  }
-
-  if (Array.isArray(team?.members)) {
-    team.members.forEach((member) => {
-      if (typeof member === "string") {
-        addCleanId(ids, member);
-        return;
-      }
-
-      addCleanId(ids, member?.uid);
-      addCleanId(ids, member?.id);
-      addCleanId(ids, member?.userId);
-    });
-  }
-
-  if (Array.isArray(team?.users)) {
-    team.users.forEach((member) => {
-      if (typeof member === "string") {
-        addCleanId(ids, member);
-        return;
-      }
-
-      addCleanId(ids, member?.uid);
-      addCleanId(ids, member?.id);
-      addCleanId(ids, member?.userId);
-    });
-  }
-
-  return [...ids];
-}
-
-function getActorTeamIds({ teams = [], actorUid }) {
-  const uid = cleanId(actorUid);
-
-  if (!uid) return [];
-
-  return teams
-    .filter((team) => getTeamMemberIds(team).includes(uid))
-    .map((team) => cleanId(team?.id || team?.teamId))
-    .filter(Boolean);
-}
 
 function getBgoBucketTarget(bucket = {}) {
   const assignmentTargets = Array.isArray(bucket?.raw?.assignment?.targets)
@@ -1172,9 +1122,9 @@ export default function WorkorderManagementSystem() {
     );
   }, [actorUid, actorRole, fieldWorkorderActor, router]);
 
+  // TB-R052: office work orders are read by type and state, not the newest TRNs of all workers.
   const {
     data: wmsData,
-    isLoading,
     error,
     refetch,
   } = useGetWmsLifecycleWorkItemsQuery(
@@ -1184,19 +1134,13 @@ export default function WorkorderManagementSystem() {
       actorSpId,
       actorName,
       mode: "INDIVIDUAL",
-      limit: 500,
     },
     { skip: !fieldWorkorderActor },
   );
 
-  const {
-    data: bgoDetailData,
-    isLoading: isLoadingBgoDetailTrns,
-    isFetching: isFetchingBgoDetailTrns,
-    error: bgoDetailError,
-    refetch: refetchBgoDetail,
-  } = useGetWmsLifecycleWorkItemsQuery(
-    {
+  // TB-R052: an opened BGO batch reads its own TRNs; the three most recently opened stay live (see below).
+  const bgoDetailArgs = useMemo(
+    () => ({
       actorUid,
       actorRole,
       actorSpId,
@@ -1204,9 +1148,19 @@ export default function WorkorderManagementSystem() {
       mode: "BGO_BUCKET",
       bgoBatchId: selectedBgoBatchId,
       limit: 2000,
-    },
-    { skip: !fieldWorkorderActor || !selectedBgoBatchId },
+    }),
+    [actorUid, actorRole, actorSpId, actorName, selectedBgoBatchId],
   );
+  const bgoDetailQuerySkipped = !fieldWorkorderActor || !selectedBgoBatchId;
+  const {
+    data: bgoDetailData,
+    isLoading: isLoadingBgoDetailTrns,
+    isFetching: isFetchingBgoDetailTrns,
+    error: bgoDetailError,
+    refetch: refetchBgoDetail,
+  } = useGetWmsBgoBatchWorkItemsQuery(bgoDetailArgs, {
+    skip: bgoDetailQuerySkipped,
+  });
 
   const {
     data: bgoData,
@@ -1226,7 +1180,6 @@ export default function WorkorderManagementSystem() {
 
   const {
     data: targetedBatchData,
-    isLoading: isLoadingTargetedBatches,
     error: targetedBatchError,
   } = useGetTargetedBatchBucketsQuery(
     {
@@ -1246,7 +1199,6 @@ export default function WorkorderManagementSystem() {
 
   const {
     data: targetedBatchRowsData,
-    isLoading: isLoadingTargetedBatchRows,
     error: targetedBatchRowsError,
   } = useGetTargetedBatchRowsQuery(
     {
@@ -1257,59 +1209,17 @@ export default function WorkorderManagementSystem() {
     },
   );
 
+  // TB-R052: the three most recently opened batches stay live for up to 24 hours: a targeted batch's meters and
+  // a BGO batch's TRNs.
+  const dispatch = useDispatch();
   useEffect(() => {
-    const receivedRows = Array.isArray(targetedBatchRowsData?.rows)
-      ? targetedBatchRowsData.rows
-      : [];
-
-    console.log("[MY WORKORDERS][TB ROW QUERY STATE]", {
-      selectedTargetedBatchId,
-      querySkipped: targetedBatchRowsQuerySkipped,
-      canViewRows: selectedBucket?.permissions?.canViewRows === true,
-      isLoading: isLoadingTargetedBatchRows,
-      error: targetedBatchRowsError
-        ? {
-            status: targetedBatchRowsError?.status || null,
-            code:
-              targetedBatchRowsError?.data?.code ||
-              targetedBatchRowsError?.code ||
-              null,
-            message:
-              targetedBatchRowsError?.data?.message ||
-              targetedBatchRowsError?.message ||
-              String(targetedBatchRowsError),
-            data: targetedBatchRowsError?.data || null,
-          }
-        : null,
-      responseSummary: targetedBatchRowsData?.summary || null,
-      responsePagination: targetedBatchRowsData?.pagination || null,
-      responseDiagnostics: targetedBatchRowsData?.diagnostics || null,
-      receivedRowCount: receivedRows.length,
-      receivedRows: receivedRows.map((row) => ({
-        id: row?.id || null,
-        tbId: row?.tbId || null,
-        rowNo: row?.rowNo ?? null,
-        meterNo: row?.meterNo || null,
-        salesAllMeterId: row?.salesAllMeterId || null,
-        salesDocId: row?.salesDocId || null,
-        noAccessCount: row?.noAccessCount ?? null,
-        fieldWorkMeterId: row?.fieldWorkMeterId || row?.raw?.fieldWorkMeterId || null,
-        noAccessSourceStatus: row?.noAccessSourceStatus || null,
-        executionStatus:
-          row?.executionStatus ||
-          row?.execution?.status ||
-          null,
-        refs: row?.refs || null,
-      })),
-    });
-  }, [
-    selectedTargetedBatchId,
-    targetedBatchRowsQuerySkipped,
-    selectedBucket?.permissions?.canViewRows,
-    isLoadingTargetedBatchRows,
-    targetedBatchRowsError,
-    targetedBatchRowsData,
-  ]);
+    if (targetedBatchRowsQuerySkipped) return;
+    keepTargetedBatchRows(dispatch, selectedTargetedBatchId);
+  }, [dispatch, selectedTargetedBatchId, targetedBatchRowsQuerySkipped]);
+  useEffect(() => {
+    if (bgoDetailQuerySkipped) return;
+    keepBgoBatchWorkItems(dispatch, bgoDetailArgs);
+  }, [dispatch, bgoDetailArgs, bgoDetailQuerySkipped]);
 
   useEffect(() => {
     clearPendingTargetedBatchAction();
@@ -1321,9 +1231,6 @@ export default function WorkorderManagementSystem() {
     setTargetedBatchMapOpen(false);
   }, [selectedTargetedBatchId]);
 
-  const { data: teamsData = [] } = useGetTeamsQuery(undefined, {
-    skip: !fieldWorkorderActor,
-  });
 
   const [acceptRejectLifecycleInstruction, { isLoading: deciding }] =
     useAcceptRejectLifecycleInstructionMutation();
@@ -1420,40 +1327,6 @@ export default function WorkorderManagementSystem() {
       return acc;
     }, {});
   }, [targetedBatchErfIdsKey, all?.geoLibrary]);
-
-  useEffect(() => {
-    if (!selectedTargetedBatchId && targetedBatchRows.length === 0) return;
-
-    console.log("[MY WORKORDERS][TB ROW ACTION STATE]", {
-      selectedTargetedBatchId,
-      rowCount: targetedBatchRows.length,
-      rows: targetedBatchRows.map((row) => {
-        const actions = getTargetedBatchRowActionState(row);
-
-        return {
-          id: row?.id || null,
-          tbId: row?.tbId || null,
-          rowNo: row?.rowNo ?? null,
-          meterNo: row?.meterNo || null,
-          salesAllMeterId: row?.salesAllMeterId || null,
-          salesDocId: row?.salesDocId || null,
-          noAccessCount: row?.noAccessCount ?? null,
-          fieldWorkMeterId: row?.fieldWorkMeterId || row?.raw?.fieldWorkMeterId || null,
-          noAccessSourceStatus: row?.noAccessSourceStatus || null,
-          executionStatus:
-            row?.executionStatus ||
-            row?.execution?.status ||
-            null,
-          refs: row?.refs || null,
-          invalidLinkage: actions?.invalidLinkage === true,
-          premiseAction: actions?.premise || null,
-          astAction: actions?.ast || null,
-          noAccessAction: actions?.noAccess || null,
-          erfAction: actions?.erf || null,
-        };
-      }),
-    });
-  }, [selectedTargetedBatchId, targetedBatchRows]);
 
   useEffect(() => {
     const pending = pendingTargetedBatchAction;
@@ -1834,12 +1707,19 @@ export default function WorkorderManagementSystem() {
     );
   }, [allItems]);
 
-  const actorTeamIds = useMemo(() => {
-    return getActorTeamIds({
-      teams: Array.isArray(teamsData) ? teamsData : [],
-      actorUid,
-    });
-  }, [teamsData, actorUid]);
+  // TB-R052: each list is read for the worker's teams and says which teams those were.
+  const bgoTeamIds = useMemo(
+    () =>
+      Array.isArray(bgoData?.meta?.actorTeamIds) ? bgoData.meta.actorTeamIds : [],
+    [bgoData?.meta?.actorTeamIds],
+  );
+  const targetedBatchTeamIds = useMemo(
+    () =>
+      Array.isArray(targetedBatchData?.meta?.actorTeamIds)
+        ? targetedBatchData.meta.actorTeamIds
+        : [],
+    [targetedBatchData?.meta?.actorTeamIds],
+  );
 
   const bgoBuckets = useMemo(() => {
     const allBgoBuckets = Array.isArray(bgoData?.buckets)
@@ -1852,7 +1732,7 @@ export default function WorkorderManagementSystem() {
           bucket,
           actorUid,
           actorSpId,
-          actorTeamIds,
+          actorTeamIds: bgoTeamIds,
         }),
       )
       .map((bucket) => {
@@ -1874,7 +1754,7 @@ export default function WorkorderManagementSystem() {
     bgoData?.buckets,
     actorUid,
     actorSpId,
-    actorTeamIds,
+    bgoTeamIds,
     all?.prems,
     all?.meters,
     all?.trns,
@@ -1890,14 +1770,14 @@ export default function WorkorderManagementSystem() {
         bucket,
         actorUid,
         actorSpId,
-        actorTeamIds,
+        actorTeamIds: targetedBatchTeamIds,
       }),
     );
   }, [
     targetedBatchData?.buckets,
     actorUid,
     actorSpId,
-    actorTeamIds,
+    targetedBatchTeamIds,
   ]);
 
   useEffect(() => {
@@ -1929,60 +1809,6 @@ export default function WorkorderManagementSystem() {
     targetedBatchBuckets,
     openingTargetedBatchId,
     clearOpeningTargetedBatch,
-  ]);
-
-  useEffect(() => {
-    const receivedBuckets = Array.isArray(targetedBatchData?.buckets)
-      ? targetedBatchData.buckets
-      : [];
-
-    console.log("[MY WORKORDERS][TB BUCKET QUERY STATE]", {
-      actorUid,
-      actorRole,
-      actorSpId,
-      actorTeamIds,
-      isLoading: isLoadingTargetedBatches,
-      error: targetedBatchError
-        ? {
-            status: targetedBatchError?.status || null,
-            code:
-              targetedBatchError?.data?.code ||
-              targetedBatchError?.code ||
-              null,
-            message:
-              targetedBatchError?.data?.message ||
-              targetedBatchError?.message ||
-              String(targetedBatchError),
-            data: targetedBatchError?.data || null,
-          }
-        : null,
-      responseMeta: targetedBatchData?.meta || null,
-      receivedBucketCount: receivedBuckets.length,
-      visibleBucketCount: targetedBatchBuckets.length,
-      receivedBuckets: receivedBuckets.map((bucket) => ({
-        id: bucket?.id || null,
-        bucketType: bucket?.bucketType || null,
-        acceptanceStatus: bucket?.acceptanceStatus || null,
-        status: bucket?.status || null,
-        target: getBgoBucketTarget(bucket),
-        targetText: bucket?.targetText || null,
-        permissions: bucket?.permissions || null,
-        counts: bucket?.counts || null,
-        scope: bucket?.scope || bucket?.raw?.scope || null,
-      })),
-      visibleBucketIds: targetedBatchBuckets
-        .map((bucket) => bucket?.id)
-        .filter(Boolean),
-    });
-  }, [
-    actorUid,
-    actorRole,
-    actorSpId,
-    actorTeamIds,
-    isLoadingTargetedBatches,
-    targetedBatchError,
-    targetedBatchData,
-    targetedBatchBuckets,
   ]);
 
   const groups = useMemo(() => {
@@ -2033,11 +1859,27 @@ export default function WorkorderManagementSystem() {
     ];
   }, [individualBucket, targetedBatchBuckets, bgoBuckets]);
 
-  const individualBucketReady = !isLoading && Boolean(wmsData);
+  // TB-R052: a list is ready once it has been read; before that it is loading, never "no work".
+  const individualBucketReady = Boolean(wmsData?.meta?.updatedAt);
   const targetedBatchBucketReady = Boolean(
     targetedBatchData?.meta?.updatedAt,
   );
   const bgoBucketReady = Boolean(bgoData?.meta?.updatedAt);
+
+  // TB-R052: a live list that failed, or that only the phone's memory answers after the server did (the open
+  // batch's rows and the open BGO batch too), is reconnecting and says so.
+  const workOrderListsFailed = [
+    wmsData,
+    targetedBatchData,
+    bgoData,
+    targetedBatchRowsQuerySkipped ? null : targetedBatchRowsData,
+    bgoDetailQuerySkipped ? null : bgoDetailData,
+  ].some((data) => isLiveStreamOutOfDate(data?.meta?.stream));
+  // TB-R052: with no connection, work already on the screen stays and says it is from before.
+  const workOrdersOnScreen =
+    individualItems.length > 0 ||
+    targetedBatchBuckets.length > 0 ||
+    bgoBuckets.length > 0;
 
   useEffect(() => {
     if (!selectedBucket?.id) {
@@ -2169,7 +2011,10 @@ export default function WorkorderManagementSystem() {
   const isPreparingBgoDetail =
     selectedBucket?.bucketType === "BGOB" &&
     (preparingBgoDetail ||
-      ((isLoadingBgoDetailTrns || isFetchingBgoDetailTrns) &&
+      ((isLoadingBgoDetailTrns ||
+        isFetchingBgoDetailTrns ||
+        // TB-R052: until the server has answered, an opened BGO batch is loading, never empty.
+        !bgoDetailData?.meta?.updatedAt) &&
         allVisibleBucketItems.length === 0 &&
         Number(selectedBucket?.totalTrns || selectedBucket?.counts?.total || 0) > 0));
 
@@ -3222,8 +3067,11 @@ export default function WorkorderManagementSystem() {
     ],
   );
 
+  // TB-R052: until the server has answered its rows, an opened batch is loading, never empty.
   const targetedBatchRowsLoading =
-    isLoadingTargetedBatchRows && !targetedBatchRowsData;
+    !targetedBatchRowsQuerySkipped &&
+    !targetedBatchRowsError &&
+    !targetedBatchRowsData?.meta?.updatedAt;
 
   if (!fieldWorkorderActor) {
     return (
@@ -3269,7 +3117,16 @@ export default function WorkorderManagementSystem() {
       {offline ? (
         <View style={styles.wmsOfflineBanner} accessibilityRole="alert">
           <MaterialCommunityIcons name="wifi-off" size={16} color="#991b1b" />
-          <Text style={styles.wmsOfflineBannerText}>{WMS_OFFLINE_MESSAGE}</Text>
+          <Text style={styles.wmsOfflineBannerText}>
+            {workOrdersOnScreen ? WMS_OFFLINE_KEPT_MESSAGE : WMS_OFFLINE_MESSAGE}
+          </Text>
+        </View>
+      ) : workOrderListsFailed ? (
+        <View style={styles.wmsOfflineBanner} accessibilityRole="alert">
+          <MaterialCommunityIcons name="sync-alert" size={16} color="#991b1b" />
+          <Text style={styles.wmsOfflineBannerText}>
+            {WMS_NOT_UP_TO_DATE_MESSAGE}
+          </Text>
         </View>
       ) : null}
 
@@ -3324,7 +3181,7 @@ export default function WorkorderManagementSystem() {
         />
       ) : showIndividualGroups ? (
         <GroupLanding
-          isLoading={isLoading}
+          isLoading={!individualBucketReady && !error}
           error={error}
           groups={groups}
           offline={offline}

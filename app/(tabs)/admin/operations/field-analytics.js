@@ -1,31 +1,12 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function FieldAnalytics() {
-  const router = useRouter();
-
+  // TB-R051 (1.3.38): one title bar in Operations. The stack title bar ("Field Analytics")
+  // carries the only back arrow, so this screen draws no back arrow or title row of its own.
   return (
     <SafeAreaView style={styles.container} edges={["left", "right"]}>
-      {/* 🔙 SOVEREIGN TACTICAL HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backBtn}
-          hitSlop={15}
-        >
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#1e293b" />
-        </TouchableOpacity>
-        <Text style={styles.title}>Field Analytics</Text>
-      </View>
-
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* 📊 MISSION VELOCITY SUMMARY */}
         <View style={styles.statsGrid}>
@@ -140,16 +121,6 @@ const AgentRow = ({ name, count, rank }) => (
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8fafc" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderColor: "#e2e8f0",
-  },
-  backBtn: { marginRight: 16 },
-  title: { fontSize: 20, fontWeight: "900", color: "#1e293b" },
   scrollContent: { padding: 16 },
 
   statsGrid: {

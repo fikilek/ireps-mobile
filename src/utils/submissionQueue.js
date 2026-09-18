@@ -580,6 +580,26 @@ function isServerConfirmedTrn(serverTrn = {}) {
   ].includes(serverTrnType);
 }
 
+// TB-R052: the server TRN IDs that queued items wait on for confirmation (the same items and IDs the
+// reconciliation below matches), so My Work Orders reads exactly those TRNs instead of the newest TRNs of all
+// workers.
+export function listPendingReconcilableTrnIds(queue = []) {
+  const ids = new Set();
+
+  for (const queueItem of Array.isArray(queue) ? queue : []) {
+    if (!queueItem?.id || queueItem?.status === "SUCCESS") continue;
+    if (!isReconciliableQueueItem(queueItem)) continue;
+
+    const trnId = readQueueInstructionTrnId(queueItem);
+    if (trnId) ids.add(trnId);
+  }
+
+  return [...ids];
+}
+
+export const getPendingReconcilableTrnIds = () =>
+  listPendingReconcilableTrnIds(readQueueFromStorage());
+
 export const reconcileSubmissionQueueWithServerTrns = async ({
   trns = [],
   updatedByUid = "WMS_TRN_STREAM",
