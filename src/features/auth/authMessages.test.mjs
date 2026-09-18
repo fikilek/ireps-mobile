@@ -42,23 +42,50 @@ test("sign in names the cause, not one message for everything", () => {
     signinMessage(fbError("auth/invalid-email")).message,
     "That does not look like an email address.",
   );
-  assert.equal(
-    signinMessage(fbError("auth/user-disabled")).message,
-    "This account has been stopped. Speak to your manager.",
-  );
-  assert.equal(
-    signinMessage(fbError("auth/too-many-requests")).message,
-    "Too many tries. Wait a few minutes and try again.",
-  );
-  assert.equal(
-    signinMessage(fbError("auth/network-request-failed")).message,
-    "No connection. Check your signal and try again.",
-  );
+
+  const stopped = signinMessage(fbError("auth/user-disabled"));
+  assert.equal(stopped.title, "Account stopped");
+  assert.equal(stopped.message, "Speak to your manager.");
+
+  const tooMany = signinMessage(fbError("auth/too-many-requests"));
+  assert.equal(tooMany.title, "Too many tries");
+  assert.equal(tooMany.message, "Wait a few minutes and try again.");
+
+  const offline = signinMessage(fbError("auth/network-request-failed"));
+  assert.equal(offline.title, "No connection");
+  assert.equal(offline.message, "Check your signal and try again.");
+
   assert.match(
     signinMessage(fbError("auth/profile-wait")).message,
-    /signed in, but your details did not load/,
+    /You are signed in, but they did not arrive/,
   );
   assert.match(signinMessage(fbError("auth/internal-error")).message, /tell your manager/);
+});
+
+test("no window says the same thing twice", () => {
+  const windows = [
+    signinMessage(fbError("auth/invalid-credential")),
+    signinMessage(fbError("auth/user-disabled")),
+    signinMessage(fbError("auth/too-many-requests")),
+    signinMessage(fbError("auth/network-request-failed")),
+    signinMessage(fbError("auth/internal-error")),
+    signupMessage(fbError("functions/already-exists", "A user with this email already exists.")),
+    signupMessage(fbError("functions/failed-precondition", "Selected service provider is not active.")),
+    signupMessage(fbError("functions/unavailable")),
+    serviceProviderListMessage(),
+    passwordResetMessage(fbError("auth/too-many-requests")),
+    passwordResetMessage(fbError("auth/internal-error")),
+    changePasswordMessage(fbError("auth/network-request-failed")),
+    changePasswordMessage(fbError("auth/internal-error")),
+  ];
+
+  for (const { title, message } of windows) {
+    assert.ok(title.length > 0 && message.length > 0);
+    assert.ok(
+      !message.toLowerCase().startsWith(title.toLowerCase()),
+      `"${message}" must not open by repeating its title "${title}"`,
+    );
+  }
 });
 
 test("sign in never blames the network for a wrong password", () => {
@@ -69,27 +96,27 @@ test("sign in never blames the network for a wrong password", () => {
 });
 
 test("sign up keeps the reason the back end gave", () => {
-  assert.match(
-    signupMessage(fbError("functions/already-exists", "A user with this email already exists."))
-      .message,
-    /An account already uses this email/,
+  const taken = signupMessage(
+    fbError("functions/already-exists", "A user with this email already exists."),
   );
+  assert.equal(taken.title, "Email already used");
+  assert.match(taken.message, /Sign in instead, or use Lost access\?/);
 
-  assert.match(
+  assert.equal(
     signupMessage(
       fbError("functions/failed-precondition", "Selected service provider is not active."),
-    ).message,
-    /not active/,
+    ).title,
+    "Service provider not active",
   );
 
-  assert.match(
+  assert.equal(
     signupMessage(
       fbError(
         "functions/failed-precondition",
         "No responsible manager was found for the selected service provider.",
       ),
-    ).message,
-    /No manager is set for that service provider/,
+    ).title,
+    "No manager for that service provider",
   );
 
   assert.equal(
@@ -100,8 +127,8 @@ test("sign up keeps the reason the back end gave", () => {
   );
 
   assert.equal(
-    signupMessage(fbError("functions/unavailable")).message,
-    "No connection. Check your signal and try again.",
+    signupMessage(fbError("functions/unavailable")).title,
+    "No connection",
   );
 
   // Anything else still carries the server's own words rather than a shrug, including a cause the
@@ -145,7 +172,8 @@ test("an invitation hands over its one-time password, once", () => {
 });
 
 test("a picker that could not load says so", () => {
-  assert.match(serviceProviderListMessage().message, /Could not load the service providers/);
+  assert.match(serviceProviderListMessage().title, /Could not load the service providers/);
+  assert.match(serviceProviderListMessage().message, /Check your signal/);
 });
 
 test("password reset says the same thing whether or not the email has an account", () => {
@@ -165,17 +193,20 @@ test("password reset says the same thing whether or not the email has an account
 test("password reset only differs when the send did not happen", () => {
   assert.equal(
     passwordResetMessage(fbError("auth/too-many-requests")).message,
-    "Too many tries. Wait a few minutes and try again.",
+    "Wait a few minutes and try again.",
   );
   assert.equal(
     passwordResetMessage(fbError("auth/invalid-email")).message,
     "That does not look like an email address.",
   );
   assert.equal(
-    passwordResetMessage(fbError("auth/network-request-failed")).message,
-    "No connection. Check your signal and try again.",
+    passwordResetMessage(fbError("auth/network-request-failed")).title,
+    "No connection",
   );
-  assert.match(passwordResetMessage(fbError("auth/internal-error")).message, /Could not send/);
+  assert.match(
+    passwordResetMessage(fbError("auth/internal-error")).title,
+    /Could not send the reset link/,
+  );
 });
 
 test("change password tells a stale sign-in apart from a short password", () => {
@@ -185,11 +216,11 @@ test("change password tells a stale sign-in apart from a short password", () => 
   );
   assert.match(
     changePasswordMessage(fbError("auth/requires-recent-login")).message,
-    /sign in again/,
+    /fresh sign-in/,
   );
   assert.equal(
     changePasswordMessage(fbError("auth/network-request-failed")).message,
-    "No connection. Check your signal and try again.",
+    "Check your signal and try again.",
   );
   assert.match(changePasswordMessage(fbError("auth/internal-error")).message, /tell your manager/);
 });

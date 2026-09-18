@@ -39,9 +39,9 @@ The link works for a limited time. If it has expired, come back to this screen a
 | --- | --- | --- |
 | "If that email belongs to an iREPS account, a reset link is on its way. Check the inbox, and the junk folder." | The send was accepted. This is also what you see for an email with no account | Open the email. If nothing arrives, check the spelling and the junk folder |
 | "That does not look like an email address." | The email is mistyped | Correct it |
-| "Too many tries. Wait a few minutes and try again." | Too many reset requests from this phone. Nothing was sent | Wait a few minutes and try again |
-| "No connection. Check your signal and try again." | The phone could not reach iREPS | Move to signal and try again |
-| "Could not send the reset link. Try again, and tell your manager if it keeps happening." | Something else | Try again, then report it |
+| **Too many tries** — "Wait a few minutes and try again." | Too many reset requests from this phone. Nothing was sent | Wait a few minutes and try again |
+| **No connection** — "Check your signal and try again." | The phone could not reach iREPS | Move to signal and try again |
+| **Could not send the reset link** — "Try again, and tell your manager if it keeps happening." | Something else | Try again, then report it |
 
 ## What it does not do
 

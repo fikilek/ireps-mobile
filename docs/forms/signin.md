@@ -45,11 +45,11 @@ Everything you can be told after tapping Signin.
 | --- | --- | --- |
 | "Email or password is not right." | The password is wrong, or there is no account for that email | Check both and try again. Use Lost access? if you cannot remember |
 | "That does not look like an email address." | The email is mistyped, for example a missing @ | Correct the email |
-| "This account has been stopped. Speak to your manager." | The account has been disabled | Speak to your manager |
-| "Too many tries. Wait a few minutes and try again." | Too many wrong tries from this phone | Wait a few minutes. Use Lost access? in the meantime |
-| "No connection. Check your signal and try again." | The phone could not reach iREPS | Move to signal and try again |
-| "You are signed in, but your details did not load. Check your signal and try again." | You are through, but your record did not arrive in 30 seconds | Try again. If it keeps happening, tell your manager |
-| "Sign in failed. Try again, and tell your manager if it keeps happening." | Something else | Try again, then report it |
+| **Account stopped** — "Speak to your manager." | The account has been disabled | Speak to your manager |
+| **Too many tries** — "Wait a few minutes and try again." | Too many wrong tries from this phone | Wait a few minutes. Use Lost access? in the meantime |
+| **No connection** — "Check your signal and try again." | The phone could not reach iREPS | Move to signal and try again |
+| **Your details did not load** — "You are signed in, but they did not arrive. Check your signal and try again." | You are through, but your record did not arrive in 30 seconds | Try again. If it keeps happening, tell your manager |
+| **Sign in failed** — "Try again, and tell your manager if it keeps happening." | Something else | Try again, then report it |
 
 ## What it does not do
 

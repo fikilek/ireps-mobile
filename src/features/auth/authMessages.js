@@ -8,9 +8,20 @@ export const PASSWORD_RULE_TEXT = `Password must be at least ${PASSWORD_MIN_LENG
 // The wait before Sign in stops expecting the person's record and gives them their screen back.
 export const PROFILE_WAIT_MS = 30000;
 
-const NO_CONNECTION = "No connection. Check your signal and try again.";
-const NOT_AN_EMAIL = "That does not look like an email address.";
-const TOO_MANY = "Too many tries. Wait a few minutes and try again.";
+// Each of these is shown in a window with a title, and the message never repeats its title.
+const NO_CONNECTION = {
+  title: "No connection",
+  message: "Check your signal and try again.",
+};
+const NOT_AN_EMAIL = {
+  title: "Check the email",
+  message: "That does not look like an email address.",
+};
+const TOO_MANY = {
+  title: "Too many tries",
+  message: "Wait a few minutes and try again.",
+};
+const TRY_AGAIN_AND_REPORT = "Try again, and tell your manager if it keeps happening.";
 
 function errorCode(error) {
   return String(error?.code || "").trim();
@@ -56,37 +67,24 @@ export function signinMessage(error) {
     return { title: "Sign in failed", message: "Email or password is not right." };
   }
 
-  if (code === "auth/invalid-email") {
-    return { title: "Sign in failed", message: NOT_AN_EMAIL };
-  }
+  if (code === "auth/invalid-email") return NOT_AN_EMAIL;
 
   if (code === "auth/user-disabled") {
-    return {
-      title: "Account stopped",
-      message: "This account has been stopped. Speak to your manager.",
-    };
+    return { title: "Account stopped", message: "Speak to your manager." };
   }
 
-  if (code === "auth/too-many-requests") {
-    return { title: "Too many tries", message: TOO_MANY };
-  }
+  if (code === "auth/too-many-requests") return TOO_MANY;
 
   if (code === "auth/profile-wait") {
     return {
-      title: "Details did not load",
-      message:
-        "You are signed in, but your details did not load. Check your signal and try again.",
+      title: "Your details did not load",
+      message: "You are signed in, but they did not arrive. Check your signal and try again.",
     };
   }
 
-  if (isNetworkFailure(error)) {
-    return { title: "No connection", message: NO_CONNECTION };
-  }
+  if (isNetworkFailure(error)) return NO_CONNECTION;
 
-  return {
-    title: "Sign in failed",
-    message: "Sign in failed. Try again, and tell your manager if it keeps happening.",
-  };
+  return { title: "Sign in failed", message: TRY_AGAIN_AND_REPORT };
 }
 
 /* =====================================================
@@ -99,22 +97,21 @@ export function signupMessage(error) {
   if (code === "already-exists" || /already exists/i.test(text)) {
     return {
       title: "Email already used",
-      message: "An account already uses this email. Sign in instead, or use Lost access?",
+      message: "Sign in instead, or use Lost access?",
     };
   }
 
   if (code === "failed-precondition" && /manager/i.test(text)) {
     return {
       title: "No manager for that service provider",
-      message:
-        "No manager is set for that service provider. Ask your manager to sort this out before you sign up.",
+      message: "Ask your manager to sort this out before you sign up.",
     };
   }
 
   if (code === "failed-precondition" || /not active/i.test(text)) {
     return {
       title: "Service provider not active",
-      message: "That service provider is not active. Choose another, or ask your manager.",
+      message: "Choose another, or ask your manager.",
     };
   }
 
@@ -122,22 +119,16 @@ export function signupMessage(error) {
     return { title: "Check the form", message: text || PASSWORD_RULE_TEXT };
   }
 
-  if (isNetworkFailure(error)) {
-    return { title: "No connection", message: NO_CONNECTION };
-  }
+  if (isNetworkFailure(error)) return NO_CONNECTION;
 
-  return {
-    title: "Sign up failed",
-    message:
-      text || "Sign up failed. Try again, and tell your manager if it keeps happening.",
-  };
+  return { title: "Sign up failed", message: text || TRY_AGAIN_AND_REPORT };
 }
 
 // The signup picker cannot be left empty and silent (AU-R001 2).
 export function serviceProviderListMessage() {
   return {
-    title: "Service providers",
-    message: "Could not load the service providers. Check your signal and try again.",
+    title: "Could not load the service providers",
+    message: "Check your signal and try again.",
   };
 }
 
@@ -181,23 +172,13 @@ export function passwordResetSentMessage(email) {
 export function passwordResetMessage(error) {
   const code = errorCode(error);
 
-  if (code === "auth/invalid-email") {
-    return { title: "Check the email", message: NOT_AN_EMAIL };
-  }
+  if (code === "auth/invalid-email") return NOT_AN_EMAIL;
 
-  if (code === "auth/too-many-requests") {
-    return { title: "Too many tries", message: TOO_MANY };
-  }
+  if (code === "auth/too-many-requests") return TOO_MANY;
 
-  if (isNetworkFailure(error)) {
-    return { title: "No connection", message: NO_CONNECTION };
-  }
+  if (isNetworkFailure(error)) return NO_CONNECTION;
 
-  return {
-    title: "Could not send",
-    message:
-      "Could not send the reset link. Try again, and tell your manager if it keeps happening.",
-  };
+  return { title: "Could not send the reset link", message: TRY_AGAIN_AND_REPORT };
 }
 
 /* =====================================================
@@ -213,19 +194,13 @@ export function changePasswordMessage(error) {
   if (code === "auth/requires-recent-login") {
     return {
       title: "Sign in again",
-      message: "For your safety, sign in again before changing your password.",
+      message: "For your safety, iREPS needs a fresh sign-in before you change your password.",
     };
   }
 
-  if (isNetworkFailure(error)) {
-    return { title: "No connection", message: NO_CONNECTION };
-  }
+  if (isNetworkFailure(error)) return NO_CONNECTION;
 
-  return {
-    title: "Password not changed",
-    message:
-      "Could not change the password. Try again, and tell your manager if it keeps happening.",
-  };
+  return { title: "Password not changed", message: TRY_AGAIN_AND_REPORT };
 }
 
 // The two checks a password must pass before it is sent anywhere (AU-R001 1).

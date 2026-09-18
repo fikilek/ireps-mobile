@@ -45,14 +45,14 @@ On success you are told your sign up went through and your manager must authoris
 
 | What you see | What happened | What to do |
 | --- | --- | --- |
-| "Could not load the service providers. Check your signal and try again." | The picker's list could not be fetched | Try again. It needs signal |
-| "An account already uses this email. Sign in instead, or use Lost access?" | You, or somebody, already signed up with that email | Sign in, or reset the password |
-| "That service provider is not active. Choose another, or ask your manager." | The service provider has been stopped on iREPS | Choose another, or ask your manager |
-| "No manager is set for that service provider. Ask your manager to sort this out before you sign up." | Nobody can authorise you, so signing up would leave you stuck | Tell your manager. The office must set this up first |
+| **Could not load the service providers** — "Check your signal and try again." | The picker's list could not be fetched | Try again. It needs signal |
+| **Email already used** — "Sign in instead, or use Lost access?" | You, or somebody, already signed up with that email | Sign in, or reset the password |
+| **Service provider not active** — "Choose another, or ask your manager." | The service provider has been stopped on iREPS | Choose another, or ask your manager |
+| **No manager for that service provider** — "Ask your manager to sort this out before you sign up." | Nobody can authorise you, so signing up would leave you stuck | Tell your manager. The office must set this up first |
 | "Password must be at least 8 characters." | The password is too short | Use a longer one |
 | A message naming another field | Something required is missing or wrong | Fix that field |
-| "No connection. Check your signal and try again." | The phone could not reach iREPS | Move to signal and try again |
-| "Sign up failed. Try again, and tell your manager if it keeps happening." | Something else | Try again, then report it |
+| **No connection** — "Check your signal and try again." | The phone could not reach iREPS | Move to signal and try again |
+| **Sign up failed** — "Try again, and tell your manager if it keeps happening." | Something else | Try again, then report it |
 
 ## What it does not do
 

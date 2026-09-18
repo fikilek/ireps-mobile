@@ -38,9 +38,9 @@ Changing the password clears the demand **and nothing else**. Your role, your au
 | --- | --- | --- |
 | "Password must be at least 8 characters." | Too short | Use a longer one |
 | "The two passwords are not the same." | The two fields differ | Retype them both |
-| "For your safety, sign in again before changing your password." | You have been signed in a long time; such a change needs a fresh sign-in | Sign out, sign in, come back |
-| "No connection. Check your signal and try again." | The phone could not reach iREPS | Move to signal and try again |
-| "Could not change the password. Try again, and tell your manager if it keeps happening." | Something else | Try again, then report it |
+| **Sign in again** — "For your safety, iREPS needs a fresh sign-in before you change your password." | You have been signed in a long time; such a change needs a fresh sign-in | Sign out, sign in, come back |
+| **No connection** — "Check your signal and try again." | The phone could not reach iREPS | Move to signal and try again |
+| **Password not changed** — "Try again, and tell your manager if it keeps happening." | Something else | Try again, then report it |
 
 ## What it does not do
 
