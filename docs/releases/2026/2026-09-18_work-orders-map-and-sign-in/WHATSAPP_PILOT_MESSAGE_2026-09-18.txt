@@ -1,0 +1,57 @@
+*iREPS MOBILE — NEW RELEASE*
+*18 September 2026*
+
+A new iREPS Mobile release is ready. Please install it before you start work.
+
+*Install it over the app you have. Do NOT uninstall first* — uninstalling deletes any forms still waiting on your phone.
+
+*WHAT'S NEW*
+
+• *Search inside a batch*
+In *My Work Orders*, open a batch and type a meter number, ERF number or street name in the search box.
+
+• *Batch map*
+Tap the map button on the batch. Every meter is a pin:
+→ *S* — the Sales GPS point
+→ *G* — the address point (not checked in the field)
+→ *E* — the middle of the ERF
+Tap a pin to get the same buttons as the list. The buttons at the top switch on *ERFs*, *Premises*, other *Sales* meters, *Me* (your position) and *Satellite*.
+
+• *Finished meters are locked*
+A meter that is already found shows as completed, below the open work, and its buttons are locked. You no longer waste a trip on it.
+
+• *The app checks the batch first*
+When you open a batch meter from anywhere — list, map, premise or ERF — you will see *"Checking the batch meter…"* for a moment. If the meter is already done, or the batch is no longer yours, the app tells you instead of letting you capture it for nothing.
+
+• *My Work Orders comes back instantly*
+The phone now loads only your own batches. Going back to the screen is instant. If your signal drops you will see *"Not up to date — reconnecting"*.
+
+• *Sign in tells you what went wrong*
+Instead of "Network error" every time, you now see one of:
+→ *No connection* — check your signal
+→ *Sign in failed* — email or password is not right
+→ *Too many tries* — wait a few minutes
+→ *Account stopped* — speak to your manager
+It no longer spins forever.
+
+• *Meter numbers: letters and digits only*
+Spaces are removed and small letters become capitals by themselves. *Dashes, slashes, dots and other symbols are refused* — type the number without them.
+Example: if the meter shows *1234-567*, type *1234567*.
+
+*PLEASE TEST AND REPORT*
+
+Please use the app normally and report anything that behaves differently — crashes, freezing, slow screens, GPS problems or failed submissions.
+
+In particular:
+• Open a batch, try the search and the map.
+• Tell us how long *My Work Orders* takes to open the first time in the morning.
+• Tell us if a meter number you need is refused.
+
+*IMPORTANT*
+
+This update only reaches your phone *if you install it*.
+
+Please confirm once you have installed it.
+
+*DOWNLOAD:*
+https://expo.dev/accounts/ireps/projects/maps1/builds/513efa39-e2d8-4c5c-868c-596311fd5a76

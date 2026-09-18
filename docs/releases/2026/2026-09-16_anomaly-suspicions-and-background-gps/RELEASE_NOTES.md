@@ -9,7 +9,7 @@
 **Git ref:** `0c083b1` (clean tree — both builds are the same commit)
 **Runtime:** `exposdk:54.0.0`
 **App Version:** 1.0.0
-**Android Build (versionCode):** 11 (`live`) · 10 (`test`, to confirm)
+**Android Build (versionCode):** 11 (`live`) · 34 (`test`, build `5f5341df-25bb-4e3c-8074-c596b290541e`)
 **LIVE EAS Build ID:** `fdd0d2e6-3a32-4daf-b121-aa25c3ea0101`
 **Field Approved:** No
 **General Release:** No

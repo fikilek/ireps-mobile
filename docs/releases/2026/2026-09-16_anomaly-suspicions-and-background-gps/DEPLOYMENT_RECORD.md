@@ -37,7 +37,7 @@ The server went out ahead of the APK deliberately. A phone running the old app c
 
 | Profile | Channel | Git ref | Runtime | Outcome |
 | --- | --- | --- | --- | --- |
-| `test` | `test` | `0c083b1` | `exposdk:54.0.0` | Finished, 24m 41s. versionCode 10 (to confirm) |
+| `test` | `test` | `0c083b1` | `exposdk:54.0.0` | Finished, 24m 41s. versionCode 34, build `5f5341df-25bb-4e3c-8074-c596b290541e` |
 | `live` | `production` | `0c083b1` | `exposdk:54.0.0` | Finished. versionCode 11, build `fdd0d2e6-3a32-4daf-b121-aa25c3ea0101` |
 
 App version 1.0.0. Android credentials: remote (Expo server), keystore `Build Credentials N8kBeiIyAG` (default).
