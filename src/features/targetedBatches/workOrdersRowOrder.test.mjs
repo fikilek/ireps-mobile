@@ -90,11 +90,15 @@ test("the newest field work on the meter is its time, wherever it was written", 
 
   // A row the server closed, and a different meter found at the ERF, both count.
   assert.equal(
-    readRowLastWorkedMillis(
-      { execution: { completedAt: { seconds: 9_000 } }, metadata: { updatedAt: { seconds: 2_000 } } },
-      { fieldWork },
-    ),
+    readRowLastWorkedMillis({ execution: { completedAt: { seconds: 9_000 } } }, { fieldWork }),
     9_000_000,
+  );
+  assert.equal(readRowLastWorkedMillis({ execution: { startedAt: { seconds: 3_000 } } }, {}), 3_000_000);
+  // The row's own metadata.updatedAt is not field work: every row carries it, because it moves when
+  // the row is created and batched. Reading it would leave no meter untouched.
+  assert.equal(
+    readRowLastWorkedMillis({ metadata: { updatedAt: { seconds: 2_000 } }, execution: { status: "NOT_STARTED" } }, {}),
+    0,
   );
   assert.equal(
     readRowLastWorkedMillis({}, { sales: { differentMeterFound: { foundAt: { seconds: 7_000 } } } }),

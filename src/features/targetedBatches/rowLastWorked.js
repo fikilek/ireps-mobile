@@ -2,9 +2,14 @@
 // is the first one they see when they come back to the list.
 //
 // No single field carries it. The back end moves `fieldWork.updatedAt` on the batch's reference in the
-// Sales record on every submit (a premise, a meter, a No Access), writes the row's completion when the
-// row closes, and records a different meter found at the ERF (TB-R063) on the Sales record itself. The
-// newest of them is the time; a meter with none of them has never been worked on.
+// Sales record on every submit (a premise, a meter, a No Access), writes the row's own `execution`
+// times when work starts and when the row closes, and records a different meter found at the ERF
+// (TB-R063) on the Sales record. The newest of them is the time; a meter with none has never been
+// worked on.
+//
+// The row's `metadata.updatedAt` is NOT one of them. Every row on DEV carries it, untouched ones
+// included, because it moves when the row is created and batched. Reading it as field work would
+// give every meter in the batch a time and leave none of them untouched.
 
 // Timestamps reach the phone as a Firestore Timestamp, a plain {seconds}, or a string.
 export function toWorkedMillis(value) {
@@ -44,7 +49,6 @@ export function readRowLastWorkedMillis(row = {}, { fieldWork = null, sales = nu
     toWorkedMillis(fieldWork?.submittedAt),
     toWorkedMillis(row?.execution?.completedAt),
     toWorkedMillis(row?.execution?.startedAt),
-    toWorkedMillis(row?.metadata?.updatedAt),
     toWorkedMillis(sales?.differentMeterFound?.foundAt),
     ...visits.map(noAccessVisitMillis),
   );
