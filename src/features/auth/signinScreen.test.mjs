@@ -15,6 +15,10 @@ test("sign in names the cause instead of blaming the network for everything", ()
   assert.match(signinSource, /signinMessage\(error\)/);
 });
 
+test("the cursor waits in the email field", () => {
+  assert.match(signinSource, /placeholder="Email address"[\s\S]{0,700}autoFocus/);
+});
+
 test("sign in cannot spin forever", () => {
   assert.match(signinSource, /PROFILE_WAIT_MS/);
   assert.match(signinSource, /auth\/profile-wait/);

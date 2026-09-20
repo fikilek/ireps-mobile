@@ -153,6 +153,9 @@ const Signin = () => {
                       onChangeText={handleChange("email")}
                       onBlur={handleBlur("email")}
                       autoCapitalize="none"
+                      autoCorrect={false}
+                      // The cursor waits in the email field, so a worker can type straight away.
+                      autoFocus
                       keyboardType="email-address"
                       editable={!isLoading}
                       style={styles.textInput}
