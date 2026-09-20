@@ -1347,11 +1347,18 @@ export default function TargetedBatchMapModal({
 
   // Only when the pan or zoom has settled, so nothing is recomputed on every frame of a gesture.
   const handleRegionSettled = useCallback((next) => {
-    setRegion(
-      Number.isFinite(next?.latitudeDelta) && next.latitudeDelta > 0
-        ? { latitudeDelta: next.latitudeDelta }
-        : null,
-    );
+    const delta = Number(next?.latitudeDelta);
+    if (!Number.isFinite(delta) || delta <= 0) return;
+
+    setRegion((current) => {
+      // A pan does not change the zoom, and a hair of drift is no new size for any number. Holding the
+      // same region keeps a pan from redrawing every ERF number on the map.
+      const held = Number(current?.latitudeDelta);
+      if (Number.isFinite(held) && Math.abs(delta - held) <= held * 0.01) {
+        return current;
+      }
+      return { latitudeDelta: delta };
+    });
   }, []);
 
   const toggleErfs = useCallback(() => setErfsOn((on) => !on), []);
@@ -2321,7 +2328,9 @@ const styles = StyleSheet.create({
   },
   erfLabelText: {
     color: "#1e293b",
-    fontSize: 9,
+    // TB-R051 (1.3.70): the size the number is drawn at when its ERF has room for it; the marker sets a
+    // smaller one when it has not, so this and the geometry must stay the same number.
+    fontSize: ERF_LABEL_BASE_FONT_SIZE,
     fontWeight: "800",
   },
   premisePin: {

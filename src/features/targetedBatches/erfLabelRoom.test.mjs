@@ -109,6 +109,26 @@ test("an ERF with no room left is given no number at all", () => {
   }
 });
 
+test("the legend keeps the three statuses only, and nothing brings the block back", () => {
+  // Asked for days before it was built, so the map is checked for it rather than trusted.
+  assert.doesNotMatch(modalSource, /legendHeading|OTHER_SALES_LEGEND/);
+  const legend = modalSource.slice(
+    modalSource.indexOf("styles.legendRow"),
+    modalSource.indexOf("styles.offlineBanner"),
+  );
+  assert.doesNotMatch(legend, /Other CAT Sales meters/);
+  // The Map Layers button that turns those meters on keeps its own words.
+  assert.match(modalSource, /word="Sales"/);
+  assert.match(modalSource, /label=\{\s*offline\s*\?\s*"Other CAT Sales meters, needs a connection"/);
+});
+
+test("a pan does not resize anything: only a real change of zoom is kept", () => {
+  const start = modalSource.indexOf("const handleRegionSettled");
+  const settled = modalSource.slice(start, start + 800);
+  assert.match(settled, /Math\.abs\(delta - held\) <= held \* 0\.01/);
+  assert.match(settled, /return current;/);
+});
+
 test("the map sizes each number from the zoom it has settled on", () => {
   // The map keeps the region it settles on, and only then.
   assert.match(modalSource, /onRegionChangeComplete=\{handleRegionSettled\}/);

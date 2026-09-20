@@ -198,7 +198,9 @@ const METRES_PER_DEGREE_LATITUDE = 111320;
 export const ERF_LABEL_BASE_FONT_SIZE = 9;
 const ERF_LABEL_WIDTH_PER_CHARACTER = 0.68; // of the font size, for the heavy digits a number is made of
 const ERF_LABEL_LINE_HEIGHT = 1.25;
-const ERF_LABEL_EDGE = 4; // padding and border on each side
+// Padding and border on each side of the box. The label's horizontal edge; its vertical edge is smaller,
+// so measuring the height with this one makes the fit cautious rather than tight.
+const ERF_LABEL_EDGE = 4;
 // Below this the label has no readable pixels left, so nothing is drawn rather than a smudge.
 const ERF_LABEL_SMALLEST_FONT_SIZE = 3;
 
