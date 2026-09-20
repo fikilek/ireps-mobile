@@ -1,15 +1,15 @@
 import { FilterSearchOverlay } from "../filters/FilterSearchOverlay";
 
-export function AstSearch({ visible, onClose, value, onChange }) {
+export function ErfSearch({ visible, onClose, value, onChange }) {
   return (
     <FilterSearchOverlay
       visible={visible}
       onClose={onClose}
       value={value}
       onChange={onChange}
-      placeholder="Search meter no, ERF, address..."
+      placeholder="Search Erf No or Erf Id..."
     />
   );
 }
 
-export default AstSearch;
+export default ErfSearch;

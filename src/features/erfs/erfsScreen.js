@@ -9,7 +9,7 @@ import { useWarehouse } from "../../context/WarehouseContext";
 import { erfWithCarriedBatchContext } from "../targetedBatches/targetedBatchContextCarry";
 import ErfFilterHeader from "./erfFilterHeader";
 import { ErfItem } from "./erfItem";
-import ErfsBottomSearch from "./ErfsBottomSearch";
+import { ErfSearch } from "./ErfSearch";
 import {
   getWardErfLocalMetaByWard,
   getWardErfQueriesRevision,
@@ -72,6 +72,7 @@ export default function ErfsScreen() {
   const { all, filtered, sync } = useWarehouse();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
 
   const scopeSync = sync?.scope ?? { status: "idle" };
 
@@ -172,8 +173,10 @@ export default function ErfsScreen() {
 
   /* ================= FILTER ================= */
 
+  const scopeErfs = useMemo(() => filtered?.erfs || [], [filtered?.erfs]);
+
   const visibleErfs = useMemo(() => {
-    let list = [...(filtered?.erfs || [])];
+    let list = [...scopeErfs];
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -185,7 +188,12 @@ export default function ErfsScreen() {
     }
 
     return list;
-  }, [searchQuery, filtered?.erfs]);
+  }, [searchQuery, scopeErfs]);
+
+  const closeSearch = () => {
+    setSearchQuery("");
+    setShowSearch(false);
+  };
 
   /* ================= GUARDS ================= */
 
@@ -205,17 +213,13 @@ export default function ErfsScreen() {
         <ErfFilterHeader
           selectedWard={geoState.selectedWard}
           setSelectedWard={handleWardSelectionFromHeader}
+          totalCount={0}
           filteredCount={0}
           onWardErfSync={handleWardErfSync}
+          showSearch={false}
         />
 
         <AwaitWardState lmName={lmName} wardsCount={wardsCount} />
-
-        <ErfsBottomSearch
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          count={0}
-        />
       </View>
     );
   }
@@ -251,8 +255,12 @@ export default function ErfsScreen() {
       <ErfFilterHeader
         selectedWard={geoState.selectedWard}
         setSelectedWard={handleWardSelectionFromHeader}
+        totalCount={all?.erfs?.length || 0}
         filteredCount={visibleErfs.length}
         onWardErfSync={handleWardErfSync}
+        showSearch={showSearch}
+        onSearchPress={() => setShowSearch(true)}
+        isFiltering={Boolean(searchQuery)}
       />
 
       <FlashList
@@ -299,10 +307,11 @@ export default function ErfsScreen() {
         )}
       />
 
-      <ErfsBottomSearch
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        count={visibleErfs.length}
+      <ErfSearch
+        visible={showSearch}
+        onClose={closeSearch}
+        value={searchQuery}
+        onChange={setSearchQuery}
       />
     </View>
   );

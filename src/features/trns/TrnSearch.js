@@ -1,4 +1,4 @@
-import FilterSearchOverlay from "../filters/FilterSearchOverlay";
+import { FilterSearchOverlay } from "../filters/FilterSearchOverlay";
 
 export function TrnSearch({ visible, onClose, value, onChange }) {
   return (

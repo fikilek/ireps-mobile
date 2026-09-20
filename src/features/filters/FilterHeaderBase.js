@@ -3,7 +3,6 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Badge } from "react-native-paper";
 
 export function FilterHeaderBase({
-  title = "",
   totalLabel = "TOTAL",
   filteredLabel = "FILTERED",
   totalCount = 0,
@@ -21,6 +20,7 @@ export function FilterHeaderBase({
 
   showStatsButton = true,
   showSearchButton = true,
+  showFilterButton = true,
 }) {
   const safeTotalCount = Number(totalCount || 0);
   const safeFilteredCount = Number(filteredCount || 0);
@@ -28,7 +28,12 @@ export function FilterHeaderBase({
 
   return (
     <View style={styles.headerContainer}>
-      <View style={styles.leftSection}>
+      <View
+        style={[
+          styles.leftSection,
+          !showStatsButton && !showFilterButton && styles.leftSectionOnly,
+        ]}
+      >
         <View style={styles.statPod}>
           <Text style={styles.statLabel}>{totalLabel}</Text>
           <Text style={styles.statValue}>{safeTotalCount}</Text>
@@ -74,38 +79,45 @@ export function FilterHeaderBase({
           </TouchableOpacity>
         )}
 
-        <View style={[styles.filterPod, isFiltering && styles.filterPodActive]}>
-          {isFiltering && (
+        {showFilterButton && (
+          <View
+            style={[styles.filterPod, isFiltering && styles.filterPodActive]}
+          >
+            {isFiltering && (
+              <TouchableOpacity
+                style={styles.podActionBtn}
+                onPress={onQuickReset}
+              >
+                <MaterialCommunityIcons
+                  name="filter-off-outline"
+                  size={20}
+                  color="#ef4444"
+                />
+              </TouchableOpacity>
+            )}
+
+            {isFiltering && <View style={styles.podDivider} />}
+
             <TouchableOpacity
               style={styles.podActionBtn}
-              onPress={onQuickReset}
+              onPress={onFilterPress}
             >
-              <MaterialCommunityIcons
-                name="filter-off-outline"
-                size={20}
-                color="#ef4444"
-              />
+              <View>
+                <MaterialCommunityIcons
+                  name={isFiltering ? "filter" : "filter-variant"}
+                  size={22}
+                  color={isFiltering ? "#2563eb" : "#1e293b"}
+                />
+
+                {isFiltering && safeFilterCount > 0 && (
+                  <Badge size={14} style={styles.filterBadge}>
+                    {safeFilterCount}
+                  </Badge>
+                )}
+              </View>
             </TouchableOpacity>
-          )}
-
-          {isFiltering && <View style={styles.podDivider} />}
-
-          <TouchableOpacity style={styles.podActionBtn} onPress={onFilterPress}>
-            <View>
-              <MaterialCommunityIcons
-                name={isFiltering ? "filter" : "filter-variant"}
-                size={22}
-                color={isFiltering ? "#2563eb" : "#1e293b"}
-              />
-
-              {isFiltering && safeFilterCount > 0 && (
-                <Badge size={14} style={styles.filterBadge}>
-                  {safeFilterCount}
-                </Badge>
-              )}
-            </View>
-          </TouchableOpacity>
-        </View>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -138,17 +150,8 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
 
-  titlePod: {
-    maxWidth: 70,
-    alignItems: "center",
-    paddingHorizontal: 4,
-  },
-
-  titleText: {
-    fontSize: 10,
-    fontWeight: "900",
-    color: "#0f172a",
-    letterSpacing: 0.5,
+  leftSectionOnly: {
+    marginRight: 0,
   },
 
   statPod: {

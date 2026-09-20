@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Animated,
+  BackHandler,
   Keyboard,
   Platform,
   StyleSheet,
@@ -47,13 +48,28 @@ export function FilterSearchOverlay({
     };
   }, [keyboardHeight]);
 
-  if (!visible) return null;
-
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     onChange?.("");
     onClose?.();
     Keyboard.dismiss();
-  };
+  }, [onChange, onClose]);
+
+  // 🔙 Android back closes the search bar instead of leaving the screen
+  useEffect(() => {
+    if (!visible) return undefined;
+
+    const backSubscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        handleClose();
+        return true;
+      },
+    );
+
+    return () => backSubscription.remove();
+  }, [visible, handleClose]);
+
+  if (!visible) return null;
 
   return (
     <Animated.View

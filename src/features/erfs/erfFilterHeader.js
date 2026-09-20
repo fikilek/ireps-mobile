@@ -6,6 +6,7 @@ import { Button, Dialog, Portal, Surface } from "react-native-paper";
 import { useSelector } from "react-redux";
 
 import { useGeo } from "../../context/GeoContext";
+import { FilterHeaderBase } from "../filters/FilterHeaderBase";
 import { useWarehouse } from "../../context/WarehouseContext";
 import {
   getWardErfLocalMetaByWard,
@@ -17,8 +18,12 @@ import {
 const ErfFilterHeader = ({
   selectedWard,
   setSelectedWard,
+  totalCount = 0,
   filteredCount,
   onWardErfSync,
+  showSearch = false,
+  onSearchPress,
+  isFiltering = false,
 }) => {
   const [visible, setVisible] = useState(false);
   const showDialog = () => setVisible(true);
@@ -69,8 +74,21 @@ const ErfFilterHeader = ({
 
   return (
     <Surface style={styles.header} elevation={1}>
+      {/* 🔍 STANDARD SEARCH HEADER (same as Premises, Trns and Asts) */}
+      <FilterHeaderBase
+        searchLabel="ERF NO"
+        totalCount={totalCount}
+        filteredCount={filteredCount}
+        isFiltering={isFiltering}
+        showSearch={showSearch}
+        onSearchPress={onSearchPress}
+        showSearchButton={typeof onSearchPress === "function"}
+        showStatsButton={false}
+        showFilterButton={false}
+      />
+
       <View style={styles.row}>
-        {/* 🎯 LEFT: WARD SELECTION + SYNC ACCESS */}
+        {/* 🎯 LEFT: WARD SELECTION */}
         <View style={styles.leftControls}>
           <View style={styles.leftCol}>
             <Button
@@ -85,28 +103,18 @@ const ErfFilterHeader = ({
               {displayWardName}
             </Button>
           </View>
-
-          <TouchableOpacity
-            style={styles.syncButton}
-            onPress={onWardErfSync}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Manage Ward ERF sync"
-          >
-            <MaterialCommunityIcons name="sync" size={20} color="#2563eb" />
-          </TouchableOpacity>
         </View>
 
-        {/* 📊 RIGHT: TACTICAL STATS */}
-        <View style={styles.rightCol}>
-          {/* <View style={styles.statsBox}> */}
-          <Text style={styles.statsText}>
-            Erfs:
-            <Text style={{ fontWeight: "900", fontSize: 14, color: "blue" }}>
-              {filteredCount}
-            </Text>
-          </Text>
-        </View>
+        {/* 🔄 RIGHT: WARD ERF SYNC */}
+        <TouchableOpacity
+          style={styles.syncButton}
+          onPress={onWardErfSync}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Manage Ward ERF sync"
+        >
+          <MaterialCommunityIcons name="sync" size={20} color="#2563eb" />
+        </TouchableOpacity>
       </View>
 
       <Portal>
@@ -225,18 +233,17 @@ const styles = StyleSheet.create({
     fontStyle: "italic", // Make description italic
   },
   header: {
-    padding: 12,
     backgroundColor: "white",
     borderBottomWidth: 1,
     borderColor: "#e2e8f0",
   },
   row: {
-    // flex: 1,
     width: "100%",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    height: 40,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
 
   label: {
@@ -265,11 +272,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#f1f5f9",
     // width: "100%",
-  },
-  statsText: {
-    fontSize: 12,
-    color: "#393939",
-    textAlign: "right",
   },
   boldText: {
     color: "#413694",
@@ -367,14 +369,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 8,
-  },
-  rightCol: {
-    // flex: 0.4,
-    padding: 10,
-    borderWidth: 1,
-    marginRight: 2,
     borderColor: "#cbd5e1",
     borderRadius: 8,
   },

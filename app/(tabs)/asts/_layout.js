@@ -2,13 +2,13 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo } from "react";
 import { StyleSheet, Text, TouchableOpacity } from "react-native";
-import SovereignHeader from "../../../components/SovereignHeader";
 import { AstFilterProvider } from "../../../src/context/AstFilterContext";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
 import { AstFilterModal } from "../../../src/features/asts/AstFilterModal";
 import { AstSearch } from "../../../src/features/asts/AstSearch";
 import { AstStatsModal } from "../../../src/features/asts/AstStatsModal";
 import { filterAsts } from "../../../src/features/asts/filterAsts";
+import { FilterHeaderBase } from "../../../src/features/filters/FilterHeaderBase";
 import { useAstFilter } from "../../../src/hooks/useAstFilter";
 
 function safeParseJson(value, fallback = {}) {
@@ -116,7 +116,7 @@ function lifecycleScreenOptions(title) {
 }
 
 function AstsLayoutContent() {
-  const { filtered } = useWarehouse();
+  const { all, filtered } = useWarehouse();
 
   const {
     showFilters,
@@ -147,9 +147,9 @@ function AstsLayoutContent() {
           name="index"
           options={{
             header: () => (
-              <SovereignHeader
-                title="METERS"
-                totalCount={baseMeters.length}
+              <FilterHeaderBase
+                searchLabel="METERS"
+                totalCount={all?.meters?.length || 0}
                 filteredCount={filteredMeters.length}
                 isFiltering={isFiltering}
                 filterCount={activeFilterCount}

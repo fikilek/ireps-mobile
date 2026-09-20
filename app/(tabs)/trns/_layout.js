@@ -3,15 +3,15 @@ import { useMemo } from "react";
 
 import { TrnFilterProvider } from "../../../src/context/TrnFilterContext";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
-import FilterHeaderBase from "../../../src/features/filters/FilterHeaderBase";
+import { FilterHeaderBase } from "../../../src/features/filters/FilterHeaderBase";
 import { filterTrns } from "../../../src/features/trns/filterTrns";
 import TrnFilterModal from "../../../src/features/trns/TrnFilterModal";
-import TrnSearch from "../../../src/features/trns/TrnSearch";
+import { TrnSearch } from "../../../src/features/trns/TrnSearch";
 import TrnStatsModal from "../../../src/features/trns/TrnStatsModal";
 import { useTrnFilter } from "../../../src/hooks/useTrnFilter";
 
 function TrnsLayoutContent() {
-  const { filtered: warehouseFiltered } = useWarehouse();
+  const { all, filtered: warehouseFiltered } = useWarehouse();
 
   const baseTrns = useMemo(
     () => warehouseFiltered?.trns || [],
@@ -48,8 +48,7 @@ function TrnsLayoutContent() {
           options={{
             header: () => (
               <FilterHeaderBase
-                title="TRNS"
-                totalCount={baseTrns.length}
+                totalCount={all?.trns?.length || 0}
                 filteredCount={displayTrns.length}
                 searchLabel="TRN/METER"
                 showSearch={showSearch}
