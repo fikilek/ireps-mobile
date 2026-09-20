@@ -1,6 +1,6 @@
 import { Slot, useRouter, useSegments } from "expo-router";
 import { memo, useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, LogBox, StyleSheet, Text, View } from "react-native";
 import { PaperProvider } from "react-native-paper";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Provider } from "react-redux";
@@ -19,6 +19,21 @@ import { persistor, store } from "../src/redux/store";
 import FwrMonitoringCoordinator from "../src/services/fwr-monitoring/FwrMonitoringCoordinator";
 import { startInformalErfQueueSyncService } from "../src/services/startInformalErfQueueSyncService";
 import { startMeterDiscoveryNoAccessQueueSyncService } from "../src/services/startMeterDiscoveryNoAccessQueueSyncService";
+
+// Development client only. React Navigation logs this when a second app root
+// registers deep linking, which happens on a reload in the dev client. The
+// check is skipped in release builds, so a field phone never sees it: nothing
+// in this app configures linking twice, the manifest already sets
+// launchMode="singleTask", and Expo Router owns the only navigator.
+//
+// It is silenced because dismissing the red toast crashes the app outright:
+// React Native's own LogBoxDialogSurfaceDelegate.hide tries to close a dialog
+// on an activity that is no longer attached.
+if (__DEV__) {
+  LogBox.ignoreLogs([
+    "Looks like you have configured linking in multiple places",
+  ]);
+}
 
 const AuthGate = memo(function AuthGate() {
   const {
