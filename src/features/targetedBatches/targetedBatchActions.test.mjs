@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appendUniqueTargetedBatchRows, getTargetedBatchRowActionState, snapshotTargetedBatchRefs, targetedBatchRefsMatch, TARGETED_BATCH_INTENTS } from "./targetedBatchActions.js";
+import { appendUniqueTargetedBatchRows, getTargetedBatchRowActionState, isTargetedBatchFoundMeterIntent, isTargetedBatchWorkIntent, snapshotTargetedBatchRefs, targetedBatchRefsMatch, TARGETED_BATCH_INTENTS } from "./targetedBatchActions.js";
 
 const row = (refs = {}, count = 0, fieldWorkMeterId = null) => ({ id: "ROW1", salesDocId: "SALE1", allocationStatus: "ALLOCATED", executionStatus: "NOT_STARTED", refs: { erfId: "ERF1", ...refs }, erfNo: "1138", noAccessCount: count, fieldWorkMeterId });
 
@@ -75,27 +75,48 @@ test("reference snapshots detect stale row changes", () => {
   assert.equal(targetedBatchRefsMatch(row({ erfId: "E1", premiseId: "P1", meterId: "A1" }), snapshot), false);
 });
 
-test("TB-R051 a Completed meter locks all four buttons and reads COMPLETED", () => {
+test("TB-R051 1.3.42 a Completed meter opens its meter, premise and ERF, but No Access stays disabled", () => {
   for (const refs of [{}, { premiseId: "P1" }, { premiseId: "P1", meterId: "A1" }, { meterId: "A1" }]) {
     const state = getTargetedBatchRowActionState({ ...row(refs, 2, null), displayStatus: "COMPLETED" });
     assert.equal(state.completed, true);
-    for (const tile of [state.premise, state.ast, state.noAccess, state.erf]) {
-      assert.equal(tile.disabled, true);
-      assert.equal(tile.helperText, "COMPLETED");
-    }
+    assert.equal(state.premise.disabled, false);
+    assert.equal(state.ast.disabled, false);
+    assert.equal(state.erf.disabled, false);
+    assert.equal(state.noAccess.disabled, true);
+    assert.equal(state.noAccess.helperText, "COMPLETED");
+    assert.equal(state.ast.helperText, "OPEN AST");
     assert.equal(state.premise.value, refs.premiseId ? 1 : 0);
     assert.equal(state.ast.value, refs.meterId ? 1 : 0);
     assert.equal(state.noAccess.value, 2);
     assert.equal(state.erf.value, "1138");
-    assert.equal(state.ast.intent, refs.meterId ? TARGETED_BATCH_INTENTS.OPEN_AST : TARGETED_BATCH_INTENTS.START_METER_DISCOVERY);
+    // A linked meter or premise opens directly; with none linked, the meter is looked up by its meter number.
+    assert.equal(state.ast.intent, refs.meterId ? TARGETED_BATCH_INTENTS.OPEN_AST : TARGETED_BATCH_INTENTS.OPEN_FOUND_METER);
+    assert.equal(state.premise.intent, refs.premiseId ? TARGETED_BATCH_INTENTS.OPEN_PREMISE : TARGETED_BATCH_INTENTS.OPEN_FOUND_METER_PREMISE);
+    // Nothing on a Completed meter starts work.
+    for (const tile of [state.premise, state.ast, state.erf]) assert.equal(isTargetedBatchWorkIntent(tile.intent), false);
   }
+  // A Completed row without its ERF link cannot open the ERF, like any row.
+  const noErf = getTargetedBatchRowActionState({ ...row(), refs: {}, displayStatus: "COMPLETED" });
+  assert.equal(noErf.erf.disabled, true);
 });
 
-test("TB-R051 a VISIBLE meter whose row is not completed is locked through its display status", () => {
+test("TB-R051 1.3.42 a VISIBLE meter whose row is not completed is Completed through its display status", () => {
   const state = getTargetedBatchRowActionState({ ...row({ premiseId: "P1" }), executionStatus: "IN_PROGRESS", salesVisibility: "VISIBLE", displayStatus: "COMPLETED" });
   assert.equal(state.completed, true);
-  assert.equal(state.ast.disabled, true);
-  assert.equal(state.ast.helperText, "COMPLETED");
+  assert.equal(state.ast.disabled, false);
+  assert.equal(state.ast.intent, TARGETED_BATCH_INTENTS.OPEN_FOUND_METER);
+  assert.equal(state.noAccess.disabled, true);
+});
+
+test("TB-R051 1.3.42 work intents and found-meter intents", () => {
+  assert.equal(isTargetedBatchWorkIntent(TARGETED_BATCH_INTENTS.START_METER_DISCOVERY), true);
+  assert.equal(isTargetedBatchWorkIntent(TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS), true);
+  for (const intent of ["OPEN_AST", "OPEN_PREMISE", "OPEN_ERF", "OPEN_FOUND_METER", "OPEN_FOUND_METER_PREMISE"]) {
+    assert.equal(isTargetedBatchWorkIntent(intent), false, intent);
+  }
+  assert.equal(isTargetedBatchFoundMeterIntent(TARGETED_BATCH_INTENTS.OPEN_FOUND_METER), true);
+  assert.equal(isTargetedBatchFoundMeterIntent(TARGETED_BATCH_INTENTS.OPEN_FOUND_METER_PREMISE), true);
+  assert.equal(isTargetedBatchFoundMeterIntent(TARGETED_BATCH_INTENTS.OPEN_AST), false);
 });
 
 test("TB-R051 open meters keep the existing button rules and are not locked", () => {

@@ -34,6 +34,8 @@ import TargetedBatchMapModal from "../../../../src/features/targetedBatches/Targ
 import { isFieldWorkorderActor } from "../../../../src/features/targetedBatches/fieldWorkorderActor";
 import {
   getTargetedBatchRowActionState,
+  isTargetedBatchFoundMeterIntent,
+  isTargetedBatchWorkIntent,
   snapshotTargetedBatchRefs,
   targetedBatchRefsMatch,
   TARGETED_BATCH_INTENTS,
@@ -41,9 +43,18 @@ import {
 import { BATCH_DISCOVERY_REASONS } from "../../../../src/features/targetedBatches/targetedBatchContextCarry";
 import { buildTargetedBatchNoAccessContext } from "../../../../src/features/targetedBatches/targetedBatchNoAccess";
 import {
+  filterTargetedBatchRowsByStatus,
+  nextTargetedBatchStatusFilter,
   searchTargetedBatchRows,
   sortTargetedBatchRowsOpenFirst,
+  TARGETED_BATCH_STATUS_FILTERS,
 } from "../../../../src/features/targetedBatches/targetedBatchRowSearch";
+import {
+  chooseFoundMeter,
+  foundMeterMessage,
+} from "../../../../src/features/targetedBatches/foundMeter";
+import { findMetersByNumber } from "../../../../src/features/targetedBatches/findMetersByNumber";
+import { MAP_STATUS_COLORS } from "../../../../src/features/targetedBatches/targetedBatchMapLayers";
 import {
   useAcceptRejectLifecycleInstructionMutation,
   useGetWmsBgoBatchWorkItemsQuery,
@@ -147,7 +158,22 @@ const TARGETED_BATCH_INTENT_LABELS = Object.freeze({
   [TARGETED_BATCH_INTENTS.OPEN_AST]: "Meter",
   [TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS]: "No Access",
   [TARGETED_BATCH_INTENTS.OPEN_ERF]: "ERF",
+  [TARGETED_BATCH_INTENTS.OPEN_FOUND_METER]: "Meter",
+  [TARGETED_BATCH_INTENTS.OPEN_FOUND_METER_PREMISE]: "Premise",
 });
+
+// TB-R051 (1.3.42): the batch header's four filters, left to right, with the status colours of the batch map.
+const TARGETED_BATCH_STATUS_FILTER_BUTTONS = [
+  { key: TARGETED_BATCH_STATUS_FILTERS.TOTAL, label: "Total", summaryKey: "total", color: "#0f172a" },
+  { key: TARGETED_BATCH_STATUS_FILTERS.NOT_STARTED, label: "Not Started", summaryKey: "notStarted", color: MAP_STATUS_COLORS.NOT_STARTED },
+  { key: TARGETED_BATCH_STATUS_FILTERS.IN_PROGRESS, label: "In Progress", summaryKey: "inProgress", color: MAP_STATUS_COLORS.IN_PROGRESS },
+  { key: TARGETED_BATCH_STATUS_FILTERS.COMPLETED, label: "Completed", summaryKey: "completed", color: MAP_STATUS_COLORS.COMPLETED },
+];
+
+// TB-R051 (1.3.42): nothing starts work on a Completed meter.
+const TARGETED_BATCH_COMPLETED_TITLE = "Meter completed";
+const TARGETED_BATCH_COMPLETED_MESSAGE =
+  "This meter is Completed: it has been found. Nothing can be started on it; you can open its meter, premise and ERF.";
 
 const RejectSchema = object().shape({
   rejectReason: string()
@@ -569,6 +595,12 @@ function buildTargetedBatchSelectedErf({
   };
 }
 
+// TB-R051 (1.3.42): the same ERF selection with no batch on it (a key that is present, even empty, means a batch).
+function withoutTargetedBatchContext(selectedErf = {}) {
+  const { targetedBatchContext: _batch, ...plain } = selectedErf || {};
+  return plain;
+}
+
 function getTargetedBatchStatusText(bucket = {}) {
   switch (normalizeUpper(bucket?.acceptanceStatus)) {
     case "WAITING":
@@ -936,6 +968,15 @@ export default function WorkorderManagementSystem() {
     setPendingTargetedBatchAction,
   ] = useState(null);
   const [targetedBatchSearchText, setTargetedBatchSearchText] = useState("");
+  // TB-R051 (1.3.42): the batch header's status filter; Total shows every meter.
+  const [targetedBatchStatusFilter, setTargetedBatchStatusFilter] = useState(
+    TARGETED_BATCH_STATUS_FILTERS.TOTAL,
+  );
+  const handleTargetedBatchStatusFilterPress = useCallback((tapped) => {
+    setTargetedBatchStatusFilter((current) =>
+      nextTargetedBatchStatusFilter(current, tapped),
+    );
+  }, []);
   const [targetedBatchMapOpen, setTargetedBatchMapOpen] = useState(false);
   const netInfo = useNetInfo();
   // TB-R051: online only.
@@ -1225,9 +1266,10 @@ export default function WorkorderManagementSystem() {
     clearPendingTargetedBatchAction();
   }, [selectedTargetedBatchId, clearPendingTargetedBatchAction]);
 
-  // TB-R051: another batch starts with an empty search and the map closed.
+  // TB-R051: another batch starts with an empty search, Total (1.3.42) and the map closed.
   useEffect(() => {
     setTargetedBatchSearchText("");
+    setTargetedBatchStatusFilter(TARGETED_BATCH_STATUS_FILTERS.TOTAL);
     setTargetedBatchMapOpen(false);
   }, [selectedTargetedBatchId]);
 
@@ -1295,13 +1337,17 @@ export default function WorkorderManagementSystem() {
     all?.geoLibrary,
   ]);
 
-  // TB-R051: search by meter number, ERF number or street address; open work is listed first.
+  // TB-R051: search by meter number, ERF number or street address, inside the header's status filter (1.3.42);
+  // open work is listed first.
   const visibleTargetedBatchRows = useMemo(
     () =>
       sortTargetedBatchRowsOpenFirst(
-        searchTargetedBatchRows(targetedBatchRows, targetedBatchSearchText),
+        searchTargetedBatchRows(
+          filterTargetedBatchRowsByStatus(targetedBatchRows, targetedBatchStatusFilter),
+          targetedBatchSearchText,
+        ),
       ),
-    [targetedBatchRows, targetedBatchSearchText],
+    [targetedBatchRows, targetedBatchStatusFilter, targetedBatchSearchText],
   );
 
   const targetedBatchErfIdsKey = useMemo(
@@ -1388,9 +1434,18 @@ export default function WorkorderManagementSystem() {
         Alert.alert("Targeted Batch row changed", "The row linkage changed while the action was preparing. Please try again.");
         return;
       }
-      // TB-R051: a Completed meter is locked, also when it became Completed while the action was waiting.
-      if (getTargetedBatchRowActionState(currentRow).completed) {
-        console.log("[MY WORKORDERS][TB ACTION LOCKED]", {
+      // TB-R051 (1.3.42): nothing starts work on a Completed meter, also when it became Completed while the
+      // action was waiting. Opening its meter, premise or ERF goes on.
+      const currentRowCompleted = getTargetedBatchRowActionState(currentRow).completed;
+      const becameCompletedWithoutPremise =
+        currentRowCompleted &&
+        pending.intent === TARGETED_BATCH_INTENTS.OPEN_PREMISE &&
+        !cleanId(currentRow?.refs?.premiseId);
+      if (
+        currentRowCompleted &&
+        (isTargetedBatchWorkIntent(pending.intent) || becameCompletedWithoutPremise)
+      ) {
+        console.log("[MY WORKORDERS][TB ACTION COMPLETED]", {
           requestKey: pending.requestKey,
           rowId: pending.rowId,
           intent: pending.intent,
@@ -1398,7 +1453,12 @@ export default function WorkorderManagementSystem() {
           salesLoadState: currentRow?.salesLoadState || null,
         });
         clearPendingTargetedBatchAction(pending.requestKey);
-        Alert.alert("Meter completed", "This meter is Completed and locked.");
+        Alert.alert(
+          TARGETED_BATCH_COMPLETED_TITLE,
+          becameCompletedWithoutPremise
+            ? "This meter became Completed while it was opening. Tap Premise again to open its premise."
+            : TARGETED_BATCH_COMPLETED_MESSAGE,
+        );
         return;
       }
       // TB-R051: also when the row was unallocated or the batch left this worker's work orders while waiting.
@@ -1446,11 +1506,110 @@ export default function WorkorderManagementSystem() {
         ...(all?.geoLibrary?.[pending.erfId] || {}),
         ...warehouseErf,
       };
-      const selectedErf = buildTargetedBatchSelectedErf({
+      const batchSelectedErf = buildTargetedBatchSelectedErf({
         row: currentRow,
         bucket: selectedBucket,
         warehouseErf: canonicalErf,
       });
+      // TB-R051 (1.3.42): a Completed meter is opened without carrying the batch, since nothing may start on it.
+      const selectedErf = currentRowCompleted
+        ? withoutTargetedBatchContext(batchSelectedErf)
+        : batchSelectedErf;
+
+      // TB-R051 (1.3.42): a Completed meter found outside this batch (no meter linked to its row) is opened from
+      // its meter record, looked up by its meter number: when that record is in the batch's Ward it opens, with no
+      // batch carried; otherwise the worker is told where it was found.
+      if (isTargetedBatchFoundMeterIntent(pending.intent)) {
+        const lookup = pending.foundMeterLookup;
+        if (!lookup || lookup.status === "LOOKING") {
+          waitFor("the meter's record");
+          return;
+        }
+        if (lookup.status === "ERROR") {
+          clearPendingTargetedBatchAction(pending.requestKey);
+          // TB-R051: no false errors; only a failure to reach the server blames the connection.
+          const connectionFailed =
+            lookup.code === "unavailable" || lookup.code === "deadline-exceeded";
+          Alert.alert(
+            "Meter not looked up",
+            `Meter ${lookup.meterNo || "of this row"} could not be looked up. ${
+              connectionFailed
+                ? "Check your connection and try again."
+                : "Try again; if it keeps failing, tell the office."
+            }`,
+          );
+          return;
+        }
+        const choice = chooseFoundMeter(lookup.found, {
+          lmPcode: pending.lmPcode,
+          wardPcode: pending.wardPcode,
+        });
+        if (choice.outcome !== "OPEN") {
+          clearPendingTargetedBatchAction(pending.requestKey);
+          Alert.alert("Meter found outside this batch", foundMeterMessage(choice, lookup.meterNo));
+          return;
+        }
+        const foundMeter = (all?.meters || []).find(
+          (item) => cleanId(item?.ast?.astData?.astId || item?.id) === choice.meter.id,
+        );
+        // Its record says it is in this Ward: wait for it to reach the phone (within the 30-second limit).
+        if (!foundMeter) {
+          waitFor("the meter");
+          return;
+        }
+        const foundPremiseId = getMeterPremiseId(foundMeter) || choice.meter.premiseId;
+        const foundPremise = foundPremiseId
+          ? (all?.prems || []).find((item) => getPremiseId(item) === foundPremiseId)
+          : null;
+        if (pending.intent === TARGETED_BATCH_INTENTS.OPEN_FOUND_METER_PREMISE) {
+          if (!foundPremiseId) {
+            clearPendingTargetedBatchAction(pending.requestKey);
+            Alert.alert(
+              "No premise",
+              `Meter ${lookup.meterNo || "of this row"} was found outside this batch, and its record has no premise.`,
+            );
+            return;
+          }
+          if (!foundPremise) {
+            waitFor("the meter's premise");
+            return;
+          }
+        }
+        const premiseErfIds = new Map((all?.prems || []).map((item) => [getPremiseId(item), getPremiseErfId(item)]));
+        const foundErfId =
+          getMeterErfId(foundMeter, premiseErfIds) ||
+          (foundPremise ? getPremiseErfId(foundPremise) : "") ||
+          choice.meter.erfId;
+        // The ERF selection narrows the premise list to this ERF; an ERF not (yet) in the Ward's list on the phone
+        // is still selected by its ID, never left empty (an empty selection lists the whole Ward).
+        const foundErf = foundErfId
+          ? {
+              ...(all?.geoLibrary?.[foundErfId] || {}),
+              ...(findWarehouseErfById(all?.erfs, foundErfId) || {}),
+              id: foundErfId,
+            }
+          : null;
+        const openMeter = pending.intent === TARGETED_BATCH_INTENTS.OPEN_FOUND_METER;
+
+        try {
+          updateGeo({
+            selectedWard: pending.ward,
+            selectedErf: foundErf || null,
+            selectedPremise: foundPremise || null,
+            selectedMeter: openMeter ? foundMeter : null,
+            lastSelectionType: openMeter ? "METER" : "PREMISE",
+          });
+          setTargetedBatchMapOpen(false);
+          router.push(openMeter ? "/(tabs)/asts" : "/(tabs)/premises");
+        } catch (error) {
+          clearPendingTargetedBatchAction(pending.requestKey);
+          Alert.alert(
+            "Targeted Batch Navigation Failed",
+            error?.message || "The meter could not be opened.",
+          );
+        }
+        return;
+      }
 
       const premiseId = cleanId(currentRow?.refs?.premiseId);
       const meterId = cleanId(currentRow?.refs?.meterId);
@@ -2733,8 +2892,11 @@ export default function WorkorderManagementSystem() {
       scope,
     });
 
-    // TB-R051: a Completed meter is locked.
-    if (actions.completed) return false;
+    // TB-R051 (1.3.42): a Completed meter opens its meter, premise and ERF, but nothing starts work on it.
+    if (actions.completed && isTargetedBatchWorkIntent(intent)) {
+      Alert.alert(TARGETED_BATCH_COMPLETED_TITLE, TARGETED_BATCH_COMPLETED_MESSAGE);
+      return false;
+    }
 
     // TB-R051: refused at once, before any Ward switch, when the row is no longer allocated or its batch is no
     // longer in this worker's work orders (unallocated, or no longer accepted); the map stays open under the message.
@@ -2869,7 +3031,32 @@ export default function WorkorderManagementSystem() {
       ward: targetWard,
       intent,
       preparationStarted: false,
+      // TB-R051 (1.3.42): a meter found outside this batch is looked up by its meter number, once, while the
+      // batch's Ward loads.
+      foundMeterLookup: isTargetedBatchFoundMeterIntent(intent)
+        ? { status: "LOOKING" }
+        : null,
     });
+
+    if (isTargetedBatchFoundMeterIntent(intent)) {
+      const meterNo = readFirstString(row?.salesDocId, row?.meterNo);
+      const answer = (lookup) =>
+        setPendingTargetedBatchAction((current) =>
+          current?.requestKey === requestKey
+            ? { ...current, foundMeterLookup: lookup }
+            : current,
+        );
+      findMetersByNumber(meterNo)
+        .then((found) => answer({ status: "DONE", meterNo, found }))
+        .catch((error) => {
+          console.log("[MY WORKORDERS][TB FOUND METER LOOKUP FAILED]", {
+            requestKey,
+            meterNo,
+            message: error?.message || String(error),
+          });
+          answer({ status: "ERROR", meterNo, code: error?.code || null });
+        });
+    }
 
     targetedBatchPaintFrameRef.current = requestAnimationFrame(() => {
       targetedBatchPaintFrameRef.current = null;
@@ -3036,8 +3223,9 @@ export default function WorkorderManagementSystem() {
       // The map is a Modal and would cover the screen the action opens.
       setTargetedBatchMapOpen(false);
       // TB-R051: no silent waits; the banner under the search box says what is opening, and an empty
-      // search keeps the row's tile spinner in the list.
+      // search (and Total, 1.3.42) keeps the row's tile spinner in the list.
       setTargetedBatchSearchText("");
+      setTargetedBatchStatusFilter(TARGETED_BATCH_STATUS_FILTERS.TOTAL);
       return true;
     },
     [handleTargetedBatchRowAction],
@@ -3205,6 +3393,8 @@ export default function WorkorderManagementSystem() {
           error={targetedBatchRowsError}
           searchText={targetedBatchSearchText}
           onSearchTextChange={setTargetedBatchSearchText}
+          statusFilter={targetedBatchStatusFilter}
+          onStatusFilterPress={handleTargetedBatchStatusFilterPress}
           offline={offline}
           onOpenMap={() => {
             // TB-R051: the map does not open while a batch action is preparing.
@@ -4250,6 +4440,8 @@ function TargetedBatchRowsWorklist({
   error,
   searchText = "",
   onSearchTextChange,
+  statusFilter = TARGETED_BATCH_STATUS_FILTERS.TOTAL,
+  onStatusFilterPress,
   offline = false,
   onOpenMap,
   onBack,
@@ -4265,6 +4457,11 @@ function TargetedBatchRowsWorklist({
     : rows.length;
   const searchQuery = String(searchText || "").trim();
   const searchActive = searchQuery.length > 0;
+  // TB-R051 (1.3.42): a status other than Total narrows the list.
+  const statusButton =
+    TARGETED_BATCH_STATUS_FILTER_BUTTONS.find((button) => button.key === statusFilter) ||
+    TARGETED_BATCH_STATUS_FILTER_BUTTONS[0];
+  const statusFilterActive = statusButton.key !== TARGETED_BATCH_STATUS_FILTERS.TOTAL;
   // TB-R051: no false "no position" map; the map opens only once the batch rows are on the phone,
   // and not while a batch action is preparing (the action's screen would open behind it).
   const mapUnavailable =
@@ -4336,34 +4533,45 @@ function TargetedBatchRowsWorklist({
           />
         </Pressable>
 
-        {/* TB-R051: the header counts use the status on the phone (Sales VISIBLE counts as Completed);
-            the batch list card shows the batch record's counts under its own caption. */}
-        <View style={styles.tbPhoneStatusGroup}>
-          <Text style={styles.tbCountsCaption}>Status on the phone</Text>
+      </View>
 
-          <View style={styles.tbPhoneStatusRow}>
-            <View style={styles.mdBgoCompactStat}>
-              <Text style={styles.mdBgoCompactStatLabel}>Rows</Text>
-              <Text style={styles.mdBgoCompactStatValue}>
-                {summary?.total ?? allRowCount}
-              </Text>
-            </View>
+      {/* TB-R051 (1.3.42): four filters for the whole batch's counts (Sales VISIBLE counts as Completed). Total
+          shows every meter; a status shows only its meters; tapping Total or the selected status again shows all. */}
+      <View style={styles.tbStatusFilterRow}>
+        {TARGETED_BATCH_STATUS_FILTER_BUTTONS.map((button) => {
+          const selected = button.key === statusButton.key;
+          const count =
+            button.key === TARGETED_BATCH_STATUS_FILTERS.TOTAL
+              ? summary?.total ?? allRowCount
+              : summary?.[button.summaryKey] ?? 0;
 
-            <View style={styles.mdBgoCompactStat}>
-              <Text style={styles.mdBgoCompactStatLabel}>Started</Text>
-              <Text style={styles.mdBgoCompactStatValue}>
-                {summary?.inProgress ?? 0}
+          return (
+            <Pressable
+              key={button.key}
+              style={({ pressed }) => [
+                styles.tbStatusFilter,
+                selected && { borderColor: button.color, backgroundColor: `${button.color}14` },
+                pressed && styles.tbStatusFilterPressed,
+              ]}
+              onPress={() => onStatusFilterPress?.(button.key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              accessibilityLabel={`${button.label}: ${count}`}
+              hitSlop={4}
+            >
+              {/* On a narrow phone "Not Started" wraps to two lines rather than being cut. */}
+              <Text
+                style={[styles.tbStatusFilterLabel, selected && { color: button.color }]}
+                numberOfLines={2}
+              >
+                {button.label}
               </Text>
-            </View>
-
-            <View style={styles.mdBgoCompactStat}>
-              <Text style={styles.mdBgoCompactStatLabel}>Done</Text>
-              <Text style={styles.mdBgoCompactStatValue}>
-                {summary?.completed ?? 0}
+              <Text style={[styles.tbStatusFilterValue, { color: button.color }]}>
+                {count}
               </Text>
-            </View>
-          </View>
-        </View>
+            </Pressable>
+          );
+        })}
       </View>
 
       {/* TB-R051: search by meter number, ERF number or street address. */}
@@ -4398,9 +4606,10 @@ function TargetedBatchRowsWorklist({
           ) : null}
         </View>
 
-        {searchActive ? (
+        {searchActive || statusFilterActive ? (
           <Text style={styles.tbSearchCount}>
             Showing {rows.length} of {allRowCount}
+            {statusFilterActive ? ` · ${statusButton.label}` : ""}
           </Text>
         ) : null}
 
@@ -4454,7 +4663,21 @@ function TargetedBatchRowsWorklist({
           contentContainerStyle={styles.flashListContent}
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
-            searchActive && allRowCount > 0 ? (
+            statusFilterActive && allRowCount > 0 ? (
+              // TB-R051 (1.3.42): a status with no meters says so, never a blank list.
+              <View style={styles.emptyListCard}>
+                <MaterialCommunityIcons
+                  name={searchActive ? "magnify-close" : "filter-remove-outline"}
+                  size={35}
+                  color="#94a3b8"
+                />
+                <Text style={styles.stateTitle}>
+                  {searchActive
+                    ? `No ${statusButton.label} meter matches ${searchQuery}`
+                    : `No ${statusButton.label} meters in this batch`}
+                </Text>
+              </View>
+            ) : searchActive && allRowCount > 0 ? (
               <View style={styles.emptyListCard}>
                 <MaterialCommunityIcons
                   name="magnify-close"
@@ -6849,14 +7072,42 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
 
-  tbPhoneStatusGroup: {
-    alignItems: "center",
+  // TB-R051 (1.3.42): the batch header's four status filters, equal width across the screen.
+  tbStatusFilterRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginHorizontal: 12,
+    marginBottom: 8,
   },
 
-  tbPhoneStatusRow: {
-    flexDirection: "row",
+  tbStatusFilter: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#ffffff",
     alignItems: "center",
-    gap: 7,
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+  },
+
+  tbStatusFilterPressed: {
+    opacity: 0.7,
+  },
+
+  tbStatusFilterLabel: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  tbStatusFilterValue: {
+    marginTop: 2,
+    fontSize: 17,
+    fontWeight: "900",
   },
 
   tbOpeningBanner: {
