@@ -22,7 +22,13 @@ import {
 } from "./loadBatchAreaLayers";
 import { loadLatestSalesCategoryMonth } from "./loadLatestSalesCategoryMonth";
 import { loadOtherSalesMeters } from "./loadOtherSalesMeters";
-import { erfLabelPoint, holesByErf } from "./erfLabelPoint";
+import {
+  ERF_LABEL_BASE_FONT_SIZE,
+  erfLabelFontSize,
+  erfLabelPoint,
+  erfLabelRoomMetres,
+  holesByErf,
+} from "./erfLabelPoint";
 import { isBatchMapOpeningZoomReached } from "./targetedBatchMapOpening";
 import { isCatSalesMeter } from "./salesCategory";
 import {
@@ -379,7 +385,7 @@ function withTimeout(promise, ms) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-// TB-R051 (1.3.69): a custom marker view is drawn once into a picture and then stops tracking, so a long
+// TB-R051 (1.3.70): a custom marker view is drawn once into a picture and then stops tracking, so a long
 // layer does not redraw on every frame. The picture must be taken AFTER the view has laid out: taken on a
 // timer alone it caught a long geofence name still being measured, and the map drew "Gf W6 Cr" where the
 // name reads "Gf W6 Craigside1". Tracking therefore stops a moment after the view reports its layout, and
@@ -499,8 +505,17 @@ const GeofenceNameMarker = memo(GeofenceNameMarkerBase);
 GeofenceNameMarker.displayName = "GeofenceNameMarker";
 
 // TB-R051 (1.3.38, 1.3.40): the ERF number, centred on its label point inside the ERF (erfLabelPoint.js).
-function ErfLabelMarkerBase({ latitude, longitude, erfNo }) {
-  const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(erfNo);
+// (1.3.70) It is drawn at the size that fits the room its own ERF gives it at this zoom, so it never reaches
+// the neighbour's ERF. The size is part of the signature: a new size means a new picture of the marker.
+function ErfLabelMarkerBase({
+  latitude,
+  longitude,
+  erfNo,
+  fontSize = ERF_LABEL_BASE_FONT_SIZE,
+}) {
+  const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(
+    `${erfNo}:${fontSize}`,
+  );
   const coordinate = useMemo(
     () => ({ latitude, longitude }),
     [latitude, longitude],
@@ -513,8 +528,14 @@ function ErfLabelMarkerBase({ latitude, longitude, erfNo }) {
       tracksViewChanges={tracksViewChanges}
       zIndex={100}
     >
-      <View style={styles.erfLabel} onLayout={onLayout}>
-        <Text style={styles.erfLabelText} numberOfLines={1}>
+      <View
+        style={[styles.erfLabel, { borderRadius: Math.max(2, fontSize / 2) }]}
+        onLayout={onLayout}
+      >
+        <Text
+          style={[styles.erfLabelText, { fontSize, lineHeight: fontSize * 1.25 }]}
+          numberOfLines={1}
+        >
           {erfNo}
         </Text>
       </View>
@@ -718,6 +739,8 @@ export default function TargetedBatchMapModal({
   }
   const [sheet, setSheet] = useState(null);
   const [mapAreaHeight, setMapAreaHeight] = useState(0);
+  // TB-R051 (1.3.70): the ERF numbers are sized from the zoom, so the map keeps the region it settles on.
+  const [region, setRegion] = useState(null);
   const [geofenceWaitOver, setGeofenceWaitOver] = useState(false);
   const [salesWaitDoneKey, setSalesWaitDoneKey] = useState("");
   // TB-R051 (1.3.38): ERFs on, Premises and Other Sales meters off, Normal map when the map opens.
@@ -965,10 +988,39 @@ export default function TargetedBatchMapModal({
       .map((erf, index) => {
         const erfNo = readFirstString(erf?.erfNo);
         const point = erfNo ? erfLabelPoint(erf, { holes: holes[index] }) : null;
-        return point ? { id: erf.id, erfNo, point } : null;
+        return point
+          ? {
+              id: erf.id,
+              erfNo,
+              point,
+              // TB-R051 (1.3.70): how much room this ERF gives its own number, in metres.
+              roomMetres: erfLabelRoomMetres(erf, { holes: holes[index], point }),
+            }
+          : null;
       })
       .filter(Boolean);
   }, [drawnErfs]);
+
+  // TB-R051 (1.3.70): how many metres one pixel covers at the zoom the map is at. The region's latitude
+  // delta spans the height of the map area, which is measured in the same pixels the label is drawn in.
+  const metresPerPixel = useMemo(() => {
+    const delta = Number(region?.latitudeDelta ?? initialRegion?.latitudeDelta);
+    if (!Number.isFinite(delta) || delta <= 0 || mapAreaHeight <= 0) return 0;
+    return (delta * 111320) / mapAreaHeight;
+  }, [region?.latitudeDelta, initialRegion?.latitudeDelta, mapAreaHeight]);
+
+  // The size each number is drawn at. 0 leaves it out: its ERF has no room for it at this zoom.
+  const erfLabelSizes = useMemo(() => {
+    if (!metresPerPixel) return {};
+    const sizes = {};
+    for (const label of erfLabels) {
+      sizes[label.id] = erfLabelFontSize(
+        String(label.erfNo).length,
+        label.roomMetres / metresPerPixel,
+      );
+    }
+    return sizes;
+  }, [erfLabels, metresPerPixel]);
 
   // TB-R051 (1.3.38): premises of the batch area, read once when the Premises button is first switched on. An empty
   // warehouse list cannot tell "not arrived" from "none", so it is read from the batch area instead.
@@ -1291,6 +1343,15 @@ export default function TargetedBatchMapModal({
   );
   const handleMapAreaLayout = useCallback((event) => {
     setMapAreaHeight(Math.round(event?.nativeEvent?.layout?.height || 0));
+  }, []);
+
+  // Only when the pan or zoom has settled, so nothing is recomputed on every frame of a gesture.
+  const handleRegionSettled = useCallback((next) => {
+    setRegion(
+      Number.isFinite(next?.latitudeDelta) && next.latitudeDelta > 0
+        ? { latitudeDelta: next.latitudeDelta }
+        : null,
+    );
   }, []);
 
   const toggleErfs = useCallback(() => setErfsOn((on) => !on), []);
@@ -1672,6 +1733,7 @@ export default function TargetedBatchMapModal({
             mapPadding={MAP_PADDING}
             initialRegion={initialRegion}
             onMapReady={handleMapReady}
+            onRegionChangeComplete={handleRegionSettled}
           >
             {erfPolygons.map(({ key, ring }) => (
               <Polygon
@@ -1694,14 +1756,20 @@ export default function TargetedBatchMapModal({
               />
             ) : null}
 
-            {erfLabels.map((label) => (
-              <ErfLabelMarker
-                key={`erf-label-${label.id}`}
-                latitude={label.point.latitude}
-                longitude={label.point.longitude}
-                erfNo={label.erfNo}
-              />
-            ))}
+            {erfLabels.map((label) => {
+              const fontSize = erfLabelSizes[label.id] || 0;
+              if (!fontSize) return null;
+
+              return (
+                <ErfLabelMarker
+                  key={`erf-label-${label.id}`}
+                  latitude={label.point.latitude}
+                  longitude={label.point.longitude}
+                  erfNo={label.erfNo}
+                  fontSize={fontSize}
+                />
+              );
+            })}
 
             {geofenceLabelPoint && geofenceName ? (
               <GeofenceNameMarker
