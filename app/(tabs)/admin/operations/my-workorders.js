@@ -38,6 +38,7 @@ import {
   isTargetedBatchWorkIntent,
   snapshotTargetedBatchRefs,
   targetedBatchRefsMatch,
+  findBlockedTargetedBatchAction,
   TARGETED_BATCH_INTENTS,
 } from "../../../../src/features/targetedBatches/targetedBatchActions";
 import { BATCH_DISCOVERY_REASONS } from "../../../../src/features/targetedBatches/targetedBatchContextCarry";
@@ -46,7 +47,10 @@ import {
   filterTargetedBatchRowsByStatus,
   nextTargetedBatchStatusFilter,
   searchTargetedBatchRows,
-  sortTargetedBatchRowsOpenFirst,
+  sortTargetedBatchRowsByLastWorked,
+  nextTargetedBatchRowOrder,
+  DEFAULT_TARGETED_BATCH_ROW_ORDER,
+  TARGETED_BATCH_ROW_ORDERS,
   TARGETED_BATCH_STATUS_FILTERS,
 } from "../../../../src/features/targetedBatches/targetedBatchRowSearch";
 import {
@@ -972,6 +976,14 @@ export default function WorkorderManagementSystem() {
   const [targetedBatchStatusFilter, setTargetedBatchStatusFilter] = useState(
     TARGETED_BATCH_STATUS_FILTERS.TOTAL,
   );
+  // TB-R051 (1.3.68): a batch opens with the meter worked on most recently at the top; the sort button toggles.
+  const [targetedBatchRowOrder, setTargetedBatchRowOrder] = useState(
+    DEFAULT_TARGETED_BATCH_ROW_ORDER,
+  );
+  const handleTargetedBatchRowOrderPress = useCallback(() => {
+    setTargetedBatchRowOrder((current) => nextTargetedBatchRowOrder(current));
+  }, []);
+
   const handleTargetedBatchStatusFilterPress = useCallback((tapped) => {
     setTargetedBatchStatusFilter((current) =>
       nextTargetedBatchStatusFilter(current, tapped),
@@ -1270,6 +1282,7 @@ export default function WorkorderManagementSystem() {
   useEffect(() => {
     setTargetedBatchSearchText("");
     setTargetedBatchStatusFilter(TARGETED_BATCH_STATUS_FILTERS.TOTAL);
+    setTargetedBatchRowOrder(DEFAULT_TARGETED_BATCH_ROW_ORDER);
     setTargetedBatchMapOpen(false);
   }, [selectedTargetedBatchId]);
 
@@ -1338,16 +1351,22 @@ export default function WorkorderManagementSystem() {
   ]);
 
   // TB-R051: search by meter number, ERF number or street address, inside the header's status filter (1.3.42);
-  // open work is listed first.
+  // the meter worked on most recently leads the list (1.3.68).
   const visibleTargetedBatchRows = useMemo(
     () =>
-      sortTargetedBatchRowsOpenFirst(
+      sortTargetedBatchRowsByLastWorked(
         searchTargetedBatchRows(
           filterTargetedBatchRowsByStatus(targetedBatchRows, targetedBatchStatusFilter),
           targetedBatchSearchText,
         ),
+        targetedBatchRowOrder,
       ),
-    [targetedBatchRows, targetedBatchStatusFilter, targetedBatchSearchText],
+    [
+      targetedBatchRows,
+      targetedBatchStatusFilter,
+      targetedBatchSearchText,
+      targetedBatchRowOrder,
+    ],
   );
 
   const targetedBatchErfIdsKey = useMemo(
@@ -3206,6 +3225,13 @@ export default function WorkorderManagementSystem() {
         ? selectedBucketRef.current
         : args?.bucket;
 
+    // TB-R051 (1.3.68): no button is dead. One a worker cannot use yet says why when it is tapped.
+    const blocked = findBlockedTargetedBatchAction(latestRow, args?.intent);
+    if (blocked) {
+      Alert.alert(blocked.title, blocked.message);
+      return false;
+    }
+
     return (
       prepareTargetedBatchActionRef.current?.({
         ...args,
@@ -3395,6 +3421,8 @@ export default function WorkorderManagementSystem() {
           onSearchTextChange={setTargetedBatchSearchText}
           statusFilter={targetedBatchStatusFilter}
           onStatusFilterPress={handleTargetedBatchStatusFilterPress}
+          rowOrder={targetedBatchRowOrder}
+          onRowOrderPress={handleTargetedBatchRowOrderPress}
           offline={offline}
           onOpenMap={() => {
             // TB-R051: the map does not open while a batch action is preparing.
@@ -4442,6 +4470,8 @@ function TargetedBatchRowsWorklist({
   onSearchTextChange,
   statusFilter = TARGETED_BATCH_STATUS_FILTERS.TOTAL,
   onStatusFilterPress,
+  rowOrder = DEFAULT_TARGETED_BATCH_ROW_ORDER,
+  onRowOrderPress,
   offline = false,
   onOpenMap,
   onBack,
@@ -4457,6 +4487,9 @@ function TargetedBatchRowsWorklist({
     : rows.length;
   const searchQuery = String(searchText || "").trim();
   const searchActive = searchQuery.length > 0;
+  // TB-R051 (1.3.68): which way the meters are sorted, said in words under the search box.
+  const newestFirst = rowOrder !== TARGETED_BATCH_ROW_ORDERS.OLDEST_FIRST;
+  const orderWords = newestFirst ? "Last worked on first" : "Oldest work first";
   // TB-R051 (1.3.42): a status other than Total narrows the list.
   const statusButton =
     TARGETED_BATCH_STATUS_FILTER_BUTTONS.find((button) => button.key === statusFilter) ||
@@ -4574,8 +4607,9 @@ function TargetedBatchRowsWorklist({
         })}
       </View>
 
-      {/* TB-R051: search by meter number, ERF number or street address. */}
+      {/* TB-R051: search by meter number, ERF number or street address, with the sort button (1.3.68). */}
       <View style={styles.tbSearchWrap}>
+        <View style={styles.tbSearchRow}>
         <View style={styles.tbSearchBox}>
           <MaterialCommunityIcons name="magnify" size={18} color="#64748b" />
           <TextInput
@@ -4606,12 +4640,32 @@ function TargetedBatchRowsWorklist({
           ) : null}
         </View>
 
-        {searchActive || statusFilterActive ? (
-          <Text style={styles.tbSearchCount}>
-            Showing {rows.length} of {allRowCount}
-            {statusFilterActive ? ` · ${statusButton.label}` : ""}
-          </Text>
-        ) : null}
+        {/* TB-R051 (1.3.68): the order of the meters, and which way it is showing. */}
+        <Pressable
+          style={({ pressed }) => [styles.tbSortButton, pressed && styles.tbSortButtonPressed]}
+          onPress={() => onRowOrderPress?.()}
+          accessibilityRole="button"
+          accessibilityLabel={
+            newestFirst
+              ? "Sorted by last worked on first. Tap to show the oldest work first."
+              : "Sorted by the oldest work first. Tap to show what was last worked on first."
+          }
+          hitSlop={6}
+        >
+          <MaterialCommunityIcons
+            name={newestFirst ? "sort-clock-descending-outline" : "sort-clock-ascending-outline"}
+            size={18}
+            color="#2563eb"
+          />
+          <Text style={styles.tbSortButtonText}>{newestFirst ? "Newest" : "Oldest"}</Text>
+        </Pressable>
+        </View>
+
+        <Text style={styles.tbSearchCount} numberOfLines={1}>
+          {searchActive || statusFilterActive
+            ? `Showing ${rows.length} of ${allRowCount}${statusFilterActive ? ` · ${statusButton.label}` : ""} · ${orderWords}`
+            : orderWords}
+        </Text>
 
         {openingText ? (
           <View
@@ -4769,6 +4823,13 @@ function TargetedBatchRowCardBase({
           <Text style={styles.mdBgoErfTitle}>
             Meter {row?.meterNo || "NAv"}
           </Text>
+          {/* TB-R051 (1.3.68): a different meter was captured at this ERF (TB-R063). Meter opens the one
+              that is actually there, so the worker reads both numbers before tapping anything. */}
+          {row?.foundMeterNo ? (
+            <Text style={styles.tbFoundMeterLine} numberOfLines={1}>
+              Found on site: {row.foundMeterNo}
+            </Text>
+          ) : null}
           <Text style={styles.mdBgoErfSub} numberOfLines={1}>
             Account {row?.accountNumber || "NAv"} •{" "}
             {row?.customerName || "NAv"}
@@ -4816,6 +4877,7 @@ const TARGETED_BATCH_ROW_CARD_FIELDS = [
   (row) => row?.refs?.premiseId,
   (row) => row?.refs?.meterId,
   (row) => row?.meterNo,
+  (row) => row?.foundMeterNo,
   (row) => row?.accountNumber,
   (row) => row?.customerName,
   (row) => row?.address,
@@ -7026,8 +7088,41 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginBottom: 4,
   },
+  // TB-R051 (1.3.68): the search box with the sort button beside it.
+  tbSearchRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: 6,
+  },
+  tbSortButton: {
+    minHeight: 40,
+    minWidth: 58,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tbSortButtonPressed: {
+    backgroundColor: "#eff6ff",
+  },
+  tbSortButtonText: {
+    color: "#2563eb",
+    fontSize: 9,
+    fontWeight: "800",
+    marginTop: 1,
+  },
+  // TB-R051 (1.3.68): the meter found on site, under the number the batch was sent for.
+  tbFoundMeterLine: {
+    color: "#b45309",
+    fontSize: 11,
+    fontWeight: "800",
+  },
 
   tbSearchBox: {
+    flex: 1,
     minHeight: 40,
     borderRadius: 12,
     borderWidth: 1,

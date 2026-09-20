@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { resolveTargetedBatchSalesPoint } from "../features/targetedBatches/targetedBatchMapPoints.js";
+import { readRowLastWorkedMillis } from "../features/targetedBatches/rowLastWorked.js";
 import { LIVE_STREAM_STATUS, createLiveDataStore, isDocumentId, readFromCache } from "./liveSubscription.js";
 
 const source = await readFile(new URL("./targetedBatchApi.js", import.meta.url), "utf8");
@@ -46,7 +47,7 @@ function extractFunction(name) {
 }
 
 // Pure imports of the module are bound into the evaluated source under the names it imports them by.
-const pureImports = { resolveTargetedBatchSalesPoint, LIVE_STREAM_STATUS };
+const pureImports = { resolveTargetedBatchSalesPoint, readRowLastWorkedMillis, LIVE_STREAM_STATUS };
 function evaluateFunctions(names, returned) {
   const body = `${names.map(extractFunction).join("\n")}\nreturn ${returned};`;
   return new Function(...Object.keys(pureImports), body)(...Object.values(pureImports));
@@ -54,6 +55,8 @@ function evaluateFunctions(names, returned) {
 
 test("pure imports bound in the harness are the ones the module imports", () => {
   assert.match(source, /import \{ resolveTargetedBatchSalesPoint \} from "\.\.\/features\/targetedBatches\/targetedBatchMapPoints";/);
+  // TB-R051 (1.3.68): when each meter was last worked on.
+  assert.match(source, /import \{ readRowLastWorkedMillis \} from "\.\.\/features\/targetedBatches\/rowLastWorked";/);
   const live = source.match(/import \{([^}]+)\} from "\.\/liveSubscription";/);
   assert.ok(live, "no liveSubscription import");
   assert.ok(live[1].split(",").map((name) => name.trim()).includes("LIVE_STREAM_STATUS"));

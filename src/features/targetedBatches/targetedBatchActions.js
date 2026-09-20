@@ -67,7 +67,17 @@ export function getTargetedBatchRowActionState(row = {}) {
         helperText: "COMPLETED",
         intent: TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS,
       },
-      erf: { value: clean(row?.erfNo) || "—", disabled: !clean(row?.refs?.erfId), intent: TARGETED_BATCH_INTENTS.OPEN_ERF },
+      erf: {
+      value: clean(row?.erfNo) || "—",
+      disabled: false,
+      blocked: clean(row?.refs?.erfId)
+        ? null
+        : {
+            title: "No ERF on this row",
+            message: "This meter has no ERF linked to it, so there is nothing to open. Report it to the office.",
+          },
+      intent: TARGETED_BATCH_INTENTS.OPEN_ERF,
+    },
       invalidLinkage,
       completed: true,
     };
@@ -77,7 +87,17 @@ export function getTargetedBatchRowActionState(row = {}) {
     premise: { value: premiseId ? 1 : 0, disabled: false, intent: TARGETED_BATCH_INTENTS.OPEN_PREMISE },
     ast: {
       value: meterId ? 1 : 0,
-      disabled: !premiseId && !meterId,
+      // TB-R051 (1.3.68): no button is dead. Meter Discovery still needs the premise first, so the
+      // button says so when it is tapped instead of being greyed out with nothing behind it.
+      disabled: false,
+      blocked:
+        !premiseId && !meterId
+          ? {
+              title: "Premise first",
+              message:
+                "The premise at this address is captured before its meter. Tap PREMISE, record it, then come back to the meter.",
+            }
+          : null,
       helperText: invalidLinkage ? "LINKAGE ISSUE" : !premiseId ? "PREMISE REQUIRED" : meterId ? "OPEN AST" : "DISCOVER",
       intent: meterId ? TARGETED_BATCH_INTENTS.OPEN_AST : TARGETED_BATCH_INTENTS.START_METER_DISCOVERY,
     },
@@ -87,7 +107,17 @@ export function getTargetedBatchRowActionState(row = {}) {
       disabled: Boolean(fieldWorkMeterId),
       intent: TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS,
     },
-    erf: { value: clean(row?.erfNo) || "—", disabled: !clean(row?.refs?.erfId), intent: TARGETED_BATCH_INTENTS.OPEN_ERF },
+    erf: {
+      value: clean(row?.erfNo) || "—",
+      disabled: false,
+      blocked: clean(row?.refs?.erfId)
+        ? null
+        : {
+            title: "No ERF on this row",
+            message: "This meter has no ERF linked to it, so there is nothing to open. Report it to the office.",
+          },
+      intent: TARGETED_BATCH_INTENTS.OPEN_ERF,
+    },
     invalidLinkage,
     completed: false,
   };
@@ -110,4 +140,15 @@ export function snapshotTargetedBatchRefs(row = {}) {
 export function targetedBatchRefsMatch(row, snapshot) {
   const current = snapshotTargetedBatchRefs(row);
   return Object.keys(current).every((key) => current[key] === snapshot?.[key]);
+}
+
+// TB-R051 (1.3.68): the reason a tapped button cannot do its work yet, or null when it can.
+// No button is dead: the screen says this instead of leaving the worker with nothing.
+export function findBlockedTargetedBatchAction(row, intent) {
+  if (!intent) return null;
+  const actions = getTargetedBatchRowActionState(row || {});
+  const tapped = [actions.premise, actions.ast, actions.noAccess, actions.erf].find(
+    (action) => action?.intent === intent,
+  );
+  return tapped?.blocked || null;
 }

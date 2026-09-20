@@ -21,8 +21,6 @@ function streetAddresses(row) {
   return row.raw?.location ? [] : [row.address];
 }
 
-const isCompleted = (row) => String(row?.displayStatus || row?.executionStatus || "").trim().toUpperCase() === "COMPLETED";
-
 // TB-R051: only a query made of digits, spaces and hyphens is read as a meter number, so "0425 123"
 // finds meter 04251234567 while the house number in "5 Church" never matches meter numbers holding a 5.
 const looksLikeMeterNumber = (text) => /^[\d\s-]+$/.test(text) && /\d/.test(text);
@@ -87,8 +85,42 @@ export function nextTargetedBatchStatusFilter(current, tapped) {
   return next === current ? TARGETED_BATCH_STATUS_FILTERS.TOTAL : next;
 }
 
-// TB-R051: open work is listed first; the order is otherwise kept.
-export function sortTargetedBatchRowsOpenFirst(rows) {
+// TB-R051 (1.3.68; replaces "open work is listed first" of 1.3.35): a batch lists the meter worked on
+// most recently first, so a worker coming back to the list sees what they have just done at the top.
+export const TARGETED_BATCH_ROW_ORDERS = Object.freeze({
+  NEWEST_FIRST: "NEWEST_FIRST",
+  OLDEST_FIRST: "OLDEST_FIRST",
+});
+
+// The order a batch opens on.
+export const DEFAULT_TARGETED_BATCH_ROW_ORDER = TARGETED_BATCH_ROW_ORDERS.NEWEST_FIRST;
+
+export function nextTargetedBatchRowOrder(current) {
+  return String(current || "").toUpperCase() === TARGETED_BATCH_ROW_ORDERS.OLDEST_FIRST
+    ? TARGETED_BATCH_ROW_ORDERS.NEWEST_FIRST
+    : TARGETED_BATCH_ROW_ORDERS.OLDEST_FIRST;
+}
+
+// A meter nobody has worked on has no time of its own. Newest first, it follows the worked meters;
+// oldest first, it leads them, because untouched work is the oldest work in the batch. Meters sharing
+// a time, and all the untouched ones, keep the order the batch holds them in.
+export function sortTargetedBatchRowsByLastWorked(rows, order = DEFAULT_TARGETED_BATCH_ROW_ORDER) {
   const list = Array.isArray(rows) ? rows : [];
-  return [...list.filter((row) => !isCompleted(row)), ...list.filter(isCompleted)];
+  const oldestFirst =
+    String(order || "").toUpperCase() === TARGETED_BATCH_ROW_ORDERS.OLDEST_FIRST;
+
+  return list
+    .map((row, index) => {
+      const at = Number(row?.lastWorkedAt);
+      return { row, index, at: Number.isFinite(at) && at > 0 ? at : 0 };
+    })
+    .sort((a, b) => {
+      if (a.at !== b.at) {
+        if (!a.at) return oldestFirst ? -1 : 1;
+        if (!b.at) return oldestFirst ? 1 : -1;
+        return oldestFirst ? a.at - b.at : b.at - a.at;
+      }
+      return a.index - b.index;
+    })
+    .map((entry) => entry.row);
 }

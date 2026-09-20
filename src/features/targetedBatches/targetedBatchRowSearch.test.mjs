@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   searchTargetedBatchRows,
-  sortTargetedBatchRowsOpenFirst,
+  sortTargetedBatchRowsByLastWorked,
+  nextTargetedBatchRowOrder,
+  DEFAULT_TARGETED_BATCH_ROW_ORDER,
+  TARGETED_BATCH_ROW_ORDERS,
   targetedBatchRowMatchesSearch,
 } from "./targetedBatchRowSearch.js";
 
@@ -155,30 +158,75 @@ test("a row without searchable fields does not match a non-blank search", () => 
   assert.deepEqual(searchTargetedBatchRows(undefined, ""), []);
 });
 
-test("open work is listed first and each part keeps its order", () => {
+test("the meter worked on most recently leads the batch (1.3.68)", () => {
   const list = [
-    { id: "1", displayStatus: "COMPLETED", executionStatus: "IN_PROGRESS" },
-    { id: "2", displayStatus: "NOT_STARTED", executionStatus: "NOT_STARTED" },
-    { id: "3", executionStatus: "COMPLETED" },
-    { id: "4", displayStatus: "IN_PROGRESS", executionStatus: "IN_PROGRESS" },
-    { id: "5" },
-    { id: "6", displayStatus: "COMPLETED", executionStatus: "COMPLETED" },
-    { id: "7", displayStatus: "NOT_STARTED" },
+    { id: "never" },
+    { id: "old", lastWorkedAt: 1_000 },
+    { id: "newest", lastWorkedAt: 9_000 },
+    { id: "never2", lastWorkedAt: 0 },
+    { id: "middle", lastWorkedAt: 5_000 },
   ];
-  const sorted = sortTargetedBatchRowsOpenFirst(list);
-  assert.deepEqual(ids(sorted), ["2", "4", "5", "7", "1", "3", "6"]);
-  assert.notEqual(sorted, list);
-  assert.deepEqual(ids(list), ["1", "2", "3", "4", "5", "6", "7"]);
-  assert.equal(sorted[0], list[1]);
+  const sorted = sortTargetedBatchRowsByLastWorked(list);
+  assert.deepEqual(ids(sorted), ["newest", "middle", "old", "never", "never2"]);
+  // The list handed in is never reordered in place.
+  assert.deepEqual(ids(list), ["never", "old", "newest", "never2", "middle"]);
+  assert.equal(sorted[0], list[2]);
 });
 
-test("displayStatus decides before executionStatus when sorting", () => {
+test("a Completed meter just worked on leads the open work it used to follow", () => {
   const list = [
-    { id: "visible", displayStatus: "COMPLETED", executionStatus: "NOT_STARTED" },
-    { id: "open", displayStatus: "IN_PROGRESS", executionStatus: "COMPLETED" },
+    { id: "open", displayStatus: "NOT_STARTED" },
+    { id: "justDone", displayStatus: "COMPLETED", lastWorkedAt: 4_000 },
   ];
-  assert.deepEqual(ids(sortTargetedBatchRowsOpenFirst(list)), ["open", "visible"]);
-  assert.deepEqual(sortTargetedBatchRowsOpenFirst(null), []);
-  assert.deepEqual(ids(sortTargetedBatchRowsOpenFirst([{ id: "a" }, { id: "b" }])), ["a", "b"]);
+  assert.deepEqual(ids(sortTargetedBatchRowsByLastWorked(list)), ["justDone", "open"]);
+});
+
+test("oldest first leads with the meters nobody has touched", () => {
+  const list = [
+    { id: "newest", lastWorkedAt: 9_000 },
+    { id: "never" },
+    { id: "old", lastWorkedAt: 1_000 },
+  ];
+  assert.deepEqual(
+    ids(sortTargetedBatchRowsByLastWorked(list, TARGETED_BATCH_ROW_ORDERS.OLDEST_FIRST)),
+    ["never", "old", "newest"],
+  );
+});
+
+test("meters sharing a time, and the untouched ones, keep the batch's own order", () => {
+  const list = [
+    { id: "a", lastWorkedAt: 7_000 },
+    { id: "b", lastWorkedAt: 7_000 },
+    { id: "c" },
+    { id: "d" },
+  ];
+  assert.deepEqual(ids(sortTargetedBatchRowsByLastWorked(list)), ["a", "b", "c", "d"]);
+  assert.deepEqual(
+    ids(sortTargetedBatchRowsByLastWorked(list, TARGETED_BATCH_ROW_ORDERS.OLDEST_FIRST)),
+    ["c", "d", "a", "b"],
+  );
+});
+
+test("a batch opens on the most recent work, and the button toggles both ways", () => {
+  assert.equal(DEFAULT_TARGETED_BATCH_ROW_ORDER, TARGETED_BATCH_ROW_ORDERS.NEWEST_FIRST);
+  assert.equal(
+    nextTargetedBatchRowOrder(TARGETED_BATCH_ROW_ORDERS.NEWEST_FIRST),
+    TARGETED_BATCH_ROW_ORDERS.OLDEST_FIRST,
+  );
+  assert.equal(
+    nextTargetedBatchRowOrder(TARGETED_BATCH_ROW_ORDERS.OLDEST_FIRST),
+    TARGETED_BATCH_ROW_ORDERS.NEWEST_FIRST,
+  );
+  // Anything unreadable goes back to the order a batch opens on.
+  assert.equal(nextTargetedBatchRowOrder(null), TARGETED_BATCH_ROW_ORDERS.OLDEST_FIRST);
+});
+
+test("a broken or missing list sorts to an empty list", () => {
+  assert.deepEqual(sortTargetedBatchRowsByLastWorked(null), []);
+  assert.deepEqual(sortTargetedBatchRowsByLastWorked(undefined), []);
+  assert.deepEqual(
+    ids(sortTargetedBatchRowsByLastWorked([{ id: "a", lastWorkedAt: "nonsense" }, { id: "b" }])),
+    ["a", "b"],
+  );
 });
 

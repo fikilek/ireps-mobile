@@ -1,14 +1,51 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appendUniqueTargetedBatchRows, getTargetedBatchRowActionState, isTargetedBatchFoundMeterIntent, isTargetedBatchWorkIntent, snapshotTargetedBatchRefs, targetedBatchRefsMatch, TARGETED_BATCH_INTENTS } from "./targetedBatchActions.js";
+import { appendUniqueTargetedBatchRows, findBlockedTargetedBatchAction, getTargetedBatchRowActionState, isTargetedBatchFoundMeterIntent, isTargetedBatchWorkIntent, snapshotTargetedBatchRefs, targetedBatchRefsMatch, TARGETED_BATCH_INTENTS } from "./targetedBatchActions.js";
 
 const row = (refs = {}, count = 0, fieldWorkMeterId = null) => ({ id: "ROW1", salesDocId: "SALE1", allocationStatus: "ALLOCATED", executionStatus: "NOT_STARTED", refs: { erfId: "ERF1", ...refs }, erfNo: "1138", noAccessCount: count, fieldWorkMeterId });
 
-test("State A exposes row values, disables AST, and enables pre-premise NA", () => {
+test("State A exposes row values, answers the Meter tap with the premise first, and enables pre-premise NA", () => {
   const state = getTargetedBatchRowActionState(row());
   assert.equal(state.premise.value, 0); assert.equal(state.ast.value, 0);
-  assert.equal(state.ast.disabled, true); assert.equal(state.ast.helperText, "PREMISE REQUIRED");
+  // TB-R051 (1.3.68): no button is dead. Meter Discovery still needs the premise; the button says so.
+  assert.equal(state.ast.disabled, false); assert.equal(state.ast.helperText, "PREMISE REQUIRED");
+  assert.equal(state.ast.blocked.title, "Premise first");
+  assert.match(state.ast.blocked.message, /premise/i);
   assert.equal(state.noAccess.value, 0); assert.equal(state.noAccess.disabled, false);
+});
+
+test("TB-R051 1.3.68 a button a worker can use carries no reason to refuse it", () => {
+  const usable = getTargetedBatchRowActionState(row({ premiseId: "P1" }, 2));
+  assert.equal(usable.ast.blocked, null);
+  assert.equal(usable.erf.blocked, null);
+  // The reason is found by the intent the tapped tile carries.
+  assert.equal(
+    findBlockedTargetedBatchAction(row({ premiseId: "P1" }, 2), TARGETED_BATCH_INTENTS.OPEN_AST),
+    null,
+  );
+  const needsPremise = row();
+  assert.equal(
+    findBlockedTargetedBatchAction(needsPremise, TARGETED_BATCH_INTENTS.START_METER_DISCOVERY).title,
+    "Premise first",
+  );
+  assert.equal(findBlockedTargetedBatchAction(needsPremise, null), null);
+  // A row that is not there at all has no ERF either, so the ERF tap is answered rather than ignored.
+  assert.equal(
+    findBlockedTargetedBatchAction(null, TARGETED_BATCH_INTENTS.OPEN_ERF).title,
+    "No ERF on this row",
+  );
+});
+
+test("TB-R051 1.3.68 a row with no ERF answers the ERF tap instead of doing nothing", () => {
+  for (const displayStatus of ["NOT_STARTED", "COMPLETED"]) {
+    const state = getTargetedBatchRowActionState({ ...row(), refs: {}, displayStatus });
+    assert.equal(state.erf.disabled, false);
+    assert.equal(state.erf.blocked.title, "No ERF on this row");
+    assert.equal(
+      findBlockedTargetedBatchAction({ ...row(), refs: {}, displayStatus }, TARGETED_BATCH_INTENTS.OPEN_ERF).title,
+      "No ERF on this row",
+    );
+  }
 });
 
 test("State B enables discovery for the exact linked premise", () => {
@@ -95,9 +132,10 @@ test("TB-R051 1.3.42 a Completed meter opens its meter, premise and ERF, but No 
     // Nothing on a Completed meter starts work.
     for (const tile of [state.premise, state.ast, state.erf]) assert.equal(isTargetedBatchWorkIntent(tile.intent), false);
   }
-  // A Completed row without its ERF link cannot open the ERF, like any row.
+  // TB-R051 (1.3.68): a Completed row without its ERF link says so when tapped, like any row.
   const noErf = getTargetedBatchRowActionState({ ...row(), refs: {}, displayStatus: "COMPLETED" });
-  assert.equal(noErf.erf.disabled, true);
+  assert.equal(noErf.erf.disabled, false);
+  assert.equal(noErf.erf.blocked.title, "No ERF on this row");
 });
 
 test("TB-R051 1.3.42 a VISIBLE meter whose row is not completed is Completed through its display status", () => {

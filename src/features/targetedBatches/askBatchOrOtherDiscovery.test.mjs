@@ -5,6 +5,7 @@ import test, { mock } from "node:test";
 import * as premiseContext from "../premises/targetedBatchPremiseContext.js";
 import * as carry from "./targetedBatchContextCarry.js";
 import { resolveTargetedBatchSalesPoint } from "./targetedBatchMapPoints.js";
+import { readRowLastWorkedMillis } from "./rowLastWorked.js";
 
 // askBatchOrOtherDiscovery imports React Native and Firebase, so it is evaluated
 // from its source text with the pure modules it imports and fakes for the rest.
@@ -35,9 +36,10 @@ function extractApiFunction(name) {
 // The real row pipeline of the rows stream (TB-R051 salesLoadState included).
 const api = new Function(
   "resolveTargetedBatchSalesPoint",
+  "readRowLastWorkedMillis",
   `${["normalizeUpper", "cleanText", "readFirstString", "readNumber", "readTbRefBatchId", "readSalesLoadState", "normalizeTargetedBatchRow", "enrichTargetedBatchRowFromSales"].map(extractApiFunction).join("\n")}
 return { normalizeTargetedBatchRow, enrichTargetedBatchRowFromSales };`,
-)(resolveTargetedBatchSalesPoint);
+)(resolveTargetedBatchSalesPoint, readRowLastWorkedMillis);
 
 test("the harness binds exactly what askBatchOrOtherDiscovery imports", () => {
   assert.deepEqual(readImports(askSource), {

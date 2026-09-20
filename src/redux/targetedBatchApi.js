@@ -11,6 +11,7 @@ import { httpsCallable } from "firebase/functions";
 
 import { db, functions } from "../firebase";
 import { resolveTargetedBatchSalesPoint } from "../features/targetedBatches/targetedBatchMapPoints";
+import { readRowLastWorkedMillis } from "../features/targetedBatches/rowLastWorked";
 import { listenActorTeams, listenWhereIn } from "./firestoreListeners";
 import {
   FIRESTORE_IN_LIMIT,
@@ -324,6 +325,9 @@ export function normalizeTargetedBatchRow(row = {}) {
       row?.noAccessCount === null ? null : Number(row?.noAccessCount || 0),
     noAccessSourceStatus: normalizeUpper(row?.noAccessSourceStatus),
     fieldWorkMeterId: cleanText(row?.fieldWorkMeterId) || null,
+    // TB-R051 (1.3.68): when this meter was last worked on, and the number found when it was not this meter.
+    lastWorkedAt: readNumber(row?.lastWorkedAt) || null,
+    foundMeterNo: cleanText(row?.foundMeterNo) || null,
 
     meterNo: readFirstString(
       row?.meter?.numberRaw,
@@ -381,6 +385,7 @@ export function enrichTargetedBatchRowFromSales(row = {}, sales = null, salesLoa
   let noAccessSourceStatus = "OK";
   let noAccessCount = 0;
   let fieldWorkMeterId = null;
+  let rowFieldWork = null;
   if (!salesDocId) noAccessSourceStatus = "SALES_DOCUMENT_ID_MISSING";
   else if (!sales) noAccessSourceStatus = "SALES_DOCUMENT_MISSING";
   else if (sales.tbRefs != null && !Array.isArray(sales.tbRefs)) noAccessSourceStatus = "TB_REFERENCES_INVALID";
@@ -396,6 +401,7 @@ export function enrichTargetedBatchRowFromSales(row = {}, sales = null, salesLoa
       noAccessSourceStatus = "FIELDWORK_INVALID";
     } else {
       const fieldWork = tbRef.fieldWork || {};
+      rowFieldWork = fieldWork;
       fieldWorkMeterId = cleanText(fieldWork.meterId) || null;
       if (fieldWork.noAccess != null && !Array.isArray(fieldWork.noAccess)) noAccessSourceStatus = "FIELDWORK_INVALID";
       else noAccessCount = fieldWork.noAccess?.length || 0;
@@ -409,7 +415,22 @@ export function enrichTargetedBatchRowFromSales(row = {}, sales = null, salesLoa
   // TB-R051: a row with no Sales ID has nothing to load, and LOADED needs the Sales record itself.
   const loadState = readSalesLoadState(salesLoadState, sales ? "LOADED" : "MISSING");
   const resolvedSalesLoadState = !salesDocId || (loadState === "LOADED" && !sales) ? "MISSING" : loadState;
-  return { ...row, salesDocId: salesDocId || null, noAccessCount, fieldWorkMeterId, noAccessSourceStatus, salesVisibility, salesPoint, salesLoadState: resolvedSalesLoadState };
+  // TB-R051 (1.3.68): the order of a batch's meters, and the number found when a different meter was
+  // captured at this ERF (TB-R063). The row carries the number once the server has closed it; before
+  // that the Sales record holds it. A number equal to the row's own meter is not a different meter.
+  const lastWorkedAt = readRowLastWorkedMillis(row, { fieldWork: rowFieldWork, sales: linkedSales }) || null;
+  const sameNumber = (a, b) => normalizeUpper(a) === normalizeUpper(b);
+  const foundMeterNoRaw = cleanText(
+    row?.execution?.foundMeterNo || linkedSales?.differentMeterFound?.meterNo,
+  );
+  const foundMeterNo =
+    foundMeterNoRaw &&
+    !sameNumber(foundMeterNoRaw, row?.meter?.numberNormalized) &&
+    !sameNumber(foundMeterNoRaw, row?.meter?.numberRaw)
+      ? foundMeterNoRaw
+      : null;
+
+  return { ...row, salesDocId: salesDocId || null, noAccessCount, fieldWorkMeterId, noAccessSourceStatus, salesVisibility, salesPoint, lastWorkedAt, foundMeterNo, salesLoadState: resolvedSalesLoadState };
 }
 
 export function buildTargetedBatchRowsData({
