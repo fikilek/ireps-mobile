@@ -7,7 +7,7 @@ export function ErfSearch({ visible, onClose, value, onChange }) {
       onClose={onClose}
       value={value}
       onChange={onChange}
-      placeholder="Search Erf No or Erf Id..."
+      placeholder="Search Erf No..."
     />
   );
 }

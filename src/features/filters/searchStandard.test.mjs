@@ -71,6 +71,21 @@ for (const [screen, { file, base }] of Object.entries(headers)) {
   });
 }
 
+test("Erfs searches the erf number only, never the erf id", () => {
+  const source = read("../erfs/erfsScreen.js");
+
+  assert.ok(
+    source.includes("e?.erfNo?.toLowerCase().includes(q)"),
+    "Erfs must match on erfNo",
+  );
+
+  assert.ok(
+    !source.includes("e?.id?.toLowerCase()"),
+    "the erf id is the parcel key and carries the erf number inside it, " +
+      "so matching it drags in erfs the worker never asked for",
+  );
+});
+
 test("the shared search bar closes on the Android back button", () => {
   const source = read("../filters/FilterSearchOverlay.js");
 

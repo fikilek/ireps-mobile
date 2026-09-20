@@ -180,11 +180,10 @@ export default function ErfsScreen() {
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      list = list.filter(
-        (e) =>
-          e?.erfNo?.toLowerCase().includes(q) ||
-          e?.id?.toLowerCase().includes(q),
-      );
+      // Erf number only. The erf id is the surveyor-general parcel key and
+      // carries the erf number inside it, so matching it dragged in erfs the
+      // worker never asked for.
+      list = list.filter((e) => e?.erfNo?.toLowerCase().includes(q));
     }
 
     return list;
