@@ -68,16 +68,16 @@ export function getTargetedBatchRowActionState(row = {}) {
         intent: TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS,
       },
       erf: {
-      value: clean(row?.erfNo) || "—",
-      disabled: false,
-      blocked: clean(row?.refs?.erfId)
-        ? null
-        : {
-            title: "No ERF on this row",
-            message: "This meter has no ERF linked to it, so there is nothing to open. Report it to the office.",
-          },
-      intent: TARGETED_BATCH_INTENTS.OPEN_ERF,
-    },
+        value: clean(row?.erfNo) || "—",
+        disabled: false,
+        blocked: clean(row?.refs?.erfId)
+          ? null
+          : {
+              title: "No ERF on this row",
+              message: "This meter has no ERF linked to it, so there is nothing to open. Report it to the office.",
+            },
+        intent: TARGETED_BATCH_INTENTS.OPEN_ERF,
+      },
       invalidLinkage,
       completed: true,
     };
@@ -144,9 +144,8 @@ export function targetedBatchRefsMatch(row, snapshot) {
 
 // TB-R051 (1.3.68): the reason a tapped button cannot do its work yet, or null when it can.
 // No button is dead: the screen says this instead of leaving the worker with nothing.
-export function findBlockedTargetedBatchAction(row, intent) {
-  if (!intent) return null;
-  const actions = getTargetedBatchRowActionState(row || {});
+export function blockedTargetedBatchReason(actions, intent) {
+  if (!actions || !intent) return null;
   const tapped = [actions.premise, actions.ast, actions.noAccess, actions.erf].find(
     (action) => action?.intent === intent,
   );

@@ -38,7 +38,7 @@ import {
   isTargetedBatchWorkIntent,
   snapshotTargetedBatchRefs,
   targetedBatchRefsMatch,
-  findBlockedTargetedBatchAction,
+  blockedTargetedBatchReason,
   TARGETED_BATCH_INTENTS,
 } from "../../../../src/features/targetedBatches/targetedBatchActions";
 import { BATCH_DISCOVERY_REASONS } from "../../../../src/features/targetedBatches/targetedBatchContextCarry";
@@ -2955,6 +2955,19 @@ export default function WorkorderManagementSystem() {
       return false;
     }
 
+    // TB-R051 (1.3.68): no button is dead. One a worker cannot use yet says why instead of doing nothing.
+    const blocked = blockedTargetedBatchReason(actions, intent);
+    if (blocked) {
+      console.log("[MY WORKORDERS][TB ACTION BLOCKED]", {
+        bucketId: bucket?.id || null,
+        rowId: row?.id || null,
+        intent,
+        reason: blocked.title,
+      });
+      Alert.alert(blocked.title, blocked.message);
+      return false;
+    }
+
     if (
       intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS &&
       actions.noAccess.disabled
@@ -3224,13 +3237,6 @@ export default function WorkorderManagementSystem() {
       args?.bucket?.id && selectedBucketRef.current?.id === args.bucket.id
         ? selectedBucketRef.current
         : args?.bucket;
-
-    // TB-R051 (1.3.68): no button is dead. One a worker cannot use yet says why when it is tapped.
-    const blocked = findBlockedTargetedBatchAction(latestRow, args?.intent);
-    if (blocked) {
-      Alert.alert(blocked.title, blocked.message);
-      return false;
-    }
 
     return (
       prepareTargetedBatchActionRef.current?.({

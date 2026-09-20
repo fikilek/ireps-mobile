@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appendUniqueTargetedBatchRows, findBlockedTargetedBatchAction, getTargetedBatchRowActionState, isTargetedBatchFoundMeterIntent, isTargetedBatchWorkIntent, snapshotTargetedBatchRefs, targetedBatchRefsMatch, TARGETED_BATCH_INTENTS } from "./targetedBatchActions.js";
+import { appendUniqueTargetedBatchRows, blockedTargetedBatchReason, getTargetedBatchRowActionState, isTargetedBatchFoundMeterIntent, isTargetedBatchWorkIntent, snapshotTargetedBatchRefs, targetedBatchRefsMatch, TARGETED_BATCH_INTENTS } from "./targetedBatchActions.js";
 
 const row = (refs = {}, count = 0, fieldWorkMeterId = null) => ({ id: "ROW1", salesDocId: "SALE1", allocationStatus: "ALLOCATED", executionStatus: "NOT_STARTED", refs: { erfId: "ERF1", ...refs }, erfNo: "1138", noAccessCount: count, fieldWorkMeterId });
 
@@ -20,20 +20,17 @@ test("TB-R051 1.3.68 a button a worker can use carries no reason to refuse it", 
   assert.equal(usable.erf.blocked, null);
   // The reason is found by the intent the tapped tile carries.
   assert.equal(
-    findBlockedTargetedBatchAction(row({ premiseId: "P1" }, 2), TARGETED_BATCH_INTENTS.OPEN_AST),
+    blockedTargetedBatchReason(usable, TARGETED_BATCH_INTENTS.OPEN_AST),
     null,
   );
-  const needsPremise = row();
+  const needsPremise = getTargetedBatchRowActionState(row());
   assert.equal(
-    findBlockedTargetedBatchAction(needsPremise, TARGETED_BATCH_INTENTS.START_METER_DISCOVERY).title,
+    blockedTargetedBatchReason(needsPremise, TARGETED_BATCH_INTENTS.START_METER_DISCOVERY).title,
     "Premise first",
   );
-  assert.equal(findBlockedTargetedBatchAction(needsPremise, null), null);
-  // A row that is not there at all has no ERF either, so the ERF tap is answered rather than ignored.
-  assert.equal(
-    findBlockedTargetedBatchAction(null, TARGETED_BATCH_INTENTS.OPEN_ERF).title,
-    "No ERF on this row",
-  );
+  assert.equal(blockedTargetedBatchReason(needsPremise, null), null);
+  // Nothing to read means nothing to refuse.
+  assert.equal(blockedTargetedBatchReason(null, TARGETED_BATCH_INTENTS.OPEN_ERF), null);
 });
 
 test("TB-R051 1.3.68 a row with no ERF answers the ERF tap instead of doing nothing", () => {
@@ -42,7 +39,7 @@ test("TB-R051 1.3.68 a row with no ERF answers the ERF tap instead of doing noth
     assert.equal(state.erf.disabled, false);
     assert.equal(state.erf.blocked.title, "No ERF on this row");
     assert.equal(
-      findBlockedTargetedBatchAction({ ...row(), refs: {}, displayStatus }, TARGETED_BATCH_INTENTS.OPEN_ERF).title,
+      blockedTargetedBatchReason(state, TARGETED_BATCH_INTENTS.OPEN_ERF).title,
       "No ERF on this row",
     );
   }

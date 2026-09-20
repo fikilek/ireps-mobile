@@ -183,11 +183,21 @@ test("the card shows the meter found on site, and a tapped button that cannot wo
   assert.match(screenSource, /Found on site: \{row\.foundMeterNo\}/);
   // The card is redrawn when the number found changes.
   assert.match(screenSource, /\(row\) => row\?\.foundMeterNo,/);
-  // TB-R051 (1.3.68): the reason is given before anything is prepared.
-  const handler = screenSource.slice(
-    screenSource.indexOf("const handleTargetedBatchRowAction"),
-    screenSource.indexOf("const handleTargetedBatchMapRowAction"),
+  // TB-R051 (1.3.68): the reason is given where every other refusal is decided, so the map tap
+  // and the list tap answer the same way.
+  const prepare = screenSource.slice(
+    screenSource.indexOf("function prepareTargetedBatchAction("),
+    screenSource.indexOf("const showBmdErfWorklist"),
   );
-  assert.match(handler, /findBlockedTargetedBatchAction\(latestRow, args\?\.intent\)/);
-  assert.match(handler, /Alert\.alert\(blocked\.title, blocked\.message\);\s*return false;/);
+  assert.match(prepare, /const blocked = blockedTargetedBatchReason\(actions, intent\);/);
+  assert.match(prepare, /Alert\.alert\(blocked\.title, blocked\.message\);\s*return false;/);
+  // It never speaks over a batch that left the worker's work orders, or a Sales record that failed.
+  assert.ok(
+    prepare.indexOf("TB ACTION NOT IN WORK ORDERS") < prepare.indexOf("const blocked ="),
+    "the work-orders check comes first",
+  );
+  assert.ok(
+    prepare.indexOf("TARGETED_BATCH_SALES_NOT_READABLE_TITLE") < prepare.indexOf("const blocked ="),
+    "the Sales check comes first",
+  );
 });

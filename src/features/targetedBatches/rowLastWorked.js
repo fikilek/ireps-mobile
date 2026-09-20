@@ -13,7 +13,9 @@ export function toWorkedMillis(value) {
     const millis = value.toMillis();
     return Number.isFinite(millis) ? millis : 0;
   }
-  if (typeof value?.seconds === "number") return value.seconds * 1000;
+  if (typeof value?.seconds === "number") {
+    return Number.isFinite(value.seconds) ? value.seconds * 1000 : 0;
+  }
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
 
   const parsed = Date.parse(value);
