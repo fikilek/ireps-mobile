@@ -134,6 +134,8 @@ const PwdReset = () => {
                       onBlur={handleBlur("email")}
                       autoCapitalize="none"
                       autoCorrect={false}
+                      // The cursor waits in the email field, so a worker can type straight away.
+                      autoFocus
                       keyboardType="email-address"
                       editable={!busy}
                       style={styles.textInput}

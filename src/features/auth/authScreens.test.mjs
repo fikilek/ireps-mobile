@@ -134,6 +134,10 @@ test("sign in names the cause and cannot hang", () => {
 
   // Lost access? has somewhere to go.
   assert.match(signinSource, /router\.push\("\/pwdReset"\)/);
+
+  // The cursor waits in the email field on both screens that open on one.
+  assert.match(signinSource, /placeholder="Email address"[\s\S]{0,700}autoFocus/);
+  assert.match(resetSource, /placeholder="Email address"[\s\S]{0,700}autoFocus/);
 });
 
 test("password reset asks first, says one thing, and never says who is on iREPS", () => {
