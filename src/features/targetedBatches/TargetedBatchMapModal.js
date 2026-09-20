@@ -58,16 +58,6 @@ const SOURCE_LEGEND = [
   { source: "ERF", label: MAP_PIN_LABELS.ERF },
 ];
 
-// TB-R051 (1.3.38): other Sales meters show ▲ ★ ■ in the same status colours as the batch pins.
-const OTHER_SALES_LEGEND = ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"].map(
-  (status) => ({
-    status,
-    symbol: SALES_STATUS_ICONS[status].symbol,
-    label: SALES_STATUS_ICONS[status].label,
-    color: MAP_STATUS_COLORS[status],
-  }),
-);
-
 // TB-R043: the batch geofence is purple.
 const GEOFENCE_COLOR = "#7c3aed";
 const GEOFENCE_FILL = "rgba(124,58,237,0.10)";
@@ -389,21 +379,39 @@ function withTimeout(promise, ms) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-// Custom marker views draw once, then stop tracking, so a long layer does not redraw on every frame.
+// TB-R051 (1.3.69): a custom marker view is drawn once into a picture and then stops tracking, so a long
+// layer does not redraw on every frame. The picture must be taken AFTER the view has laid out: taken on a
+// timer alone it caught a long geofence name still being measured, and the map drew "Gf W6 Cr" where the
+// name reads "Gf W6 Craigside1". Tracking therefore stops a moment after the view reports its layout, and
+// on a plain timer only for a view that never reports one.
+const MARKER_SETTLE_MS = 150;
+const MARKER_SETTLE_WITHOUT_LAYOUT_MS = 1000;
+
 function useSettledTracksViewChanges(signature) {
   const [tracksViewChanges, setTracksViewChanges] = useState(true);
+  const timerRef = useRef(null);
+
+  const stopTrackingIn = useCallback((wait) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setTracksViewChanges(false), wait);
+  }, []);
 
   useEffect(() => {
     setTracksViewChanges(true);
+    stopTrackingIn(MARKER_SETTLE_WITHOUT_LAYOUT_MS);
 
-    const timer = setTimeout(() => {
-      setTracksViewChanges(false);
-    }, 300);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [signature, stopTrackingIn]);
 
-    return () => clearTimeout(timer);
-  }, [signature]);
+  // The view has been measured, so the picture taken now holds the whole label.
+  const onLayout = useCallback(
+    () => stopTrackingIn(MARKER_SETTLE_MS),
+    [stopTrackingIn],
+  );
 
-  return tracksViewChanges;
+  return { tracksViewChanges, onLayout };
 }
 
 function BatchGroupMarkerBase({
@@ -416,17 +424,9 @@ function BatchGroupMarkerBase({
   selected,
   onPress,
 }) {
-  const [tracksViewChanges, setTracksViewChanges] = useState(true);
-
-  useEffect(() => {
-    setTracksViewChanges(true);
-
-    const timer = setTimeout(() => {
-      setTracksViewChanges(false);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [status, source, count, selected]);
+  const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(
+    `${status}|${source}|${count}|${selected ? "1" : "0"}`,
+  );
 
   const coordinate = useMemo(
     () => ({ latitude, longitude }),
@@ -443,7 +443,7 @@ function BatchGroupMarkerBase({
       onPress={handlePress}
       zIndex={selected ? 300 : 200}
     >
-      <View style={styles.pinWrap}>
+      <View style={styles.pinWrap} onLayout={onLayout}>
         <View
           style={[
             styles.pin,
@@ -472,17 +472,7 @@ const BatchGroupMarker = memo(BatchGroupMarkerBase);
 BatchGroupMarker.displayName = "BatchGroupMarker";
 
 function GeofenceNameMarkerBase({ latitude, longitude, name }) {
-  const [tracksViewChanges, setTracksViewChanges] = useState(true);
-
-  useEffect(() => {
-    setTracksViewChanges(true);
-
-    const timer = setTimeout(() => {
-      setTracksViewChanges(false);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [name]);
+  const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(name);
 
   const coordinate = useMemo(
     () => ({ latitude, longitude }),
@@ -496,7 +486,7 @@ function GeofenceNameMarkerBase({ latitude, longitude, name }) {
       tracksViewChanges={tracksViewChanges}
       zIndex={150}
     >
-      <View style={styles.geofenceLabel}>
+      <View style={styles.geofenceLabel} onLayout={onLayout}>
         <Text style={styles.geofenceLabelText} numberOfLines={1}>
           {name}
         </Text>
@@ -510,7 +500,7 @@ GeofenceNameMarker.displayName = "GeofenceNameMarker";
 
 // TB-R051 (1.3.38, 1.3.40): the ERF number, centred on its label point inside the ERF (erfLabelPoint.js).
 function ErfLabelMarkerBase({ latitude, longitude, erfNo }) {
-  const tracksViewChanges = useSettledTracksViewChanges(erfNo);
+  const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(erfNo);
   const coordinate = useMemo(
     () => ({ latitude, longitude }),
     [latitude, longitude],
@@ -523,7 +513,7 @@ function ErfLabelMarkerBase({ latitude, longitude, erfNo }) {
       tracksViewChanges={tracksViewChanges}
       zIndex={100}
     >
-      <View style={styles.erfLabel}>
+      <View style={styles.erfLabel} onLayout={onLayout}>
         <Text style={styles.erfLabelText} numberOfLines={1}>
           {erfNo}
         </Text>
@@ -537,7 +527,8 @@ ErfLabelMarker.displayName = "ErfLabelMarker";
 
 // TB-R051 (1.3.38): a premise in the batch area; tapping shows its label.
 function PremiseMarkerBase({ premiseId, latitude, longitude, selected, onPress }) {
-  const tracksViewChanges = useSettledTracksViewChanges(Boolean(selected));
+  const { tracksViewChanges, onLayout } =
+    useSettledTracksViewChanges(Boolean(selected));
   const coordinate = useMemo(
     () => ({ latitude, longitude }),
     [latitude, longitude],
@@ -555,7 +546,10 @@ function PremiseMarkerBase({ premiseId, latitude, longitude, selected, onPress }
       onPress={handlePress}
       zIndex={selected ? 190 : 120}
     >
-      <View style={[styles.premisePin, selected && styles.layerPinSelected]}>
+      <View
+        style={[styles.premisePin, selected && styles.layerPinSelected]}
+        onLayout={onLayout}
+      >
         <MaterialCommunityIcons name="home" size={12} color="#ffffff" />
       </View>
     </Marker>
@@ -576,7 +570,7 @@ function OtherSalesMarkerBase({
 }) {
   const icon = SALES_STATUS_ICONS[status] || SALES_STATUS_ICONS.NOT_STARTED;
   const color = MAP_STATUS_COLORS[status] || MAP_STATUS_COLORS.NOT_STARTED;
-  const tracksViewChanges = useSettledTracksViewChanges(
+  const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(
     `${status}:${Boolean(selected)}`,
   );
   const coordinate = useMemo(
@@ -600,6 +594,7 @@ function OtherSalesMarkerBase({
           { borderColor: color },
           selected && styles.layerPinSelected,
         ]}
+        onLayout={onLayout}
       >
         <Text style={[styles.otherSalesPinText, { color }]}>
           {icon.symbol}
@@ -1652,18 +1647,6 @@ export default function TargetedBatchMapModal({
               </View>
             ))}
           </View>
-
-          {otherSalesOn ? (
-            <View style={styles.legendRow}>
-              <Text style={styles.legendHeading}>Other CAT Sales meters</Text>
-              {OTHER_SALES_LEGEND.map(({ status, symbol, color, label }) => (
-                <View key={status} style={styles.legendItem}>
-                  <Text style={[styles.legendSymbol, { color }]}>{symbol}</Text>
-                  <Text style={styles.legendText}>{label}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
         </View>
 
         {offline ? (
@@ -2170,15 +2153,6 @@ const styles = StyleSheet.create({
     color: "#475569",
     fontSize: 10,
     fontWeight: "800",
-  },
-  legendHeading: {
-    color: "#0f172a",
-    fontSize: 10,
-    fontWeight: "900",
-  },
-  legendSymbol: {
-    fontSize: 12,
-    fontWeight: "900",
   },
 
   offlineBanner: {
