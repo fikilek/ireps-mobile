@@ -58,7 +58,9 @@ import {
 import { ForensicFooter } from "./ForensicFooter";
 import { isCompleteNoAccessReason } from "./noAccessReasons";
 import {
+  MANAGER_DISCONNECTION_MESSAGE,
   buildDisconnectionRouteParams,
+  canDoFieldDisconnection,
   leadsToDisconnection,
   waitForMeterRecord,
 } from "./normalisationHandover";
@@ -1874,6 +1876,23 @@ export default function FormMeterDiscovery() {
       // MN-R001 section 6: the worker said the meter must be disconnected, so
       // the disconnection form follows on from here. It is the disconnection
       // that is the record, not the word on this form.
+      if (
+        leadsToDisconnection(cleanPayload?.ast?.normalisation?.actionTaken) &&
+        !canDoFieldDisconnection(profile?.employment?.role)
+      ) {
+        setInProgress(false);
+        Alert.alert("Meter saved", MANAGER_DISCONNECTION_MESSAGE, [
+          {
+            text: "OK",
+            onPress: () => {
+              updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
+              router.replace(targetedBatchReturnTo);
+            },
+          },
+        ]);
+        return;
+      }
+
       if (leadsToDisconnection(cleanPayload?.ast?.normalisation?.actionTaken)) {
         setPreparingDisconnection(true);
 

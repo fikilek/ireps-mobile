@@ -12,6 +12,16 @@ export const DISCONNECT_METER_ACTION = "Disconnect meter";
 export const METER_RECORD_WAIT_MS = 20000;
 const POLL_EVERY_MS = 1500;
 
+// Field work is done by field workers and supervisors. A manager's finding still
+// needs its disconnection, but the manager issues it to a field worker from the
+// meter card instead of doing it (the server refuses a manager's field work).
+export function canDoFieldDisconnection(role) {
+  return ["FWR", "SPV"].includes(String(role || "").trim().toUpperCase());
+}
+
+export const MANAGER_DISCONNECTION_MESSAGE =
+  "This meter still needs to be disconnected. Issue the disconnection to a field worker from the meter card (DISC).";
+
 export function leadsToDisconnection(actionTaken) {
   return (Array.isArray(actionTaken) ? actionTaken : []).includes(
     DISCONNECT_METER_ACTION,

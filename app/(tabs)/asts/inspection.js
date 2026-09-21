@@ -53,7 +53,9 @@ import {
   normalisationPhotoRequired,
 } from "../../../src/features/meters/formOptions";
 import {
+  MANAGER_DISCONNECTION_MESSAGE,
   buildDisconnectionRouteParams,
+  canDoFieldDisconnection,
   leadsToDisconnection,
 } from "../../../src/features/meters/normalisationHandover";
 import {
@@ -2904,7 +2906,21 @@ export default function InspectionScreen() {
 
       // MN-R001 section 6: the finding said this meter must be disconnected, and
       // the meter already exists, so the disconnection form opens straight away.
-      if (leadsToDisconnection(cleanPayload?.inspection?.captured?.ast?.normalisation?.actionTaken)) {
+      const inspectionLeadsToDisconnection = leadsToDisconnection(
+        cleanPayload?.inspection?.captured?.ast?.normalisation?.actionTaken,
+      );
+
+      if (
+        inspectionLeadsToDisconnection &&
+        !canDoFieldDisconnection(profile?.employment?.role)
+      ) {
+        Alert.alert("Inspection saved", MANAGER_DISCONNECTION_MESSAGE, [
+          { text: "OK", onPress: () => routeBackToMyWorkorders(router) },
+        ]);
+        return;
+      }
+
+      if (inspectionLeadsToDisconnection) {
         router.replace(
           buildDisconnectionRouteParams({
             astDoc,
