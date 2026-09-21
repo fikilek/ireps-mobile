@@ -143,14 +143,20 @@ test("the geofence name is measured and never frozen into a stale picture", () =
     modalSource.indexOf("function GeofenceNameMarkerBase("),
     modalSource.indexOf("const GeofenceNameMarker = memo("),
   );
-  // It keeps redrawing: freezing it is what cut the name off.
-  assert.match(marker, /\n {6}tracksViewChanges\n/);
-  assert.doesNotMatch(marker, /useSettledTracksViewChanges/);
+  // It stops redrawing like every other marker: redrawing for good ran a field phone out of memory.
+  assert.match(marker, /useSettledTracksViewChanges\(name\)/);
+  assert.doesNotMatch(marker, /\n {6}tracksViewChanges\n/);
   // It is given the width its name needs, rather than leaving the map to measure it.
   assert.match(marker, /GEOFENCE_LABEL_CHARACTER_WIDTH/);
   assert.match(marker, /style=\{\[styles\.geofenceLabel, \{ width \}\]\}/);
   // A new name gets a new marker, so no marker keeps the size it was made with.
   assert.match(modalSource, /key=\{`geofence-name-\$\{geofenceName\}`\}/);
+});
+
+test("no marker keeps drawing pictures for longer than it did before", () => {
+  // Each tick of tracking draws a new picture. A 1 s budget ran the SM-A065F out of memory (21 Sep).
+  assert.match(modalSource, /const MARKER_SETTLE_WITHOUT_LAYOUT_MS = 300;/);
+  assert.doesNotMatch(modalSource, /\n\s+tracksViewChanges\n/, "no marker tracks for good");
 });
 
 test("a pan does not resize anything: only a real change of zoom is kept", () => {

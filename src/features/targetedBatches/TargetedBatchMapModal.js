@@ -397,8 +397,11 @@ function withTimeout(promise, ms) {
 // timer alone it caught a long geofence name still being measured, and the map drew "Gf W6 Cr" where the
 // name reads "Gf W6 Craigside1". Tracking therefore stops a moment after the view reports its layout, and
 // on a plain timer only for a view that never reports one.
+// (1.3.70) Never longer than the 0.3 s every marker had before: each tick of tracking draws a new picture,
+// and on a field phone with a 256 MB limit a longer budget ran the app out of memory (21 Sep, SM-A065F:
+// OutOfMemoryError in MapMarker.updateCustomForTracking).
 const MARKER_SETTLE_MS = 150;
-const MARKER_SETTLE_WITHOUT_LAYOUT_MS = 1000;
+const MARKER_SETTLE_WITHOUT_LAYOUT_MS = 300;
 
 function useSettledTracksViewChanges(signature) {
   const [tracksViewChanges, setTracksViewChanges] = useState(true);
@@ -484,10 +487,13 @@ function BatchGroupMarkerBase({
 const BatchGroupMarker = memo(BatchGroupMarkerBase);
 BatchGroupMarker.displayName = "BatchGroupMarker";
 
-// TB-R051 (1.3.70): the batch's geofence name, drawn whole. It was coming out cut off, and there is one of
-// these on a map, so it is not frozen into a picture like the other markers and it is given the width its
-// name needs instead of leaving the map to measure it.
+// TB-R051 (1.3.70): the batch's geofence name, drawn whole. It was coming out cut off, so it is given the
+// width its name needs instead of leaving the map to measure it, and a new name makes a new marker. It is
+// drawn into a picture like every other marker: keeping it redrawing for good ran a field phone out of
+// memory.
 function GeofenceNameMarkerBase({ latitude, longitude, name }) {
+  const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(name);
+
   const coordinate = useMemo(
     () => ({ latitude, longitude }),
     [latitude, longitude],
@@ -507,11 +513,10 @@ function GeofenceNameMarkerBase({ latitude, longitude, name }) {
     <Marker
       coordinate={coordinate}
       anchor={LABEL_ANCHOR}
-      // The one marker on the map that keeps redrawing itself: freezing it is what cut the name off.
-      tracksViewChanges
+      tracksViewChanges={tracksViewChanges}
       zIndex={150}
     >
-      <View style={[styles.geofenceLabel, { width }]}>
+      <View style={[styles.geofenceLabel, { width }]} onLayout={onLayout}>
         <Text style={styles.geofenceLabelText} numberOfLines={1}>
           {name}
         </Text>
