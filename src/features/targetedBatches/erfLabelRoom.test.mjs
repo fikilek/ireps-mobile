@@ -153,6 +153,21 @@ test("the geofence name is measured and never frozen into a stale picture", () =
   assert.match(modalSource, /key=\{`geofence-name-\$\{geofenceName\}`\}/);
 });
 
+test("an ERF number is drawn over the batch pins, so a pin never hides it", () => {
+  const erfLabel = modalSource.slice(
+    modalSource.indexOf("function ErfLabelMarkerBase("),
+    modalSource.indexOf("const ErfLabelMarker = memo("),
+  );
+  const pin = modalSource.slice(
+    modalSource.indexOf("function BatchGroupMarkerBase("),
+    modalSource.indexOf("const BatchGroupMarker = memo("),
+  );
+  const labelOrder = Number(erfLabel.match(/zIndex=\{(\d+)\}/)[1]);
+  const [, selectedOrder, pinOrder] = pin.match(/zIndex=\{selected \? (\d+) : (\d+)\}/).map(Number);
+  assert.ok(labelOrder > pinOrder, `the number (${labelOrder}) must be over a pin (${pinOrder})`);
+  assert.ok(labelOrder < selectedOrder, `a selected pin (${selectedOrder}) stays on top`);
+});
+
 test("no marker keeps drawing pictures for longer than it did before", () => {
   // Each tick of tracking draws a new picture. A 1 s budget ran the SM-A065F out of memory (21 Sep).
   assert.match(modalSource, /const MARKER_SETTLE_WITHOUT_LAYOUT_MS = 300;/);

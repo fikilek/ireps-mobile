@@ -550,7 +550,10 @@ function ErfLabelMarkerBase({
       coordinate={coordinate}
       anchor={CENTRE_ANCHOR}
       tracksViewChanges={tracksViewChanges}
-      zIndex={100}
+      // (1.3.70) Drawn over the batch pins (200), below a selected pin (300). Sitting just below the centre,
+      // the number is where a pin often is, and a pin drawn over it hid the number entirely (owner's phone,
+      // 21 Sep: five ERFs of batch X70E).
+      zIndex={250}
     >
       <View
         style={[styles.erfLabel, { borderRadius: Math.max(2, fontSize / 2) }]}
