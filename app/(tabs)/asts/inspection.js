@@ -2912,7 +2912,8 @@ export default function InspectionScreen() {
             premiseId: astDoc?.accessData?.premise?.id || "NAv",
             parentTrnId: result?.trnId || instructionTrnId,
             parentTrnType: "METER_INSPECTION",
-            returnTo: "/(tabs)/admin/operations/my-workorders",
+            // Back to the meters list, where the meter now reads disconnected.
+            returnTo: "/(tabs)/asts",
           }),
         );
         return;

@@ -1884,14 +1884,19 @@ export default function FormMeterDiscovery() {
         setInProgress(false);
 
         if (astDoc) {
-          router.replace(
+          // Close the discovery in the Premises tab first, so it is not left
+          // sitting there, then open the disconnection in the ASTs tab. When the
+          // disconnection is done it returns to the meters list, where the meter
+          // now reads disconnected.
+          router.replace(targetedBatchReturnTo);
+          router.push(
             buildDisconnectionRouteParams({
               astDoc,
               astId: cleanPayload.id,
               premiseId: gate?.resolvedPremiseId || premise?.id,
               parentTrnId: cleanPayload.id,
               parentTrnType: "METER_DISCOVERY",
-              returnTo: targetedBatchReturnTo,
+              returnTo: "/(tabs)/asts",
             }),
           );
           return;
