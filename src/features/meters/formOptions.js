@@ -149,18 +149,26 @@ const FORM_OPTIONS = Object.freeze({
     "Keypad Faulty",
   ]),
 
+  // MN-R001: one list for Meter Discovery and Meter Inspection. What is offered
+  // depends on the anomaly — see getNormalisationOptions below.
   norm_actions: Object.freeze([
     option("None", "none"),
-    option("New Meter Installed"),
-    option("Meter Removed"),
-    option("Illegal connection - meter disconnected"),
-    option("Illegal connection - meter reconnected"),
-    option("Meter faulty - meter replaced"),
-    option("Meter damaged - meter replaced"),
-    option("Tamper Removed"),
-    option("Keypad Normalised"),
-    option("Service Point Completed / Cable Installed"),
-    option("Meter Registered"),
+    option("Disconnect meter"),
+    option("Meter replaced"),
+    option("Tamper removed"),
+    option("Keypad normalised"),
+    option("Service point completed"),
+    option("Meter registered"),
+  ]),
+
+  no_action_reasons: Object.freeze([
+    "Threatened or chased away",
+    "Customer refused",
+    "Unsafe to work on",
+    "Meter could not be reached",
+    "No meter available to replace",
+    "Office said to leave it",
+    "Other",
   ]),
 });
 
@@ -208,6 +216,151 @@ export function anomalyPhotoRequired(anomaly, anomalyDetail) {
   if (!detail) return name !== "Meter Ok";
 
   return !ANOMALY_DETAILS_WITHOUT_PHOTO.includes(detail);
+}
+
+// ── MN-R001: the anomaly decides what follows ─────────────────────────────────
+// The back end keeps the same rules in ireps-web/functions/meterDiscovery/
+// validation.js and functions/meterLifecycle/helpers.js. The three must agree, or
+// a capture that passes on the phone is refused on arrival.
+
+export const NORMALISATION_NONE = "none";
+
+// Fixes done on the spot. Offered whatever the finding, including Meter Ok.
+export const NORMALISATION_ON_SITE_FIXES = Object.freeze([
+  "Tamper removed",
+  "Keypad normalised",
+  "Service point completed",
+  "Meter registered",
+]);
+
+// The action that follows each finding. Not ticking it needs a reason.
+const NORMALISATION_EXPECTED_BY_ANOMALY = Object.freeze({
+  "Illegally Connected": "Disconnect meter",
+  "Meter Damaged": "Meter replaced",
+  "Meter Faulty": "Meter replaced",
+});
+
+export const NORMALISATION_JOB_ACTIONS = Object.freeze([
+  "Disconnect meter",
+  "Meter replaced",
+]);
+
+export const NORMALISATION_ACTION_VALUES = Object.freeze([
+  NORMALISATION_NONE,
+  ...NORMALISATION_JOB_ACTIONS,
+  ...NORMALISATION_ON_SITE_FIXES,
+]);
+
+export const NO_ACTION_REASONS = getFormOptions("no_action_reasons");
+export const NO_ACTION_REASON_OTHER = "Other";
+
+export function isMeterOk(anomaly) {
+  return String(anomaly || "").trim() === "Meter Ok";
+}
+
+// Normalisation is only asked of a finding that has been made.
+export function isNormalisationRequired(anomaly) {
+  const name = String(anomaly || "").trim();
+  return !!name && !isMeterOk(name);
+}
+
+export function getExpectedNormalisationAction(anomaly) {
+  return NORMALISATION_EXPECTED_BY_ANOMALY[String(anomaly || "").trim()] || "";
+}
+
+// None disappears as soon as the finding is not Meter Ok.
+export function getNormalisationOptions(anomaly) {
+  if (!isNormalisationRequired(anomaly)) {
+    return [
+      { label: "None", value: NORMALISATION_NONE },
+      ...NORMALISATION_ON_SITE_FIXES.map((value) => ({ label: value, value })),
+    ];
+  }
+
+  return [
+    ...NORMALISATION_JOB_ACTIONS.map((value) => ({ label: value, value })),
+    ...NORMALISATION_ON_SITE_FIXES.map((value) => ({ label: value, value })),
+  ];
+}
+
+export function normalisationActionsTaken(actionTaken) {
+  const actions = Array.isArray(actionTaken) ? actionTaken : [];
+  return actions.filter((action) => String(action) !== NORMALISATION_NONE);
+}
+
+// A photo proves work that leaves a mark here. A disconnection proves itself in
+// the disconnection form that follows, so it is not asked for twice.
+export function normalisationPhotoRequired(actionTaken) {
+  return normalisationActionsTaken(actionTaken).some(
+    (action) => action !== "Disconnect meter",
+  );
+}
+
+export function isNoActionReasonRequired({ anomaly, actionTaken }) {
+  if (!isNormalisationRequired(anomaly)) return false;
+
+  const expected = getExpectedNormalisationAction(anomaly);
+  if (!expected) return false;
+
+  return !normalisationActionsTaken(actionTaken).includes(expected);
+}
+
+// One place that says what is wrong, so the phone and the back end say the same.
+export function getNormalisationValidationError({
+  anomaly,
+  actionTaken,
+  noActionReason,
+  noActionReasonOther,
+}) {
+  const actions = Array.isArray(actionTaken) ? actionTaken.map(String) : [];
+
+  if (actions.some((action) => !NORMALISATION_ACTION_VALUES.includes(action))) {
+    return { path: "actionTaken", message: "This action is not on the list." };
+  }
+
+  if (new Set(actions).size !== actions.length) {
+    return {
+      path: "actionTaken",
+      message: "The same action cannot be chosen twice.",
+    };
+  }
+
+  if (actions.includes(NORMALISATION_NONE) && actions.length !== 1) {
+    return {
+      path: "actionTaken",
+      message: "None cannot be used with another action.",
+    };
+  }
+
+  if (!isNormalisationRequired(anomaly)) return null;
+
+  if (!isNoActionReasonRequired({ anomaly, actionTaken: actions })) return null;
+
+  const reason = String(noActionReason || "").trim();
+
+  if (!reason) {
+    const expected = getExpectedNormalisationAction(anomaly);
+    return {
+      path: "noActionReason",
+      message:
+        expected === "Disconnect meter"
+          ? "Say why the meter was not disconnected."
+          : "Say why the meter was not replaced.",
+    };
+  }
+
+  if (!NO_ACTION_REASONS.includes(reason)) {
+    return { path: "noActionReason", message: "This reason is not on the list." };
+  }
+
+  if (
+    reason === NO_ACTION_REASON_OTHER &&
+    !String(noActionReasonOther || "").trim()
+  ) {
+    return { path: "noActionReasonOther", message: "Type the reason." };
+  }
+
+  return null;
 }
 
 export function isFormOptionPhotoRequired(name, value) {

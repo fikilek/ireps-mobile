@@ -1,0 +1,93 @@
+// MN-R001 section 6: from the finding to the disconnection.
+//
+// A discovery creates the meter, and the meter record is finished a moment after
+// the server accepts the form. The disconnection form cannot open before that
+// record exists, so we wait for it — and if it does not arrive, we say so
+// plainly instead of pretending the work is done.
+import { doc, getDoc } from "firebase/firestore";
+
+import { db } from "../../firebase";
+
+export const DISCONNECT_METER_ACTION = "Disconnect meter";
+export const METER_RECORD_WAIT_MS = 20000;
+const POLL_EVERY_MS = 1500;
+
+export function leadsToDisconnection(actionTaken) {
+  return (Array.isArray(actionTaken) ? actionTaken : []).includes(
+    DISCONNECT_METER_ACTION,
+  );
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Returns the meter record, or null when it is not ready in time.
+export async function waitForMeterRecord({
+  astId,
+  timeoutMs = METER_RECORD_WAIT_MS,
+  pollEveryMs = POLL_EVERY_MS,
+} = {}) {
+  if (!astId) return null;
+
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    try {
+      const snapshot = await getDoc(doc(db, "asts", astId));
+
+      if (snapshot.exists()) {
+        return { id: snapshot.id, ...snapshot.data() };
+      }
+    } catch (error) {
+      // A lost connection is not a failed disconnection: keep trying until the
+      // deadline, then let the caller tell the worker what to do.
+    }
+
+    if (Date.now() >= deadline) return null;
+
+    await wait(Math.min(pollEveryMs, Math.max(0, deadline - Date.now())));
+  }
+}
+
+// The disconnection carries where it came from, so the office can follow the
+// chain: discovery or inspection → disconnection.
+export function buildDisconnectionRouteParams({
+  astDoc,
+  astId,
+  premiseId,
+  parentTrnId,
+  parentTrnType,
+  returnTo = "/(tabs)/asts",
+}) {
+  const resolvedAstId = astDoc?.id || astId;
+
+  return {
+    pathname: "/(tabs)/asts/disconnection",
+    params: {
+      astId: resolvedAstId,
+      sourceAstId: resolvedAstId,
+      premiseId:
+        premiseId || astDoc?.accessData?.premise?.id || "NAv",
+      returnTo,
+      action: JSON.stringify({
+        source: "FIELD",
+        trnType: "METER_DISCONNECTION",
+        returnTo,
+        astId: resolvedAstId,
+        sourceAstId: resolvedAstId,
+        premiseId: premiseId || astDoc?.accessData?.premise?.id || "NAv",
+        meterType: astDoc?.meterType || "electricity",
+        meterNo: astDoc?.ast?.astData?.astNo || "NAv",
+        statusBefore: astDoc?.status?.state || "CONNECTED",
+        ast: astDoc?.ast || null,
+        accessData: astDoc?.accessData || null,
+        status: astDoc?.status || null,
+        origin: {
+          channel: "FIELD",
+          source: parentTrnType || "METER_DISCOVERY",
+          parentTrnId: parentTrnId || null,
+          parentTrnType: parentTrnType || null,
+        },
+      }),
+    },
+  };
+}

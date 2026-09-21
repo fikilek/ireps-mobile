@@ -42,6 +42,21 @@ import { functions } from "../../../src/firebase";
 import { useAuth } from "../../../src/hooks/useAuth";
 import { useIrepsLookupOptions } from "../../../src/hooks/useIrepsLookupOptions";
 import {
+  NORMALISATION_NONE,
+  NO_ACTION_REASONS,
+  NO_ACTION_REASON_OTHER,
+  getExpectedNormalisationAction,
+  getNormalisationOptions,
+  getNormalisationValidationError,
+  isNoActionReasonRequired,
+  isNormalisationRequired,
+  normalisationPhotoRequired,
+} from "../../../src/features/meters/formOptions";
+import {
+  buildDisconnectionRouteParams,
+  leadsToDisconnection,
+} from "../../../src/features/meters/normalisationHandover";
+import {
   addSubmissionQueueItem,
   getSubmissionQueueItemById,
   updateSubmissionQueueItem,
@@ -808,16 +823,9 @@ function cloneAstForInspection(ast = {}) {
       hasOffGridSupplySelect: makeEmptySelectWithOther(),
     },
     normalisation: {
-      actionTaken: "NONE",
-      actionText: "None",
-      actionSelect: {
-        code: "NONE",
-        label: "None",
-        otherText: "",
-      },
-      childTrnId: "NAv",
-      childTrnType: "NAv",
-      childTrnStatus: "NOT_REQUIRED",
+      actionTaken: [NORMALISATION_NONE],
+      noActionReason: "",
+      noActionReasonOther: "",
     },
   };
 }
@@ -1084,16 +1092,189 @@ function buildCapturedMreading(values = {}, { isConventional = false } = {}) {
   };
 }
 
-function getNormalisationActionCode(values = {}) {
+// MN-R001: the finding decides what is offered. None disappears as soon as the
+// anomaly is not Meter Ok, and not taking the action that follows needs a reason.
+function InspectionNormalisation({
+  anomaly,
+  normalisation,
+  errors,
+  setFieldValue,
+}) {
+  const base = "inspection.captured.ast.normalisation";
+  const actions = Array.isArray(normalisation?.actionTaken)
+    ? normalisation.actionTaken
+    : [NORMALISATION_NONE];
+
+  const options = getNormalisationOptions(anomaly);
+  const expected = getExpectedNormalisationAction(anomaly);
+  const needsReason = isNoActionReasonRequired({
+    anomaly,
+    actionTaken: actions,
+  });
+
+  const offered = options.map((option) => option.value);
+  const kept = actions.filter((action) => offered.includes(action));
+
+  useEffect(() => {
+    const next = kept.length ? kept : [NORMALISATION_NONE];
+
+    if (next.join("|") !== actions.join("|")) {
+      setFieldValue(`${base}.actionTaken`, next);
+      return;
+    }
+
+    if (!needsReason && normalisation?.noActionReason) {
+      setFieldValue(`${base}.noActionReason`, "");
+      setFieldValue(`${base}.noActionReasonOther`, "");
+    }
+    // setFieldValue is stable for the life of the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offered.join("|"), actions.join("|"), needsReason]);
+
+  const toggle = (value) => {
+    let next;
+
+    if (value === NORMALISATION_NONE) {
+      next = [NORMALISATION_NONE];
+    } else if (actions.includes(value)) {
+      next = actions.filter((action) => action !== value);
+    } else {
+      next = [
+        ...actions.filter((action) => action !== NORMALISATION_NONE),
+        value,
+      ];
+    }
+
+    setFieldValue(
+      `${base}.actionTaken`,
+      next.length ? next : [NORMALISATION_NONE],
+    );
+  };
+
   return (
-    values?.inspection?.captured?.ast?.normalisation?.actionSelect?.code ||
-    values?.inspection?.captured?.ast?.normalisation?.actionTaken ||
-    "NONE"
+    <View>
+      {options.map((option) => {
+        const isChecked = actions.includes(option.value);
+
+        return (
+          <TouchableOpacity
+            key={option.value}
+            style={styles.normalisationRow}
+            onPress={() => toggle(option.value)}
+          >
+            <MaterialCommunityIcons
+              name={isChecked ? "checkbox-marked" : "checkbox-blank-outline"}
+              size={22}
+              color={isChecked ? "#2563eb" : "#94a3b8"}
+            />
+            <Text style={styles.normalisationLabel}>{option.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+
+      {isNormalisationRequired(anomaly) && !!expected && (
+        <Text style={styles.normalisationNote}>
+          {needsReason
+            ? `This meter needs to be ${
+                expected === "Disconnect meter" ? "disconnected" : "replaced"
+              }. Tick it, or say below why it was not done.`
+            : `${expected} recorded.`}
+        </Text>
+      )}
+
+      {needsReason && (
+        <View style={styles.reasonBlock}>
+          <Text style={styles.reasonTitle}>Reason for not acting</Text>
+
+          {NO_ACTION_REASONS.map((reason) => {
+            const isChosen = normalisation?.noActionReason === reason;
+
+            return (
+              <TouchableOpacity
+                key={reason}
+                style={styles.normalisationRow}
+                onPress={() => {
+                  setFieldValue(`${base}.noActionReason`, reason);
+                  if (reason !== NO_ACTION_REASON_OTHER) {
+                    setFieldValue(`${base}.noActionReasonOther`, "");
+                  }
+                }}
+              >
+                <MaterialCommunityIcons
+                  name={
+                    isChosen ? "radiobox-marked" : "radiobox-blank"
+                  }
+                  size={22}
+                  color={isChosen ? "#2563eb" : "#94a3b8"}
+                />
+                <Text style={styles.normalisationLabel}>{reason}</Text>
+              </TouchableOpacity>
+            );
+          })}
+
+          {normalisation?.noActionReason === NO_ACTION_REASON_OTHER && (
+            <TextInput
+              mode="outlined"
+              label="Type the reason"
+              value={normalisation?.noActionReasonOther || ""}
+              onChangeText={(text) =>
+                setFieldValue(`${base}.noActionReasonOther`, text)
+              }
+              style={styles.reasonInput}
+            />
+          )}
+
+          {typeof errors?.noActionReason === "string" && (
+            <Text style={styles.reasonError}>{errors.noActionReason}</Text>
+          )}
+          {typeof errors?.noActionReasonOther === "string" && (
+            <Text style={styles.reasonError}>{errors.noActionReasonOther}</Text>
+          )}
+        </View>
+      )}
+
+      {typeof errors?.actionTaken === "string" && (
+        <Text style={styles.reasonError}>{errors.actionTaken}</Text>
+      )}
+    </View>
   );
 }
 
+// Other becomes the words the worker typed, exactly as Meter Discovery sends it.
+function buildCanonicalNormalisation(normalisation = {}) {
+  const actionTaken = Array.isArray(normalisation?.actionTaken)
+    ? normalisation.actionTaken.map((action) => String(action))
+    : [NORMALISATION_NONE];
+
+  const reason = String(normalisation?.noActionReason || "").trim();
+
+  return {
+    actionTaken,
+    noActionReason:
+      reason === NO_ACTION_REASON_OTHER
+        ? String(normalisation?.noActionReasonOther || "").trim()
+        : reason,
+  };
+}
+
+function getInspectionNormalisationActions(values = {}) {
+  const actions =
+    values?.inspection?.captured?.ast?.normalisation?.actionTaken;
+  return Array.isArray(actions) ? actions : [NORMALISATION_NONE];
+}
+
+function getInspectionAnomalyName(values = {}) {
+  const anomalies = values?.inspection?.captured?.ast?.anomalies || {};
+  return (
+    selectWithOtherToText(anomalies?.anomalySelect) ||
+    String(anomalies?.anomaly || "").trim()
+  );
+}
+
+// MN-R001: the same photo rule as Meter Discovery. A disconnection proves itself
+// in the disconnection form that follows.
 function shouldRequireNormalisationPhoto(values = {}) {
-  return getNormalisationActionCode(values) !== "NONE";
+  return normalisationPhotoRequired(getInspectionNormalisationActions(values));
 }
 
 function shouldRequireAnomalyPhoto(values = {}) {
@@ -1290,10 +1471,17 @@ const InspectionSchema = object()
         });
       }
 
-      if (!isSelectWithOtherFilled(capturedAst?.normalisation?.actionSelect)) {
+      const normalisationError = getNormalisationValidationError({
+        anomaly: getInspectionAnomalyName(values),
+        actionTaken: capturedAst?.normalisation?.actionTaken,
+        noActionReason: capturedAst?.normalisation?.noActionReason,
+        noActionReasonOther: capturedAst?.normalisation?.noActionReasonOther,
+      });
+
+      if (normalisationError) {
         return this.createError({
-          path: "inspection.captured.ast.normalisation.actionSelect",
-          message: "Normalisation action is required",
+          path: `inspection.captured.ast.normalisation.${normalisationError.path}`,
+          message: normalisationError.message,
         });
       }
 
@@ -1956,9 +2144,6 @@ export default function InspectionScreen() {
   const anomalyDetailLookup = lookupState(
     useIrepsLookupOptions("ANOMALY_DETAIL"),
   );
-  const normalisationLookup = lookupState(
-    useIrepsLookupOptions("METER_NORMALISATION_ACTION"),
-  );
   const placementLookup = lookupState(useIrepsLookupOptions("METER_PLACEMENT"));
   const cbSizeLookup = lookupState(useIrepsLookupOptions("METER_CB_SIZE"));
   const phaseLookup = lookupState(useIrepsLookupOptions("METER_PHASE"));
@@ -1967,6 +2152,18 @@ export default function InspectionScreen() {
   );
   const connectionStatusLookup = lookupState(
     useIrepsLookupOptions("METER_CONNECTION_STATUS"),
+  );
+
+  // MN-R001 section 8: an inspection records what the worker found — connected
+  // or disconnected. Removed and decommissioned are their own transactions.
+  const foundStatusOptions = useMemo(
+    () =>
+      (connectionStatusLookup.options || []).filter((option) =>
+        ["CONNECTED", "DISCONNECTED"].includes(
+          String(option?.code || "").toUpperCase(),
+        ),
+      ),
+    [connectionStatusLookup.options],
   );
 
   const lastKnown = useMemo(
@@ -2245,17 +2442,9 @@ export default function InspectionScreen() {
         ...values?.inspection?.captured,
         ast: {
           ...capturedAst,
-          normalisation: {
-            ...capturedAst?.normalisation,
-            actionTaken:
-              capturedAst?.normalisation?.actionSelect?.code ||
-              capturedAst?.normalisation?.actionTaken ||
-              "NONE",
-            actionText:
-              selectWithOtherToText(capturedAst?.normalisation?.actionSelect) ||
-              capturedAst?.normalisation?.actionText ||
-              "None",
-          },
+          normalisation: buildCanonicalNormalisation(
+            capturedAst?.normalisation,
+          ),
         },
         mreading: buildCapturedMreading(values, {
           isConventional: payloadIsConventional,
@@ -2713,6 +2902,22 @@ export default function InspectionScreen() {
       setInProgress(false);
       helpers?.setSubmitting?.(false);
 
+      // MN-R001 section 6: the finding said this meter must be disconnected, and
+      // the meter already exists, so the disconnection form opens straight away.
+      if (leadsToDisconnection(cleanPayload?.inspection?.captured?.ast?.normalisation?.actionTaken)) {
+        router.replace(
+          buildDisconnectionRouteParams({
+            astDoc,
+            astId: sourceAstId,
+            premiseId: astDoc?.accessData?.premise?.id || "NAv",
+            parentTrnId: result?.trnId || instructionTrnId,
+            parentTrnType: "METER_INSPECTION",
+            returnTo: "/(tabs)/admin/operations/my-workorders",
+          }),
+        );
+        return;
+      }
+
       routeBackToMyWorkorders(router);
     } catch (error) {
       Alert.alert("Error", error?.message || "Submission failed");
@@ -2768,16 +2973,9 @@ export default function InspectionScreen() {
           ast: {
             ...cloneAstForInspection({}),
             normalisation: {
-              actionTaken: "NONE",
-              actionText: "None",
-              actionSelect: {
-                code: "NONE",
-                label: "None",
-                otherText: "",
-              },
-              childTrnId: "NAv",
-              childTrnType: "NAv",
-              childTrnStatus: "NOT_REQUIRED",
+              actionTaken: [NORMALISATION_NONE],
+              noActionReason: "",
+              noActionReasonOther: "",
             },
           },
           mreading: {
@@ -3754,8 +3952,11 @@ export default function InspectionScreen() {
                           lastKnownValue={
                             values?.inspection?.lastKnown?.status?.state
                           }
-                          options={connectionStatusLookup.options}
-                          lookup={connectionStatusLookup}
+                          options={foundStatusOptions}
+                          lookup={{
+                            ...connectionStatusLookup,
+                            options: foundStatusOptions,
+                          }}
                           onChange={(nextValue) => {
                             setFieldValue("status.stateSelect", nextValue);
                             setFieldValue(
@@ -3813,35 +4014,11 @@ export default function InspectionScreen() {
                         </Text>
                       </View>
 
-                      <IrepsSelectWithOther
-                        label="Normalisation Action"
-                        placeholder="Select normalisation action"
-                        options={normalisationLookup.options}
-                        includeOther={normalisationLookup.allowOther}
-                        otherCode={normalisationLookup.otherCode}
-                        otherLabel={normalisationLookup.otherLabel}
-                        loading={normalisationLookup.loading}
-                        value={capturedAst?.normalisation?.actionSelect}
-                        onChange={(nextValue) => {
-                          setFieldValue(
-                            "inspection.captured.ast.normalisation.actionSelect",
-                            nextValue,
-                          );
-                          setFieldValue(
-                            "inspection.captured.ast.normalisation.actionTaken",
-                            nextValue?.code || "OTHER",
-                          );
-                          setFieldValue(
-                            "inspection.captured.ast.normalisation.actionText",
-                            selectWithOtherToText(nextValue),
-                          );
-                        }}
-                        errorText={
-                          typeof capturedErrors?.normalisation?.actionSelect ===
-                          "string"
-                            ? capturedErrors.normalisation.actionSelect
-                            : ""
-                        }
+                      <InspectionNormalisation
+                        anomaly={getInspectionAnomalyName(values)}
+                        normalisation={capturedAst?.normalisation}
+                        errors={capturedErrors?.normalisation}
+                        setFieldValue={setFieldValue}
                       />
 
                       {shouldRequireNormalisationPhoto(values) && (
@@ -4162,6 +4339,28 @@ export default function InspectionScreen() {
 }
 
 const styles = StyleSheet.create({
+  normalisationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 8,
+  },
+  normalisationLabel: { fontSize: 14, color: "#1E293B", flexShrink: 1 },
+  normalisationNote: { fontSize: 13, color: "#B45309", paddingTop: 4 },
+  reasonBlock: {
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    marginTop: 8,
+    paddingTop: 8,
+  },
+  reasonTitle: {
+    fontSize: 13,
+    fontWeight: "bold",
+    color: "#475569",
+    paddingBottom: 4,
+  },
+  reasonInput: { marginTop: 8, backgroundColor: "#fff" },
+  reasonError: { fontSize: 12, color: "#DC2626", paddingTop: 4 },
   container: {
     flex: 1,
     backgroundColor: "#F1F5F9",
