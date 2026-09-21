@@ -867,9 +867,29 @@ export default function FormMeterDisconnection() {
     .trim()
     .toUpperCase();
 
+  // Field work starts from the meter card, or follows on from a finding on a
+  // Meter Discovery or Meter Inspection (MN-R001 section 6). Either way there is
+  // no office instruction behind it.
+  const FIELD_ORIGIN_SOURCES = ["AST_ITEM", "METER_DISCOVERY", "METER_INSPECTION"];
+
   const isFieldOrigin =
-    (actionOriginChannel === "FIELD" && actionOriginSource === "AST_ITEM") ||
-    (queuedOriginChannel === "FIELD" && queuedOriginSource === "AST_ITEM");
+    (actionOriginChannel === "FIELD" &&
+      FIELD_ORIGIN_SOURCES.includes(actionOriginSource)) ||
+    (queuedOriginChannel === "FIELD" &&
+      FIELD_ORIGIN_SOURCES.includes(queuedOriginSource));
+
+  // Where this disconnection came from, kept through a save on the phone.
+  const fieldOrigin = {
+    source: actionOriginSource || queuedOriginSource || "AST_ITEM",
+    parentTrnId:
+      action?.origin?.parentTrnId ||
+      editQueueItem?.payload?.origin?.parentTrnId ||
+      null,
+    parentTrnType:
+      action?.origin?.parentTrnType ||
+      editQueueItem?.payload?.origin?.parentTrnType ||
+      null,
+  };
 
   const instructionTrnId = isFieldOrigin ? "" : instructionTrnIdCandidate;
   const returnTo = readFirstString(routeReturnTo, action?.returnTo);
@@ -1263,8 +1283,10 @@ export default function FormMeterDisconnection() {
       origin: isFieldOrigin
         ? {
             channel: "FIELD",
-            source: "AST_ITEM",
+            source: fieldOrigin.source,
             parentInspectionTrnId: null,
+            parentTrnId: fieldOrigin.parentTrnId,
+            parentTrnType: fieldOrigin.parentTrnType,
           }
         : {
             channel: "OFFICE",
