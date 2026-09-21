@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { ERF_LABEL_RISE, erfLabelPoint, holesByErf, ringContainsPoint, ringsContainPoint } from "./erfLabelPoint.js";
+import { ERF_LABEL_DROP, erfLabelPoint, holesByErf, ringContainsPoint, ringsContainPoint } from "./erfLabelPoint.js";
 
 const modalSource = await readFile(new URL("./TargetedBatchMapModal.js", import.meta.url), "utf8");
 
@@ -16,36 +16,38 @@ const rectangle = [
 const centre = { latitude: -28.0005, longitude: 30.0005 };
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`);
 
-test("TB-R051 1.3.40 an ERF number sits straight above the centre, 60% of the way to the boundary", () => {
-  assert.equal(ERF_LABEL_RISE, 0.6);
+test("TB-R051 1.3.70 an ERF number sits just below the centre, beside the pin, 30% of the way to the boundary", () => {
+  // Not up against the edge (60% of the way up, 1.3.40), where it had the least room and crossed first.
+  assert.equal(ERF_LABEL_DROP, 0.3);
   const point = erfLabelPoint({ centroid: centre, polygons: [rectangle] });
-  close(point.latitude, -28.0005 + 0.0005 * 0.6);
+  close(point.latitude, -28.0005 - 0.0005 * 0.3);
+  assert.ok(point.latitude < centre.latitude, "below the centre, the side a pin does not cover");
   close(point.longitude, 30.0005);
   assert.equal(ringContainsPoint(rectangle, point), true, "inside its own ERF");
 });
 
 test("TB-R051 1.3.40 the ERF number is a fixed point on the ground: the same whatever the zoom", () => {
   // The point depends only on the ERF's shape; nothing about the map view goes in.
-  assert.equal(erfLabelPoint.length, 1, "only the ERF (and the optional rise) decide the point");
+  assert.equal(erfLabelPoint.length, 1, "only the ERF (and the optional drop) decide the point");
   assert.deepEqual(erfLabelPoint({ centroid: centre, polygons: [rectangle] }), erfLabelPoint({ centroid: centre, polygons: [rectangle] }));
 });
 
 test("TB-R051 1.3.40 a closed ring (first point repeated) and a slanted ERF also give a point inside", () => {
   const closed = [...rectangle, rectangle[0]];
   const point = erfLabelPoint({ centroid: centre, polygons: [closed] });
-  close(point.latitude, -28.0005 + 0.0005 * 0.6);
+  close(point.latitude, -28.0005 - 0.0005 * 0.3);
 
-  // A parallelogram whose top edge slopes: the boundary straight above the centre is used.
+  // A parallelogram whose bottom edge slopes: the boundary straight below the centre is used.
   const slanted = [
-    { latitude: -28.001, longitude: 30.0 },
-    { latitude: -28.001, longitude: 30.001 },
-    { latitude: -27.9996, longitude: 30.001 },
-    { latitude: -28.0004, longitude: 30.0 },
+    { latitude: -28.0014, longitude: 30.0 },
+    { latitude: -28.0006, longitude: 30.001 },
+    { latitude: -28.0, longitude: 30.001 },
+    { latitude: -28.0, longitude: 30.0 },
   ];
   const slantCentre = { latitude: -28.0005, longitude: 30.0005 };
   const slantPoint = erfLabelPoint({ centroid: slantCentre, polygons: [slanted] });
-  const topAtCentre = -28.0 + 0; // the top edge at longitude 30.0005 is halfway between -28.0004 and -27.9996
-  close(slantPoint.latitude, -28.0005 + (topAtCentre - -28.0005) * 0.6);
+  const bottomAtCentre = -28.001; // the bottom edge at longitude 30.0005 is halfway between -28.0014 and -28.0006
+  close(slantPoint.latitude, -28.0005 - (-28.0005 - bottomAtCentre) * 0.3);
   assert.equal(ringContainsPoint(slanted, slantPoint), true);
 });
 
@@ -64,7 +66,7 @@ test("TB-R051 1.3.40 where the centre is not inside the ERF, the number starts f
   const point = erfLabelPoint({ centroid: centre, polygons: [lShape] });
   assert.equal(ringContainsPoint(lShape, point), true, "inside its own ERF, never the neighbour in the missing corner");
   close(point.longitude, 30.0001);
-  close(point.latitude, -28.0005 + 0.0005 * 0.6);
+  close(point.latitude, -28.0005 - 0.0005 * 0.3);
 
   // A U-shaped ERF whose centre falls in the gap between the arms: the widest stretch on that line is used.
   const uShape = [
@@ -111,20 +113,20 @@ test("TB-R051 1.3.40 an ERF lying inside another is a hole: the outer number nev
   assert.deepEqual(holesByErf([outer, neighbour]), [[], []]);
 });
 
-test("TB-R051 1.3.40 a north-south boundary exactly on the line above the base point is found", () => {
-  // A notched ERF: the notch's east side runs north-south on the centre's longitude, above the centre.
+test("TB-R051 1.3.70 a north-south boundary exactly on the line below the base point is found", () => {
+  // A notched ERF: the notch's east side runs north-south on the centre's longitude, below the centre.
   const notched = [
-    { latitude: -28.001, longitude: 30.0 },
-    { latitude: -28.001, longitude: 30.001 },
+    { latitude: -28.0, longitude: 30.0 },
     { latitude: -28.0, longitude: 30.001 },
-    { latitude: -28.0, longitude: 30.0005 },
-    { latitude: -28.0004, longitude: 30.0005 },
-    { latitude: -28.0004, longitude: 30.0 },
+    { latitude: -28.001, longitude: 30.001 },
+    { latitude: -28.001, longitude: 30.0005 },
+    { latitude: -28.0006, longitude: 30.0005 },
+    { latitude: -28.0006, longitude: 30.0 },
   ];
-  const base = { latitude: -28.0007, longitude: 30.0005 };
+  const base = { latitude: -28.0003, longitude: 30.0005 };
   const point = erfLabelPoint({ centroid: base, polygons: [notched] });
-  // The boundary straight above is the notch floor at -28.0004.
-  close(point.latitude, -28.0007 + 0.0003 * 0.6);
+  // The boundary straight below is the top of the notch at -28.0006.
+  close(point.latitude, -28.0003 - 0.0003 * 0.3);
   assert.equal(ringContainsPoint(notched, point), true);
 });
 
@@ -141,7 +143,7 @@ test("TB-R051 1.3.40 broken or missing outlines fall back to the centre", () => 
 test("TB-R051 1.3.40 an ERF drawn as several outlines uses the one holding its centre", () => {
   const far = rectangle.map((point) => ({ latitude: point.latitude + 0.01, longitude: point.longitude }));
   const point = erfLabelPoint({ centroid: centre, polygons: [far, rectangle] });
-  close(point.latitude, -28.0005 + 0.0005 * 0.6);
+  close(point.latitude, -28.0005 - 0.0005 * 0.3);
 });
 
 test("TB-R051 1.3.40 on the map: icons centred exactly on their position, ERF numbers at their label point", () => {

@@ -41,11 +41,12 @@ test("the room is the distance from the label point to the nearest edge of its o
   });
   assert.ok(Math.abs(atCentre - 50) < 0.5, `expected about 50 m, got ${atCentre}`);
 
-  // At its real label point the number sits 60% of the way up, so the top edge is the nearest one.
+  // At its real label point the number sits just below the centre (1.3.70), so the bottom edge is the
+  // nearest one, and it keeps most of the room the ERF has: far more than up against the edge.
   const point = erfLabelPoint(erf);
   const room = erfLabelRoomMetres(erf, { point });
   assert.ok(room > 0 && room < atCentre, `expected less than 50 m, got ${room}`);
-  assert.ok(Math.abs(room - 20) < 1, `expected about 20 m, got ${room}`);
+  assert.ok(Math.abs(room - 35) < 1, `expected about 35 m, got ${room}`);
 });
 
 test("an ERF lying inside another takes the outer ERF's room away", () => {

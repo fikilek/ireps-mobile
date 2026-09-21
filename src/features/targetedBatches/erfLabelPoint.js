@@ -2,12 +2,16 @@
 //
 // A map label keeps its size on screen at every zoom, so a label moved by screen pixels lands in another ERF when
 // the map is zoomed out. The ERF number is therefore placed on a fixed point on the ground inside its own ERF:
-// straight above a base point, part of the way to the ERF's boundary, so a pin or icon at the centre does not hide
+// just below a base point (1.3.70), a little of the way to the ERF's boundary, beside the pin rather than under
 // it. The base point is the ERF centre when it is inside the ERF, else the middle of the widest stretch of the ERF
 // on a line across it. An ERF lying inside another counts as a hole in the outer one.
 
-// How far from the base point towards the boundary above it the ERF number sits.
-export const ERF_LABEL_RISE = 0.6;
+// TB-R051 (1.3.70; replaces "60% of the way up" of 1.3.40): the ERF number sits just below the ERF's centre,
+// beside the pin, and never up against the ERF's edge. Up at 60% it had the least room in the ERF, so it was
+// the first thing to cross into the neighbour's ERF as the map zoomed out (owner, 2026-09-21: "make it closer
+// to S, and the S is at the center"). It goes below the centre because a pin grows upward from its point, so
+// that is the side the pin does not cover. This is how far towards the boundary below it the number sits.
+export const ERF_LABEL_DROP = 0.3;
 
 function isPoint(point) {
   return (
@@ -57,14 +61,14 @@ export function ringContainsPoint(ring, point) {
   return ringsContainPoint([ring], point);
 }
 
-// The latitude where the boundary first meets the line straight above the point, or null.
-function boundaryAbove(rings, point) {
-  let top = Infinity;
+// The latitude where the boundary first meets the line straight below the point, or null.
+function boundaryBelow(rings, point) {
+  let bottom = -Infinity;
   for (const [a, b] of edgesOf(rings)) {
     let latitude = null;
     if (a.longitude === point.longitude && b.longitude === point.longitude) {
-      // A north-south edge on the line itself: the boundary starts at its lower end.
-      latitude = Math.min(a.latitude, b.latitude);
+      // A north-south edge on the line itself: the boundary starts at its upper end.
+      latitude = Math.max(a.latitude, b.latitude);
     } else {
       const crosses =
         (a.longitude <= point.longitude && point.longitude < b.longitude) ||
@@ -75,9 +79,9 @@ function boundaryAbove(rings, point) {
         ((point.longitude - a.longitude) * (b.latitude - a.latitude)) /
           (b.longitude - a.longitude);
     }
-    if (latitude > point.latitude && latitude < top) top = latitude;
+    if (latitude < point.latitude && latitude > bottom) bottom = latitude;
   }
-  return Number.isFinite(top) ? top : null;
+  return Number.isFinite(bottom) ? bottom : null;
 }
 
 // The middle of the widest stretch inside the rings on the east-west line at this latitude, or null.
@@ -121,7 +125,7 @@ function basePoint(rings, centroid) {
 // erf: { centroid: { latitude, longitude }, polygons: [[{ latitude, longitude }, ...], ...] }.
 // holes: outlines of other ERFs that lie inside this one.
 // Returns the point to draw the ERF number at, or null when the ERF has no centre.
-export function erfLabelPoint(erf, { holes = [], rise = ERF_LABEL_RISE } = {}) {
+export function erfLabelPoint(erf, { holes = [], drop = ERF_LABEL_DROP } = {}) {
   const centroid = erf?.centroid;
   if (!isPoint(centroid)) return null;
 
@@ -132,12 +136,12 @@ export function erfLabelPoint(erf, { holes = [], rise = ERF_LABEL_RISE } = {}) {
   const base = basePoint(rings, centroid);
   if (!base) return centroid;
 
-  const top = boundaryAbove(rings, base);
-  if (top === null) return base;
+  const bottom = boundaryBelow(rings, base);
+  if (bottom === null) return base;
 
-  // Every point between the base point and the first boundary above it is inside the ERF.
+  // Every point between the base point and the first boundary below it is inside the ERF.
   return {
-    latitude: base.latitude + (top - base.latitude) * rise,
+    latitude: base.latitude - (base.latitude - bottom) * drop,
     longitude: base.longitude,
   };
 }
