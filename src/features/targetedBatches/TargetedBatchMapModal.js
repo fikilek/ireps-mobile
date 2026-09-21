@@ -64,6 +64,13 @@ const SOURCE_LEGEND = [
   { source: "ERF", label: MAP_PIN_LABELS.ERF },
 ];
 
+// TB-R051 (1.3.70): the geofence name is measured rather than left to the map. A marker drawn once into a
+// picture came out cut off ("Gf W6 Cr" for "Gf W6 Craigside1"), so the label is given the width its name
+// needs. A heavy character at this size is about this wide, plus the padding and border on each side.
+const GEOFENCE_LABEL_CHARACTER_WIDTH = 7;
+const GEOFENCE_LABEL_EDGES = 16;
+const GEOFENCE_LABEL_MAX_WIDTH = 220;
+
 // TB-R043: the batch geofence is purple.
 const GEOFENCE_COLOR = "#7c3aed";
 const GEOFENCE_FILL = "rgba(124,58,237,0.10)";
@@ -477,22 +484,34 @@ function BatchGroupMarkerBase({
 const BatchGroupMarker = memo(BatchGroupMarkerBase);
 BatchGroupMarker.displayName = "BatchGroupMarker";
 
+// TB-R051 (1.3.70): the batch's geofence name, drawn whole. It was coming out cut off, and there is one of
+// these on a map, so it is not frozen into a picture like the other markers and it is given the width its
+// name needs instead of leaving the map to measure it.
 function GeofenceNameMarkerBase({ latitude, longitude, name }) {
-  const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(name);
-
   const coordinate = useMemo(
     () => ({ latitude, longitude }),
     [latitude, longitude],
+  );
+
+  const width = useMemo(
+    () =>
+      Math.min(
+        GEOFENCE_LABEL_MAX_WIDTH,
+        Math.ceil(String(name ?? "").length * GEOFENCE_LABEL_CHARACTER_WIDTH) +
+          GEOFENCE_LABEL_EDGES,
+      ),
+    [name],
   );
 
   return (
     <Marker
       coordinate={coordinate}
       anchor={LABEL_ANCHOR}
-      tracksViewChanges={tracksViewChanges}
+      // The one marker on the map that keeps redrawing itself: freezing it is what cut the name off.
+      tracksViewChanges
       zIndex={150}
     >
-      <View style={styles.geofenceLabel} onLayout={onLayout}>
+      <View style={[styles.geofenceLabel, { width }]}>
         <Text style={styles.geofenceLabelText} numberOfLines={1}>
           {name}
         </Text>
@@ -1001,27 +1020,6 @@ export default function TargetedBatchMapModal({
       .filter(Boolean);
   }, [drawnErfs]);
 
-  // TB-R051 (1.3.70): how many metres one pixel covers at the zoom the map is at. The region's latitude
-  // delta spans the height of the map area, which is measured in the same pixels the label is drawn in.
-  const metresPerPixel = useMemo(() => {
-    const delta = Number(region?.latitudeDelta ?? initialRegion?.latitudeDelta);
-    if (!Number.isFinite(delta) || delta <= 0 || mapAreaHeight <= 0) return 0;
-    return (delta * 111320) / mapAreaHeight;
-  }, [region?.latitudeDelta, initialRegion?.latitudeDelta, mapAreaHeight]);
-
-  // The size each number is drawn at. 0 leaves it out: its ERF has no room for it at this zoom.
-  const erfLabelSizes = useMemo(() => {
-    if (!metresPerPixel) return {};
-    const sizes = {};
-    for (const label of erfLabels) {
-      sizes[label.id] = erfLabelFontSize(
-        String(label.erfNo).length,
-        label.roomMetres / metresPerPixel,
-      );
-    }
-    return sizes;
-  }, [erfLabels, metresPerPixel]);
-
   // TB-R051 (1.3.38): premises of the batch area, read once when the Premises button is first switched on. An empty
   // warehouse list cannot tell "not arrived" from "none", so it is read from the batch area instead.
   const premisesAreaLoad = useLayerLoad({
@@ -1232,6 +1230,29 @@ export default function TargetedBatchMapModal({
     locatingRef.current = false;
     setLocating(false);
   }, [visible, bucketId]);
+
+  // TB-R051 (1.3.70): how many metres one pixel covers at the zoom the map is at. The region's latitude
+  // delta spans the height of the map area, measured in the same pixels the label is drawn in. Until the
+  // map has settled on a region of its own, the one it opened at is used, so the numbers are sized from
+  // the first frame rather than missing until the first pan.
+  const metresPerPixel = useMemo(() => {
+    const delta = Number(region?.latitudeDelta ?? initialRegion?.latitudeDelta);
+    if (!Number.isFinite(delta) || delta <= 0 || mapAreaHeight <= 0) return 0;
+    return (delta * 111320) / mapAreaHeight;
+  }, [region?.latitudeDelta, initialRegion?.latitudeDelta, mapAreaHeight]);
+
+  // The size each number is drawn at. 0 leaves it out: its ERF has no room for it at this zoom.
+  const erfLabelSizes = useMemo(() => {
+    if (!metresPerPixel) return {};
+    const sizes = {};
+    for (const label of erfLabels) {
+      sizes[label.id] = erfLabelFontSize(
+        String(label.erfNo).length,
+        label.roomMetres / metresPerPixel,
+      );
+    }
+    return sizes;
+  }, [erfLabels, metresPerPixel]);
 
   // Fit once to the meters and once more when the geofence arrives; later row updates never move the map.
   useEffect(() => {
@@ -1780,6 +1801,9 @@ export default function TargetedBatchMapModal({
 
             {geofenceLabelPoint && geofenceName ? (
               <GeofenceNameMarker
+                // A new name gets a new marker: the map kept the size the marker was made with, which is
+                // one of the ways the name came out cut off.
+                key={`geofence-name-${geofenceName}`}
                 latitude={geofenceLabelPoint.latitude}
                 longitude={geofenceLabelPoint.longitude}
                 name={geofenceName}
@@ -2315,6 +2339,8 @@ const styles = StyleSheet.create({
     color: GEOFENCE_COLOR,
     fontSize: 11,
     fontWeight: "900",
+    // The label is given its width, so the name sits in the middle of it.
+    textAlign: "center",
   },
 
   erfLabel: {

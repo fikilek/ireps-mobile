@@ -122,6 +122,36 @@ test("the legend keeps the three statuses only, and nothing brings the block bac
   assert.match(modalSource, /label=\{\s*offline\s*\?\s*"Other CAT Sales meters, needs a connection"/);
 });
 
+test("the size is worked out after the region it reads, not before it", () => {
+  // Reading a const declared further down throws in plain JavaScript; the phone's transpiler hides it and
+  // the size silently reads nothing on the first frame. The order is held here instead.
+  assert.ok(
+    modalSource.indexOf("const initialRegion = useMemo(") <
+      modalSource.indexOf("const metresPerPixel = useMemo("),
+    "metresPerPixel must come after initialRegion",
+  );
+  assert.ok(
+    modalSource.indexOf("const metresPerPixel = useMemo(") <
+      modalSource.indexOf("const erfLabelSizes = useMemo("),
+    "erfLabelSizes must come after metresPerPixel",
+  );
+});
+
+test("the geofence name is measured and never frozen into a stale picture", () => {
+  const marker = modalSource.slice(
+    modalSource.indexOf("function GeofenceNameMarkerBase("),
+    modalSource.indexOf("const GeofenceNameMarker = memo("),
+  );
+  // It keeps redrawing: freezing it is what cut the name off.
+  assert.match(marker, /\n {6}tracksViewChanges\n/);
+  assert.doesNotMatch(marker, /useSettledTracksViewChanges/);
+  // It is given the width its name needs, rather than leaving the map to measure it.
+  assert.match(marker, /GEOFENCE_LABEL_CHARACTER_WIDTH/);
+  assert.match(marker, /style=\{\[styles\.geofenceLabel, \{ width \}\]\}/);
+  // A new name gets a new marker, so no marker keeps the size it was made with.
+  assert.match(modalSource, /key=\{`geofence-name-\$\{geofenceName\}`\}/);
+});
+
 test("a pan does not resize anything: only a real change of zoom is kept", () => {
   const start = modalSource.indexOf("const handleRegionSettled");
   const settled = modalSource.slice(start, start + 800);
