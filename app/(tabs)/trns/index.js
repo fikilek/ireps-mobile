@@ -680,11 +680,14 @@ function buildFormSummaryRows(item = {}) {
       "Meter Removed",
       answerToText(item?.removal?.meterRemoved),
     );
-    addSummaryRow(
-      rows,
-      "Safety Confirmed",
-      answerToText(item?.removal?.safetyConfirmed),
-    );
+    // Safety confirmed was removed on 22 Sep 2026; only older removals have it.
+    if (item?.removal?.safetyConfirmed?.answer) {
+      addSummaryRow(
+        rows,
+        "Safety Confirmed",
+        answerToText(item?.removal?.safetyConfirmed),
+      );
+    }
     addSummaryRow(
       rows,
       "Removal Outcome",
