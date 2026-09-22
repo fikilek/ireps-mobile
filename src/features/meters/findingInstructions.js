@@ -12,13 +12,10 @@ const FINDING_FORM_NAMES = Object.freeze({
   METER_DISCOVERY: "Meter Discovery",
 });
 
-// The instruction each kind of follow-on work carries when a finding started it.
-const FINDING_INSTRUCTIONS = Object.freeze({
-  METER_DISCONNECTION: Object.freeze({
-    code: "ILLEGAL_CONNECTION",
-    text: "Illegal Connection",
-  }),
-  METER_REMOVAL: REPLACE_METER_STEP_1,
+// The words each kind of follow-on work carries when a finding started it.
+const FINDING_INSTRUCTION_TEXT = Object.freeze({
+  METER_DISCONNECTION: "Illegal Connection",
+  METER_REMOVAL: REPLACE_METER_STEP_1.text,
 });
 
 // "Meter Inspection" / "Meter Discovery", or "" when the parent is not a finding.
@@ -27,11 +24,13 @@ export function findingFormName(parentTrnType) {
 }
 
 // The locked instruction for work that follows a finding, in the shape the
-// forms use for an office instruction.
+// forms use for an office instruction. The server requires the instruction's
+// code to be the work's own type (validateAssignment), so the words go in text.
 export function findingInstruction(workTrnType) {
-  const base = FINDING_INSTRUCTIONS[String(workTrnType || "").trim().toUpperCase()];
-  if (!base) return null;
-  return { code: base.code, text: base.text, notes: "", mediaRequired: false };
+  const type = String(workTrnType || "").trim().toUpperCase();
+  const text = FINDING_INSTRUCTION_TEXT[type];
+  if (!text) return null;
+  return { code: type, text, notes: "", mediaRequired: false };
 }
 
 // Replace meter, from any channel: the installation follows the removal.
