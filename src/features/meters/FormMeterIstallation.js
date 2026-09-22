@@ -1203,6 +1203,27 @@ export default function FormMeterInstallation() {
         throw new Error("Unable to determine transaction payload.");
       }
 
+      // MN-R001 section 6.1: an installation that completes a replacement says
+      // which removal it follows and which meter it replaces. A new installation
+      // on its own carries no origin.
+      const replacementOrigin =
+        action?.origin?.parentTrnType === "METER_REMOVAL"
+          ? action.origin
+          : editQueueItem?.payload?.origin?.parentTrnType === "METER_REMOVAL"
+            ? editQueueItem.payload.origin
+            : null;
+
+      if (replacementOrigin) {
+        cleanPayload.origin = {
+          channel: "FIELD",
+          source: "METER_REMOVAL",
+          parentTrnId: replacementOrigin.parentTrnId || null,
+          parentTrnType: "METER_REMOVAL",
+          replacesAstId: replacementOrigin.replacesAstId || null,
+          replacesMeterNo: replacementOrigin.replacesMeterNo || null,
+        };
+      }
+
       cleanPayload = JSON.parse(
         JSON.stringify(cleanPayload, (key, value) =>
           value === undefined ? null : value,

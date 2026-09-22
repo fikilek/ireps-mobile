@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Checkbox, Surface } from "react-native-paper";
 import FormInputMeterNo from "../../src/features/meters/FormInputMeterNo";
 import {
+  NORMALISATION_JOB_ACTIONS,
   NORMALISATION_NONE,
   NO_ACTION_REASONS,
   NO_ACTION_REASON_OTHER,
@@ -75,8 +76,14 @@ export const ElectricitySections = ({
     } else if (currentActions.includes(optionValue)) {
       newActions = currentActions.filter((a) => a !== optionValue);
     } else {
+      // One job per finding: ticking one job clears the other.
+      const isJob = NORMALISATION_JOB_ACTIONS.includes(optionValue);
       newActions = [
-        ...currentActions.filter((a) => a !== NORMALISATION_NONE),
+        ...currentActions.filter(
+          (a) =>
+            a !== NORMALISATION_NONE &&
+            !(isJob && NORMALISATION_JOB_ACTIONS.includes(a)),
+        ),
         optionValue,
       ];
     }

@@ -59,6 +59,9 @@ import { ForensicFooter } from "./ForensicFooter";
 import { isCompleteNoAccessReason } from "./noAccessReasons";
 import {
   MANAGER_DISCONNECTION_MESSAGE,
+  MANAGER_REPLACEMENT_MESSAGE,
+  buildRemovalRouteParams,
+  getFollowOnWork,
   buildDisconnectionRouteParams,
   canDoFieldDisconnection,
   leadsToDisconnection,
@@ -540,7 +543,7 @@ export default function FormMeterDiscovery() {
     `${premise?.propertyType?.type || ""} ${premise?.propertyType?.name || ""} ${premise?.propertyType?.unitNo || ""}`.trim();
 
   const [showSuccess, setShowSuccess] = useState(false);
-  const [preparingDisconnection, setPreparingDisconnection] = useState(false);
+  const [preparingFollowOn, setPreparingFollowOn] = useState("");
   // console.log(`FormMeterDiscovery ----showSuccess`, showSuccess);
 
   const finalErfNo = premise?.erfNo || "NAv";
@@ -1744,14 +1747,16 @@ export default function FormMeterDiscovery() {
       const isOnline = netState.isConnected && netState.isInternetReachable;
 
       if (!isOnline) {
-        const disconnectionFollows = leadsToDisconnection(
+        const followOnWork = getFollowOnWork(
           cleanPayload?.ast?.normalisation?.actionTaken,
         );
 
         await saveMeterDraftToQueue(
           "Saved Offline",
-          disconnectionFollows
-            ? "No internet connection. This meter was saved on the phone and will be sent when you are online. The disconnection cannot be started until it has been sent."
+          followOnWork
+            ? `No internet connection. This meter was saved on the phone and will be sent when you are online. The ${
+                followOnWork === "DISCONNECTION" ? "disconnection" : "removal"
+              } cannot be started until it has been sent.`
             : "No internet connection. This submission was saved locally and will sync automatically when online.",
         );
 
@@ -1873,15 +1878,21 @@ export default function FormMeterDiscovery() {
         await removeSubmissionQueueItem(queueItemId);
       }
 
-      // MN-R001 section 6: the worker said the meter must be disconnected, so
-      // the disconnection form follows on from here. It is the disconnection
-      // that is the record, not the word on this form.
-      if (
-        leadsToDisconnection(cleanPayload?.ast?.normalisation?.actionTaken) &&
-        !canDoFieldDisconnection(profile?.employment?.role)
-      ) {
+      // MN-R001 section 6: the finding calls for a disconnection or a
+      // replacement, so the form for that work follows on from here. It is that
+      // form that is the record, not the word on this one.
+      const followOnWork = getFollowOnWork(
+        cleanPayload?.ast?.normalisation?.actionTaken,
+      );
+
+      if (followOnWork && !canDoFieldDisconnection(profile?.employment?.role)) {
         setInProgress(false);
-        Alert.alert("Meter saved", MANAGER_DISCONNECTION_MESSAGE, [
+        Alert.alert(
+          "Meter saved",
+          followOnWork === "DISCONNECTION"
+            ? MANAGER_DISCONNECTION_MESSAGE
+            : MANAGER_REPLACEMENT_MESSAGE,
+          [
           {
             text: "OK",
             onPress: () => {
@@ -1889,16 +1900,17 @@ export default function FormMeterDiscovery() {
               router.replace(targetedBatchReturnTo);
             },
           },
-        ]);
+          ],
+        );
         return;
       }
 
-      if (leadsToDisconnection(cleanPayload?.ast?.normalisation?.actionTaken)) {
-        setPreparingDisconnection(true);
+      if (followOnWork) {
+        setPreparingFollowOn(followOnWork);
 
         const astDoc = await waitForMeterRecord({ astId: cleanPayload.id });
 
-        setPreparingDisconnection(false);
+        setPreparingFollowOn("");
         updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
         setInProgress(false);
 
@@ -1907,23 +1919,30 @@ export default function FormMeterDiscovery() {
           // sitting there, then open the disconnection in the ASTs tab. When the
           // disconnection is done it returns to the meters list, where the meter
           // now reads disconnected.
+          const handover = {
+            astDoc,
+            astId: cleanPayload.id,
+            premiseId: gate?.resolvedPremiseId || premise?.id,
+            parentTrnId: cleanPayload.id,
+            parentTrnType: "METER_DISCOVERY",
+            returnTo: "/(tabs)/asts",
+          };
+
           router.replace(targetedBatchReturnTo);
           router.push(
-            buildDisconnectionRouteParams({
-              astDoc,
-              astId: cleanPayload.id,
-              premiseId: gate?.resolvedPremiseId || premise?.id,
-              parentTrnId: cleanPayload.id,
-              parentTrnType: "METER_DISCOVERY",
-              returnTo: "/(tabs)/asts",
-            }),
+            followOnWork === "DISCONNECTION"
+              ? buildDisconnectionRouteParams(handover)
+              : buildRemovalRouteParams(handover),
           );
           return;
         }
 
+        const workName =
+          followOnWork === "DISCONNECTION" ? "disconnection" : "removal";
+
         Alert.alert(
-          "Meter saved, disconnection still to do",
-          "The meter is not ready yet. Open the disconnection from the meter card on the ASTs screen.",
+          `Meter saved, ${workName} still to do`,
+          `The meter is not ready yet. Open the ${workName} from the meter card on the ASTs screen.`,
           [{ text: "OK", onPress: () => router.replace(targetedBatchReturnTo) }],
         );
 
@@ -2313,7 +2332,7 @@ export default function FormMeterDiscovery() {
                   saved and the disconnection form opening. */}
               <Portal>
                 <Modal
-                  visible={preparingDisconnection}
+                  visible={!!preparingFollowOn}
                   dismissable={false}
                   contentContainerStyle={styles.successModal}
                 >
@@ -2321,7 +2340,9 @@ export default function FormMeterDiscovery() {
                     <ActivityIndicator size="large" color="#2563eb" />
                     <Text style={styles.successTitle}>METER SAVED</Text>
                     <Text style={styles.successSub}>
-                      Preparing the disconnection…
+                      {preparingFollowOn === "REPLACEMENT"
+                        ? "Preparing the removal…"
+                        : "Preparing the disconnection…"}
                     </Text>
                   </View>
                 </Modal>

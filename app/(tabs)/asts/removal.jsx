@@ -37,6 +37,7 @@ import IrepsSelectWithOther, {
 import { IrepsMedia } from "../../../components/media/IrepsMedia";
 import { ScreenLock } from "../../../components/SceenLock";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
+import { buildInstallationRouteParams } from "../../../src/features/meters/normalisationHandover";
 import { functions } from "../../../src/firebase";
 import { useAuth } from "../../../src/hooks/useAuth";
 import { useIrepsLookupOptions } from "../../../src/hooks/useIrepsLookupOptions";
@@ -980,9 +981,34 @@ export default function FormMeterRemoval() {
     .trim()
     .toUpperCase();
 
+  // Field work starts from the meter card, or follows on from a finding on a
+  // Meter Discovery or Meter Inspection (MN-R001 section 6.1). Either way there
+  // is no office instruction behind it.
+  const FIELD_ORIGIN_SOURCES = ["AST_ITEM", "METER_DISCOVERY", "METER_INSPECTION"];
+
   const isFieldOrigin =
-    (actionOriginChannel === "FIELD" && actionOriginSource === "AST_ITEM") ||
-    (queuedOriginChannel === "FIELD" && queuedOriginSource === "AST_ITEM");
+    (actionOriginChannel === "FIELD" &&
+      FIELD_ORIGIN_SOURCES.includes(actionOriginSource)) ||
+    (queuedOriginChannel === "FIELD" &&
+      FIELD_ORIGIN_SOURCES.includes(queuedOriginSource));
+
+  // Where this removal came from, kept through a save on the phone.
+  const fieldOrigin = {
+    source: actionOriginSource || queuedOriginSource || "AST_ITEM",
+    parentTrnId:
+      action?.origin?.parentTrnId ||
+      editQueueItem?.payload?.origin?.parentTrnId ||
+      null,
+    parentTrnType:
+      action?.origin?.parentTrnType ||
+      editQueueItem?.payload?.origin?.parentTrnType ||
+      null,
+  };
+
+  // A removal that is part of a replacement is followed by the installation.
+  const installationFollows =
+    action?.followOn === "METER_INSTALLATION" ||
+    editQueueItem?.payload?.followOn === "METER_INSTALLATION";
 
   const instructionTrnId = isFieldOrigin ? "" : instructionTrnIdCandidate;
   const returnTo = readFirstString(routeReturnTo, action?.returnTo);
@@ -1381,11 +1407,16 @@ export default function FormMeterRemoval() {
       status: values.status,
       serviceProvider,
 
+      // Kept through a save on the phone, so a resumed removal still leads on.
+      ...(installationFollows ? { followOn: "METER_INSTALLATION" } : {}),
+
       origin: isFieldOrigin
         ? {
             channel: "FIELD",
-            source: "AST_ITEM",
+            source: fieldOrigin.source,
             parentInspectionTrnId: null,
+            parentTrnId: fieldOrigin.parentTrnId,
+            parentTrnType: fieldOrigin.parentTrnType,
           }
         : {
             channel: "OFFICE",
@@ -1838,6 +1869,34 @@ export default function FormMeterRemoval() {
       }
 
       setInProgress(false);
+
+      // MN-R001 section 6.1: the old meter is out, so the new one goes in at
+      // the same premise, linked to this removal.
+      if (installationFollows) {
+        const installationPremiseId =
+          astDoc?.accessData?.premise?.id || premiseId || "";
+
+        if (!installationPremiseId || installationPremiseId === "NAv") {
+          Alert.alert(
+            "Meter removed",
+            "Meter removed. The new meter still needs to be installed: open Meter Installation at this premise.",
+            [{ text: "OK", onPress: navigateAfterRemoval }],
+          );
+          return;
+        }
+
+        router.replace(getLifecycleReturnRoute());
+        router.push(
+          buildInstallationRouteParams({
+            premiseId: installationPremiseId,
+            removalTrnId: result?.trnId || cleanPayload?.id,
+            replacedAstId: astDoc?.id || sourceAstId,
+            replacedMeterNo: astDoc?.ast?.astData?.astNo || action?.meterNo,
+            meterType: astDoc?.meterType || action?.meterType || "electricity",
+          }),
+        );
+        return;
+      }
 
       navigateAfterRemoval();
       return;

@@ -154,7 +154,7 @@ const FORM_OPTIONS = Object.freeze({
   norm_actions: Object.freeze([
     option("None", "none"),
     option("Disconnect meter"),
-    option("Meter replaced"),
+    option("Replace meter"),
     option("Tamper removed"),
     option("Keypad normalised"),
     option("Service point completed"),
@@ -236,13 +236,15 @@ export const NORMALISATION_ON_SITE_FIXES = Object.freeze([
 // The action that follows each finding. Not ticking it needs a reason.
 const NORMALISATION_EXPECTED_BY_ANOMALY = Object.freeze({
   "Illegally Connected": "Disconnect meter",
-  "Meter Damaged": "Meter replaced",
-  "Meter Faulty": "Meter replaced",
+  "Meter Damaged": "Replace meter",
+  "Meter Faulty": "Replace meter",
 });
 
+// The two jobs. Each opens its own chain of forms (MN-R001 section 6), so a
+// finding carries one of them, never both.
 export const NORMALISATION_JOB_ACTIONS = Object.freeze([
   "Disconnect meter",
-  "Meter replaced",
+  "Replace meter",
 ]);
 
 export const NORMALISATION_ACTION_VALUES = Object.freeze([
@@ -288,11 +290,11 @@ export function normalisationActionsTaken(actionTaken) {
   return actions.filter((action) => String(action) !== NORMALISATION_NONE);
 }
 
-// A photo proves work that leaves a mark here. A disconnection proves itself in
-// the disconnection form that follows, so it is not asked for twice.
+// A photo proves work that leaves a mark here. A disconnection or a replacement
+// proves itself in the forms that follow, so it is not asked for twice.
 export function normalisationPhotoRequired(actionTaken) {
   return normalisationActionsTaken(actionTaken).some(
-    (action) => action !== "Disconnect meter",
+    (action) => !NORMALISATION_JOB_ACTIONS.includes(action),
   );
 }
 
@@ -329,6 +331,13 @@ export function getNormalisationValidationError({
     return {
       path: "actionTaken",
       message: "None cannot be used with another action.",
+    };
+  }
+
+  if (NORMALISATION_JOB_ACTIONS.every((job) => actions.includes(job))) {
+    return {
+      path: "actionTaken",
+      message: "Choose one: disconnect or replace.",
     };
   }
 

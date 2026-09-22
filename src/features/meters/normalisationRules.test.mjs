@@ -49,8 +49,8 @@ test("the action that follows each finding", () => {
     getExpectedNormalisationAction("Illegally Connected"),
     "Disconnect meter",
   );
-  assert.equal(getExpectedNormalisationAction("Meter Damaged"), "Meter replaced");
-  assert.equal(getExpectedNormalisationAction("Meter Faulty"), "Meter replaced");
+  assert.equal(getExpectedNormalisationAction("Meter Damaged"), "Replace meter");
+  assert.equal(getExpectedNormalisationAction("Meter Faulty"), "Replace meter");
   assert.equal(getExpectedNormalisationAction("Meter Ok"), "");
 });
 
@@ -154,12 +154,39 @@ test("nothing is wrong when the work was done or properly explained", () => {
   );
 });
 
-test("a photo for work that leaves a mark, never twice for a disconnection", () => {
+test("a photo for work that leaves a mark, never for a job the next forms prove", () => {
   assert.equal(normalisationPhotoRequired(["none"]), false);
   assert.equal(normalisationPhotoRequired(["Disconnect meter"]), false);
-  assert.equal(normalisationPhotoRequired(["Meter replaced"]), true);
+  assert.equal(normalisationPhotoRequired(["Replace meter"]), false);
+  assert.equal(normalisationPhotoRequired(["Replace meter", "Keypad normalised"]), true);
   assert.equal(
     normalisationPhotoRequired(["Disconnect meter", "Tamper removed"]),
     true,
+  );
+});
+
+test("one job per finding: disconnect or replace, never both", () => {
+  assert.equal(
+    getNormalisationValidationError({
+      anomaly: "Meter Damaged",
+      actionTaken: ["Disconnect meter", "Replace meter"],
+    })?.message,
+    "Choose one: disconnect or replace.",
+  );
+
+  assert.equal(
+    getNormalisationValidationError({
+      anomaly: "Meter Damaged",
+      actionTaken: ["Replace meter"],
+    }),
+    null,
+  );
+
+  assert.equal(
+    getNormalisationValidationError({
+      anomaly: "Meter Damaged",
+      actionTaken: ["Meter replaced"],
+    })?.message,
+    "This action is not on the list.",
   );
 });

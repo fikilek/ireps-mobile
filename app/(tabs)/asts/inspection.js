@@ -45,7 +45,9 @@ import {
   NORMALISATION_NONE,
   NO_ACTION_REASONS,
   NO_ACTION_REASON_OTHER,
+  anomalyPhotoRequired,
   getExpectedNormalisationAction,
+  getFormOptions,
   getNormalisationOptions,
   getNormalisationValidationError,
   isNoActionReasonRequired,
@@ -54,7 +56,10 @@ import {
 } from "../../../src/features/meters/formOptions";
 import {
   MANAGER_DISCONNECTION_MESSAGE,
+  MANAGER_REPLACEMENT_MESSAGE,
   buildDisconnectionRouteParams,
+  buildRemovalRouteParams,
+  getFollowOnWork,
   canDoFieldDisconnection,
   leadsToDisconnection,
 } from "../../../src/features/meters/normalisationHandover";
@@ -1279,17 +1284,43 @@ function shouldRequireNormalisationPhoto(values = {}) {
   return normalisationPhotoRequired(getInspectionNormalisationActions(values));
 }
 
+// MA-R001: the same photo rule as Meter Discovery — every detail except
+// Operationally Ok needs an anomaly photo, a Meter Ok suspicion included.
 function shouldRequireAnomalyPhoto(values = {}) {
-  const anomalyCode =
-    values?.inspection?.captured?.ast?.anomalies?.anomalySelect?.code || "";
-
-  const anomalyText =
-    values?.inspection?.captured?.ast?.anomalies?.anomaly || "";
-
-  return !["METER_OK", "Meter Ok", "meter ok"].includes(
-    anomalyCode || anomalyText,
-  );
+  const anomalies = values?.inspection?.captured?.ast?.anomalies || {};
+  return anomalyPhotoRequired(anomalies?.anomaly, anomalies?.anomalyDetail);
 }
+
+// MA-R001 1.2.0: the inspection offers exactly the Meter Discovery anomalies,
+// details and Other Anomalies, in the shape its selects expect.
+const DISCOVERY_ANOMALIES = getFormOptions("anomalies");
+
+const INSPECTION_ANOMALY_LOOKUP = Object.freeze({
+  options: DISCOVERY_ANOMALIES.map((entry) => ({
+    code: entry.anomaly,
+    label: entry.anomaly,
+  })),
+  allowOther: false,
+  otherCode: "OTHER",
+  otherLabel: "Other",
+  loading: false,
+});
+
+const INSPECTION_ANOMALY_DETAIL_LOOKUP = Object.freeze({
+  options: DISCOVERY_ANOMALIES.flatMap((entry) =>
+    entry.anomalyDetails.map((detail) => ({
+      code: detail,
+      label: detail,
+      parentCode: entry.anomaly,
+    })),
+  ),
+  allowOther: false,
+  otherCode: "OTHER",
+  otherLabel: "Other",
+  loading: false,
+});
+
+const INSPECTION_OTHER_ANOMALIES = getFormOptions("other_anomalies");
 
 function getNestedError(errorObject, path) {
   return path.split(".").reduce((acc, key) => {
@@ -2064,7 +2095,7 @@ export default function InspectionScreen() {
     [params?.action],
   );
 
-  const instructionTrnId = readFirstString(
+  const instructionTrnIdCandidate = readFirstString(
     params?.instructionTrnId,
     params?.trnId,
     action?.instructionTrnId,
@@ -2103,6 +2134,46 @@ export default function InspectionScreen() {
     profile?.profile?.displayName || profile?.profile?.email || "Field Agent";
 
   const [editQueueItem, setEditQueueItem] = useState(undefined);
+
+  // MN-R001 section 8 (1.1.0): a field worker who finds a meter live again
+  // inspects it on the spot from the meter card. That is field work: there is no
+  // office instruction behind it, and the inspection carries its own number.
+  const isFieldOrigin =
+    normalizeUpper(action?.origin?.channel) === "FIELD" ||
+    normalizeUpper(editQueueItem?.payload?.origin?.channel) === "FIELD";
+
+  const instructionTrnId = isFieldOrigin ? "" : instructionTrnIdCandidate;
+
+  const fieldInspectionTrnIdRef = useRef("");
+  if (isFieldOrigin && !fieldInspectionTrnIdRef.current) {
+    const parents = action?.accessData?.parents || action?.raw?.accessData?.parents || {};
+    const safeWard = String(parents?.wardPcode || "WARD")
+      .replace(/[^a-zA-Z0-9]+/g, "_")
+      .toUpperCase();
+    const safeErf = String(
+      action?.accessData?.erfNo || action?.raw?.accessData?.erfNo || "ERF",
+    )
+      .replace(/[^a-zA-Z0-9]+/g, "_")
+      .toUpperCase();
+    const serviceCode =
+      normalizeLower(action?.meterType) === "water" ? "WTR" : "ELC";
+
+    fieldInspectionTrnIdRef.current =
+      editQueueItem?.payload?.id ||
+      `TRN_MINSP_${Date.now()}_${serviceCode}_${safeWard}_${safeErf}`;
+  }
+
+  // The number of this inspection: the office instruction it executes, or its
+  // own number when it is field work.
+  const inspectionTrnId = instructionTrnId || fieldInspectionTrnIdRef.current;
+
+  function routeBackAfterInspection() {
+    if (isFieldOrigin) {
+      router.replace("/(tabs)/asts");
+      return;
+    }
+    routeBackToMyWorkorders(router);
+  }
   const [inProgress, setInProgress] = useState(false);
   const [saveInProgress, setSaveInProgress] = useState(false);
   const [comparisonReview, setComparisonReview] = useState({
@@ -2142,10 +2213,8 @@ export default function InspectionScreen() {
   const noReadingLookup = lookupState(
     useIrepsLookupOptions("METER_NO_READING_REASON"),
   );
-  const anomalyLookup = lookupState(useIrepsLookupOptions("METER_ANOMALY"));
-  const anomalyDetailLookup = lookupState(
-    useIrepsLookupOptions("ANOMALY_DETAIL"),
-  );
+  const anomalyLookup = INSPECTION_ANOMALY_LOOKUP;
+  const anomalyDetailLookup = INSPECTION_ANOMALY_DETAIL_LOOKUP;
   const placementLookup = lookupState(useIrepsLookupOptions("METER_PLACEMENT"));
   const cbSizeLookup = lookupState(useIrepsLookupOptions("METER_CB_SIZE"));
   const phaseLookup = lookupState(useIrepsLookupOptions("METER_PHASE"));
@@ -2407,7 +2476,7 @@ export default function InspectionScreen() {
     return {
       formType: "METER_INSPECTION",
       trnType: "METER_INSPECTION",
-      trnId: instructionTrnId,
+      trnId: inspectionTrnId,
       sourceAstId,
       meterNo:
         values?.inspection?.captured?.ast?.astData?.astNo ||
@@ -2466,7 +2535,7 @@ export default function InspectionScreen() {
         };
 
     return removeUndefined({
-      id: instructionTrnId,
+      id: inspectionTrnId,
       instructionTrnId,
       sourceAstId: astDoc?.id || sourceAstId || "NAv",
       trnType: "METER_INSPECTION",
@@ -2510,13 +2579,25 @@ export default function InspectionScreen() {
       },
       serviceProvider,
 
-      origin: {
-        channel: "OFFICE",
-        source: "WMS",
-        parentInspectionTrnId: action?.origin?.parentInspectionTrnId || null,
-      },
+      origin: isFieldOrigin
+        ? {
+            channel: "FIELD",
+            source: "AST_ITEM",
+            parentInspectionTrnId: null,
+          }
+        : {
+            channel: "OFFICE",
+            source: "WMS",
+            parentInspectionTrnId:
+              action?.origin?.parentInspectionTrnId || null,
+          },
 
-      workflow: values?.workflow,
+      workflow: isFieldOrigin
+        ? {
+            state: "COMPLETED",
+            requiresAcceptance: false,
+          }
+        : values?.workflow,
     });
   }
 
@@ -2537,7 +2618,7 @@ export default function InspectionScreen() {
         }
 
         const extension = getMediaExtension(mediaItem);
-        const fileName = `${instructionTrnId}_${mediaItem?.tag || "inspectionEvidence"}_${Date.now()}.${extension}`;
+        const fileName = `${inspectionTrnId}_${mediaItem?.tag || "inspectionEvidence"}_${Date.now()}.${extension}`;
 
         return await uploadLocalMediaItem({
           storage,
@@ -2583,7 +2664,7 @@ export default function InspectionScreen() {
               queueStatus === "PENDING"
                 ? "Submission was not confirmed by backend. Draft remains pending for retry."
                 : "Saved locally only. Not submitted.",
-            trnId: instructionTrnId || "NAv",
+            trnId: inspectionTrnId || "NAv",
           },
           sync: {
             ...existingSync,
@@ -2619,7 +2700,7 @@ export default function InspectionScreen() {
       message: "",
     });
 
-    routeBackToMyWorkorders(router);
+    routeBackAfterInspection();
 
     return true;
   }
@@ -2646,7 +2727,7 @@ export default function InspectionScreen() {
   }
 
   async function handleSubmitInspection(values, helpers) {
-    if (!instructionTrnId) {
+    if (!instructionTrnId && !isFieldOrigin) {
       setInProgress(false);
       Alert.alert(
         "Missing Instruction",
@@ -2888,7 +2969,7 @@ export default function InspectionScreen() {
               code: result?.code || "SUCCESS",
               message:
                 result?.message || "Meter inspection synced successfully.",
-              trnId: result?.trnId || instructionTrnId || "NAv",
+              trnId: result?.trnId || inspectionTrnId || "NAv",
             },
             sync: {
               ...(editQueueItem?.sync || {}),
@@ -2904,38 +2985,58 @@ export default function InspectionScreen() {
       setInProgress(false);
       helpers?.setSubmitting?.(false);
 
-      // MN-R001 section 6: the finding said this meter must be disconnected, and
-      // the meter already exists, so the disconnection form opens straight away.
-      const inspectionLeadsToDisconnection = leadsToDisconnection(
+      // MN-R001 section 6: the finding calls for a disconnection or a
+      // replacement, and the meter already exists, so the form for that work
+      // opens straight away.
+      const followOnWork = getFollowOnWork(
         cleanPayload?.inspection?.captured?.ast?.normalisation?.actionTaken,
       );
 
-      if (
-        inspectionLeadsToDisconnection &&
-        !canDoFieldDisconnection(profile?.employment?.role)
-      ) {
-        Alert.alert("Inspection saved", MANAGER_DISCONNECTION_MESSAGE, [
-          { text: "OK", onPress: () => routeBackToMyWorkorders(router) },
-        ]);
-        return;
-      }
-
-      if (inspectionLeadsToDisconnection) {
-        router.replace(
-          buildDisconnectionRouteParams({
-            astDoc,
-            astId: sourceAstId,
-            premiseId: astDoc?.accessData?.premise?.id || "NAv",
-            parentTrnId: result?.trnId || instructionTrnId,
-            parentTrnType: "METER_INSPECTION",
-            // Back to the meters list, where the meter now reads disconnected.
-            returnTo: "/(tabs)/asts",
-          }),
+      if (followOnWork && !canDoFieldDisconnection(profile?.employment?.role)) {
+        Alert.alert(
+          "Inspection saved",
+          followOnWork === "DISCONNECTION"
+            ? MANAGER_DISCONNECTION_MESSAGE
+            : MANAGER_REPLACEMENT_MESSAGE,
+          [{ text: "OK", onPress: routeBackAfterInspection }],
         );
         return;
       }
 
-      routeBackToMyWorkorders(router);
+      if (followOnWork) {
+        // The inspection has just set the meter to the status the worker found
+        // (MN-R001 section 8), so the next form starts from that status: a
+        // re-offender found live is connected again, and can be disconnected.
+        const foundState = String(cleanPayload?.status?.state || "")
+          .trim()
+          .toUpperCase();
+        const meterAsFound =
+          foundState === "CONNECTED" || foundState === "DISCONNECTED"
+            ? {
+                ...astDoc,
+                status: { ...(astDoc?.status || {}), state: foundState },
+              }
+            : astDoc;
+
+        const handover = {
+          astDoc: meterAsFound,
+          astId: sourceAstId,
+          premiseId: astDoc?.accessData?.premise?.id || "NAv",
+          parentTrnId: result?.trnId || cleanPayload?.id || inspectionTrnId,
+          parentTrnType: "METER_INSPECTION",
+          // Back to the meters list, where the meter shows its new status.
+          returnTo: "/(tabs)/asts",
+        };
+
+        router.replace(
+          followOnWork === "DISCONNECTION"
+            ? buildDisconnectionRouteParams(handover)
+            : buildRemovalRouteParams(handover),
+        );
+        return;
+      }
+
+      routeBackAfterInspection();
     } catch (error) {
       Alert.alert("Error", error?.message || "Submission failed");
       setInProgress(false);
@@ -2966,7 +3067,7 @@ export default function InspectionScreen() {
     }
 
     return {
-      id: instructionTrnId,
+      id: inspectionTrnId,
       instructionTrnId,
       sourceAstId: astDoc?.id || sourceAstId || "NAv",
       trnType: "METER_INSPECTION",
@@ -3022,7 +3123,17 @@ export default function InspectionScreen() {
         success: true,
       },
 
-      assignment: getActionAssignment(action),
+      assignment: isFieldOrigin
+        ? {
+            instruction: {
+              code: "METER_INSPECTION",
+              text: "",
+              notes: "",
+              mediaRequired: false,
+            },
+            targets: [{ type: "USER", id: agentUid, name: agentName }],
+          }
+        : getActionAssignment(action),
       media: [],
       status: {
         ...(lastKnown?.status || {}),
@@ -3040,6 +3151,10 @@ export default function InspectionScreen() {
     astDoc,
     editQueueItem?.payload,
     instructionTrnId,
+    inspectionTrnId,
+    isFieldOrigin,
+    agentUid,
+    agentName,
     lastKnown,
     meterType,
     serviceProvider,
@@ -3058,7 +3173,7 @@ export default function InspectionScreen() {
     );
   }
 
-  if (!instructionTrnId) {
+  if (!instructionTrnId && !isFieldOrigin) {
     return (
       <ScrollView style={styles.container}>
         <Stack.Screen
@@ -3201,7 +3316,7 @@ export default function InspectionScreen() {
                   <View style={styles.summaryItem}>
                     <Text style={styles.summaryLabel}>TRN</Text>
                     <Text style={styles.summaryValue}>
-                      {instructionTrnId || "INSP"}
+                      {inspectionTrnId || "INSP"}
                     </Text>
                   </View>
 
@@ -3937,6 +4052,46 @@ export default function InspectionScreen() {
                         }
                       />
 
+                      <View style={styles.otherAnomaliesBlock}>
+                        <Text style={styles.reasonTitle}>Other Anomalies</Text>
+                        {INSPECTION_OTHER_ANOMALIES.map((otherAnomaly) => {
+                          const chosen = Array.isArray(
+                            capturedAst?.anomalies?.otherAnomalies,
+                          )
+                            ? capturedAst.anomalies.otherAnomalies
+                            : [];
+                          const isChecked = chosen.includes(otherAnomaly);
+
+                          return (
+                            <TouchableOpacity
+                              key={otherAnomaly}
+                              style={styles.normalisationRow}
+                              onPress={() =>
+                                setFieldValue(
+                                  "inspection.captured.ast.anomalies.otherAnomalies",
+                                  isChecked
+                                    ? chosen.filter((a) => a !== otherAnomaly)
+                                    : [...chosen, otherAnomaly],
+                                )
+                              }
+                            >
+                              <MaterialCommunityIcons
+                                name={
+                                  isChecked
+                                    ? "checkbox-marked"
+                                    : "checkbox-blank-outline"
+                                }
+                                size={22}
+                                color={isChecked ? "#2563eb" : "#94a3b8"}
+                              />
+                              <Text style={styles.normalisationLabel}>
+                                {otherAnomaly}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+
                       {shouldRequireAnomalyPhoto(values) && (
                         <View style={styles.evidenceSlot}>
                           <IrepsMedia
@@ -4377,6 +4532,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   reasonInput: { marginTop: 8, backgroundColor: "#fff" },
+  otherAnomaliesBlock: { marginTop: 10 },
   reasonError: { fontSize: 12, color: "#DC2626", paddingTop: 4 },
   container: {
     flex: 1,
