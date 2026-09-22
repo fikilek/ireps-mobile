@@ -429,11 +429,19 @@ const RemovalSchema = object()
     }),
 
     assignment: object().shape({
-      instructionSelect: object().shape({
-        code: string().notRequired(),
-        label: string().notRequired(),
-        otherText: string().notRequired(),
-      }),
+      // MN-R001 6.1: every removal says why. A locked instruction (office or
+      // finding) is already filled in.
+      instructionSelect: object()
+        .shape({
+          code: string().notRequired(),
+          label: string().notRequired(),
+          otherText: string().notRequired(),
+        })
+        .test(
+          "removal-instruction-required",
+          "Removal instruction is required",
+          (value) => isSelectWithOtherFilled(value),
+        ),
     }),
 
     removal: object().shape({

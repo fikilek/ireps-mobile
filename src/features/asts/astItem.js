@@ -680,7 +680,11 @@ const AstItem = ({ item }) => {
   );
   const canDisconnect = meterState === "CONNECTED";
   const canReconnect = meterState === "DISCONNECTED";
-  const canRemove = meterState !== "REMOVED";
+  // Only a meter that is still there can be removed. A decommissioned one
+  // used to open the form and then refuse (MN-R001 6.1).
+  const canRemove = ["FIELD", "CONNECTED", "DISCONNECTED"].includes(
+    meterState,
+  );
 
   const actorServiceProviderId =
     profile?.employment?.serviceProvider?.id || null;
