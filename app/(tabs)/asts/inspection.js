@@ -49,6 +49,7 @@ import {
   NO_ACTION_REASON_OTHER,
   anomalyPhotoRequired,
   getExpectedNormalisationAction,
+  getFormOptionValues,
   getFormOptions,
   getNormalisationOptions,
   getNormalisationValidationError,
@@ -1456,18 +1457,42 @@ const InspectionSchema = object()
           });
         }
 
-        if (!String(meter?.cb?.size || "").trim()) {
+        if (
+          !String(meter?.cb?.size || "").trim() &&
+          !String(meter?.cb?.comment || "").trim()
+        ) {
           return this.createError({
             path: "inspection.captured.ast.astData.meter.cb.sizeSelect",
-            message: "CB size is required",
+            message:
+              "CB size is required, or tap NOT AVAILABLE and say why",
           });
         }
 
-        if (!String(meter?.keypad?.serialNo || "").trim()) {
+        if (
+          !String(meter?.keypad?.serialNo || "").trim() &&
+          !String(meter?.keypad?.comment || "").trim()
+        ) {
           return this.createError({
             path: "inspection.captured.ast.astData.meter.keypad.serialNo",
-            message: "Serial number is required",
+            message:
+              "Keypad serial number is required, or tap NOT AVAILABLE and say why",
           });
+        }
+
+        for (const [part, label] of [
+          ["cb", "circuit breaker size"],
+          ["keypad", "keypad serial number"],
+          ["seal", "seal number"],
+        ]) {
+          if (
+            String(meter?.[part]?.comment || "").trim() === "Other" &&
+            !String(meter?.[part]?.commentOther || "").trim()
+          ) {
+            return this.createError({
+              path: `inspection.captured.ast.astData.meter.${part}.commentOther`,
+              message: `Type why the ${label} is not available`,
+            });
+          }
         }
 
         if (!String(capturedAst?.location?.placement || "").trim()) {
@@ -1865,6 +1890,135 @@ function InfoRow({ label, value }) {
   );
 }
 
+// When iREPS holds no value for a field, SAME has nothing to copy. The worker
+// taps NOT AVAILABLE instead and says why, from the same reasons Meter Discovery
+// uses, so a missing value is never recorded as if it had been checked.
+function NotAvailableControl({ notAvailable, hasValue, hasLastKnown }) {
+  const [choosing, setChoosing] = useState(false);
+
+  if (!notAvailable || hasValue || hasLastKnown) return null;
+
+  const reason = String(notAvailable.reason || "").trim();
+
+  if (reason) {
+    return (
+      <View style={styles.notAvailableBlock}>
+        <View style={styles.sameDeleteRow}>
+          <View style={styles.notAvailablePill}>
+            <Text style={styles.notAvailablePillText}>
+              Not available: {reason}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={() => {
+              setChoosing(false);
+              notAvailable.onClear();
+            }}
+          >
+            <Text style={styles.deleteButtonText}>DELETE</Text>
+          </TouchableOpacity>
+        </View>
+
+        {reason === "Other" && (
+          <TextInput
+            mode="outlined"
+            placeholder="Type why it is not available"
+            value={notAvailable.otherText || ""}
+            onChangeText={notAvailable.onOtherText}
+            style={styles.input}
+          />
+        )}
+      </View>
+    );
+  }
+
+  if (!choosing) {
+    return (
+      <View style={styles.sameDeleteRow}>
+        <TouchableOpacity
+          style={styles.notAvailableButton}
+          onPress={() => setChoosing(true)}
+        >
+          <Text style={styles.notAvailableButtonText}>NOT AVAILABLE</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.notAvailableBlock}>
+      <Text style={styles.reasonTitle}>Why is it not available?</Text>
+      {notAvailable.reasons.map((option) => (
+        <TouchableOpacity
+          key={option}
+          style={styles.normalisationRow}
+          onPress={() => {
+            setChoosing(false);
+            notAvailable.onChoose(option);
+          }}
+        >
+          <MaterialCommunityIcons
+            name="radiobox-blank"
+            size={22}
+            color="#94a3b8"
+          />
+          <Text style={styles.normalisationLabel}>{option}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+// Reasons shared with Meter Discovery (formOptions), by field.
+const NOT_AVAILABLE_REASONS = Object.freeze({
+  cb: getFormOptionValues("cb_comment_reasons"),
+  keypad: getFormOptionValues("keypad_serial_number_comment_reasons"),
+  seal: getFormOptionValues("seal_number_comment_reasons"),
+});
+
+// Build the props for a field's NOT AVAILABLE control. The reason is kept in
+// the field's comment, and typed words for Other in commentOther until submit.
+function buildNotAvailable({ reasons, container, basePath, setFieldValue }) {
+  return {
+    reasons,
+    reason: container?.comment || "",
+    otherText: container?.commentOther || "",
+    onChoose: (reason) => {
+      setFieldValue(`${basePath}.commentOther`, "");
+      setFieldValue(`${basePath}.comment`, reason);
+    },
+    onOtherText: (text) => setFieldValue(`${basePath}.commentOther`, text),
+    onClear: () => {
+      setFieldValue(`${basePath}.commentOther`, "");
+      setFieldValue(`${basePath}.comment`, "");
+    },
+  };
+}
+
+// On submit a value wins over a reason, and Other becomes the typed words, as
+// on Meter Discovery.
+function canonicalizeNotAvailable(meter = {}) {
+  const next = { ...meter };
+  for (const [key, valueKey] of [
+    ["cb", "size"],
+    ["keypad", "serialNo"],
+    ["seal", "sealNo"],
+  ]) {
+    const part = { ...(next[key] || {}) };
+    const hasValue = !!String(part[valueKey] || "").trim();
+    const reason = String(part.comment || "").trim();
+    part.comment = hasValue
+      ? ""
+      : reason === "Other"
+        ? String(part.commentOther || "").trim()
+        : reason;
+    delete part.commentOther;
+    next[key] = part;
+  }
+  return next;
+}
+
 function SameDeleteTextField({
   label,
   value,
@@ -1874,6 +2028,7 @@ function SameDeleteTextField({
   onDelete,
   keyboardType = "default",
   errorText = "",
+  notAvailable = null,
 }) {
   const cleanValue = String(value || "").trim();
   const hasValue = Boolean(cleanValue);
@@ -1923,6 +2078,12 @@ function SameDeleteTextField({
         )}
       </View>
 
+      <NotAvailableControl
+        notAvailable={notAvailable}
+        hasValue={hasValue}
+        hasLastKnown={hasLastKnown}
+      />
+
       {!!errorText && <Text style={styles.errorText}>{errorText}</Text>}
     </View>
   );
@@ -1938,6 +2099,7 @@ function SameDeleteSelectField({
   onSame,
   onDelete,
   errorText = "",
+  notAvailable = null,
 }) {
   const displayText = selectWithOtherToText(value);
   const hasValue = Boolean(String(displayText || "").trim());
@@ -1989,6 +2151,12 @@ function SameDeleteSelectField({
           </TouchableOpacity>
         )}
       </View>
+
+      <NotAvailableControl
+        notAvailable={notAvailable}
+        hasValue={hasValue}
+        hasLastKnown={hasLastKnown}
+      />
     </View>
   );
 }
@@ -2522,6 +2690,10 @@ export default function InspectionScreen() {
         ...values?.inspection?.captured,
         ast: {
           ...capturedAst,
+          astData: {
+            ...(capturedAst?.astData || {}),
+            meter: canonicalizeNotAvailable(capturedAst?.astData?.meter || {}),
+          },
           normalisation: buildCanonicalNormalisation(
             capturedAst?.normalisation,
           ),
@@ -3729,6 +3901,13 @@ export default function InspectionScreen() {
                         <Surface style={styles.questionCard} elevation={1}>
                           <SameDeleteSelectField
                             label="CB Size"
+                            notAvailable={buildNotAvailable({
+                              reasons: NOT_AVAILABLE_REASONS.cb,
+                              container: meter?.cb,
+                              basePath:
+                                "inspection.captured.ast.astData.meter.cb",
+                              setFieldValue,
+                            })}
                             value={meter?.cb?.sizeSelect}
                             lastKnownValue={
                               lastKnownAst?.astData?.meter?.cb?.size
@@ -3779,6 +3958,13 @@ export default function InspectionScreen() {
                         <Surface style={styles.questionCard} elevation={1}>
                           <SameDeleteTextField
                             label="Seal Number"
+                            notAvailable={buildNotAvailable({
+                              reasons: NOT_AVAILABLE_REASONS.seal,
+                              container: meter?.seal,
+                              basePath:
+                                "inspection.captured.ast.astData.meter.seal",
+                              setFieldValue,
+                            })}
                             value={meter?.seal?.sealNo}
                             lastKnownValue={
                               lastKnownAst?.astData?.meter?.seal?.sealNo
@@ -3808,6 +3994,13 @@ export default function InspectionScreen() {
                         <Surface style={styles.questionCard} elevation={1}>
                           <SameDeleteTextField
                             label="Keypad Serial Number"
+                            notAvailable={buildNotAvailable({
+                              reasons: NOT_AVAILABLE_REASONS.keypad,
+                              container: meter?.keypad,
+                              basePath:
+                                "inspection.captured.ast.astData.meter.keypad",
+                              setFieldValue,
+                            })}
                             value={meter?.keypad?.serialNo}
                             lastKnownValue={
                               lastKnownAst?.astData?.meter?.keypad?.serialNo
@@ -4560,6 +4753,25 @@ const styles = StyleSheet.create({
   },
   reasonInput: { marginTop: 8, backgroundColor: "#fff" },
   otherAnomaliesBlock: { marginTop: 10 },
+  notAvailableBlock: { marginTop: 6 },
+  notAvailableButton: {
+    borderWidth: 1,
+    borderColor: "#B45309",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "#FFFBEB",
+  },
+  notAvailableButtonText: { color: "#B45309", fontWeight: "800", fontSize: 12 },
+  notAvailablePill: {
+    flexShrink: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "#FFFBEB",
+    marginRight: 8,
+  },
+  notAvailablePillText: { color: "#92400E", fontWeight: "700", fontSize: 12 },
   reasonError: { fontSize: 12, color: "#DC2626", paddingTop: 4 },
   container: {
     flex: 1,
