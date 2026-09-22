@@ -3357,8 +3357,43 @@ export default function InspectionScreen() {
     const editPayload = editQueueItem?.payload || null;
 
     if (editPayload) {
+      // A draft saved before Meter Kind and Category became dropdowns has the
+      // typed value but no select: fill the select in, so the field shows what
+      // the worker captured and SAME cannot quietly replace it (UI-R003 1.3.0).
+      const draftMeter = editPayload?.inspection?.captured?.ast?.astData?.meter;
+      const draftSelects = draftMeter
+        ? {
+            typeSelect:
+              draftMeter.typeSelect ||
+              makeSelectFromText(draftMeter.type, METER_KIND_LOOKUP.options),
+            categorySelect:
+              draftMeter.categorySelect ||
+              makeSelectFromText(
+                draftMeter.category,
+                METER_CATEGORY_LOOKUP.options,
+              ),
+          }
+        : null;
+
       return {
         ...editPayload,
+        ...(draftSelects
+          ? {
+              inspection: {
+                ...editPayload.inspection,
+                captured: {
+                  ...editPayload.inspection.captured,
+                  ast: {
+                    ...editPayload.inspection.captured.ast,
+                    astData: {
+                      ...editPayload.inspection.captured.ast.astData,
+                      meter: { ...draftMeter, ...draftSelects },
+                    },
+                  },
+                },
+              },
+            }
+          : {}),
         accessData: {
           ...editPayload?.accessData,
           access: {
