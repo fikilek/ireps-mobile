@@ -195,8 +195,11 @@ const FORM_OPTIONS = Object.freeze({
     option("No access to premises", "NO_ACCESS_TO_PREMISES"),
   ]),
 
+  // MN-R001 6.1 (1.2.0): Replace meter is one instruction in two stages;
+  // Meter remove decommission is retired.
   removal_instructions: Object.freeze([
-    option("Meter remove decommission", "METER_REMOVE_DECOMMISION"),
+    option("Remove meter", "REMOVE_METER"),
+    option("Replace meter – step 1: remove", "REPLACE_METER_STEP_1"),
   ]),
 
   meter_reading_instructions: Object.freeze([

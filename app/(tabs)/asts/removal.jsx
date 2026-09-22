@@ -3,6 +3,11 @@ import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
 import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
+import {
+  findingFormName,
+  findingInstruction,
+  isReplaceMeterInstruction,
+} from "../../../src/features/meters/findingInstructions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -52,6 +57,10 @@ import {
 
 const REMOVAL_INSTRUCTION_LOOKUP = getLocalSelectLookup("removal_instructions");
 const NO_READING_REASON_LOOKUP = getLocalSelectLookup("no_reading_reasons");
+// UI-R003 3.1: a prepaid meter's reading is Remaining Credit, as on Discovery.
+const REMAINING_CREDIT_REASON_LOOKUP = getLocalSelectLookup(
+  "remaining_credit_comment_reasons",
+);
 
 const EMPTY_SELECT_WITH_OTHER = {
   code: "",
@@ -65,7 +74,6 @@ const EXECUTION_MEDIA_TAGS = [
   "removalEvidence",
   "removalMeterReadingEvidence",
   "tokenReadingPhoto",
-  "safetyEvidence",
   "noAccessPhoto",
 ];
 
@@ -293,11 +301,6 @@ function buildBackendRemovalPayload(
       meterReading: "",
       tokenReading: "",
       noReadingReason: "",
-
-      safetyConfirmed: {
-        answer: "",
-        notes: "",
-      },
     };
   }
 
@@ -311,11 +314,6 @@ function buildBackendRemovalPayload(
     tokenReading: isPrepaid ? String(removal?.tokenReading || "") : "",
 
     noReadingReason: selectWithOtherToText(removal?.noReadingReason),
-
-    safetyConfirmed: {
-      answer: removal?.safetyConfirmed?.answer || "",
-      notes: removal?.safetyConfirmed?.notes || "",
-    },
   };
 }
 
@@ -447,11 +445,6 @@ const RemovalSchema = object()
         label: string().notRequired(),
         otherText: string().notRequired(),
       }),
-
-      safetyConfirmed: object().shape({
-        answer: string().notRequired(),
-        notes: string().notRequired(),
-      }),
     }),
 
     media: array().of(object()),
@@ -510,8 +503,7 @@ const RemovalSchema = object()
     ) {
       return this.createError({
         path: "removal.noReadingReason",
-        message:
-          "Meter reading, token reading, or no-reading reason is required",
+        message: "The reading, or why it could not be captured, is required",
       });
     }
 
@@ -525,28 +517,7 @@ const RemovalSchema = object()
     if (tokenReading && !hasMediaTag(media, "tokenReadingPhoto")) {
       return this.createError({
         path: "media",
-        message: "Token reading photo is required",
-      });
-    }
-
-    if (!["yes", "no"].includes(removal?.safetyConfirmed?.answer)) {
-      return this.createError({
-        path: "removal.safetyConfirmed.answer",
-        message: "Safety confirmed answer is required",
-      });
-    }
-
-    if (removal?.safetyConfirmed?.answer !== "yes") {
-      return this.createError({
-        path: "removal.safetyConfirmed.answer",
-        message: "Safety must be confirmed before submit",
-      });
-    }
-
-    if (!hasMediaTag(media, "safetyEvidence")) {
-      return this.createError({
-        path: "media",
-        message: "Safety evidence required",
+        message: "Remaining credit photo is required",
       });
     }
 
@@ -696,6 +667,7 @@ const OfficeInstructionSection = ({
   color,
   instruction,
   media,
+  fromLabel = "",
 }) => {
   const [activeMedia, setActiveMedia] = useState(null);
 
@@ -736,6 +708,13 @@ const OfficeInstructionSection = ({
       <View style={styles.readOnlyBox}>
         <Text style={styles.readOnlyLabel}>Instruction</Text>
         <Text style={styles.readOnlyValue}>{instruction?.text || "NAv"}</Text>
+
+        {!!fromLabel && (
+          <>
+            <Text style={styles.readOnlyLabel}>From</Text>
+            <Text style={styles.readOnlyValue}>{fromLabel}</Text>
+          </>
+        )}
 
         <Text style={styles.readOnlyLabel}>Instruction Notes</Text>
         <Text style={styles.readOnlyValue}>
@@ -947,7 +926,7 @@ export default function FormMeterRemoval() {
     action?.ast?.astData?.astId,
   );
 
-  const officeInstruction = useMemo(() => {
+  const rawOfficeInstruction = useMemo(() => {
     return action?.officeInstruction || action?.assignment?.instruction || {};
   }, [action]);
 
@@ -1018,9 +997,28 @@ export default function FormMeterRemoval() {
   const instructionTrnId = isFieldOrigin ? "" : instructionTrnIdCandidate;
   const returnTo = readFirstString(routeReturnTo, action?.returnTo);
 
+  // MN-R001 1.2.0: work that follows a finding carries the finding's
+  // instruction, locked, with the form it came from.
+  const findingFrom =
+    isFieldOrigin && fieldOrigin.parentTrnId
+      ? findingFormName(fieldOrigin.parentTrnType)
+      : "";
+
+  const officeInstruction = useMemo(
+    () =>
+      findingFrom
+        ? findingInstruction("METER_REMOVAL")
+        : rawOfficeInstruction,
+    [findingFrom, rawOfficeInstruction],
+  );
+
   const instructionLocked = useMemo(() => {
-    return Boolean(instructionTrnId) || isLifecycleInstructionLocked(action);
-  }, [action, instructionTrnId]);
+    return (
+      Boolean(instructionTrnId) ||
+      isLifecycleInstructionLocked(action) ||
+      Boolean(findingFrom)
+    );
+  }, [action, instructionTrnId, findingFrom]);
 
   const [inProgress, setInProgress] = useState(false);
   const [saveInProgress, setSaveInProgress] = useState(false);
@@ -1409,7 +1407,16 @@ export default function FormMeterRemoval() {
       serviceProvider,
 
       // Kept through a save on the phone, so a resumed removal still leads on.
-      ...(installationFollows ? { followOn: "METER_INSTALLATION" } : {}),
+      // Replace meter, from any channel, is followed by the installation
+      // (MN-R001 6.1, 1.2.0).
+      ...(installationFollows ||
+      isReplaceMeterInstruction({
+        code: values?.assignment?.instructionSelect?.code,
+        text: selectWithOtherToText(values?.assignment?.instructionSelect),
+      }) ||
+      isReplaceMeterInstruction(instructionLocked ? officeInstruction : {})
+        ? { followOn: "METER_INSTALLATION" }
+        : {}),
 
       origin: isFieldOrigin
         ? {
@@ -1604,11 +1611,6 @@ export default function FormMeterRemoval() {
             answer: "",
             notes: "",
           },
-
-          safetyConfirmed: editRemoval?.safetyConfirmed || {
-            answer: "",
-            notes: "",
-          },
         },
 
         media: filterExecutionMedia(editPayload?.media || []),
@@ -1650,11 +1652,6 @@ export default function FormMeterRemoval() {
         meterReading: "",
         tokenReading: "",
         noReadingReason: makeEmptySelectWithOther(),
-
-        safetyConfirmed: {
-          answer: "",
-          notes: "",
-        },
       },
 
       assignment: {
@@ -1879,7 +1876,11 @@ export default function FormMeterRemoval() {
         String(result?.executionOutcome?.outcome || "").toUpperCase() !==
           "NO_ACCESS";
 
-      if (installationFollows && meterWasRemoved) {
+      if (
+        (installationFollows ||
+          cleanPayload?.followOn === "METER_INSTALLATION") &&
+        meterWasRemoved
+      ) {
         const installationPremiseId =
           astDoc?.accessData?.premise?.id || premiseId || "";
 
@@ -2191,6 +2192,7 @@ export default function FormMeterRemoval() {
                   icon="text-box-remove-outline"
                   color="#ef4444"
                   instruction={officeInstruction}
+                  fromLabel={findingFrom}
                   media={officeInstructionMedia}
                 />
               ) : (
@@ -2317,130 +2319,102 @@ export default function FormMeterRemoval() {
                       />
                     </YesNoQuestion>
 
+                    {/* UI-R003 3.1: the reading as on Meter Discovery — type it
+                        and take the photo, or pick why it could not be read. */}
                     <Surface style={styles.questionCard} elevation={1}>
                       <View style={styles.questionHeader}>
                         <Text style={styles.questionTitle}>
-                          {isPrepaidReading ? "Token reading" : "Meter reading"}
+                          {isPrepaidReading ? "Remaining Credit" : "Meter Reading"}
                         </Text>
 
                         <Text style={styles.questionDescription}>
                           {isPrepaidReading
-                            ? "Capture the prepaid token/register reading at removal. If unavailable, provide the reason."
-                            : "Capture the meter reading at removal. If unavailable, provide the reason."}
+                            ? "The credit left on the meter when it was removed. If it cannot be read, pick why."
+                            : "The reading when the meter was removed. If it cannot be read, pick why."}
                         </Text>
                       </View>
 
-                      {isPrepaidReading ? (
-                        <>
-                          <TextInput
-                            mode="outlined"
-                            label="Token Reading"
-                            value={values?.removal?.tokenReading}
-                            onChangeText={(text) =>
-                              setFieldValue(
-                                "removal.tokenReading",
-                                text.replace(/[^\d.]/g, ""),
-                              )
-                            }
-                            keyboardType="numeric"
-                            style={styles.readingInput}
-                          />
+                      <TextInput
+                        mode="outlined"
+                        label={
+                          isPrepaidReading ? "Remaining Credit" : "Meter Reading"
+                        }
+                        placeholder={
+                          isPrepaidReading
+                            ? "Enter remaining credit"
+                            : "Enter meter reading"
+                        }
+                        value={
+                          (isPrepaidReading
+                            ? values?.removal?.tokenReading
+                            : values?.removal?.meterReading) || ""
+                        }
+                        onChangeText={(text) => {
+                          const clean = text.replace(/[^\d.]/g, "");
+                          // A reading and a reason never go together.
+                          if (clean) {
+                            setFieldValue(
+                              "removal.noReadingReason",
+                              makeEmptySelectWithOther(),
+                            );
+                          }
+                          setFieldValue(
+                            isPrepaidReading
+                              ? "removal.tokenReading"
+                              : "removal.meterReading",
+                            clean,
+                          );
+                        }}
+                        keyboardType="numeric"
+                        style={styles.readingInput}
+                      />
 
-                          <View style={styles.questionEvidenceSlot}>
-                            <IrepsMedia
-                              name="media"
-                              tag="tokenReadingPhoto"
-                              agentName={agentName}
-                              agentUid={agentUid}
-                              fallbackGps={fallbackGps}
-                              required={
-                                !!String(
-                                  values?.removal?.tokenReading || "",
-                                ).trim()
-                              }
-                            />
-                          </View>
-                        </>
+                      {String(
+                        (isPrepaidReading
+                          ? values?.removal?.tokenReading
+                          : values?.removal?.meterReading) || "",
+                      ).trim() ? (
+                        <View style={styles.questionEvidenceSlot}>
+                          <IrepsMedia
+                            name="media"
+                            tag={
+                              isPrepaidReading
+                                ? "tokenReadingPhoto"
+                                : "removalMeterReadingEvidence"
+                            }
+                            agentName={agentName}
+                            agentUid={agentUid}
+                            fallbackGps={fallbackGps}
+                            required
+                          />
+                        </View>
                       ) : (
-                        <>
-                          <TextInput
-                            mode="outlined"
-                            label="Meter Reading"
-                            value={values?.removal?.meterReading}
-                            onChangeText={(text) =>
-                              setFieldValue(
-                                "removal.meterReading",
-                                text.replace(/[^\d.]/g, ""),
-                              )
-                            }
-                            keyboardType="numeric"
-                            style={styles.readingInput}
-                          />
-
-                          <View style={styles.questionEvidenceSlot}>
-                            <IrepsMedia
-                              name="media"
-                              tag="removalMeterReadingEvidence"
-                              agentName={agentName}
-                              agentUid={agentUid}
-                              fallbackGps={fallbackGps}
-                              required={
-                                !!String(
-                                  values?.removal?.meterReading || "",
-                                ).trim()
-                              }
-                            />
-                          </View>
-                        </>
+                        <IrepsSelectWithOther
+                          label={
+                            isPrepaidReading
+                              ? "Reason Remaining Credit Could Not Be Captured"
+                              : "No Reading Reason"
+                          }
+                          placeholder="Select reason"
+                          options={
+                            (isPrepaidReading
+                              ? REMAINING_CREDIT_REASON_LOOKUP
+                              : noReadingReasonLookup
+                            ).options
+                          }
+                          includeOther
+                          value={values?.removal?.noReadingReason}
+                          onChange={(nextValue) =>
+                            setFieldValue("removal.noReadingReason", nextValue)
+                          }
+                          errorText={
+                            typeof removalErrors?.noReadingReason === "string"
+                              ? removalErrors.noReadingReason
+                              : ""
+                          }
+                        />
                       )}
-
-                      <IrepsSelectWithOther
-                        label="No Reading Reason"
-                        placeholder="Select reason"
-                        options={noReadingReasonLookup.options}
-                        includeOther={noReadingReasonLookup.allowOther ?? true}
-                        otherCode={noReadingReasonLookup.otherCode || "OTHER"}
-                        otherLabel={noReadingReasonLookup.otherLabel || "Other"}
-                        loading={
-                          noReadingReasonLookup.isLoading ||
-                          noReadingReasonLookup.isFetching
-                        }
-                        value={values?.removal?.noReadingReason}
-                        onChange={(nextValue) =>
-                          setFieldValue("removal.noReadingReason", nextValue)
-                        }
-                        errorText={
-                          typeof removalErrors?.noReadingReason === "string"
-                            ? removalErrors.noReadingReason
-                            : ""
-                        }
-                      />
                     </Surface>
-
-                    <YesNoQuestion
-                      title="Safety confirmed"
-                      description="Confirm that the removal was left safe after the work was done."
-                      value={values?.removal?.safetyConfirmed?.answer}
-                      notes={values?.removal?.safetyConfirmed?.notes}
-                      answerPath="removal.safetyConfirmed.answer"
-                      notesPath="removal.safetyConfirmed.notes"
-                      setFieldValue={setFieldValue}
-                      errorText={
-                        removalErrors?.safetyConfirmed?.answer ||
-                        removalErrors?.safetyConfirmed?.notes
-                      }
-                    >
-                      <IrepsMedia
-                        name="media"
-                        tag="safetyEvidence"
-                        agentName={agentName}
-                        agentUid={agentUid}
-                        fallbackGps={fallbackGps}
-                        required={
-                          values?.removal?.safetyConfirmed?.answer === "yes"
-                        }
-                      />
-                    </YesNoQuestion>
                   </>
                 )}
 

@@ -82,9 +82,6 @@ test("the lists that came from the server keep the server's words and codes", ()
       "NO_ACCESS_TO_PREMISES",
     ],
   );
-  assert.deepEqual(getLocalSelectLookup("removal_instructions").options, [
-    { code: "METER_REMOVE_DECOMMISION", label: "Meter remove decommission" },
-  ]);
   assert.equal(getLocalSelectLookup("meter_reading_instructions").options.length, 6);
 });
 

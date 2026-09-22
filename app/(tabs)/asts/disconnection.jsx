@@ -3,6 +3,10 @@ import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
 import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
+import {
+  findingFormName,
+  findingInstruction,
+} from "../../../src/features/meters/findingInstructions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -577,6 +581,7 @@ const OfficeInstructionSection = ({
   color,
   instruction,
   media,
+  fromLabel = "",
 }) => {
   const [activeMedia, setActiveMedia] = useState(null);
 
@@ -617,6 +622,13 @@ const OfficeInstructionSection = ({
       <View style={styles.readOnlyBox}>
         <Text style={styles.readOnlyLabel}>Instruction</Text>
         <Text style={styles.readOnlyValue}>{instruction?.text || "NAv"}</Text>
+
+        {!!fromLabel && (
+          <>
+            <Text style={styles.readOnlyLabel}>From</Text>
+            <Text style={styles.readOnlyValue}>{fromLabel}</Text>
+          </>
+        )}
 
         <Text style={styles.readOnlyLabel}>Instruction Notes</Text>
         <Text style={styles.readOnlyValue}>
@@ -828,7 +840,7 @@ export default function FormMeterDisconnection() {
     action?.ast?.astData?.astId,
   );
 
-  const officeInstruction = useMemo(() => {
+  const rawOfficeInstruction = useMemo(() => {
     return action?.officeInstruction || action?.assignment?.instruction || {};
   }, [action]);
 
@@ -896,9 +908,28 @@ export default function FormMeterDisconnection() {
   const instructionTrnId = isFieldOrigin ? "" : instructionTrnIdCandidate;
   const returnTo = readFirstString(routeReturnTo, action?.returnTo);
 
+  // MN-R001 1.2.0: work that follows a finding carries the finding's
+  // instruction, locked, with the form it came from.
+  const findingFrom =
+    isFieldOrigin && fieldOrigin.parentTrnId
+      ? findingFormName(fieldOrigin.parentTrnType)
+      : "";
+
+  const officeInstruction = useMemo(
+    () =>
+      findingFrom
+        ? findingInstruction("METER_DISCONNECTION")
+        : rawOfficeInstruction,
+    [findingFrom, rawOfficeInstruction],
+  );
+
   const instructionLocked = useMemo(() => {
-    return Boolean(instructionTrnId) || isLifecycleInstructionLocked(action);
-  }, [action, instructionTrnId]);
+    return (
+      Boolean(instructionTrnId) ||
+      isLifecycleInstructionLocked(action) ||
+      Boolean(findingFrom)
+    );
+  }, [action, instructionTrnId, findingFrom]);
 
   const [inProgress, setInProgress] = useState(false);
   const [saveInProgress, setSaveInProgress] = useState(false);
@@ -2016,6 +2047,7 @@ export default function FormMeterDisconnection() {
                   icon="text-box-remove-outline"
                   color="#ef4444"
                   instruction={officeInstruction}
+                  fromLabel={findingFrom}
                   media={officeInstructionMedia}
                 />
               ) : (
