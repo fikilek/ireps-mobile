@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { Checkbox, Surface } from "react-native-paper";
+import { Checkbox, RadioButton, Surface } from "react-native-paper";
 import FormInputMeterNo from "../../src/features/meters/FormInputMeterNo";
 import {
   NORMALISATION_JOB_ACTIONS,
@@ -112,19 +112,21 @@ export const ElectricitySections = ({
     }
 
     if (!needsReason && values?.ast?.normalisation?.noActionReason) {
+      setFieldValue("ast.normalisation.noActionReasonOther", "", false);
       setFieldValue("ast.normalisation.noActionReason", "");
-      setFieldValue("ast.normalisation.noActionReasonOther", "");
     }
     // setFieldValue is stable for the life of the form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [normalisationOptionsKey, normalisationActionsKey, needsReason]);
 
+  // One reason only. The typed words are cleared first, without a check, so the
+  // check that runs on the reason itself sees the whole answer.
   const handleReasonSelect = (reason) => {
-    setFieldValue("ast.normalisation.noActionReason", reason);
-
     if (reason !== NO_ACTION_REASON_OTHER) {
-      setFieldValue("ast.normalisation.noActionReasonOther", "");
+      setFieldValue("ast.normalisation.noActionReasonOther", "", false);
     }
+
+    setFieldValue("ast.normalisation.noActionReason", reason);
   };
 
   return (
@@ -518,9 +520,12 @@ export const ElectricitySections = ({
                     onPress={() => handleReasonSelect(reason)}
                     disabled={disabled}
                   >
-                    <Checkbox.Android
+                    <RadioButton.Android
+                      value={reason}
                       status={isChosen ? "checked" : "unchecked"}
                       color="#2563eb"
+                      onPress={() => handleReasonSelect(reason)}
+                      disabled={disabled}
                     />
                     <Text
                       style={[

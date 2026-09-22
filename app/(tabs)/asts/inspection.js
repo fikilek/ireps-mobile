@@ -1131,8 +1131,8 @@ function InspectionNormalisation({
     }
 
     if (!needsReason && normalisation?.noActionReason) {
+      setFieldValue(`${base}.noActionReasonOther`, "", false);
       setFieldValue(`${base}.noActionReason`, "");
-      setFieldValue(`${base}.noActionReasonOther`, "");
     }
     // setFieldValue is stable for the life of the form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1201,10 +1201,12 @@ function InspectionNormalisation({
                 key={reason}
                 style={styles.normalisationRow}
                 onPress={() => {
-                  setFieldValue(`${base}.noActionReason`, reason);
+                  // The typed words first, without a check, so the check on
+                  // the reason sees the whole answer.
                   if (reason !== NO_ACTION_REASON_OTHER) {
-                    setFieldValue(`${base}.noActionReasonOther`, "");
+                    setFieldValue(`${base}.noActionReasonOther`, "", false);
                   }
+                  setFieldValue(`${base}.noActionReason`, reason);
                 }}
               >
                 <MaterialCommunityIcons
