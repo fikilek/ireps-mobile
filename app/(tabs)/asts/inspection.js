@@ -1894,10 +1894,14 @@ function SameDeleteTextField({
         )}
       </View>
 
+      {/* The field name sits above the box, exactly as on the drop-down
+          fields, so every question on the form reads the same way. */}
+      <Text style={styles.fieldLabel}>{label}</Text>
+
       <View style={isDifferent ? styles.differentFieldFrame : null}>
         <TextInput
           mode="outlined"
-          label={label}
+          placeholder={`Enter ${label.toLowerCase()}`}
           value={value || ""}
           onChangeText={onChangeText}
           keyboardType={keyboardType}
@@ -4527,6 +4531,13 @@ export default function InspectionScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Same as the drop-down fields' label (components/IrepsSelectWithOther.jsx).
+  fieldLabel: {
+    marginBottom: 6,
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#111827",
+  },
   normalisationRow: {
     flexDirection: "row",
     alignItems: "center",
