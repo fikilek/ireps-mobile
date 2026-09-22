@@ -3,6 +3,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
 import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
+import { confirmSubmit, showResult } from "../../../src/utils/submitWindows";
 import {
   findingFormName,
   findingInstruction,
@@ -1760,6 +1761,34 @@ export default function FormMeterRemoval() {
       return;
     }
 
+    const noAccessChosen =
+      String(values?.accessData?.access?.hasAccess || "").toLowerCase() ===
+      "no";
+    const meterNo = astDoc?.ast?.astData?.astNo || "";
+    const chosenInstruction = instructionLocked
+      ? officeInstruction
+      : {
+          code: values?.assignment?.instructionSelect?.code,
+          text: selectWithOtherToText(values?.assignment?.instructionSelect),
+        };
+    const replaces =
+      installationFollows || isReplaceMeterInstruction(chosenInstruction);
+
+    // MN-R001 13.1: a confirmation window before sending.
+    const go = await confirmSubmit({
+      title: "Submit this removal?",
+      message: noAccessChosen
+        ? `Meter ${meterNo}\nNo Access: nothing is removed and nothing follows.`
+        : [
+            `Meter ${meterNo}`,
+            `Instruction: ${chosenInstruction?.text || "NAv"}`,
+            replaces
+              ? "Next: Meter Installation opens (step 2)."
+              : "Nothing opens after this.",
+          ].join("\n"),
+    });
+    if (!go) return;
+
     try {
       setInProgress(true);
 
@@ -1893,20 +1922,34 @@ export default function FormMeterRemoval() {
           return;
         }
 
-        router.replace(getLifecycleReturnRoute());
-        router.push(
-          buildInstallationRouteParams({
-            premiseId: installationPremiseId,
-            removalTrnId: result?.trnId || cleanPayload?.id,
-            replacedAstId: astDoc?.id || sourceAstId,
-            replacedMeterNo: astDoc?.ast?.astData?.astNo || action?.meterNo,
-            meterType: astDoc?.meterType || action?.meterType || "electricity",
-          }),
-        );
+        showResult({
+          title: "Removal sent",
+          message: `Meter ${meterNo} is removed. Meter Installation opens now (step 2).`,
+          onOk: () => {
+            router.replace(getLifecycleReturnRoute());
+            router.push(
+              buildInstallationRouteParams({
+                premiseId: installationPremiseId,
+                removalTrnId: result?.trnId || cleanPayload?.id,
+                replacedAstId: astDoc?.id || sourceAstId,
+                replacedMeterNo:
+                  astDoc?.ast?.astData?.astNo || action?.meterNo,
+                meterType:
+                  astDoc?.meterType || action?.meterType || "electricity",
+              }),
+            );
+          },
+        });
         return;
       }
 
-      navigateAfterRemoval();
+      showResult({
+        title: "Removal sent",
+        message: noAccessChosen
+          ? "Saved as No Access. Nothing was removed."
+          : `Meter ${meterNo} is now Removed.`,
+        onOk: navigateAfterRemoval,
+      });
       return;
     } catch (error) {
       console.error("RemovalSubmission Error:", error);

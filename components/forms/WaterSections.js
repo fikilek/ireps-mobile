@@ -1,5 +1,6 @@
 import { View } from "react-native";
 import FormInputMeterNo from "../../src/features/meters/FormInputMeterNo";
+import { getFormOptions } from "../../src/features/meters/formOptions";
 import { removeRemainingCreditPhoto } from "../../src/features/meters/remainingCreditContract";
 import SovereignLocationPicker from "../maps/SovereignLocationPicker";
 import { IrepsMedia } from "../media/IrepsMedia";
@@ -45,7 +46,7 @@ export const WaterSections = ({
         <FormSelect
           label="Category (Normal/Bulk)"
           options={
-            isDiscovery ? getOptions("meter_categories") : ["Normal", "Bulk"]
+            getFormOptions("meter_categories")
           }
           name="ast.astData.meter.category"
           disabled={disabled}
@@ -53,9 +54,7 @@ export const WaterSections = ({
         <FormSelect
           label="TYPE"
           options={
-            isDiscovery
-              ? getOptions("meter_types")
-              : ["prepaid", "conventional"]
+            getFormOptions("meter_types")
           }
           name="ast.astData.meter.type"
           disabled={disabled}

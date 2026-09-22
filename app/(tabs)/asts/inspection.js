@@ -29,6 +29,11 @@ import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
 import { SubmitBlockers } from "../../../components/forms/SubmitBlockers";
 import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
+import {
+  SAVED_FORMS_PLACE,
+  confirmSubmit,
+  showResult,
+} from "../../../src/utils/submitWindows";
 import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import IrepsSelectWithOther, {
   isSelectWithOtherFilled,
@@ -83,22 +88,10 @@ const INSP_SUBMIT_TIMEOUT_MS = 15000;
 const GPS_TOLERANCE_METERS = 5;
 const GPS_NEIGHBOURHOOD_RADIUS_METERS = 100;
 
-const OFF_GRID_SUPPLY_OPTIONS = [
-  {
-    code: "yes",
-    label: "Yes",
-    description: "Off-grid supply is present.",
-    sortOrder: 10,
-    enabled: true,
-  },
-  {
-    code: "no",
-    label: "No",
-    description: "No off-grid supply observed.",
-    sortOrder: 20,
-    enabled: true,
-  },
-];
+// UI-R003: Discovery's off-grid list (Yes / No, stored yes / no).
+const OFF_GRID_SUPPLY_OPTIONS = getLocalSelectLookup("off_grid_supply", {
+  allowOther: false,
+}).options;
 
 const EXECUTION_MEDIA_TAGS = [
   "astNoPhoto",
@@ -799,7 +792,9 @@ function cloneAstForInspection(ast = {}) {
       astName: astData?.astName || "",
       meter: {
         type: meter?.type || "",
+        typeSelect: makeEmptySelectWithOther(),
         category: meter?.category || "",
+        categorySelect: makeEmptySelectWithOther(),
         phase: meter?.phase || "",
         phaseSelect: makeEmptySelectWithOther(),
         cb: {
@@ -965,6 +960,22 @@ function buildComparison({ values, actorUid, actorName }) {
       { fieldPath: "location.placement", label: "Meter Placement" },
       { fieldPath: "ogs.hasOffGridSupply", label: "Off-grid Supply" },
     );
+  }
+
+  // MN-R001 8 (1.3.0): a status found that differs from the record is one of
+  // the differences the worker confirms.
+  const recordedState = String(values?.inspection?.lastKnown?.status?.state || "")
+    .trim()
+    .toUpperCase();
+  const foundState = String(values?.status?.state || "").trim().toUpperCase();
+  if (recordedState && foundState && recordedState !== foundState) {
+    differences.push({
+      fieldPath: "status.state",
+      label: "Meter Status",
+      lastKnownValue: recordedState,
+      capturedValue: foundState,
+      result: "MISMATCH",
+    });
   }
 
   comparisonFields.forEach((config) =>
@@ -1356,6 +1367,63 @@ const INSPECTION_OTHER_ANOMALIES = getFormOptions("other_anomalies");
 const NO_READING_LOOKUP = getLocalSelectLookup("no_reading_reasons");
 const PLACEMENT_LOOKUP = getLocalSelectLookup("placements");
 const PHASE_LOOKUP = getLocalSelectLookup("meter_phases", { allowOther: false });
+const METER_KIND_LOOKUP = getLocalSelectLookup("meter_types", {
+  allowOther: false,
+});
+const METER_CATEGORY_LOOKUP = getLocalSelectLookup("meter_categories", {
+  allowOther: false,
+});
+
+// UI-R003 1.3.0: a choice is stored as Discovery stores it (single, prepaid,
+// yes); a typed Other keeps its words; NAv stays NAv.
+function selectToStoredValue(select = {}) {
+  if (String(select?.code || "") === "OTHER") {
+    return String(select?.otherText || "").trim();
+  }
+  return String(select?.code || "").trim();
+}
+
+// MN-R001 8: an inspection records Connected or Disconnected only.
+function isFoundStatus(state) {
+  return ["CONNECTED", "DISCONNECTED"].includes(
+    String(state || "").trim().toUpperCase(),
+  );
+}
+
+function statusWords(state) {
+  const clean = String(state || "").trim().toUpperCase();
+  if (clean === "CONNECTED") return "Connected";
+  if (clean === "DISCONNECTED") return "Disconnected";
+  return clean || "NAv";
+}
+
+// The confirmation window's words (MN-R001 13.1).
+function describeInspectionSubmit(values = {}, { noAccess = false, next = "" } = {}) {
+  const astNo =
+    values?.inspection?.captured?.ast?.astData?.astNo ||
+    values?.inspection?.lastKnown?.ast?.astData?.astNo ||
+    "";
+
+  if (noAccess) {
+    return `Meter ${astNo}\nNo Access: the meter does not change.`;
+  }
+
+  const nextLine =
+    next === "DISCONNECTION"
+      ? "Next: the disconnection form opens."
+      : next === "REPLACEMENT"
+        ? "Next: the removal form opens, then the installation."
+        : next === "MANAGER"
+          ? "The work that follows must be issued as an office instruction."
+          : "Nothing opens after this.";
+
+  return [
+    `Meter ${astNo}`,
+    `Status found: ${statusWords(values?.status?.state)}`,
+    `Finding: ${getInspectionAnomalyName(values) || "NAv"}`,
+    nextLine,
+  ].join("\n");
+}
 const METER_STATE_LOOKUP = getLocalSelectLookup("meter_lifecycle_states", {
   allowOther: false,
 });
@@ -1531,10 +1599,10 @@ const InspectionSchema = object()
         }
       }
 
-      if (!String(values?.status?.state || "").trim()) {
+      if (!isFoundStatus(values?.status?.state)) {
         return this.createError({
           path: "status.stateSelect",
-          message: "Meter status is required",
+          message: "Choose the status you found: Connected or Disconnected",
         });
       }
 
@@ -1554,7 +1622,9 @@ const InspectionSchema = object()
         });
       }
 
-      const normalisationError = getNormalisationValidationError({
+      const normalisationError =
+        requireElectricityOnlyFields &&
+        getNormalisationValidationError({
         anomaly: getInspectionAnomalyName(values),
         actionTaken: capturedAst?.normalisation?.actionTaken,
         noActionReason: capturedAst?.normalisation?.noActionReason,
@@ -1581,7 +1651,7 @@ const InspectionSchema = object()
       ) {
         return this.createError({
           path: "media",
-          message: "Anomaly photo is required when anomaly is not Meter Ok",
+          message: "An anomaly photo is required for this finding",
         });
       }
 
@@ -1591,8 +1661,7 @@ const InspectionSchema = object()
       ) {
         return this.createError({
           path: "media",
-          message:
-            "Normalisation photo is required when normalisation is not None",
+          message: "Photo proof of the normalisation is required.",
         });
       }
 
@@ -1991,6 +2060,37 @@ function buildMissingValueField({
   };
 }
 
+// Meter Kind, Meter Category and Phase: Discovery's dropdown, with SAME and
+// DELETE, stored as Discovery stores it (UI-R003 1.3.0).
+function buildMeterSelectField({
+  key,
+  label,
+  lookup,
+  meter,
+  lastKnownMeter,
+  setFieldValue,
+  errors,
+  errorPath,
+}) {
+  const base = "inspection.captured.ast.astData.meter";
+  const apply = (nextValue) => {
+    setFieldValue(`${base}.${key}Select`, nextValue);
+    setFieldValue(`${base}.${key}`, selectToStoredValue(nextValue));
+  };
+
+  return {
+    label,
+    value: meter?.[`${key}Select`],
+    lastKnownValue: lastKnownMeter?.[key],
+    options: lookup.options,
+    lookup,
+    onChange: apply,
+    onSame: () => apply(makeSameSelect(lastKnownMeter?.[key], lookup.options)),
+    onDelete: () => apply(makeEmptySelectWithOther()),
+    errorText: getErrorText(errors, errorPath || `${base}.${key}`),
+  };
+}
+
 // On submit a value wins over a why; the select's working copy is not sent.
 function canonicalizeMissingReasons(meter = {}) {
   const next = { ...meter };
@@ -2111,13 +2211,12 @@ function SameDeleteSelectField({
   onSame,
   onDelete,
   errorText = "",
-  sameNeedsRecordedValue = false,
+  sameAllowed = true,
 }) {
   const displayText = selectWithOtherToText(value);
   const hasValue = Boolean(String(displayText || "").trim());
-  // Current Status: SAME only when iREPS holds a status. NAv is never a status.
-  const showSame =
-    !hasValue && (!sameNeedsRecordedValue || hasRecordedValue(lastKnownValue));
+  // Current Status offers SAME only for Connected or Disconnected (MN-R001 8).
+  const showSame = !hasValue && sameAllowed;
   const isDifferent = isDifferentFromExisting({
     value: displayText,
     lastKnownValue,
@@ -2681,9 +2780,12 @@ export default function InspectionScreen() {
             ...(capturedAst?.astData || {}),
             meter: canonicalizeMissingReasons(capturedAst?.astData?.meter || {}),
           },
-          normalisation: buildCanonicalNormalisation(
-            capturedAst?.normalisation,
-          ),
+          // MN-R001 10: a water inspection records None.
+          normalisation: isElectricityMeterService(
+            values?.meterType || values?.inspection?.lastKnown?.meterType,
+          )
+            ? buildCanonicalNormalisation(capturedAst?.normalisation)
+            : { actionTaken: [NORMALISATION_NONE] },
         },
         mreading: buildCapturedMreading(values, {
           isConventional: payloadIsConventional,
@@ -2861,14 +2963,11 @@ export default function InspectionScreen() {
       return false;
     }
 
-    setSubmitOutcome({
-      visible: false,
-      type: null,
-      title: "",
-      message: "",
+    showResult({
+      title: messageTitle,
+      message: messageBody,
+      onOk: routeBackAfterInspection,
     });
-
-    routeBackAfterInspection();
 
     return true;
   }
@@ -2879,8 +2978,8 @@ export default function InspectionScreen() {
 
       await saveDraftToQueue(
         values,
-        "SAVED LOCALLY",
-        "This INSP execution form was saved locally only. It was not submitted and no backend update was made.",
+        "Saved on this phone",
+        `This inspection is saved on this phone only. It has NOT been sent. To send it, open it from ${SAVED_FORMS_PLACE} and press SUBMIT.`,
       );
 
       setSaveInProgress(false);
@@ -3047,6 +3146,34 @@ export default function InspectionScreen() {
       comparison?.hasDifferences &&
       comparison?.confirmation?.confirmed === true;
 
+    const nextWork = noAccess
+      ? ""
+      : getFollowOnWork(
+          submitValues?.inspection?.captured?.ast?.normalisation?.actionTaken,
+        );
+    const workerCanFollowOn = canDoFieldDisconnection(profile?.employment?.role);
+    const followOnNote = nextWork
+      ? `\n\nThe ${nextWork === "DISCONNECTION" ? "disconnection" : "removal"} cannot start until the inspection has been sent.`
+      : "";
+
+    // MN-R001 13.1: a confirmation window before sending. Confirmed
+    // differences have just been through one.
+    if (!hasConfirmedDifferences) {
+      const go = await confirmSubmit({
+        title: "Submit this inspection?",
+        message: describeInspectionSubmit(submitValues, {
+          noAccess,
+          next: nextWork && !workerCanFollowOn ? "MANAGER" : nextWork,
+        }),
+      });
+
+      if (!go) {
+        setInProgress(false);
+        helpers?.setSubmitting?.(false);
+        return;
+      }
+    }
+
     try {
       setInProgress(true);
 
@@ -3057,14 +3184,14 @@ export default function InspectionScreen() {
         if (hasConfirmedDifferences) {
           await saveDraftToQueue(
             submitValues,
-            "SAVED LOCALLY",
-            "You are offline. The confirmed INSP form was saved locally and marked pending for submission when network connectivity returns.",
+            "Saved on this phone, not sent",
+            `You are offline, so the inspection was NOT sent. It is saved on this phone. When you are online, open it from ${SAVED_FORMS_PLACE} and press SUBMIT.${followOnNote}`,
             "PENDING",
           );
         } else {
           Alert.alert(
-            "Offline",
-            "You are offline. Use SAVE to keep this INSP execution form locally, then submit when online.",
+            "Offline: nothing was sent",
+            "You are offline. Press SAVE to keep this inspection on the phone, then submit it when you are online.",
           );
         }
 
@@ -3094,8 +3221,8 @@ export default function InspectionScreen() {
         if (error?.message === "SUBMISSION_TIMEOUT") {
           await saveDraftToQueue(
             submitValues,
-            "SAVED LOCALLY",
-            "The submission took too long. The INSP form was saved locally only and was not confirmed by the backend.",
+            "Saved on this phone, not sent",
+            `The network was too slow, so the inspection was NOT sent. It is saved on this phone. Open it from ${SAVED_FORMS_PLACE} and press SUBMIT again.${followOnNote}`,
             "PENDING",
           );
 
@@ -3162,7 +3289,7 @@ export default function InspectionScreen() {
 
       if (followOnWork && !canDoFieldDisconnection(profile?.employment?.role)) {
         Alert.alert(
-          "Inspection saved",
+          "Inspection sent",
           followOnWork === "DISCONNECTION"
             ? MANAGER_DISCONNECTION_MESSAGE
             : MANAGER_REPLACEMENT_MESSAGE,
@@ -3196,15 +3323,29 @@ export default function InspectionScreen() {
           returnTo: "/(tabs)/asts",
         };
 
-        router.replace(
-          followOnWork === "DISCONNECTION"
-            ? buildDisconnectionRouteParams(handover)
-            : buildRemovalRouteParams(handover),
-        );
+        showResult({
+          title: "Inspection sent",
+          message:
+            followOnWork === "DISCONNECTION"
+              ? "The disconnection form opens now."
+              : "The removal form opens now (step 1 of the replacement).",
+          onOk: () =>
+            router.replace(
+              followOnWork === "DISCONNECTION"
+                ? buildDisconnectionRouteParams(handover)
+                : buildRemovalRouteParams(handover),
+            ),
+        });
         return;
       }
 
-      routeBackAfterInspection();
+      showResult({
+        title: "Inspection sent",
+        message: noAccess
+          ? "Saved as No Access. The meter does not change."
+          : `Meter ${cleanPayload?.inspection?.captured?.ast?.astData?.astNo || ""} is recorded as ${statusWords(cleanPayload?.status?.state)}.`,
+        onOk: routeBackAfterInspection,
+      });
     } catch (error) {
       Alert.alert("Error", error?.message || "Submission failed");
       setInProgress(false);
@@ -3303,13 +3444,23 @@ export default function InspectionScreen() {
           }
         : getActionAssignment(action),
       media: [],
-      status: {
-        ...(lastKnown?.status || {}),
-        stateSelect: makeSelectFromText(
-          lastKnown?.status?.state || action?.meterPreStatus,
-          connectionStatusLookup.options,
-        ),
-      },
+      // MN-R001 1.3.0: the status is filled in only when the record holds
+      // Connected or Disconnected; for Field or Removed the worker chooses.
+      status: (() => {
+        const known = String(
+          lastKnown?.status?.state || action?.meterPreStatus || "",
+        )
+          .trim()
+          .toUpperCase();
+        const usable = isFoundStatus(known);
+        return {
+          ...(lastKnown?.status || {}),
+          state: usable ? known : "",
+          stateSelect: usable
+            ? makeSelectFromText(known, connectionStatusLookup.options)
+            : makeEmptySelectWithOther(),
+        };
+      })(),
       serviceProvider,
       workflow: action?.workflow || action?.raw?.workflow || {},
       origin: action?.origin || action?.raw?.origin || {},
@@ -3455,11 +3606,20 @@ export default function InspectionScreen() {
           const summaryErfNo = readFirstString(
             values?.accessData?.erfNo,
             action?.erfNo,
+            astDoc?.accessData?.erfNo,
             "NAv",
           );
+          const recordAddress = astDoc?.accessData?.premise?.address;
           const summaryPremiseAddress = readFirstString(
-            values?.accessData?.premise?.address,
+            typeof values?.accessData?.premise?.address === "string"
+              ? values.accessData.premise.address
+              : "",
             action?.address,
+            typeof recordAddress === "string"
+              ? recordAddress
+              : [recordAddress?.strNo, recordAddress?.strName, recordAddress?.strType]
+                  .filter(Boolean)
+                  .join(" "),
             "NAv",
           );
 
@@ -3774,64 +3934,30 @@ export default function InspectionScreen() {
                     </Surface>
 
                     <Surface style={styles.questionCard} elevation={1}>
-                      <SameDeleteTextField
-                        label="Meter Kind"
-                        value={meter?.type}
-                        lastKnownValue={lastKnownAst?.astData?.meter?.type}
-                        onChangeText={(text) =>
-                          setFieldValue(
-                            "inspection.captured.ast.astData.meter.type",
-                            text,
-                          )
-                        }
-                        onSame={() =>
-                          setFieldValue(
-                            "inspection.captured.ast.astData.meter.type",
-                            sameText(lastKnownAst?.astData?.meter?.type),
-                          )
-                        }
-                        onDelete={() =>
-                          setFieldValue(
-                            "inspection.captured.ast.astData.meter.type",
-                            "",
-                          )
-                        }
-                        errorText={
-                          typeof capturedErrors?.astData?.meter?.type ===
-                          "string"
-                            ? capturedErrors.astData.meter.type
-                            : ""
-                        }
+                      <SameDeleteSelectField
+                        {...buildMeterSelectField({
+                          key: "type",
+                          label: "Meter Kind",
+                          lookup: METER_KIND_LOOKUP,
+                          meter,
+                          lastKnownMeter: lastKnownAst?.astData?.meter,
+                          setFieldValue,
+                          errors,
+                        })}
                       />
                     </Surface>
 
                     <Surface style={styles.questionCard} elevation={1}>
-                      <SameDeleteTextField
-                        label="Meter Category"
-                        value={meter?.category}
-                        lastKnownValue={lastKnownAst?.astData?.meter?.category}
-                        onChangeText={(text) =>
-                          setFieldValue(
-                            "inspection.captured.ast.astData.meter.category",
-                            text,
-                          )
-                        }
-                        onSame={() =>
-                          setFieldValue(
-                            "inspection.captured.ast.astData.meter.category",
-                            sameText(lastKnownAst?.astData?.meter?.category),
-                          )
-                        }
-                        onDelete={() =>
-                          setFieldValue(
-                            "inspection.captured.ast.astData.meter.category",
-                            "",
-                          )
-                        }
-                        errorText={getErrorText(
+                      <SameDeleteSelectField
+                        {...buildMeterSelectField({
+                          key: "category",
+                          label: "Meter Category",
+                          lookup: METER_CATEGORY_LOOKUP,
+                          meter,
+                          lastKnownMeter: lastKnownAst?.astData?.meter,
+                          setFieldValue,
                           errors,
-                          "inspection.captured.ast.astData.meter.category",
-                        )}
+                        })}
                       />
                     </Surface>
 
@@ -3839,49 +3965,17 @@ export default function InspectionScreen() {
                       <>
                         <Surface style={styles.questionCard} elevation={1}>
                           <SameDeleteSelectField
-                            label="Phase"
-                            value={meter?.phaseSelect}
-                            lastKnownValue={lastKnownAst?.astData?.meter?.phase}
-                            options={phaseLookup.options}
-                            lookup={phaseLookup}
-                            onChange={(nextValue) => {
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.phaseSelect",
-                                nextValue,
-                              );
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.phase",
-                                selectWithOtherToText(nextValue),
-                              );
-                            }}
-                            onSame={() => {
-                              const nextValue = makeSameSelect(
-                                lastKnownAst?.astData?.meter?.phase,
-                                phaseLookup.options,
-                              );
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.phaseSelect",
-                                nextValue,
-                              );
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.phase",
-                                selectWithOtherToText(nextValue),
-                              );
-                            }}
-                            onDelete={() => {
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.phaseSelect",
-                                makeEmptySelectWithOther(),
-                              );
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.phase",
-                                "",
-                              );
-                            }}
-                            errorText={getErrorText(
+                            {...buildMeterSelectField({
+                              key: "phase",
+                              label: "Phase",
+                              lookup: phaseLookup,
+                              meter,
+                              lastKnownMeter: lastKnownAst?.astData?.meter,
+                              setFieldValue,
                               errors,
-                              "inspection.captured.ast.astData.meter.phaseSelect",
-                            )}
+                              errorPath:
+                                "inspection.captured.ast.astData.meter.phaseSelect",
+                            })}
                           />
                         </Surface>
 
@@ -4232,7 +4326,9 @@ export default function InspectionScreen() {
                       <Surface style={styles.questionCard} elevation={1}>
                         <SameDeleteSelectField
                           label="Current Status"
-                          sameNeedsRecordedValue
+                          sameAllowed={isFoundStatus(
+                            values?.inspection?.lastKnown?.status?.state,
+                          )}
                           value={values?.status?.stateSelect}
                           lastKnownValue={
                             values?.inspection?.lastKnown?.status?.state
@@ -4291,34 +4387,38 @@ export default function InspectionScreen() {
                       // </Surface>
                     )}
 
-                    <Surface style={styles.questionCard} elevation={1}>
-                      <View style={styles.questionHeader}>
-                        <Text style={styles.questionTitle}>Normalisation</Text>
-                        <Text style={styles.questionDescription}>
-                          Select what was done after inspection.
-                        </Text>
-                      </View>
-
-                      <InspectionNormalisation
-                        anomaly={getInspectionAnomalyName(values)}
-                        normalisation={capturedAst?.normalisation}
-                        errors={capturedErrors?.normalisation}
-                        setFieldValue={setFieldValue}
-                      />
-
-                      {shouldRequireNormalisationPhoto(values) && (
-                        <View style={styles.evidenceSlot}>
-                          <IrepsMedia
-                            name="media"
-                            tag="normalisationPhoto"
-                            agentName={agentName}
-                            agentUid={agentUid}
-                            fallbackGps={capturedAst?.location?.gps || null}
-                            required={true}
-                          />
+                    {/* MN-R001 10: water shows no normalisation, as on Meter
+                        Discovery's water form. */}
+                    {isElectricityInspectionService && (
+                      <Surface style={styles.questionCard} elevation={1}>
+                        <View style={styles.questionHeader}>
+                          <Text style={styles.questionTitle}>Normalisation</Text>
+                          <Text style={styles.questionDescription}>
+                            Select what was done after inspection.
+                          </Text>
                         </View>
-                      )}
-                    </Surface>
+
+                        <InspectionNormalisation
+                          anomaly={getInspectionAnomalyName(values)}
+                          normalisation={capturedAst?.normalisation}
+                          errors={capturedErrors?.normalisation}
+                          setFieldValue={setFieldValue}
+                        />
+
+                        {shouldRequireNormalisationPhoto(values) && (
+                          <View style={styles.evidenceSlot}>
+                            <IrepsMedia
+                              name="media"
+                              tag="normalisationPhoto"
+                              agentName={agentName}
+                              agentUid={agentUid}
+                              fallbackGps={capturedAst?.location?.gps || null}
+                              required={true}
+                            />
+                          </View>
+                        )}
+                      </Surface>
+                    )}
 
                     {isConventional && (
                       <Surface style={styles.questionCard} elevation={1}>

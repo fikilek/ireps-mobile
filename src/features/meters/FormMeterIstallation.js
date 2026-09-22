@@ -1040,7 +1040,8 @@ export default function FormMeterInstallation() {
         ast: {
           astData: {
             astNo: "",
-            astManufacturer: "Colog",
+            // UI-R003 1.3.0: no make chosen until the worker picks one.
+            astManufacturer: "",
             astName: "",
             meter: {
               phase: "",

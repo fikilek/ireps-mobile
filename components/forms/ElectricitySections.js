@@ -133,7 +133,7 @@ export const ElectricitySections = ({
     <View style={disabled && { opacity: 0.7 }}>
       {/* ⚡ SECTION 1: CORE METER DATA */}
       <FormSection
-        title={`${isInstallation ? "INSTALLTION" : "DISCOVERY"} - Electricity Meter Details`}
+        title={`${isInstallation ? "INSTALLATION" : "DISCOVERY"} - Electricity Meter Details`}
       >
         <Surface style={styles.section} elevation={2}>
           <FormInputMeterNo
@@ -182,9 +182,7 @@ export const ElectricitySections = ({
                 label="PHASE"
                 name="ast.astData.meter.phase"
                 options={
-                  isDiscovery
-                    ? getOptions("meter_phases")
-                    : ["single", "three"]
+                  getFormOptions("meter_phases")
                 }
                 disabled={disabled}
               />
@@ -195,9 +193,7 @@ export const ElectricitySections = ({
                 label="TYPE"
                 name="ast.astData.meter.type"
                 options={
-                  isDiscovery
-                    ? getOptions("meter_types")
-                    : ["prepaid", "conventional"]
+                  getFormOptions("meter_types")
                 }
                 disabled={disabled}
                 onValueChange={(nextValue) => {
@@ -232,9 +228,7 @@ export const ElectricitySections = ({
             label="CATEGORY"
             name="ast.astData.meter.category"
             options={
-              isDiscovery
-                ? getOptions("meter_categories")
-                : ["Normal", "Bulk"]
+              getFormOptions("meter_categories")
             }
             disabled={disabled}
           />
@@ -429,7 +423,7 @@ export const ElectricitySections = ({
           label="OFF-GRID SUPPLY?"
           name="ast.ogs.hasOffGridSupply"
           options={
-            isDiscovery ? getOptions("off_grid_supply") : ["yes", "no"]
+            getFormOptions("off_grid_supply")
           }
           disabled={disabled}
         />

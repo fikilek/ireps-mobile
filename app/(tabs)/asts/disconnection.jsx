@@ -3,6 +3,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
 import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
+import { confirmSubmit, showResult } from "../../../src/utils/submitWindows";
 import {
   findingFormName,
   findingInstruction,
@@ -437,11 +438,19 @@ const DisconnectionSchema = object()
     }),
 
     assignment: object().shape({
-      instructionSelect: object().shape({
-        code: string().notRequired(),
-        label: string().notRequired(),
-        otherText: string().notRequired(),
-      }),
+      // MN-R001 1.3.0: every disconnection says why. A locked instruction (office
+      // or finding) is already filled in.
+      instructionSelect: object()
+        .shape({
+          code: string().notRequired(),
+          label: string().notRequired(),
+          otherText: string().notRequired(),
+        })
+        .test(
+          "disconnection-instruction-required",
+          "Disconnection instruction is required",
+          (value) => isSelectWithOtherFilled(value),
+        ),
     }),
 
     disconnection: object().shape({
@@ -1171,12 +1180,19 @@ export default function FormMeterDisconnection() {
 
     if (!firstStatus) return;
 
-    setInitialEligible(firstStatus === "CONNECTED");
+    // MN-R001 1.3.0, the bypass: an illegal connection can be found while
+    // the meter itself is off, so work that follows a finding may disconnect
+    // a meter recorded as Disconnected.
+    setInitialEligible(
+      firstStatus === "CONNECTED" ||
+        (Boolean(findingFrom) && firstStatus === "DISCONNECTED"),
+    );
   }, [
     initialEligible,
     astDoc?.id,
     astDoc?.status?.state,
     action?.meterPreStatus,
+    findingFrom,
   ]);
 
   const isEligible = initialEligible === true;
@@ -1653,6 +1669,29 @@ export default function FormMeterDisconnection() {
       return;
     }
 
+    const noAccessChosen =
+      String(values?.accessData?.access?.hasAccess || "").toLowerCase() ===
+      "no";
+    const meterNo = astDoc?.ast?.astData?.astNo || "";
+
+    // MN-R001 13.1: a confirmation window before sending.
+    const go = await confirmSubmit({
+      title: "Submit this disconnection?",
+      message: noAccessChosen
+        ? `Meter ${meterNo}\nNo Access: the meter does not change.`
+        : [
+            `Meter ${meterNo}`,
+            `Instruction: ${
+              (instructionLocked
+                ? officeInstruction?.text
+                : selectWithOtherToText(values?.assignment?.instructionSelect)) ||
+              "NAv"
+            }`,
+            `Level: ${values?.disconnection?.level?.label || "NAv"}`,
+          ].join("\n"),
+    });
+    if (!go) return;
+
     try {
       setInProgress(true);
 
@@ -1763,7 +1802,13 @@ export default function FormMeterDisconnection() {
 
       setInProgress(false);
 
-      navigateAfterDisconnection();
+      showResult({
+        title: "Disconnection sent",
+        message: noAccessChosen
+          ? "Saved as No Access. The meter does not change."
+          : `Meter ${meterNo} is now Disconnected.`,
+        onOk: navigateAfterDisconnection,
+      });
       return;
     } catch (error) {
       console.error("Disconnection Submission Error:", error);
