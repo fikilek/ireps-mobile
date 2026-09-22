@@ -1,6 +1,7 @@
 // src/features/reports/prepaidRevenue/MeterSearchBox.js
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
+import { FORM_PLACEHOLDER } from "../../../theme/formColors";
 
 export default function MeterSearchBox({
   value,
@@ -31,7 +32,7 @@ export default function MeterSearchBox({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={FORM_PLACEHOLDER}
         autoCorrect={false}
         autoCapitalize="none"
         keyboardType="number-pad"

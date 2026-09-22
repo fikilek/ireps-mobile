@@ -21,6 +21,7 @@ import {
   Text,
   TextInput,
 } from "react-native-paper";
+import { FORM_TEXT } from "../../../../src/theme/formColors";
 
 function getServiceProviderParentSpClient(serviceProvider) {
   const clients = Array.isArray(serviceProvider?.clients)
@@ -374,11 +375,11 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: "900",
-    color: "#1e293b",
+    color: FORM_TEXT,
     marginBottom: 8,
   },
   helper: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 13,
     lineHeight: 20,
     marginBottom: 18,
@@ -394,7 +395,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     fontSize: 12,
     fontWeight: "900",
-    color: "#475569",
+    color: FORM_TEXT,
   },
   selector: {
     borderWidth: 1,
@@ -406,11 +407,11 @@ const styles = StyleSheet.create({
   selectorTitle: {
     fontSize: 14,
     fontWeight: "800",
-    color: "#1e293b",
+    color: FORM_TEXT,
   },
   selectorSub: {
     fontSize: 12,
-    color: "#64748b",
+    color: FORM_TEXT,
     marginTop: 4,
   },
   actions: {
@@ -431,11 +432,11 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 16,
     fontWeight: "900",
-    color: "#1e293b",
+    color: FORM_TEXT,
     marginBottom: 12,
   },
   modalEmpty: {
-    color: "#64748b",
+    color: FORM_TEXT,
     marginBottom: 12,
   },
   centerWrap: {
@@ -447,7 +448,7 @@ const styles = StyleSheet.create({
   },
   centerText: {
     textAlign: "center",
-    color: "#64748b",
+    color: FORM_TEXT,
     fontWeight: "700",
   },
 });

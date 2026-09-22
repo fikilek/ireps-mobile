@@ -19,6 +19,7 @@ import {
   useCreateGeoFenceMutation,
   useGetGeoFencesByLmPcodeWardPcodeQuery,
 } from "../../../../src/redux/geofenceApi";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../../../src/theme/formColors";
 
 export default function GeoFencesScreen() {
   const router = useRouter();
@@ -622,7 +623,7 @@ export default function GeoFencesScreen() {
               <View>
                 <TextInput
                   placeholder="Geofence Name"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={FORM_PLACEHOLDER}
                   value={draftName}
                   onChangeText={setDraftName}
                   style={styles.input}
@@ -630,7 +631,7 @@ export default function GeoFencesScreen() {
 
                 <TextInput
                   placeholder="Description"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={FORM_PLACEHOLDER}
                   value={draftDescription}
                   onChangeText={setDraftDescription}
                   style={[styles.input, styles.descriptionInput]}
@@ -854,7 +855,7 @@ const styles = StyleSheet.create({
 
   helperText: {
     fontSize: 11,
-    color: "#64748b",
+    color: FORM_TEXT,
     marginBottom: 10,
   },
 

@@ -1,5 +1,6 @@
 import { getIn, useFormikContext } from "formik";
 import { StyleSheet, Text, TextInput, View } from "react-native";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../src/theme/formColors";
 
 const FormInput = ({
   label,
@@ -49,7 +50,7 @@ const FormInput = ({
         editable={!isSubmitting} // 🛡️ Freeze on submit
         onBlur={handleFinalize} // 🎯 Format on exit
         autoCapitalize={autoCapitalize}
-        placeholderTextColor="#94a3b8"
+        placeholderTextColor={FORM_PLACEHOLDER}
         {...props}
       />
       {hasError && <Text style={styles.errorText}>{error}</Text>}
@@ -62,7 +63,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 10,
     fontWeight: "900",
-    color: "#64748b",
+    color: FORM_TEXT,
     marginBottom: 4,
     textTransform: "uppercase",
   },
@@ -73,7 +74,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    color: "#1e293b",
+    color: FORM_TEXT,
     fontWeight: "600",
   },
   inputError: {

@@ -29,6 +29,7 @@ import { useCreateLifecycleInstructionMutation } from "../../../../src/redux/lif
 import { useGetServiceProvidersQuery } from "../../../../src/redux/spApi";
 import { useGetUsersQuery } from "../../../../src/redux/usersApi";
 import { addSubmissionQueueItem } from "../../../../src/utils/submissionQueue";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../../../src/theme/formColors";
 
 const LCT_TYPES = {
   METER_INSPECTION: {
@@ -868,7 +869,7 @@ export default function TrnOriginScreen() {
             value={instructionNotes}
             onChangeText={setInstructionNotes}
             placeholder="Optional notes"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={FORM_PLACEHOLDER}
             style={[styles.input, styles.textAreaSmall]}
             multiline
             editable={!busy}
@@ -1123,7 +1124,7 @@ function DynamicTargetPicker({
               value={searchText}
               onChangeText={setSearchText}
               placeholder="Search..."
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={FORM_PLACEHOLDER}
               style={styles.searchInput}
               autoCapitalize="none"
               autoCorrect={false}
@@ -1303,7 +1304,7 @@ const styles = StyleSheet.create({
 
   infoLabel: {
     fontSize: 11,
-    color: "#64748b",
+    color: FORM_TEXT,
     fontWeight: "800",
   },
 
@@ -1311,7 +1312,7 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: "right",
     fontSize: 11,
-    color: "#334155",
+    color: FORM_TEXT,
     fontWeight: "700",
   },
 
@@ -1323,7 +1324,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 11,
     fontWeight: "900",
-    color: "#334155",
+    color: FORM_TEXT,
     marginBottom: 6,
   },
 

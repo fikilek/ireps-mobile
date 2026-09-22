@@ -22,6 +22,7 @@ import { useManageLifecycleInstructionMutation } from "../../../../../src/redux/
 import { useGetServiceProvidersQuery } from "../../../../../src/redux/spApi";
 import { useGetTeamsQuery } from "../../../../../src/redux/teamsApi";
 import { useGetUsersQuery } from "../../../../../src/redux/usersApi";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../../../../src/theme/formColors";
 
 const WMS_LCT_TYPES = [
   "METER_INSPECTION",
@@ -1427,7 +1428,7 @@ function ReassignModal({
             value={reason}
             onChangeText={setReason}
             placeholder="Reason for reassignment"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={FORM_PLACEHOLDER}
             multiline
             editable={!busy}
           />
@@ -1578,7 +1579,7 @@ const styles = StyleSheet.create({
   controlTotalLabel: {
     fontSize: 10,
     fontWeight: "900",
-    color: "#64748b",
+    color: FORM_TEXT,
     marginTop: 2,
     textTransform: "uppercase",
     letterSpacing: 0.35,
@@ -1610,7 +1611,7 @@ const styles = StyleSheet.create({
   controlStatLabel: {
     fontSize: 8,
     fontWeight: "900",
-    color: "#64748b",
+    color: FORM_TEXT,
     marginTop: 2,
     textAlign: "center",
   },
@@ -1776,7 +1777,7 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 9,
     fontWeight: "800",
-    color: "#64748b",
+    color: FORM_TEXT,
   },
 
   statValue: {
@@ -2007,13 +2008,13 @@ const styles = StyleSheet.create({
   infoLabel: {
     fontSize: 9,
     fontWeight: "800",
-    color: "#94a3b8",
+    color: FORM_TEXT,
   },
 
   infoValue: {
     fontSize: 11,
     fontWeight: "800",
-    color: "#334155",
+    color: FORM_TEXT,
     marginTop: 1,
   },
 

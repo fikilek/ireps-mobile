@@ -8,6 +8,7 @@ import {
   TextInput,
 } from "react-native";
 import { IconButton, Surface } from "react-native-paper";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../theme/formColors";
 
 export function FilterSearchOverlay({
   visible,
@@ -84,7 +85,7 @@ export function FilterSearchOverlay({
         <TextInput
           style={styles.input}
           placeholder={placeholder}
-          placeholderTextColor="#94a3b8"
+          placeholderTextColor={FORM_PLACEHOLDER}
           value={value}
           onChangeText={onChange}
           autoFocus={autoFocus}
@@ -127,7 +128,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: "100%",
     fontSize: 16,
-    color: "#1e293b",
+    color: FORM_TEXT,
     fontWeight: "700",
   },
 });

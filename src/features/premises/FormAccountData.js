@@ -30,6 +30,7 @@ import {
   saveAccountDataDraft,
 } from "../../utils/accountDataSubmissionQueue";
 import FormInputAccountNo from "./FormInputAccountNo";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../theme/formColors";
 
 const ACCOUNT_DATA_MEDIA_TAGS = [
   {
@@ -561,7 +562,7 @@ function TextInputProxy({ value, onChangeText, keyboardType, hasError = false })
       onChangeText={onChangeText}
       keyboardType={keyboardType}
       placeholder="NAv"
-      placeholderTextColor="#94a3b8"
+      placeholderTextColor={FORM_PLACEHOLDER}
       style={[styles.textInput, hasError && styles.textInputError]}
     />
   );
@@ -1745,7 +1746,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
     fontWeight: "800",
-    color: "#64748b",
+    color: FORM_TEXT,
     textAlign: "center",
   },
   backBtn: {
@@ -1810,13 +1811,13 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 9,
-    color: "#64748b",
+    color: FORM_TEXT,
     fontWeight: "900",
     textTransform: "uppercase",
   },
   summaryValue: { fontSize: 12, color: "#0f172a", fontWeight: "800", marginTop: 3 },
   infoText: { fontSize: 13, color: "#0f172a", fontWeight: "700", lineHeight: 19 },
-  mutedText: { fontSize: 12, color: "#64748b", marginTop: 6, lineHeight: 18 },
+  mutedText: { fontSize: 12, color: FORM_TEXT, marginTop: 6, lineHeight: 18 },
   warningText: {
     fontSize: 12,
     color: "#b45309",
@@ -1877,13 +1878,13 @@ const styles = StyleSheet.create({
   existingAccountOwner: {
     marginTop: 3,
     fontSize: 12,
-    color: "#334155",
+    color: FORM_TEXT,
     fontWeight: "700",
   },
   existingAccountUpdated: {
     marginTop: 8,
     fontSize: 11,
-    color: "#64748b",
+    color: FORM_TEXT,
     fontWeight: "700",
   },
   openEditBtn: {
@@ -1919,7 +1920,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   editModeSub: {
-    color: "#334155",
+    color: FORM_TEXT,
     fontWeight: "700",
     fontSize: 11,
     lineHeight: 16,
@@ -2008,12 +2009,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   toggleBtnActive: { backgroundColor: "#0f172a", borderColor: "#0f172a" },
-  toggleBtnText: { color: "#334155", fontSize: 12, fontWeight: "900" },
+  toggleBtnText: { color: FORM_TEXT, fontSize: 12, fontWeight: "900" },
   toggleBtnTextActive: { color: "#fff" },
   fieldWrap: { marginBottom: 10 },
   fieldLabel: {
     fontSize: 10,
-    color: "#64748b",
+    color: FORM_TEXT,
     fontWeight: "900",
     marginBottom: 4,
     textTransform: "uppercase",
@@ -2066,10 +2067,10 @@ const styles = StyleSheet.create({
   },
   yesBtnActive: { backgroundColor: "#16a34a", borderColor: "#16a34a" },
   noBtnActive: { backgroundColor: "#0f172a", borderColor: "#0f172a" },
-  yesNoText: { color: "#334155", fontSize: 12, fontWeight: "900" },
+  yesNoText: { color: FORM_TEXT, fontSize: 12, fontWeight: "900" },
   yesNoTextActive: { color: "#fff" },
   mediaItemWrap: { marginTop: 12 },
-  mediaLabel: { fontSize: 11, fontWeight: "900", color: "#334155", marginBottom: 4 },
+  mediaLabel: { fontSize: 11, fontWeight: "900", color: FORM_TEXT, marginBottom: 4 },
   saveDraftBtn: {
     backgroundColor: "#fff",
     borderWidth: 1,
@@ -2090,7 +2091,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
   },
-  busyText: { marginTop: 12, color: "#334155", fontWeight: "800", textAlign: "center" },
+  busyText: { marginTop: 12, color: FORM_TEXT, fontWeight: "800", textAlign: "center" },
   successModal: {
     backgroundColor: "white",
     padding: 30,
@@ -2116,7 +2117,7 @@ const styles = StyleSheet.create({
   },
   successSub: {
     fontSize: 14,
-    color: "#64748B",
+    color: FORM_TEXT,
     textAlign: "center",
     marginTop: 8,
     marginBottom: 24,

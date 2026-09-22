@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import { useListIrepsSelectLookupsQuery } from "@/src/redux/irepsSelectLookupsApi";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../../../../src/theme/formColors";
 
 function getStatusStyle(status) {
   const cleanStatus = String(status || "").toUpperCase();
@@ -250,7 +251,7 @@ export default function SelectLookupsPage() {
             value={searchText}
             onChangeText={setSearchText}
             placeholder="Search lookup key, title, domain..."
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={FORM_PLACEHOLDER}
             style={styles.searchInput}
             autoCapitalize="none"
           />
@@ -411,7 +412,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#111827",
+    color: FORM_TEXT,
   },
 
   createButton: {

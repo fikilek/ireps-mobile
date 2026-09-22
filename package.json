@@ -10,7 +10,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "ci:verify-mobile-env": "node scripts/ci/verify-mobile-env.cjs",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "ci:verify-form-colours": "node scripts/ci/verify-form-colours.cjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

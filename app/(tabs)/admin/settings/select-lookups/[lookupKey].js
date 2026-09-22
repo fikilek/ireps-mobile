@@ -22,6 +22,7 @@ import {
   useSetIrepsSelectOptionStatusMutation,
   useUpdateIrepsSelectLookupMutation,
 } from "@/src/redux/irepsSelectLookupsApi";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../../../../src/theme/formColors";
 
 function statusUi(status) {
   const clean = String(status || "").toUpperCase();
@@ -183,7 +184,7 @@ function EditableLookupModal({ visible, lookup, onClose, onSave, saving }) {
               value={form.title}
               onChangeText={(text) => updateField("title", text)}
               placeholder="Lookup title"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={FORM_PLACEHOLDER}
               style={styles.input}
             />
 
@@ -192,7 +193,7 @@ function EditableLookupModal({ visible, lookup, onClose, onSave, saving }) {
               value={form.description}
               onChangeText={(text) => updateField("description", text)}
               placeholder="Description"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={FORM_PLACEHOLDER}
               style={[styles.input, styles.textArea]}
               multiline
               textAlignVertical="top"
@@ -210,7 +211,7 @@ function EditableLookupModal({ visible, lookup, onClose, onSave, saving }) {
                 )
               }
               placeholder="METER_REMOVAL"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={FORM_PLACEHOLDER}
               style={styles.input}
               autoCapitalize="characters"
             />
@@ -220,7 +221,7 @@ function EditableLookupModal({ visible, lookup, onClose, onSave, saving }) {
               value={form.fieldKey}
               onChangeText={(text) => updateField("fieldKey", text)}
               placeholder="removal.finalReading.noReadingReason"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={FORM_PLACEHOLDER}
               style={styles.input}
               autoCapitalize="none"
             />
@@ -246,7 +247,7 @@ function EditableLookupModal({ visible, lookup, onClose, onSave, saving }) {
                   value={form.otherLabel}
                   onChangeText={(text) => updateField("otherLabel", text)}
                   placeholder="Other"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={FORM_PLACEHOLDER}
                   style={styles.input}
                 />
               </>
@@ -827,7 +828,7 @@ const styles = StyleSheet.create({
   metaLabel: {
     fontSize: 11,
     fontWeight: "800",
-    color: "#6B7280",
+    color: FORM_TEXT,
     textTransform: "uppercase",
   },
 
@@ -835,7 +836,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 14,
     fontWeight: "900",
-    color: "#111827",
+    color: FORM_TEXT,
   },
 
   fieldKeyBox: {
@@ -959,7 +960,7 @@ const styles = StyleSheet.create({
   optionLabel: {
     fontSize: 16,
     fontWeight: "900",
-    color: "#111827",
+    color: FORM_TEXT,
     paddingRight: 10,
   },
 
@@ -1105,7 +1106,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     fontSize: 13,
     fontWeight: "900",
-    color: "#111827",
+    color: FORM_TEXT,
   },
 
   input: {
@@ -1117,7 +1118,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#111827",
+    color: FORM_TEXT,
   },
 
   textArea: {

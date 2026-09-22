@@ -11,6 +11,7 @@ import {
 import { useSelector } from "react-redux";
 
 import { authApi } from "../../src/redux/authApi";
+import { FORM_TEXT } from "../../src/theme/formColors";
 
 export default function VerifyPhone() {
   const [code, setCode] = useState("");
@@ -60,7 +61,7 @@ export default function VerifyPhone() {
       <Text
         style={{
           fontSize: 14,
-          color: "#666",
+          color: FORM_TEXT,
           marginVertical: 16,
           lineHeight: 20,
         }}

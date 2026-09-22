@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { Button, Modal, Portal } from "react-native-paper";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../theme/formColors";
 
 function normalizeAccountNo(value) {
   return String(value || "")
@@ -99,7 +100,7 @@ const FormInputAccountNo = ({ label, name, disabled }) => {
             autoCapitalize="characters"
             keyboardType="default"
             placeholder="Enter or scan account no"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={FORM_PLACEHOLDER}
           />
 
           <View style={styles.iconOverlay}>
@@ -157,7 +158,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 10,
     fontWeight: "900",
-    color: "#64748b",
+    color: FORM_TEXT,
     marginBottom: 4,
     textTransform: "uppercase",
   },
@@ -179,7 +180,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    color: "#1e293b",
+    color: FORM_TEXT,
     fontWeight: "600",
     height: 50,
   },

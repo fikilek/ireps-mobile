@@ -24,6 +24,7 @@ import {
   useRenameTeamMutation,
 } from "../../../../src/redux/teamsApi";
 import { useGetUsersQuery } from "../../../../src/redux/usersApi";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../../../src/theme/formColors";
 
 export default function OperationalTeams() {
   const { profile, isSPU, isADM, isMNG, isSPV } = useAuth();
@@ -713,7 +714,7 @@ export default function OperationalTeams() {
               value={newTeamName}
               onChangeText={setNewTeamName}
               placeholder="Enter team name"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={FORM_PLACEHOLDER}
               style={styles.input}
               editable={!isCreatingTeam}
             />
@@ -945,7 +946,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#1e293b",
+    color: FORM_TEXT,
     backgroundColor: "#fff",
   },
 

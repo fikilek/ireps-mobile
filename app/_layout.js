@@ -9,6 +9,7 @@ import { PersistGate } from "redux-persist/integration/react";
 import "../src/services/fwr-monitoring/fwrLocationTask";
 import { DiscoveryProvider } from "../src/context/DiscoveryContext";
 import { GeoProvider } from "../src/context/GeoContext";
+import { irepsPaperTheme } from "../src/theme/formColors";
 import { InstallationProvider } from "../src/context/InstallationContext";
 import { MapProvider } from "../src/context/MapContext";
 import { WarehouseProvider } from "../src/context/WarehouseContext";
@@ -236,7 +237,7 @@ export default function RootLayout() {
         <GeoProvider>
           <WarehouseProvider>
             <MapProvider>
-              <PaperProvider>
+              <PaperProvider theme={irepsPaperTheme}>
                 <SafeAreaProvider>
                   <DiscoveryProvider>
                     <InstallationProvider>

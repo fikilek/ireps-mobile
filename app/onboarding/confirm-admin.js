@@ -18,6 +18,7 @@ import {
   useUpdatePasswordMutation,
   useUpdateProfileMutation,
 } from "../../src/redux/authApi";
+import { FORM_TEXT } from "../../src/theme/formColors";
 
 export default function ConformAdminProfile() {
   const { profile, user } = useAuth();
@@ -228,10 +229,10 @@ export default function ConformAdminProfile() {
 const styles = StyleSheet.create({
   container: { padding: 20, flexGrow: 1, backgroundColor: "#fff" },
   header: { alignItems: "center", marginBottom: 20 },
-  title: { fontSize: 22, fontWeight: "900", color: "#1e293b", marginTop: 12 },
+  title: { fontSize: 22, fontWeight: "900", color: FORM_TEXT, marginTop: 12 },
   subtitle: {
     fontSize: 13,
-    color: "#64748b",
+    color: FORM_TEXT,
     textAlign: "center",
     marginTop: 4,
     paddingHorizontal: 20,
@@ -243,7 +244,7 @@ const styles = StyleSheet.create({
     color: "#2563eb",
     textTransform: "uppercase",
   },
-  contextHint: { fontSize: 10, color: "#94a3b8", marginBottom: 4 },
+  contextHint: { fontSize: 10, color: FORM_TEXT, marginBottom: 4 },
   input: { backgroundColor: "#ffffff" },
   divider: { marginVertical: 4, backgroundColor: "#f1f5f9" },
   wbContainer: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
@@ -259,7 +260,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   wbCardActive: { backgroundColor: "#2563eb", borderColor: "#2563eb" },
-  wbText: { fontSize: 12, fontWeight: "700", color: "#475569" },
+  wbText: { fontSize: 12, fontWeight: "700", color: FORM_TEXT },
   wbTextActive: { color: "#fff" },
   submitBtn: {
     marginTop: 15,

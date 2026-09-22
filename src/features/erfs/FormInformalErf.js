@@ -27,6 +27,7 @@ import { useWarehouse } from "../../context/WarehouseContext";
 import { useAuth } from "../../hooks/useAuth";
 import { submitInformalErfWithFallback } from "../../services/informalErfSubmissionController";
 import { ForensicFooter } from "../meters/ForensicFooter";
+import { FORM_TEXT } from "../../theme/formColors";
 
 const NEARBY_RADIUS_M = 350;
 const MAX_CONTEXT_ITEMS = 100;
@@ -816,7 +817,7 @@ const styles = StyleSheet.create({
 
   contextLine: {
     fontSize: 11,
-    color: "#475569",
+    color: FORM_TEXT,
     marginTop: 2,
   },
 
@@ -845,14 +846,14 @@ const styles = StyleSheet.create({
   },
 
   reasonPlaceholder: {
-    color: "#94a3b8",
+    color: FORM_TEXT,
     fontWeight: "600",
   },
 
   reasonSelectorChevron: {
     marginLeft: 10,
     fontSize: 10,
-    color: "#64748b",
+    color: FORM_TEXT,
   },
 
   otherReasonWrapper: {
@@ -867,7 +868,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: "right",
     fontSize: 9,
-    color: "#94a3b8",
+    color: FORM_TEXT,
   },
 
   fieldErrorText: {
@@ -908,14 +909,14 @@ const styles = StyleSheet.create({
 
   reasonOptionLabel: {
     fontSize: 12,
-    color: "#334155",
+    color: FORM_TEXT,
   },
 
   mediaHint: {
     marginTop: 4,
     marginBottom: 4,
     fontSize: 10,
-    color: "#64748b",
+    color: FORM_TEXT,
   },
 
   centeredScreen: {
@@ -945,7 +946,7 @@ const styles = StyleSheet.create({
     marginVertical: 12,
     fontSize: 12,
     lineHeight: 18,
-    color: "#475569",
+    color: FORM_TEXT,
     textAlign: "center",
   },
 });

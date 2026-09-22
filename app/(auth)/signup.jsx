@@ -22,6 +22,7 @@ import { object, ref, string } from "yup";
 import { auth } from "../../src/firebase";
 import { useSignupMutation } from "../../src/redux/authApi";
 import { useGetServiceProvidersQuery } from "../../src/redux/spApi";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../src/theme/formColors";
 
 const initialValues = {
   surname: "",
@@ -157,7 +158,7 @@ const Signup = () => {
                     <Ionicons name="person-add" size={20} color="#6b7280" />
                     <TextInput
                       placeholder="Surname"
-                      placeholderTextColor="#9ca3af"
+                      placeholderTextColor={FORM_PLACEHOLDER}
                       value={values.surname}
                       onChangeText={handleChange("surname")}
                       onBlur={handleBlur("surname")}
@@ -178,7 +179,7 @@ const Signup = () => {
                     />
                     <TextInput
                       placeholder="Name"
-                      placeholderTextColor="#9ca3af"
+                      placeholderTextColor={FORM_PLACEHOLDER}
                       value={values.name}
                       onChangeText={handleChange("name")}
                       onBlur={handleBlur("name")}
@@ -195,7 +196,7 @@ const Signup = () => {
                     <Octicons name="mail" size={20} color="#6b7280" />
                     <TextInput
                       placeholder="Email"
-                      placeholderTextColor="#9ca3af"
+                      placeholderTextColor={FORM_PLACEHOLDER}
                       value={values.email}
                       onChangeText={handleChange("email")}
                       onBlur={handleBlur("email")}
@@ -214,7 +215,7 @@ const Signup = () => {
                     <Octicons name="lock" size={20} color="#6b7280" />
                     <TextInput
                       placeholder="Password"
-                      placeholderTextColor="#9ca3af"
+                      placeholderTextColor={FORM_PLACEHOLDER}
                       value={values.password}
                       onChangeText={handleChange("password")}
                       onBlur={handleBlur("password")}
@@ -239,7 +240,7 @@ const Signup = () => {
                     <MaterialIcons name="password" size={20} color="#6b7280" />
                     <TextInput
                       placeholder="Confirm Password"
-                      placeholderTextColor="#9ca3af"
+                      placeholderTextColor={FORM_PLACEHOLDER}
                       value={values.confirmPassword}
                       onChangeText={handleChange("confirmPassword")}
                       onBlur={handleBlur("confirmPassword")}
@@ -412,13 +413,13 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "700",
     textAlign: "center",
-    color: "#111827",
+    color: FORM_TEXT,
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
     textAlign: "center",
-    color: "#6b7280",
+    color: FORM_TEXT,
     marginBottom: 18,
   },
   fieldBlock: {
@@ -437,18 +438,18 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 15,
-    color: "#111827",
+    color: FORM_TEXT,
     paddingVertical: 12,
     marginLeft: 10,
   },
   selectText: {
     flex: 1,
     fontSize: 15,
-    color: "#111827",
+    color: FORM_TEXT,
     marginLeft: 10,
   },
   placeholderText: {
-    color: "#9ca3af",
+    color: FORM_TEXT,
   },
   errorText: {
     marginTop: 5,
@@ -464,7 +465,7 @@ const styles = StyleSheet.create({
   loaderText: {
     marginLeft: 8,
     fontSize: 13,
-    color: "#6b7280",
+    color: FORM_TEXT,
   },
   buttonRow: {
     flexDirection: "row",
@@ -529,7 +530,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#111827",
+    color: FORM_TEXT,
     marginBottom: 12,
   },
   modalList: {
@@ -542,6 +543,6 @@ const styles = StyleSheet.create({
   },
   modalItemText: {
     fontSize: 15,
-    color: "#111827",
+    color: FORM_TEXT,
   },
 });

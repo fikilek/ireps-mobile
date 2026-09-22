@@ -20,6 +20,7 @@ import {
   useGetIrepsSelectLookupQuery,
   useUpdateIrepsSelectOptionMutation,
 } from "@/src/redux/irepsSelectLookupsApi";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../../../../src/theme/formColors";
 
 const OPTION_CODE_REGEX = /^[A-Z0-9_]+$/;
 
@@ -87,7 +88,7 @@ function Field({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={FORM_PLACEHOLDER}
         editable={editable}
         multiline={multiline}
         keyboardType={keyboardType}
@@ -568,7 +569,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     fontSize: 13,
     fontWeight: "900",
-    color: "#111827",
+    color: FORM_TEXT,
   },
 
   input: {
@@ -580,7 +581,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#111827",
+    color: FORM_TEXT,
   },
 
   textArea: {
@@ -589,7 +590,7 @@ const styles = StyleSheet.create({
 
   inputDisabled: {
     backgroundColor: "#F3F4F6",
-    color: "#6B7280",
+    color: FORM_TEXT,
   },
 
   inputError: {
@@ -599,7 +600,7 @@ const styles = StyleSheet.create({
   helperText: {
     marginTop: 5,
     fontSize: 11,
-    color: "#6B7280",
+    color: FORM_TEXT,
     lineHeight: 16,
   },
 

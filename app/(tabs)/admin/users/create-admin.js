@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 // 🎯 Using the specific ADM mutation
 import { useInviteAdminMutation } from "../../../../src/redux/authApi";
+import { FORM_TEXT } from "../../../../src/theme/formColors";
 
 export default function CreateAdminScreen() {
   const router = useRouter();
@@ -137,7 +138,7 @@ const styles = StyleSheet.create({
   boxLabel: {
     fontSize: 9,
     fontWeight: "900",
-    color: "#64748b",
+    color: FORM_TEXT,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },

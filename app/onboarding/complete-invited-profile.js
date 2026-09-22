@@ -18,6 +18,7 @@ import {
   useUpdatePasswordMutation,
   useUpdateProfileMutation,
 } from "../../src/redux/authApi";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../src/theme/formColors";
 
 export default function CompleteInvitedProfile() {
   const { profile, user } = useAuth();
@@ -126,7 +127,7 @@ export default function CompleteInvitedProfile() {
           onChangeText={(t) => setForm({ ...form, password: t })}
           // 🎯 THE VISIBILITY FIX
           textColor="#1e293b" // Deep Navy/Black
-          placeholderTextColor="#94a3b8"
+          placeholderTextColor={FORM_PLACEHOLDER}
           outlineColor="#cbd5e1" // Border color when not focused
           activeOutlineColor="#2563eb" // Border color when typing
           style={[styles.input, { fontWeight: "700" }]} // Force thick text
@@ -146,7 +147,7 @@ export default function CompleteInvitedProfile() {
           value={form.confirmPassword}
           onChangeText={(t) => setForm({ ...form, confirmPassword: t })}
           textColor="#1e293b" // Deep Navy/Black
-          placeholderTextColor="#94a3b8"
+          placeholderTextColor={FORM_PLACEHOLDER}
           outlineColor="#cbd5e1" // Border color when not focused
           activeOutlineColor="#2563eb" // Border color when typing
           style={[styles.input, { fontWeight: "700" }]} // Force thick text
@@ -229,10 +230,10 @@ const styles = StyleSheet.create({
     // marginBottom: 40,
   },
   header: { alignItems: "center" },
-  title: { fontSize: 22, fontWeight: "900", color: "#1e293b", marginTop: 12 },
+  title: { fontSize: 22, fontWeight: "900", color: FORM_TEXT, marginTop: 12 },
   subtitle: {
     fontSize: 13,
-    color: "#64748b",
+    color: FORM_TEXT,
     textAlign: "center",
     marginTop: 4,
     lineHeight: 18,
@@ -259,7 +260,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   wbCardActive: { backgroundColor: "#2563eb", borderColor: "#2563eb" },
-  wbText: { fontSize: 13, fontWeight: "700", color: "#475569" },
+  wbText: { fontSize: 13, fontWeight: "700", color: FORM_TEXT },
   wbTextActive: { color: "#fff" },
   submitBtn: {
     marginTop: 5,

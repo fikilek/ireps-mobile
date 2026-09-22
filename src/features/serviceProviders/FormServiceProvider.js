@@ -10,6 +10,7 @@ import {
   Text,
   TextInput,
 } from "react-native-paper";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../theme/formColors";
 
 export default function FormServiceProvider({
   formValues,
@@ -247,7 +248,7 @@ export default function FormServiceProvider({
           <View style={styles.searchContainer}>
             <Searchbar
               placeholder="Search LMs or SPs"
-              placeholderTextColor="#64748b"
+              placeholderTextColor={FORM_PLACEHOLDER}
               onChangeText={setSearchQuery}
               value={searchQuery}
               style={styles.searchBar}
@@ -365,7 +366,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 11,
     fontWeight: "800",
-    color: "#475569",
+    color: FORM_TEXT,
     marginBottom: 12,
     textTransform: "uppercase",
     letterSpacing: 0.8,
@@ -399,7 +400,7 @@ const styles = StyleSheet.create({
 
   statusChipText: {
     fontWeight: "700",
-    color: "#475569",
+    color: FORM_TEXT,
   },
 
   statusChipTextActive: {
@@ -496,7 +497,7 @@ const styles = StyleSheet.create({
   },
   helperNote: {
     fontSize: 12,
-    color: "#64748b",
+    color: FORM_TEXT,
     marginVertical: 14,
     lineHeight: 18,
   },

@@ -27,6 +27,7 @@ import {
 import { ActivityIndicator, IconButton, Surface } from "react-native-paper";
 
 import { IrepsMedia } from "../media/IrepsMedia";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../src/theme/formColors";
 
 export const FIELD_COMMENT_MEDIA_TAGS = {
   photo: "fieldCommentPhoto",
@@ -691,7 +692,7 @@ export function IrepsFieldCommentSection({
           value={commentValue}
           onChangeText={(nextValue) => setFieldValue(commentName, nextValue)}
           placeholder="Add a general field comment..."
-          placeholderTextColor="#94A3B8"
+          placeholderTextColor={FORM_PLACEHOLDER}
           multiline
           editable={!disabled}
           textAlignVertical="top"
@@ -854,12 +855,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: "900",
-    color: "#1E293B",
+    color: FORM_TEXT,
     textTransform: "uppercase",
   },
 
   sectionHelpText: {
-    color: "#475569",
+    color: FORM_TEXT,
     fontSize: 12,
     fontWeight: "700",
     lineHeight: 17,
@@ -893,20 +894,20 @@ const styles = StyleSheet.create({
 
   questionDescription: {
     fontSize: 11,
-    color: "#64748B",
+    color: FORM_TEXT,
     fontWeight: "600",
     marginTop: 3,
   },
 
   optionalBadge: {
-    color: "#64748B",
+    color: FORM_TEXT,
     fontSize: 9,
     fontWeight: "900",
   },
 
   limitText: {
     marginLeft: "auto",
-    color: "#64748B",
+    color: FORM_TEXT,
     fontSize: 10,
     fontWeight: "900",
   },
@@ -1024,7 +1025,7 @@ const styles = StyleSheet.create({
   },
 
   timeText: {
-    color: "#94A3B8",
+    color: FORM_TEXT,
     fontSize: 8,
     fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
   },
@@ -1051,7 +1052,7 @@ const styles = StyleSheet.create({
 
   placeholderText: {
     fontSize: 9,
-    color: "#64748B",
+    color: FORM_TEXT,
     fontWeight: "bold",
     textAlign: "center",
   },

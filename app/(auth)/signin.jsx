@@ -27,6 +27,7 @@ import {
   useSigninMutation,
   useSignoutMutation,
 } from "../../src/redux/authApi";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../src/theme/formColors";
 
 const initialValues = {
   email: "",
@@ -148,7 +149,7 @@ const Signin = () => {
                     <Octicons name="mail" size={18} color="#2563eb" />
                     <TextInput
                       placeholder="Email address"
-                      placeholderTextColor="#9ca3af"
+                      placeholderTextColor={FORM_PLACEHOLDER}
                       value={values.email}
                       onChangeText={handleChange("email")}
                       onBlur={handleBlur("email")}
@@ -170,7 +171,7 @@ const Signin = () => {
                     <Octicons name="lock" size={18} color="#2563eb" />
                     <TextInput
                       placeholder="Password"
-                      placeholderTextColor="#9ca3af"
+                      placeholderTextColor={FORM_PLACEHOLDER}
                       value={values.password}
                       onChangeText={handleChange("password")}
                       onBlur={handleBlur("password")}
@@ -277,12 +278,12 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "700",
     textAlign: "center",
-    color: "#111827",
+    color: FORM_TEXT,
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
-    color: "#64748b",
+    color: FORM_TEXT,
     textAlign: "center",
     marginBottom: 22,
     fontWeight: "500",
@@ -304,7 +305,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 48,
     fontSize: 15,
-    color: "#1e293b",
+    color: FORM_TEXT,
     marginLeft: 10,
     fontWeight: "600",
   },
@@ -319,7 +320,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   lostAccessText: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 13,
     fontWeight: "500",
   },
@@ -359,7 +360,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 13,
-    color: "#64748b",
+    color: FORM_TEXT,
   },
   signupText: {
     fontSize: 13,

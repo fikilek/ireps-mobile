@@ -17,6 +17,7 @@ import {
 
 import { NO_ACCESS_REASONS } from "../../src/features/meters/noAccessReasons";
 import { IrepsMedia } from "../media/IrepsMedia";
+import { FORM_TEXT } from "../../src/theme/formColors";
 
 export function IrepsNoAccessSection({
   visible = false,
@@ -251,7 +252,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: "600",
-    color: "#1E293B",
+    color: FORM_TEXT,
   },
 
   otherInput: {

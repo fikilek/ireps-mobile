@@ -37,6 +37,7 @@ import {
   removeSubmissionQueueItem,
   updateSubmissionQueueItem,
 } from "../../../src/utils/submissionQueue";
+import { FORM_TEXT } from "../../../src/theme/formColors";
 
 function buildMeterCommissioningTrnId({ wardPcode, erfNo, meterType }) {
   const ts = Date.now();
@@ -1420,7 +1421,7 @@ const styles = StyleSheet.create({
   loaderText: {
     marginTop: 12,
     fontSize: 14,
-    color: "#64748B",
+    color: FORM_TEXT,
     fontWeight: "700",
     textAlign: "center",
   },
@@ -1448,7 +1449,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: "900",
-    color: "#1E293B",
+    color: FORM_TEXT,
     textTransform: "uppercase",
   },
 
@@ -1466,7 +1467,7 @@ const styles = StyleSheet.create({
 
   summaryLabel: {
     fontSize: 10,
-    color: "#64748B",
+    color: FORM_TEXT,
     fontWeight: "900",
     textTransform: "uppercase",
     marginBottom: 4,
@@ -1485,7 +1486,7 @@ const styles = StyleSheet.create({
 
   addressText: {
     marginLeft: 6,
-    color: "#334155",
+    color: FORM_TEXT,
     fontSize: 12,
     fontWeight: "700",
     flex: 1,
@@ -1512,7 +1513,7 @@ const styles = StyleSheet.create({
 
   questionDescription: {
     fontSize: 11,
-    color: "#64748B",
+    color: FORM_TEXT,
     fontWeight: "600",
     marginTop: 3,
   },
@@ -1547,7 +1548,7 @@ const styles = StyleSheet.create({
   radioText: {
     fontSize: 12,
     fontWeight: "900",
-    color: "#334155",
+    color: FORM_TEXT,
   },
 
   notesInput: {
@@ -1557,7 +1558,7 @@ const styles = StyleSheet.create({
 
   evidenceHint: {
     fontSize: 11,
-    color: "#64748B",
+    color: FORM_TEXT,
     fontWeight: "600",
     marginBottom: 8,
   },
@@ -1592,7 +1593,7 @@ const styles = StyleSheet.create({
   },
 
   cancelButtonText: {
-    color: "#475569",
+    color: FORM_TEXT,
     fontWeight: "900",
     fontSize: 12,
   },
@@ -1679,7 +1680,7 @@ const styles = StyleSheet.create({
 
   notEligibleText: {
     marginTop: 8,
-    color: "#64748B",
+    color: FORM_TEXT,
     fontSize: 13,
     fontWeight: "700",
     textAlign: "center",
@@ -1687,7 +1688,7 @@ const styles = StyleSheet.create({
 
   summaryLine: {
     fontSize: 13,
-    color: "#334155",
+    color: FORM_TEXT,
     fontWeight: "800",
     marginVertical: 2,
   },
@@ -1740,7 +1741,7 @@ const styles = StyleSheet.create({
 
   outcomeMessage: {
     fontSize: 13,
-    color: "#334155",
+    color: FORM_TEXT,
     marginTop: 12,
     textAlign: "left",
     lineHeight: 19,

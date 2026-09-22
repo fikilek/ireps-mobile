@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../src/theme/formColors";
 
 export const DEFAULT_OTHER_CODE = "OTHER";
 export const DEFAULT_OTHER_LABEL = "Other";
@@ -245,7 +246,7 @@ export default function IrepsSelectWithOther({
           onChangeText={handleOtherTextChange}
           onBlur={onBlur}
           placeholder={otherPlaceholder}
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={FORM_PLACEHOLDER}
           editable={!disabled}
           multiline
           textAlignVertical="top"
@@ -370,7 +371,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     fontSize: 14,
     fontWeight: "800",
-    color: "#111827",
+    color: FORM_TEXT,
   },
 
   required: {
@@ -393,12 +394,12 @@ const styles = StyleSheet.create({
   selectText: {
     flex: 1,
     fontSize: 15,
-    color: "#111827",
+    color: FORM_TEXT,
     paddingRight: 12,
   },
 
   placeholderText: {
-    color: "#9CA3AF",
+    color: FORM_TEXT,
   },
 
   inputError: {
@@ -411,7 +412,7 @@ const styles = StyleSheet.create({
   },
 
   disabledText: {
-    color: "#9CA3AF",
+    color: FORM_TEXT,
   },
 
   otherInput: {
@@ -424,13 +425,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: "#FFFFFF",
     fontSize: 15,
-    color: "#111827",
+    color: FORM_TEXT,
   },
 
   helperText: {
     marginTop: 6,
     fontSize: 12,
-    color: "#6B7280",
+    color: FORM_TEXT,
     lineHeight: 17,
   },
 
@@ -479,14 +480,14 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 17,
     fontWeight: "900",
-    color: "#111827",
+    color: FORM_TEXT,
   },
 
   modalSubtitle: {
     marginTop: 2,
     fontSize: 12,
     fontWeight: "700",
-    color: "#6B7280",
+    color: FORM_TEXT,
   },
 
   optionList: {
@@ -518,7 +519,7 @@ const styles = StyleSheet.create({
   optionLabel: {
     fontSize: 15,
     fontWeight: "900",
-    color: "#111827",
+    color: FORM_TEXT,
   },
 
   optionLabelActive: {
@@ -528,7 +529,7 @@ const styles = StyleSheet.create({
   optionDescription: {
     marginTop: 3,
     fontSize: 12,
-    color: "#6B7280",
+    color: FORM_TEXT,
     lineHeight: 17,
   },
 
@@ -536,7 +537,7 @@ const styles = StyleSheet.create({
     marginTop: 3,
     fontSize: 11,
     fontWeight: "700",
-    color: "#9CA3AF",
+    color: FORM_TEXT,
   },
 
   emptyOptions: {
@@ -548,13 +549,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 15,
     fontWeight: "900",
-    color: "#111827",
+    color: FORM_TEXT,
   },
 
   emptyText: {
     marginTop: 4,
     fontSize: 12,
-    color: "#6B7280",
+    color: FORM_TEXT,
     textAlign: "center",
     lineHeight: 17,
   },

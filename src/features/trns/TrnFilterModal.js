@@ -24,6 +24,7 @@ import {
   TRN_TYPE_OPTIONS,
   TRN_WORKFLOW_STATE_OPTIONS,
 } from "./filterTrns";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../theme/formColors";
 
 const workflowDiagramSource = require("../../../assets/help/ireps-trn-workflow-v2.png");
 
@@ -572,7 +573,7 @@ export function TrnFilterModal({
                 <TextInput
                   style={styles.customDateInput}
                   placeholder="Start date: YYYY-MM-DD"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={FORM_PLACEHOLDER}
                   value={filterState?.customDateStart || ""}
                   onChangeText={(text) =>
                     setCustomDate("customDateStart", text)
@@ -582,7 +583,7 @@ export function TrnFilterModal({
                 <TextInput
                   style={styles.customDateInput}
                   placeholder="End date: YYYY-MM-DD"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={FORM_PLACEHOLDER}
                   value={filterState?.customDateEnd || ""}
                   onChangeText={(text) => setCustomDate("customDateEnd", text)}
                 />
@@ -717,7 +718,7 @@ const styles = StyleSheet.create({
   },
 
   customDateHint: {
-    color: "#475569",
+    color: FORM_TEXT,
     fontSize: 11,
     fontWeight: "700",
     lineHeight: 16,

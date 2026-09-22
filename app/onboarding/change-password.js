@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { auth, db } from "../../src/firebase";
 import { authApi } from "../../src/redux/authApi";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../src/theme/formColors";
 
 export default function ChangePassword() {
   const router = useRouter();
@@ -188,7 +189,7 @@ export default function ChangePassword() {
               value={newPassword}
               onChangeText={setNewPassword}
               placeholder="Enter new password"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={FORM_PLACEHOLDER}
               secureTextEntry={!showPasswords}
               autoCapitalize="none"
               autoCorrect={false}
@@ -214,7 +215,7 @@ export default function ChangePassword() {
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               placeholder="Confirm new password"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={FORM_PLACEHOLDER}
               secureTextEntry={!showPasswords}
               autoCapitalize="none"
               autoCorrect={false}
@@ -276,7 +277,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: "#475569",
+    color: FORM_TEXT,
     fontWeight: "600",
   },
   errorTitle: {
@@ -288,7 +289,7 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     lineHeight: 21,
-    color: "#475569",
+    color: FORM_TEXT,
     textAlign: "center",
     marginBottom: 20,
   },
@@ -323,7 +324,7 @@ const styles = StyleSheet.create({
   infoLabel: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#64748b",
+    color: FORM_TEXT,
     marginBottom: 6,
     textTransform: "uppercase",
   },
@@ -369,7 +370,7 @@ const styles = StyleSheet.create({
   hint: {
     fontSize: 13,
     lineHeight: 20,
-    color: "#64748b",
+    color: FORM_TEXT,
     marginBottom: 18,
   },
   primaryButton: {

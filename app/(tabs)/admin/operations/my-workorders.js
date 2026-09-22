@@ -80,6 +80,7 @@ import {
   keepTargetedBatchRows,
 } from "../../../../src/redux/workOrderKeepers";
 import { removeSubmissionQueueItemsByInstructionTrnId } from "../../../../src/utils/submissionQueue";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../../../src/theme/formColors";
 
 const WMS_GROUPS = [
   {
@@ -4623,7 +4624,7 @@ function TargetedBatchRowsWorklist({
             value={searchText}
             onChangeText={onSearchTextChange}
             placeholder="Search meter no., ERF or street"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={FORM_PLACEHOLDER}
             accessibilityLabel="Search meter no., ERF or street"
             autoCapitalize="none"
             autoCorrect={false}
@@ -5750,7 +5751,7 @@ function RejectModal({ visible, item, busy, onClose, onSubmit }) {
                   onChangeText={handleChange("rejectReason")}
                   onBlur={handleBlur("rejectReason")}
                   placeholder={placeholder}
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={FORM_PLACEHOLDER}
                   style={[
                     styles.rejectInput,
                     touched.rejectReason &&
@@ -5896,7 +5897,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   bucketTypeCountLabel: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 8,
     fontWeight: "900",
     textTransform: "uppercase",
@@ -6163,7 +6164,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   miniCountLabel: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 8,
     fontWeight: "900",
     textTransform: "uppercase",
@@ -6392,7 +6393,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   infoLabel: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 9,
     fontWeight: "900",
     textTransform: "uppercase",
@@ -6636,7 +6637,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   modalLabel: {
-    color: "#334155",
+    color: FORM_TEXT,
     fontSize: 11,
     fontWeight: "900",
     marginBottom: 6,
@@ -6724,7 +6725,7 @@ const styles = StyleSheet.create({
   },
 
   instructionMediaLineValueEmpty: {
-    color: "#94a3b8",
+    color: FORM_TEXT,
   },
 
   instructionMediaSheet: {
@@ -6925,7 +6926,7 @@ const styles = StyleSheet.create({
   },
 
   mdBgoCompactStatLabel: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 7,
     fontWeight: "900",
     textTransform: "uppercase",
@@ -7011,7 +7012,7 @@ const styles = StyleSheet.create({
   },
 
   mdBgoErfMiniStatLabel: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 8,
     fontWeight: "900",
     textTransform: "uppercase",
@@ -7158,7 +7159,7 @@ const styles = StyleSheet.create({
   },
 
   tbSearchCount: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 10,
     fontWeight: "800",
     marginTop: 4,
@@ -7166,7 +7167,7 @@ const styles = StyleSheet.create({
   },
 
   tbCountsCaption: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 8,
     fontWeight: "900",
     textTransform: "uppercase",
@@ -7199,7 +7200,7 @@ const styles = StyleSheet.create({
   },
 
   tbStatusFilterLabel: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 11,
     fontWeight: "800",
     textAlign: "center",

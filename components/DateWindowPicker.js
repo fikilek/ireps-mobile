@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 import { Button, Modal, Portal, TextInput } from "react-native-paper";
+import { FORM_TEXT } from "../src/theme/formColors";
 
 const PRESET_OPTIONS = [
   { key: "TODAY", label: "Today" },
@@ -177,7 +178,7 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 10,
     fontWeight: "800",
-    color: "#475569",
+    color: FORM_TEXT,
     textTransform: "uppercase",
   },
 
@@ -201,7 +202,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: "900",
-    color: "#1e293b",
+    color: FORM_TEXT,
     marginBottom: 18,
     textAlign: "center",
   },
@@ -247,7 +248,7 @@ const styles = StyleSheet.create({
   customRangeTitle: {
     fontSize: 14,
     fontWeight: "900",
-    color: "#1e293b",
+    color: FORM_TEXT,
     marginBottom: 12,
   },
 

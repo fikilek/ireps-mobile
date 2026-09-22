@@ -23,6 +23,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useInviteMngMutation } from "../../../../src/redux/authApi";
 import { useGetServiceProvidersQuery } from "../../../../src/redux/spApi";
+import { FORM_TEXT } from "../../../../src/theme/formColors";
 
 export default function CreateManagerScreen() {
   const router = useRouter();
@@ -254,7 +255,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 11,
     fontWeight: "800",
-    color: "#64748b",
+    color: FORM_TEXT,
   },
   sovereignLabel: {
     fontSize: 11,
@@ -278,7 +279,7 @@ const styles = StyleSheet.create({
   boxLabel: {
     fontSize: 10,
     fontWeight: "900",
-    color: "#64748b",
+    color: FORM_TEXT,
     textTransform: "uppercase",
   },
   selectorInner: {
@@ -290,13 +291,13 @@ const styles = StyleSheet.create({
   selectedText: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#1e293b",
+    color: FORM_TEXT,
   },
-  placeholder: { color: "#94a3b8" },
+  placeholder: { color: FORM_TEXT },
   helperText: {
     marginTop: 4,
     fontSize: 11,
-    color: "#64748b",
+    color: FORM_TEXT,
   },
   infoBox: {
     padding: 14,
@@ -333,12 +334,12 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: "900",
-    color: "#1e293b",
+    color: FORM_TEXT,
     marginBottom: 16,
   },
   emptyText: {
     fontSize: 13,
-    color: "#64748b",
+    color: FORM_TEXT,
     paddingVertical: 12,
   },
 });
