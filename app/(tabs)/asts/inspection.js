@@ -900,10 +900,14 @@ function compareTextField({
   fieldPath,
   label,
 }) {
-  const lastKnownValue = normalizeCompareText(
-    getByPath(lastKnownAst, fieldPath),
-  );
-  const capturedValue = normalizeCompareText(getByPath(capturedAst, fieldPath));
+  // Blank and NAv both mean nothing recorded, so SAME copying NAv onto a
+  // blank record is not a difference (UI-R003 3.2).
+  const asRecorded = (value) => {
+    const clean = normalizeCompareText(value);
+    return clean === "nav" ? "" : clean;
+  };
+  const lastKnownValue = asRecorded(getByPath(lastKnownAst, fieldPath));
+  const capturedValue = asRecorded(getByPath(capturedAst, fieldPath));
 
   if (lastKnownValue !== capturedValue) {
     differences.push({
@@ -937,10 +941,15 @@ function buildComparison({ values, actorUid, actorName }) {
       { fieldPath: "astData.meter.phase", label: "Meter Phase" },
       { fieldPath: "astData.meter.cb.size", label: "CB Size" },
       { fieldPath: "astData.meter.seal.sealNo", label: "Seal Number" },
-      {
-        fieldPath: "astData.meter.keypad.serialNo",
-        label: "Keypad Serial Number",
-      },
+      // The keypad is only asked for on prepaid meters (UI-R003 3.1).
+      ...(isPrepaidMeterKind(capturedAst?.astData?.meter?.type)
+        ? [
+            {
+              fieldPath: "astData.meter.keypad.serialNo",
+              label: "Keypad Serial Number",
+            },
+          ]
+        : []),
       { fieldPath: "location.placement", label: "Meter Placement" },
       { fieldPath: "ogs.hasOffGridSupply", label: "Off-grid Supply" },
     );
