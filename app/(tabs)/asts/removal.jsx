@@ -311,7 +311,7 @@ function buildBackendRemovalPayload(
 
   return {
     meterRemoved: {
-      answer: removal?.meterRemoved?.answer || "",
+      answer: "yes",
       notes: removal?.meterRemoved?.notes || "",
     },
 
@@ -485,24 +485,10 @@ const RemovalSchema = object()
       return true;
     }
 
-    if (!["yes", "no"].includes(removal?.meterRemoved?.answer)) {
-      return this.createError({
-        path: "removal.meterRemoved.answer",
-        message: "Meter removed answer is required",
-      });
-    }
-
-    if (removal?.meterRemoved?.answer !== "yes") {
-      return this.createError({
-        path: "removal.meterRemoved.answer",
-        message: "Meter must be confirmed as removed before submit",
-      });
-    }
-
     if (!hasMediaTag(media, "removalEvidence")) {
       return this.createError({
         path: "media",
-        message: "Removal evidence required",
+        message: "The photo showing the meter is out is required",
       });
     }
 
@@ -537,68 +523,6 @@ const RemovalSchema = object()
     return true;
   });
 
-const YesNoQuestion = ({
-  title,
-  description,
-  value,
-  notes,
-  answerPath,
-  notesPath,
-  setFieldValue,
-  errorText,
-  children,
-}) => {
-  return (
-    <Surface style={styles.questionCard} elevation={1}>
-      <View style={styles.questionHeader}>
-        <Text style={styles.questionTitle}>{title}</Text>
-        <Text style={styles.questionDescription}>{description}</Text>
-      </View>
-
-      <RadioButton.Group
-        value={value}
-        onValueChange={(nextValue) => setFieldValue(answerPath, nextValue)}
-      >
-        <View style={styles.radioRow}>
-          <TouchableOpacity
-            style={[
-              styles.radioChoice,
-              value === "yes" && styles.radioChoiceYes,
-            ]}
-            onPress={() => setFieldValue(answerPath, "yes")}
-          >
-            <RadioButton value="yes" />
-            <Text style={styles.radioText}>YES</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.radioChoice, value === "no" && styles.radioChoiceNo]}
-            onPress={() => setFieldValue(answerPath, "no")}
-          >
-            <RadioButton value="no" />
-            <Text style={styles.radioText}>NO</Text>
-          </TouchableOpacity>
-        </View>
-      </RadioButton.Group>
-
-      {value === "no" && (
-        <TextInput
-          mode="outlined"
-          label="Reason / Notes"
-          value={notes}
-          onChangeText={(text) => setFieldValue(notesPath, text)}
-          multiline
-          numberOfLines={3}
-          style={styles.notesInput}
-        />
-      )}
-
-      <View style={styles.questionEvidenceSlot}>{children}</View>
-
-      {!!errorText && <Text style={styles.errorText}>{errorText}</Text>}
-    </Surface>
-  );
-};
 
 const AccessOutcomeCard = ({ value, setFieldValue }) => {
   return (
@@ -1620,9 +1544,9 @@ export default function FormMeterRemoval() {
               editRemoval?.meterReading?.noReadingReason,
           ),
 
-          meterRemoved: editRemoval?.meterRemoved || {
-            answer: "",
-            notes: "",
+          meterRemoved: {
+            answer: "yes",
+            notes: editRemoval?.meterRemoved?.notes || "",
           },
         },
 
@@ -1657,8 +1581,9 @@ export default function FormMeterRemoval() {
       },
 
       removal: {
+        // The worker confirms by submitting (MN-R001 6.1, 1.3.2).
         meterRemoved: {
-          answer: "",
+          answer: "yes",
           notes: "",
         },
 
@@ -2349,30 +2274,40 @@ export default function FormMeterRemoval() {
                   />
                 ) : (
                   <>
-                    <YesNoQuestion
-                      title="Meter removed"
-                      description="Confirm that the meter was physically removed from the field/site."
-                      value={values?.removal?.meterRemoved?.answer}
-                      notes={values?.removal?.meterRemoved?.notes}
-                      answerPath="removal.meterRemoved.answer"
-                      notesPath="removal.meterRemoved.notes"
-                      setFieldValue={setFieldValue}
-                      errorText={
-                        removalErrors?.meterRemoved?.answer ||
-                        removalErrors?.meterRemoved?.notes
-                      }
-                    >
-                      <IrepsMedia
-                        name="media"
-                        tag="removalEvidence"
-                        agentName={agentName}
-                        agentUid={agentUid}
-                        fallbackGps={fallbackGps}
-                        required={
-                          values?.removal?.meterRemoved?.answer === "yes"
-                        }
-                      />
-                    </YesNoQuestion>
+                    {/* MN-R001 6.1 (1.3.2): the removal form is filled in
+                        because the meter came out, so submitting it is the
+                        confirmation. One photo is the proof; there is no No and
+                        no reason box, and a worker who could not remove the
+                        meter records that on the finding instead. */}
+                    <Surface style={styles.questionCard} elevation={1}>
+                      <View style={styles.questionHeader}>
+                        <Text style={styles.questionTitle}>
+                          Confirm meter removed
+                        </Text>
+
+                        <Text style={styles.questionDescription}>
+                          Take the photo that shows the meter is out. Submitting
+                          this form confirms the removal.
+                        </Text>
+                      </View>
+
+                      <View style={styles.questionEvidenceSlot}>
+                        <IrepsMedia
+                          name="media"
+                          tag="removalEvidence"
+                          agentName={agentName}
+                          agentUid={agentUid}
+                          fallbackGps={fallbackGps}
+                          required
+                        />
+                      </View>
+
+                      {!!removalErrors?.meterRemoved?.answer && (
+                        <Text style={styles.errorText}>
+                          {removalErrors.meterRemoved.answer}
+                        </Text>
+                      )}
+                    </Surface>
 
                     {/* UI-R003 3.1: the reading as on Meter Discovery — type it
                         and take the photo, or pick why it could not be read. */}
