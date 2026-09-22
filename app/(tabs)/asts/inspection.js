@@ -27,6 +27,7 @@ import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
 import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
+import { SubmitBlockers } from "../../../components/forms/SubmitBlockers";
 import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import IrepsSelectWithOther, {
   isSelectWithOtherFilled,
@@ -4335,6 +4336,12 @@ export default function InspectionScreen() {
                   </>
                 )}
               </Surface>
+
+              <SubmitBlockers
+                errors={errors}
+                extraMessages={[!isEligible ? eligibilityBlockMessage : ""]}
+                visible={!isValid || !isEligible}
+              />
 
               <IrepsFormActions
                 resetLabel="RESET"
