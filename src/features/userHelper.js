@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Pressable, View } from "react-native";
 import { Button, Dialog, List, Portal, TextInput } from "react-native-paper";
 import { object, ref, string } from "yup";
+import { FORM_PLACEHOLDER } from "../theme/formColors";
 
 export const gstSignupInitialValues = {
   surname: "",
@@ -85,7 +86,7 @@ const ServiceProviderSelect = ({ value, options, onSelect, disabled }) => {
             outlineColor="transparent" // 👈 remove border
             activeOutlineColor="transparent" // 👈 remove border when focused
             placeholder="Select service provider"
-            placeholderTextColor="grey" // 👈 THIS
+            placeholderTextColor={FORM_PLACEHOLDER}
           />
         </View>
       </Pressable>

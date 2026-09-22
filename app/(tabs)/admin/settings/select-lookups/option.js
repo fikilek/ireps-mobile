@@ -20,7 +20,11 @@ import {
   useGetIrepsSelectLookupQuery,
   useUpdateIrepsSelectOptionMutation,
 } from "@/src/redux/irepsSelectLookupsApi";
-import { FORM_TEXT, FORM_PLACEHOLDER } from "../../../../../src/theme/formColors";
+import {
+  FORM_TEXT,
+  FORM_PLACEHOLDER,
+  HINT_PENDING_REWORD,
+} from "../../../../../src/theme/formColors";
 
 const OPTION_CODE_REGEX = /^[A-Z0-9_]+$/;
 
@@ -73,6 +77,9 @@ function Field({
   value,
   onChangeText,
   placeholder,
+  // The hint is a value, not an instruction, so it keeps the old grey
+  // until it is reworded (UI-R004 section 4).
+  hintPendingReword = false,
   errorText,
   helperText,
   editable = true,
@@ -88,7 +95,9 @@ function Field({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={FORM_PLACEHOLDER}
+        placeholderTextColor={
+          hintPendingReword ? HINT_PENDING_REWORD : FORM_PLACEHOLDER
+        }
         editable={editable}
         multiline={multiline}
         keyboardType={keyboardType}
@@ -348,6 +357,7 @@ export default function SelectLookupOptionScreen() {
               updateField("code", normalizeOptionCode(text))
             }
             placeholder="DISPLAY_BLANK"
+            hintPendingReword
             editable={!isEditMode}
             errorText={shouldShowError("code")}
             helperText={
@@ -363,6 +373,7 @@ export default function SelectLookupOptionScreen() {
             value={form.label}
             onChangeText={(text) => updateField("label", text)}
             placeholder="Display blank"
+            hintPendingReword
             errorText={shouldShowError("label")}
             helperText="This is what the user sees in the dropdown."
             autoCapitalize="sentences"
@@ -384,6 +395,7 @@ export default function SelectLookupOptionScreen() {
               updateField("sortOrder", text.replace(/[^0-9.]/g, ""))
             }
             placeholder="10"
+            hintPendingReword
             keyboardType="numeric"
             errorText={shouldShowError("sortOrder")}
             helperText="Lower numbers appear first. Use 10, 20, 30 so you can insert options later."
@@ -590,7 +602,8 @@ const styles = StyleSheet.create({
 
   inputDisabled: {
     backgroundColor: "#F3F4F6",
-    color: FORM_TEXT,
+    // A locked box must not read as one the worker can type in.
+    color: "#6B7280",
   },
 
   inputError: {

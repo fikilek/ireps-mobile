@@ -17,7 +17,7 @@ const { execSync } = require("child_process");
 
 // The slate and neutral greys the app used for form words before UI-R004.
 const GREY =
-  /^#(64748b|94a3b8|9ca3af|6b7280|475569|334155|1e293b|111827|1f2937|4b5563|71717a|8e8e93|757575|888888|999999|666666|333333|888|999|666|333)$/i;
+  /^(#(64748b|94a3b8|9ca3af|6b7280|475569|334155|1e293b|111827|1f2937|4b5563|71717a|8e8e93|757575|888888|999999|666666|333333|888|999|666|333)|grey|gray|darkgrey|darkgray|lightgrey|lightgray|dimgrey|dimgray|silver)$/i;
 
 // The forms themselves: every word on them is black.
 const FORMS = [
@@ -36,6 +36,10 @@ const FORMS = [
 // Elsewhere, only the box and the words attached to it.
 const BOX = /input|label|hint|placeholder|field|search|value|caption|helper/i;
 
+// Buttons and disabled states keep their own colours: they are signals, not
+// words to read (UI-R004 section 2).
+const SIGNAL = /button|disabled|error|pill|badge|chip/i;
+
 /**
  * Meter Inspection, Disconnection, Removal and the meter fields are frozen for
  * the Normalisation release (Sunday 27 September 2026). Their input boxes are
@@ -47,6 +51,8 @@ const FROZEN_UNTIL_NORMALISATION = [
   "app/(tabs)/asts/disconnection.jsx",
   "app/(tabs)/asts/removal.jsx",
   "src/features/meters/FormInputMeterNo.js",
+  "components/forms/ElectricitySections.js",
+  "components/forms/WaterSections.js",
 ];
 
 function fail(message) {
@@ -64,7 +70,10 @@ let checked = 0;
 
 for (const file of files) {
   const source = fs.readFileSync(file, "utf8");
-  if (!source.includes("TextInput")) continue;
+  // A form is a file with a box in it, or one that fills a shared box.
+  if (!source.includes("TextInput") && !source.includes("placeholder=")) {
+    continue;
+  }
   checked += 1;
 
   const isForm = FORMS.some((pattern) => pattern.test(file));
@@ -75,7 +84,13 @@ for (const file of files) {
     if (keyMatch) styleKey = keyMatch[1];
 
     const colour = line.match(/\bcolor:\s*["'](#[0-9a-fA-F]{3,6})["']/);
-    if (colour && GREY.test(colour[1]) && (isForm || BOX.test(styleKey))) {
+    const isSignal = SIGNAL.test(styleKey);
+    if (
+      colour &&
+      GREY.test(colour[1]) &&
+      !isSignal &&
+      (isForm || BOX.test(styleKey))
+    ) {
       offenders.push(`${file}:${index + 1}  ${colour[1]}`);
     }
 

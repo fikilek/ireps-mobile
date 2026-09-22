@@ -412,7 +412,9 @@ const styles = StyleSheet.create({
   },
 
   disabledText: {
-    color: FORM_TEXT,
+    // A signal, not a word to read: a control or an option the worker
+    // cannot use stays grey so it does not look live (UI-R004 section 2).
+    color: "#9CA3AF",
   },
 
   otherInput: {

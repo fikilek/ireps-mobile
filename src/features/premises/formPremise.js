@@ -54,6 +54,8 @@ import {
   sanitizePropertyTypeForSubmission,
   supportsUnitNo,
 } from "./premiseRepeatability";
+import { FORM_TEXT, HINT_PENDING_REWORD } from "../../theme/formColors";
+
 
 const streetTypeOptions = [
   "Select...",
@@ -1720,7 +1722,7 @@ export default function FormPremise() {
                             : "Suburb"}
                         </Text>
 
-                        <Text style={{ fontSize: 10, color: "#94a3b8" }}>
+                        <Text style={{ fontSize: 10, color: FORM_TEXT }}>
                           Tap row to toggle geographic context
                         </Text>
                       </View>
@@ -1777,6 +1779,7 @@ export default function FormPremise() {
                           label="Unit Name"
                           name="propertyType.name"
                           placeholder="Unit Name"
+                          placeholderTextColor={HINT_PENDING_REWORD}
                           keyboardType="default"
                         />
                         <Divider style={styles.divider} />
@@ -1788,6 +1791,7 @@ export default function FormPremise() {
                         label="Unit Number"
                         name="propertyType.unitNo"
                         placeholder="Unit Number"
+                        placeholderTextColor={HINT_PENDING_REWORD}
                         keyboardType="default"
                       />
                     )}
@@ -1810,6 +1814,7 @@ export default function FormPremise() {
                         label="SUBURB NAME"
                         name="address.suburbName"
                         placeholder="Suburb Name"
+                        placeholderTextColor={HINT_PENDING_REWORD}
                         keyboardType="default"
                       />
                     </View>
@@ -1822,6 +1827,7 @@ export default function FormPremise() {
                           label="STR NO"
                           name="address.strNo"
                           placeholder="Str No"
+                          placeholderTextColor={HINT_PENDING_REWORD}
                           keyboardType="default"
                         />
                       </View>
@@ -1830,6 +1836,7 @@ export default function FormPremise() {
                           label="STR NAME"
                           name="address.strName"
                           placeholder="Str Name"
+                          placeholderTextColor={HINT_PENDING_REWORD}
                           autoCapitalize="words" // 🏛️ Auto-Title Case for Street Names
                           onChangeText={(text) =>
                             setFieldValue(
@@ -1904,7 +1911,7 @@ const styles = StyleSheet.create({
     maxWidth: 420,
     fontSize: 14,
     lineHeight: 20,
-    color: "#475569",
+    color: FORM_TEXT,
     textAlign: "center",
   },
 
@@ -1972,7 +1979,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 11,
     fontWeight: "900",
-    color: "#64748b",
+    color: FORM_TEXT,
     marginLeft: 6,
   },
 

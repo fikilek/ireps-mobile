@@ -1593,7 +1593,7 @@ const styles = StyleSheet.create({
   },
 
   cancelButtonText: {
-    color: FORM_TEXT,
+    color: "#475569",
     fontWeight: "900",
     fontSize: 12,
   },

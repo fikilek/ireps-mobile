@@ -30,7 +30,11 @@ import {
   saveAccountDataDraft,
 } from "../../utils/accountDataSubmissionQueue";
 import FormInputAccountNo from "./FormInputAccountNo";
-import { FORM_TEXT, FORM_PLACEHOLDER } from "../../theme/formColors";
+import {
+  FORM_TEXT,
+  FORM_PLACEHOLDER,
+  HINT_PENDING_REWORD,
+} from "../../theme/formColors";
 
 const ACCOUNT_DATA_MEDIA_TAGS = [
   {
@@ -562,7 +566,7 @@ function TextInputProxy({ value, onChangeText, keyboardType, hasError = false })
       onChangeText={onChangeText}
       keyboardType={keyboardType}
       placeholder="NAv"
-      placeholderTextColor={FORM_PLACEHOLDER}
+      placeholderTextColor={HINT_PENDING_REWORD}
       style={[styles.textInput, hasError && styles.textInputError]}
     />
   );

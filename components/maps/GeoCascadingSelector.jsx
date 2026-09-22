@@ -22,6 +22,7 @@ import {
   WARD_ERF_SYNC_STATUS,
 } from "../../src/features/erfs/wardErfSyncStatus";
 import { useGetGeoFencesByLmPcodeWardPcodeQuery } from "../../src/redux/geofenceApi";
+import { FORM_TEXT } from "../../src/theme/formColors";
 
 export default function GeoCascadingSelector({
   onModalStateChange,
@@ -1004,7 +1005,7 @@ const styles = StyleSheet.create({
   labelText: {
     fontSize: 10,
     fontWeight: "800",
-    color: "#334155",
+    color: FORM_TEXT,
     letterSpacing: 0.1,
   },
 
