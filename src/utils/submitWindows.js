@@ -25,4 +25,5 @@ export function showResult({ title, message, onOk }) {
   });
 }
 
-export const SAVED_FORMS_PLACE = "Admin → Offline Submission Forms";
+export const SAVED_FORMS_PLACE =
+  "Admin → Storage → Offline Submission Forms";
