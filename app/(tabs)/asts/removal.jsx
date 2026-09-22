@@ -41,7 +41,7 @@ import { useWarehouse } from "../../../src/context/WarehouseContext";
 import { buildInstallationRouteParams } from "../../../src/features/meters/normalisationHandover";
 import { functions } from "../../../src/firebase";
 import { useAuth } from "../../../src/hooks/useAuth";
-import { useIrepsLookupOptions } from "../../../src/hooks/useIrepsLookupOptions";
+import { getLocalSelectLookup } from "../../../src/features/meters/formOptions";
 import { useGetServiceProvidersQuery } from "../../../src/redux/spApi";
 import {
   addSubmissionQueueItem,
@@ -49,6 +49,9 @@ import {
   removeSubmissionQueueItem,
   updateSubmissionQueueItem,
 } from "../../../src/utils/submissionQueue";
+
+const REMOVAL_INSTRUCTION_LOOKUP = getLocalSelectLookup("removal_instructions");
+const NO_READING_REASON_LOOKUP = getLocalSelectLookup("no_reading_reasons");
 
 const EMPTY_SELECT_WITH_OTHER = {
   code: "",
@@ -1302,13 +1305,9 @@ export default function FormMeterRemoval() {
     return `TRN_MREM_${Date.now()}_${serviceCode}_${safeWardPcode}_${safeErfNo}`;
   }, [instructionTrnId, isFieldOrigin, meterType, wardPcode, erfNo]);
 
-  const removalInstructionLookup = useIrepsLookupOptions(
-    "METER_REMOVAL_INSTRUCTION",
-  );
-
-  const noReadingReasonLookup = useIrepsLookupOptions(
-    "METER_NO_READING_REASON",
-  );
+  // UI-R003: lists on the phone, never from the server.
+  const removalInstructionLookup = REMOVAL_INSTRUCTION_LOOKUP;
+  const noReadingReasonLookup = NO_READING_REASON_LOOKUP;
 
   function buildTrnSystemFields() {
     return {

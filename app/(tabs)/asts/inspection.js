@@ -42,7 +42,6 @@ import { getSafeCoords } from "../../../src/context/MapContext";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
 import { functions } from "../../../src/firebase";
 import { useAuth } from "../../../src/hooks/useAuth";
-import { useIrepsLookupOptions } from "../../../src/hooks/useIrepsLookupOptions";
 import {
   NORMALISATION_NONE,
   NO_ACTION_REASONS,
@@ -51,6 +50,8 @@ import {
   getExpectedNormalisationAction,
   getFormOptionValues,
   getFormOptions,
+  getLocalSelectLookup,
+  getManufacturerListName,
   getNormalisationOptions,
   getNormalisationValidationError,
   isNoActionReasonRequired,
@@ -1327,6 +1328,19 @@ const INSPECTION_ANOMALY_DETAIL_LOOKUP = Object.freeze({
 
 const INSPECTION_OTHER_ANOMALIES = getFormOptions("other_anomalies");
 
+// UI-R003: every dropdown is a list on the phone. Where Meter Discovery asks
+// the same question, the inspection uses Discovery's list.
+const NO_READING_LOOKUP = getLocalSelectLookup("no_reading_reasons");
+const PLACEMENT_LOOKUP = getLocalSelectLookup("placements");
+const CB_SIZE_LOOKUP = getLocalSelectLookup("cb_sizes");
+const PHASE_LOOKUP = getLocalSelectLookup("meter_phases", { allowOther: false });
+const METER_STATE_LOOKUP = getLocalSelectLookup("meter_lifecycle_states", {
+  allowOther: false,
+});
+const FOUND_STATUS_OPTIONS = getLocalSelectLookup("meter_statuses", {
+  allowOther: false,
+}).options;
+
 function getNestedError(errorObject, path) {
   return path.split(".").reduce((acc, key) => {
     if (!acc || typeof acc !== "object") return "";
@@ -1617,16 +1631,6 @@ const InspectionSchema = object()
       return true;
     },
   );
-
-function lookupState(lookup = {}) {
-  return {
-    options: lookup?.options || [],
-    allowOther: lookup?.allowOther ?? true,
-    otherCode: lookup?.otherCode || "OTHER",
-    otherLabel: lookup?.otherLabel || "Other",
-    loading: lookup?.isLoading || lookup?.isFetching,
-  };
-}
 
 function AccessOutcomeCard({ value, setFieldValue }) {
   const hasAccess = String(value || "yes").toLowerCase();
@@ -2387,32 +2391,17 @@ export default function InspectionScreen() {
     };
   }, [queueItemId]);
 
-  const noReadingLookup = lookupState(
-    useIrepsLookupOptions("METER_NO_READING_REASON"),
-  );
+  const noReadingLookup = NO_READING_LOOKUP;
   const anomalyLookup = INSPECTION_ANOMALY_LOOKUP;
   const anomalyDetailLookup = INSPECTION_ANOMALY_DETAIL_LOOKUP;
-  const placementLookup = lookupState(useIrepsLookupOptions("METER_PLACEMENT"));
-  const cbSizeLookup = lookupState(useIrepsLookupOptions("METER_CB_SIZE"));
-  const phaseLookup = lookupState(useIrepsLookupOptions("METER_PHASE"));
-  const manufacturerLookup = lookupState(
-    useIrepsLookupOptions("METER_MANUFACTURER"),
-  );
-  const connectionStatusLookup = lookupState(
-    useIrepsLookupOptions("METER_CONNECTION_STATUS"),
-  );
+  const placementLookup = PLACEMENT_LOOKUP;
+  const cbSizeLookup = CB_SIZE_LOOKUP;
+  const phaseLookup = PHASE_LOOKUP;
 
   // MN-R001 section 8: an inspection records what the worker found — connected
   // or disconnected. Removed and decommissioned are their own transactions.
-  const foundStatusOptions = useMemo(
-    () =>
-      (connectionStatusLookup.options || []).filter((option) =>
-        ["CONNECTED", "DISCONNECTED"].includes(
-          String(option?.code || "").toUpperCase(),
-        ),
-      ),
-    [connectionStatusLookup.options],
-  );
+  const connectionStatusLookup = METER_STATE_LOOKUP;
+  const foundStatusOptions = FOUND_STATUS_OPTIONS;
 
   const lastKnown = useMemo(
     () => buildLastKnownSnapshot({ action, astDoc, sourceAstId }),
@@ -2430,17 +2419,12 @@ export default function InspectionScreen() {
   const isPrepaid = isPrepaidMeterKind(lastKnownMeterKind);
   const isKnownMeterKind = isKnownInspectionMeterKind(lastKnownMeterKind);
 
-  const manufacturerOptions = useMemo(() => {
-    return (manufacturerLookup.options || []).filter((option) => {
-      if (!Array.isArray(option?.appliesTo) || option.appliesTo.length === 0) {
-        return true;
-      }
-
-      return option.appliesTo
-        .map((item) => normalizeLower(item))
-        .includes(meterType);
-    });
-  }, [manufacturerLookup.options, meterType]);
+  // Meter Discovery's makes for this meter type (UI-R003).
+  const manufacturerLookup = useMemo(
+    () => getLocalSelectLookup(getManufacturerListName(meterType)),
+    [meterType],
+  );
+  const manufacturerOptions = manufacturerLookup.options;
 
   const statusIsEligible = !["DECOMMISSIONED"].includes(
     normalizeUpper(lastKnown?.status?.state || action?.meterPreStatus),

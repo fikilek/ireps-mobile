@@ -170,10 +170,80 @@ const FORM_OPTIONS = Object.freeze({
     "Office said to leave it",
     "Other",
   ]),
+
+  // UI-R003: these lists used to come from the server (irepsSelectLookups).
+  // Same words and codes as the server held on 22 Sep 2026, so saved data does
+  // not change.
+  cb_sizes: Object.freeze(["20", "40", "60", "80", "90", "100"]),
+
+  // The meter lifecycle states, so a form can show the state the record holds.
+  // A worker only ever chooses Connected or Disconnected (meter_statuses).
+  meter_lifecycle_states: Object.freeze([
+    option("Field", "FIELD"),
+    option("Connected", "CONNECTED"),
+    option("Disconnected", "DISCONNECTED"),
+    option("Removed", "REMOVED"),
+    option("Decommissioned", "DECOMMISSIONED"),
+  ]),
+
+  no_reading_reasons: Object.freeze([
+    option("Customer refused access", "CUSTOMER_REFUSED_ACCESS"),
+    option("Display blank", "DISPLAY_BLANK"),
+    option("Display damaged", "DISPLAY_DAMAGED"),
+    option("Display not working", "DISPLAY_NOT_WORKING"),
+    option("Meter box locked", "METER_BOX_LOCKED"),
+    option("Meter not accessible", "METER_NOT_ACCESABLE"),
+    option("Meter removed or missing", "METER_REMOVED_OR_MISSING"),
+    option("No access to premises", "NO_ACCESS_TO_PREMISES"),
+  ]),
+
+  removal_instructions: Object.freeze([
+    option("Meter remove decommission", "METER_REMOVE_DECOMMISION"),
+  ]),
+
+  meter_reading_instructions: Object.freeze([
+    option("Monthly Meter Reading", "MONTHLY_METER_READING"),
+    option("Routine Meter Reading", "ROUTINE_METER_READING"),
+    option("Verify Meter Reading", "VERIFY_METER_READING"),
+    option("Final Meter Reading", "FINAL_METER_READING"),
+    option("Investigation Meter Reading", "INVESTIGATION_METER_READING"),
+    option("Bulk Meter Reading", "BULK_METER_READING"),
+  ]),
 });
 
 export function getFormOptions(name) {
   return FORM_OPTIONS[name] || [];
+}
+
+// UI-R003: a local list in the shape the forms used to get from the server
+// (useIrepsLookupOptions), so a dropdown never waits for the network. The
+// select adds its own Other when allowOther is on, so a list's "Other" entry is
+// left out here.
+export function getLocalSelectLookup(name, { allowOther = true } = {}) {
+  const options = getFormOptions(name)
+    .map((entry) =>
+      typeof entry === "string"
+        ? { code: entry, label: entry }
+        : { code: String(entry?.value ?? ""), label: String(entry?.label ?? "") },
+    )
+    .filter((entry) => entry.code && entry.label !== "Other");
+
+  return Object.freeze({
+    options: Object.freeze(options),
+    allowOther,
+    otherCode: "OTHER",
+    otherLabel: "Other",
+    isLoading: false,
+    isFetching: false,
+    loading: false,
+  });
+}
+
+// The manufacturer list for a meter type, as Meter Discovery offers it.
+export function getManufacturerListName(meterType) {
+  return String(meterType || "").trim().toLowerCase() === "water"
+    ? "water_manufacturers"
+    : "elec_manufacturers";
 }
 
 export function getFormOptionValues(name) {

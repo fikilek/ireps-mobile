@@ -36,7 +36,6 @@ import { getSafeCoords } from "../../context/MapContext";
 import { useWarehouse } from "../../context/WarehouseContext";
 import { functions } from "../../firebase";
 import { useAuth } from "../../hooks/useAuth";
-import { useMeterFormLookupOptions } from "../../hooks/useMeterFormLookupOptions";
 import { useGetServiceProvidersQuery } from "../../redux/spApi";
 import { useAddTrnMutation } from "../../redux/trnsApi";
 import { getPremiseQueueItemByPremiseId } from "../../utils/premiseSubmissionQueue";
@@ -51,10 +50,23 @@ import { isCompleteNoAccessReason } from "./noAccessReasons";
 import {
   anomalyPhotoRequired,
   getFormOptionValues,
+  getFormOptions,
   isFormOptionPhotoRequired,
 } from "./formOptions";
 
 const METER_PLACEMENT_VALUES = getFormOptionValues("placements");
+
+// UI-R003: Meter Discovery's lists, on the phone. The installation has no box
+// to type another make, so it offers the named makes only, as before.
+function getOptions(name) {
+  const list = getFormOptions(name);
+
+  if (name === "elec_manufacturers" || name === "water_manufacturers") {
+    return list.filter((entry) => entry !== "Other");
+  }
+
+  return list;
+}
 
 function buildMeterInstallationTrnId({ wardPcode, erfNo, meterType }) {
   const ts = Date.now();
@@ -352,7 +364,6 @@ export default function FormMeterInstallation() {
   const currentMissionType =
     action?.access === "no" ? "NA" : action?.meterType || "NA";
 
-  const { getOptions } = useMeterFormLookupOptions(currentMissionType);
 
   const premiseAddress =
     `${premise?.address?.strNo || ""} ${premise?.address?.strName || ""} ${premise?.address?.strType || ""}`.trim();

@@ -40,7 +40,7 @@ import { ScreenLock } from "../../../components/SceenLock";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
 import { functions } from "../../../src/firebase";
 import { useAuth } from "../../../src/hooks/useAuth";
-import { useIrepsLookupOptions } from "../../../src/hooks/useIrepsLookupOptions";
+import { getLocalSelectLookup } from "../../../src/features/meters/formOptions";
 import { useGetServiceProvidersQuery } from "../../../src/redux/spApi";
 import {
   addSubmissionQueueItem,
@@ -64,6 +64,11 @@ const EXECUTION_MEDIA_TAGS = [
   "noAccessPhoto",
   "noReadingEvidence",
 ];
+
+const METER_READING_INSTRUCTION_LOOKUP = getLocalSelectLookup(
+  "meter_reading_instructions",
+);
+const NO_READING_REASON_LOOKUP = getLocalSelectLookup("no_reading_reasons");
 
 const LOWER_READING_REASON_OPTIONS = [
   {
@@ -1423,13 +1428,9 @@ export default function FormMeterReading() {
     return `TRN_MREAD_${Date.now()}_${serviceCode}_${safeWardPcode}_${safeErfNo}`;
   }, [instructionTrnId, meterType, wardPcode, erfNo]);
 
-  const meterReadingInstructionLookup = useIrepsLookupOptions(
-    "METER_READING_INSTRUCTION",
-  );
-
-  const noReadingReasonLookup = useIrepsLookupOptions(
-    "METER_NO_READING_REASON",
-  );
+  // UI-R003: lists on the phone, never from the server.
+  const meterReadingInstructionLookup = METER_READING_INSTRUCTION_LOOKUP;
+  const noReadingReasonLookup = NO_READING_REASON_LOOKUP;
 
   function buildTrnSystemFields() {
     return {
