@@ -1093,8 +1093,22 @@ export default function FormMeterDisconnection() {
     readFirstString(meter?.type, action?.meterKind, "NAv"),
   ).toLowerCase();
 
+  // MN-R001 section 8: an inspection has just recorded the status the worker
+  // found. The phone's meter list can lag behind the server for a moment, so a
+  // disconnection that follows an inspection trusts the status it was handed.
+  const statusFromInspection =
+    String(action?.origin?.parentTrnType || "").trim().toUpperCase() ===
+    "METER_INSPECTION"
+      ? String(action?.status?.state || "").trim().toUpperCase()
+      : "";
+
   const currentStatus = String(
-    readFirstString(astDoc?.status?.state, action?.meterPreStatus, "UNKNOWN"),
+    readFirstString(
+      statusFromInspection,
+      astDoc?.status?.state,
+      action?.meterPreStatus,
+      "UNKNOWN",
+    ),
   ).toUpperCase();
 
   const parents = astDoc?.accessData?.parents || premise?.parents || {};
@@ -1116,7 +1130,10 @@ export default function FormMeterDisconnection() {
     if (!astDoc?.id) return;
 
     const firstStatus = String(
-      astDoc?.status?.state || action?.meterPreStatus || "",
+      statusFromInspection ||
+        astDoc?.status?.state ||
+        action?.meterPreStatus ||
+        "",
     ).toUpperCase();
 
     if (!firstStatus) return;

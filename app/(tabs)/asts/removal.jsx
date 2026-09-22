@@ -1871,8 +1871,14 @@ export default function FormMeterRemoval() {
       setInProgress(false);
 
       // MN-R001 section 6.1: the old meter is out, so the new one goes in at
-      // the same premise, linked to this removal.
-      if (installationFollows) {
+      // the same premise, linked to this removal. A No Access visit removed
+      // nothing, so nothing follows it.
+      const meterWasRemoved =
+        result?.executionOutcome?.success === true &&
+        String(result?.executionOutcome?.outcome || "").toUpperCase() !==
+          "NO_ACCESS";
+
+      if (installationFollows && meterWasRemoved) {
         const installationPremiseId =
           astDoc?.accessData?.premise?.id || premiseId || "";
 
