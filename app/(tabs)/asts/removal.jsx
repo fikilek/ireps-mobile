@@ -3,7 +3,11 @@ import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
 import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
-import { confirmSubmit, showResult } from "../../../src/utils/submitWindows";
+import {
+  SAVED_FORMS_PLACE,
+  confirmSubmit,
+  showResult,
+} from "../../../src/utils/submitWindows";
 import {
   findingFormName,
   findingInstruction,
@@ -1522,7 +1526,7 @@ export default function FormMeterRemoval() {
     setSubmitOutcome({
       visible: true,
       type: "savedLocally",
-      title: messageTitle || "SAVED LOCALLY",
+      title: messageTitle || "Saved on this phone",
       message:
         messageBody ||
         "This REMOVAL execution form was saved locally only. No backend update was made.",
@@ -1538,8 +1542,8 @@ export default function FormMeterRemoval() {
 
       await saveDraftToQueue(
         values,
-        "SAVED LOCALLY",
-        "This REM execution form was saved locally only. It was not submitted and no backend update was made.",
+        "Saved on this phone",
+        `This removal is saved on this phone only. It has NOT been sent. To send it, open it from ${SAVED_FORMS_PLACE} and press SUBMIT.`,
       );
 
       setSaveInProgress(false);
@@ -1799,8 +1803,8 @@ export default function FormMeterRemoval() {
         setInProgress(false);
 
         Alert.alert(
-          "Offline",
-          "You are offline. Use SAVE to keep this REM execution form locally, then submit when online.",
+          "Offline: nothing was sent",
+          "You are offline. Press SAVE to keep this removal on the phone, then submit it when you are online.",
         );
 
         return;
@@ -1862,8 +1866,8 @@ export default function FormMeterRemoval() {
         if (error?.message === "SUBMISSION_TIMEOUT") {
           await saveDraftToQueue(
             values,
-            "SAVED LOCALLY",
-            "The submission took too long. The REM form was saved locally only and was not confirmed by the backend.",
+            "Saved on this phone, not sent",
+            `The network was too slow, so the removal was NOT sent. It is saved on this phone. Open it from ${SAVED_FORMS_PLACE} and press SUBMIT again. The installation cannot start until the removal has been sent.`,
           );
 
           setInProgress(false);
