@@ -845,8 +845,20 @@ function cloneAstForInspection(ast = {}) {
 
 function buildLastKnownSnapshot({ action, astDoc, sourceAstId }) {
   const astSnapshot = getActionAstSnapshot(action) || astDoc?.ast || {};
-  const status = getActionStatus(action) || astDoc?.status || {};
-  const accessData = getActionAccessData(action) || astDoc?.accessData || {};
+  // The meter's own record holds its status now. An inspection started from
+  // the meter card has no instruction, and the instruction helpers return {}
+  // when empty, so they must not hide the record.
+  const actionStatus = getActionStatus(action);
+  const status = astDoc?.status?.state
+    ? astDoc.status
+    : actionStatus?.state
+      ? actionStatus
+      : astDoc?.status || actionStatus || {};
+  const actionAccessData = getActionAccessData(action);
+  const accessData =
+    Object.keys(actionAccessData || {}).length > 0
+      ? actionAccessData
+      : astDoc?.accessData || {};
 
   return {
     sourceAstId:
@@ -2099,9 +2111,13 @@ function SameDeleteSelectField({
   onSame,
   onDelete,
   errorText = "",
+  sameNeedsRecordedValue = false,
 }) {
   const displayText = selectWithOtherToText(value);
   const hasValue = Boolean(String(displayText || "").trim());
+  // Current Status: SAME only when iREPS holds a status. NAv is never a status.
+  const showSame =
+    !hasValue && (!sameNeedsRecordedValue || hasRecordedValue(lastKnownValue));
   const isDifferent = isDifferentFromExisting({
     value: displayText,
     lastKnownValue,
@@ -2137,7 +2153,7 @@ function SameDeleteSelectField({
       </View>
 
       <View style={styles.sameDeleteRow}>
-        {!hasValue && (
+        {showSame && (
           <TouchableOpacity style={styles.sameButton} onPress={onSame}>
             <Text style={styles.sameButtonText}>SAME</Text>
           </TouchableOpacity>
@@ -4216,6 +4232,7 @@ export default function InspectionScreen() {
                       <Surface style={styles.questionCard} elevation={1}>
                         <SameDeleteSelectField
                           label="Current Status"
+                          sameNeedsRecordedValue
                           value={values?.status?.stateSelect}
                           lastKnownValue={
                             values?.inspection?.lastKnown?.status?.state
