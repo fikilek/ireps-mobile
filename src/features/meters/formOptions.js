@@ -174,8 +174,6 @@ const FORM_OPTIONS = Object.freeze({
   // UI-R003: these lists used to come from the server (irepsSelectLookups).
   // Same words and codes as the server held on 22 Sep 2026, so saved data does
   // not change.
-  cb_sizes: Object.freeze(["20", "40", "60", "80", "90", "100"]),
-
   // The meter lifecycle states, so a form can show the state the record holds.
   // A worker only ever chooses Connected or Disconnected (meter_statuses).
   meter_lifecycle_states: Object.freeze([

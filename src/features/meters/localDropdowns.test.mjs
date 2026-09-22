@@ -45,7 +45,6 @@ test("every list is there at once, with nothing to load", () => {
     "no_reading_reasons",
     "removal_instructions",
     "meter_reading_instructions",
-    "cb_sizes",
     "placements",
     "meter_phases",
     "meter_statuses",
@@ -87,10 +86,6 @@ test("the lists that came from the server keep the server's words and codes", ()
     { code: "METER_REMOVE_DECOMMISION", label: "Meter remove decommission" },
   ]);
   assert.equal(getLocalSelectLookup("meter_reading_instructions").options.length, 6);
-  assert.deepEqual(
-    getLocalSelectLookup("cb_sizes").options.map((o) => o.label),
-    ["20", "40", "60", "80", "90", "100"],
-  );
 });
 
 test("a worker chooses Connected or Disconnected; the record may hold any state", () => {

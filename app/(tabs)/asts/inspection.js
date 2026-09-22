@@ -804,16 +804,18 @@ function cloneAstForInspection(ast = {}) {
         phaseSelect: makeEmptySelectWithOther(),
         cb: {
           size: meter?.cb?.size || "",
-          sizeSelect: makeEmptySelectWithOther(),
           comment: meter?.cb?.comment || "",
+          commentSelect: makeEmptySelectWithOther(),
         },
         seal: {
           sealNo: meter?.seal?.sealNo || "",
           comment: meter?.seal?.comment || "",
+          commentSelect: makeEmptySelectWithOther(),
         },
         keypad: {
           serialNo: meter?.keypad?.serialNo || "",
           comment: meter?.keypad?.comment || "",
+          commentSelect: makeEmptySelectWithOther(),
         },
       },
     },
@@ -1332,7 +1334,6 @@ const INSPECTION_OTHER_ANOMALIES = getFormOptions("other_anomalies");
 // the same question, the inspection uses Discovery's list.
 const NO_READING_LOOKUP = getLocalSelectLookup("no_reading_reasons");
 const PLACEMENT_LOOKUP = getLocalSelectLookup("placements");
-const CB_SIZE_LOOKUP = getLocalSelectLookup("cb_sizes");
 const PHASE_LOOKUP = getLocalSelectLookup("meter_phases", { allowOther: false });
 const METER_STATE_LOOKUP = getLocalSelectLookup("meter_lifecycle_states", {
   allowOther: false,
@@ -1476,37 +1477,22 @@ const InspectionSchema = object()
           !String(meter?.cb?.comment || "").trim()
         ) {
           return this.createError({
-            path: "inspection.captured.ast.astData.meter.cb.sizeSelect",
+            path: "inspection.captured.ast.astData.meter.cb.size",
             message:
-              "CB size is required, or tap NOT AVAILABLE and say why",
+              "CB size is required: press SAME, type it, or pick why there is none",
           });
         }
 
         if (
+          isPrepaidMeterKind(meter?.type) &&
           !String(meter?.keypad?.serialNo || "").trim() &&
           !String(meter?.keypad?.comment || "").trim()
         ) {
           return this.createError({
             path: "inspection.captured.ast.astData.meter.keypad.serialNo",
             message:
-              "Keypad serial number is required, or tap NOT AVAILABLE and say why",
+              "Keypad serial number is required: press SAME, type it, or pick why there is none",
           });
-        }
-
-        for (const [part, label] of [
-          ["cb", "circuit breaker size"],
-          ["keypad", "keypad serial number"],
-          ["seal", "seal number"],
-        ]) {
-          if (
-            String(meter?.[part]?.comment || "").trim() === "Other" &&
-            !String(meter?.[part]?.commentOther || "").trim()
-          ) {
-            return this.createError({
-              path: `inspection.captured.ast.astData.meter.${part}.commentOther`,
-              message: `Type why the ${label} is not available`,
-            });
-          }
         }
 
         if (!String(capturedAst?.location?.placement || "").trim()) {
@@ -1894,115 +1880,98 @@ function InfoRow({ label, value }) {
   );
 }
 
-// When iREPS holds no value for a field, SAME has nothing to copy. The worker
-// taps NOT AVAILABLE instead and says why, from the same reasons Meter Discovery
-// uses, so a missing value is never recorded as if it had been checked.
-function NotAvailableControl({ notAvailable, hasValue, hasLastKnown }) {
-  const [choosing, setChoosing] = useState(false);
-
-  if (!notAvailable || hasValue || hasLastKnown) return null;
-
-  const reason = String(notAvailable.reason || "").trim();
-
-  if (reason) {
-    return (
-      <View style={styles.notAvailableBlock}>
-        <View style={styles.sameDeleteRow}>
-          <View style={styles.notAvailablePill}>
-            <Text style={styles.notAvailablePillText}>
-              Not available: {reason}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.deleteButton}
-            onPress={() => {
-              setChoosing(false);
-              notAvailable.onClear();
-            }}
-          >
-            <Text style={styles.deleteButtonText}>DELETE</Text>
-          </TouchableOpacity>
-        </View>
-
-        {reason === "Other" && (
-          <TextInput
-            mode="outlined"
-            placeholder="Type why it is not available"
-            value={notAvailable.otherText || ""}
-            onChangeText={notAvailable.onOtherText}
-            style={styles.input}
-          />
-        )}
-      </View>
-    );
-  }
-
-  if (!choosing) {
-    return (
-      <View style={styles.sameDeleteRow}>
-        <TouchableOpacity
-          style={styles.notAvailableButton}
-          onPress={() => setChoosing(true)}
-        >
-          <Text style={styles.notAvailableButtonText}>NOT AVAILABLE</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.notAvailableBlock}>
-      <Text style={styles.reasonTitle}>Why is it not available?</Text>
-      {notAvailable.reasons.map((option) => (
-        <TouchableOpacity
-          key={option}
-          style={styles.normalisationRow}
-          onPress={() => {
-            setChoosing(false);
-            notAvailable.onChoose(option);
-          }}
-        >
-          <MaterialCommunityIcons
-            name="radiobox-blank"
-            size={22}
-            color="#94a3b8"
-          />
-          <Text style={styles.normalisationLabel}>{option}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
+// UI-R003 3.2: SAME copies what the last submission recorded. Nothing recorded
+// is NAv, and NAv is copied like any other value.
+function sameText(value) {
+  const clean = String(value ?? "").trim();
+  return clean || "NAv";
 }
 
-// Reasons shared with Meter Discovery (formOptions), by field.
-const NOT_AVAILABLE_REASONS = Object.freeze({
-  cb: getFormOptionValues("cb_comment_reasons"),
-  keypad: getFormOptionValues("keypad_serial_number_comment_reasons"),
-  seal: getFormOptionValues("seal_number_comment_reasons"),
+function makeSameSelect(text, options = []) {
+  const clean = String(text ?? "").trim();
+  if (!clean || clean === "NAv") {
+    return { ...EMPTY_SELECT_WITH_OTHER, code: "NAv", label: "NAv" };
+  }
+  return makeSelectFromText(clean, options);
+}
+
+function hasRecordedValue(value) {
+  const clean = String(value ?? "").trim();
+  return Boolean(clean) && clean !== "NAv";
+}
+
+// Discovery's "why" lists for the three fields that may have no value. The
+// select adds its own Other, so the lists' Other entry is left out.
+const WHY_MISSING_REASONS = Object.freeze({
+  cb: getFormOptionValues("cb_comment_reasons").filter((v) => v !== "Other"),
+  seal: getFormOptionValues("seal_number_comment_reasons").filter(
+    (v) => v !== "Other",
+  ),
+  keypad: getFormOptionValues("keypad_serial_number_comment_reasons").filter(
+    (v) => v !== "Other",
+  ),
 });
 
-// Build the props for a field's NOT AVAILABLE control. The reason is kept in
-// the field's comment, and typed words for Other in commentOther until submit.
-function buildNotAvailable({ reasons, container, basePath, setFieldValue }) {
+// UI-R003 3.1: CB size, seal number and keypad serial number, the way Meter
+// Discovery captures them — a value, or (once the box is cleared) why there is
+// none. SAME copies the recorded value and the recorded why together.
+function buildMissingValueField({
+  part,
+  valueKey,
+  label,
+  whyLabel,
+  container,
+  lastKnownPart,
+  setFieldValue,
+  errors,
+  keyboardType = "default",
+}) {
+  const basePath = `inspection.captured.ast.astData.meter.${part}`;
+  const lastValue = lastKnownPart?.[valueKey];
+  const lastReason = hasRecordedValue(lastValue)
+    ? ""
+    : String(lastKnownPart?.comment || "").trim();
+
+  const clearWhy = () => {
+    setFieldValue(`${basePath}.commentSelect`, makeEmptySelectWithOther());
+    setFieldValue(`${basePath}.comment`, "");
+  };
+
   return {
-    reasons,
-    reason: container?.comment || "",
-    otherText: container?.commentOther || "",
-    onChoose: (reason) => {
-      setFieldValue(`${basePath}.commentOther`, "");
-      setFieldValue(`${basePath}.comment`, reason);
+    label,
+    keyboardType,
+    value: container?.[valueKey],
+    lastKnownValue: lastValue,
+    lastKnownReason: lastReason,
+    onChangeText: (text) => {
+      if (String(text || "").trim()) clearWhy();
+      setFieldValue(`${basePath}.${valueKey}`, text);
     },
-    onOtherText: (text) => setFieldValue(`${basePath}.commentOther`, text),
-    onClear: () => {
-      setFieldValue(`${basePath}.commentOther`, "");
-      setFieldValue(`${basePath}.comment`, "");
+    onSame: () => {
+      setFieldValue(`${basePath}.commentSelect`, makeEmptySelectWithOther());
+      setFieldValue(`${basePath}.comment`, lastReason);
+      setFieldValue(`${basePath}.${valueKey}`, sameText(lastValue));
     },
+    onDelete: () => {
+      clearWhy();
+      setFieldValue(`${basePath}.${valueKey}`, "");
+    },
+    whyMissing: {
+      label: whyLabel,
+      reasons: WHY_MISSING_REASONS[part],
+      value: container?.commentSelect,
+      hasReason: Boolean(String(container?.comment || "").trim()),
+      onChange: (next) => {
+        setFieldValue(`${basePath}.commentSelect`, next);
+        setFieldValue(`${basePath}.comment`, selectWithOtherToText(next));
+      },
+    },
+    errorText: getErrorText(errors, `${basePath}.${valueKey}`),
   };
 }
 
-// On submit a value wins over a reason, and Other becomes the typed words, as
-// on Meter Discovery.
-function canonicalizeNotAvailable(meter = {}) {
+// On submit a value wins over a why; the select's working copy is not sent.
+function canonicalizeMissingReasons(meter = {}) {
   const next = { ...meter };
   for (const [key, valueKey] of [
     ["cb", "size"],
@@ -2010,13 +1979,10 @@ function canonicalizeNotAvailable(meter = {}) {
     ["seal", "sealNo"],
   ]) {
     const part = { ...(next[key] || {}) };
-    const hasValue = !!String(part[valueKey] || "").trim();
-    const reason = String(part.comment || "").trim();
-    part.comment = hasValue
+    part.comment = hasRecordedValue(part[valueKey])
       ? ""
-      : reason === "Other"
-        ? String(part.commentOther || "").trim()
-        : reason;
+      : String(part.comment || "").trim();
+    delete part.commentSelect;
     delete part.commentOther;
     next[key] = part;
   }
@@ -2032,18 +1998,23 @@ function SameDeleteTextField({
   onDelete,
   keyboardType = "default",
   errorText = "",
-  notAvailable = null,
+  lastKnownReason = "",
+  whyMissing = null,
 }) {
   const cleanValue = String(value || "").trim();
   const hasValue = Boolean(cleanValue);
-  const hasLastKnown = hasMeaningfulExistingValue(lastKnownValue);
   const isDifferent = isDifferentFromExisting({ value, lastKnownValue });
+  // The why list appears once the worker clears the box, as on Discovery.
+  const [cleared, setCleared] = useState(false);
+  const showWhy =
+    !!whyMissing && !hasValue && (cleared || whyMissing.hasReason);
 
   return (
     <View style={styles.fieldBlock}>
       <View style={styles.lastKnownRow}>
         <Text style={styles.lastKnownText}>
           Existing iREPS value: {lastKnownValue || "NAv"}
+          {lastKnownReason ? ` (${lastKnownReason})` : ""}
         </Text>
 
         {isDifferent && (
@@ -2062,31 +2033,47 @@ function SameDeleteTextField({
           mode="outlined"
           placeholder={`Enter ${label.toLowerCase()}`}
           value={value || ""}
-          onChangeText={onChangeText}
+          onChangeText={(text) => {
+            if (!String(text || "").trim()) setCleared(true);
+            onChangeText(text);
+          }}
           keyboardType={keyboardType}
           style={styles.input}
         />
       </View>
 
       <View style={styles.sameDeleteRow}>
-        {!hasValue && hasLastKnown && (
+        {!hasValue && (
           <TouchableOpacity style={styles.sameButton} onPress={onSame}>
             <Text style={styles.sameButtonText}>SAME</Text>
           </TouchableOpacity>
         )}
 
         {hasValue && (
-          <TouchableOpacity style={styles.deleteButton} onPress={onDelete}>
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={() => {
+              setCleared(true);
+              onDelete();
+            }}
+          >
             <Text style={styles.deleteButtonText}>DELETE</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      <NotAvailableControl
-        notAvailable={notAvailable}
-        hasValue={hasValue}
-        hasLastKnown={hasLastKnown}
-      />
+      {showWhy && (
+        <View style={styles.whyMissingBlock}>
+          <IrepsSelectWithOther
+            label={whyMissing.label}
+            placeholder="Select why"
+            options={whyMissing.reasons}
+            includeOther
+            value={whyMissing.value}
+            onChange={whyMissing.onChange}
+          />
+        </View>
+      )}
 
       {!!errorText && <Text style={styles.errorText}>{errorText}</Text>}
     </View>
@@ -2103,11 +2090,9 @@ function SameDeleteSelectField({
   onSame,
   onDelete,
   errorText = "",
-  notAvailable = null,
 }) {
   const displayText = selectWithOtherToText(value);
   const hasValue = Boolean(String(displayText || "").trim());
-  const hasLastKnown = hasMeaningfulExistingValue(lastKnownValue);
   const isDifferent = isDifferentFromExisting({
     value: displayText,
     lastKnownValue,
@@ -2143,7 +2128,7 @@ function SameDeleteSelectField({
       </View>
 
       <View style={styles.sameDeleteRow}>
-        {!hasValue && hasLastKnown && (
+        {!hasValue && (
           <TouchableOpacity style={styles.sameButton} onPress={onSame}>
             <Text style={styles.sameButtonText}>SAME</Text>
           </TouchableOpacity>
@@ -2155,12 +2140,6 @@ function SameDeleteSelectField({
           </TouchableOpacity>
         )}
       </View>
-
-      <NotAvailableControl
-        notAvailable={notAvailable}
-        hasValue={hasValue}
-        hasLastKnown={hasLastKnown}
-      />
     </View>
   );
 }
@@ -2395,7 +2374,6 @@ export default function InspectionScreen() {
   const anomalyLookup = INSPECTION_ANOMALY_LOOKUP;
   const anomalyDetailLookup = INSPECTION_ANOMALY_DETAIL_LOOKUP;
   const placementLookup = PLACEMENT_LOOKUP;
-  const cbSizeLookup = CB_SIZE_LOOKUP;
   const phaseLookup = PHASE_LOOKUP;
 
   // MN-R001 section 8: an inspection records what the worker found — connected
@@ -2676,7 +2654,7 @@ export default function InspectionScreen() {
           ...capturedAst,
           astData: {
             ...(capturedAst?.astData || {}),
-            meter: canonicalizeNotAvailable(capturedAst?.astData?.meter || {}),
+            meter: canonicalizeMissingReasons(capturedAst?.astData?.meter || {}),
           },
           normalisation: buildCanonicalNormalisation(
             capturedAst?.normalisation,
@@ -3663,7 +3641,7 @@ export default function InspectionScreen() {
                         onSame={() =>
                           setFieldValue(
                             "inspection.captured.ast.astData.astNo",
-                            lastKnownAst?.astData?.astNo || "",
+                            sameText(lastKnownAst?.astData?.astNo),
                           )
                         }
                         onDelete={() =>
@@ -3709,7 +3687,7 @@ export default function InspectionScreen() {
                           );
                         }}
                         onSame={() => {
-                          const nextValue = makeSelectFromText(
+                          const nextValue = makeSameSelect(
                             lastKnownAst?.astData?.astManufacturer,
                             manufacturerOptions,
                           );
@@ -3753,7 +3731,7 @@ export default function InspectionScreen() {
                         onSame={() =>
                           setFieldValue(
                             "inspection.captured.ast.astData.astName",
-                            lastKnownAst?.astData?.astName || "",
+                            sameText(lastKnownAst?.astData?.astName),
                           )
                         }
                         onDelete={() =>
@@ -3784,7 +3762,7 @@ export default function InspectionScreen() {
                         onSame={() =>
                           setFieldValue(
                             "inspection.captured.ast.astData.meter.type",
-                            lastKnownAst?.astData?.meter?.type || "",
+                            sameText(lastKnownAst?.astData?.meter?.type),
                           )
                         }
                         onDelete={() =>
@@ -3816,7 +3794,7 @@ export default function InspectionScreen() {
                         onSame={() =>
                           setFieldValue(
                             "inspection.captured.ast.astData.meter.category",
-                            lastKnownAst?.astData?.meter?.category || "",
+                            sameText(lastKnownAst?.astData?.meter?.category),
                           )
                         }
                         onDelete={() =>
@@ -3852,7 +3830,7 @@ export default function InspectionScreen() {
                               );
                             }}
                             onSame={() => {
-                              const nextValue = makeSelectFromText(
+                              const nextValue = makeSameSelect(
                                 lastKnownAst?.astData?.meter?.phase,
                                 phaseLookup.options,
                               );
@@ -3883,137 +3861,55 @@ export default function InspectionScreen() {
                         </Surface>
 
                         <Surface style={styles.questionCard} elevation={1}>
-                          <SameDeleteSelectField
-                            label="CB Size"
-                            notAvailable={buildNotAvailable({
-                              reasons: NOT_AVAILABLE_REASONS.cb,
+                          <SameDeleteTextField
+                            {...buildMissingValueField({
+                              part: "cb",
+                              valueKey: "size",
+                              label: "CB Size (Amps)",
+                              whyLabel: "CB Comment",
                               container: meter?.cb,
-                              basePath:
-                                "inspection.captured.ast.astData.meter.cb",
+                              lastKnownPart: lastKnownAst?.astData?.meter?.cb,
                               setFieldValue,
-                            })}
-                            value={meter?.cb?.sizeSelect}
-                            lastKnownValue={
-                              lastKnownAst?.astData?.meter?.cb?.size
-                            }
-                            options={cbSizeLookup.options}
-                            lookup={cbSizeLookup}
-                            onChange={(nextValue) => {
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.cb.sizeSelect",
-                                nextValue,
-                              );
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.cb.size",
-                                selectWithOtherToText(nextValue),
-                              );
-                            }}
-                            onSame={() => {
-                              const nextValue = makeSelectFromText(
-                                lastKnownAst?.astData?.meter?.cb?.size,
-                                cbSizeLookup.options,
-                              );
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.cb.sizeSelect",
-                                nextValue,
-                              );
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.cb.size",
-                                selectWithOtherToText(nextValue),
-                              );
-                            }}
-                            onDelete={() => {
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.cb.sizeSelect",
-                                makeEmptySelectWithOther(),
-                              );
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.cb.size",
-                                "",
-                              );
-                            }}
-                            errorText={getErrorText(
                               errors,
-                              "inspection.captured.ast.astData.meter.cb.sizeSelect",
-                            )}
+                              keyboardType: "numeric",
+                            })}
                           />
                         </Surface>
 
                         <Surface style={styles.questionCard} elevation={1}>
                           <SameDeleteTextField
-                            label="Seal Number"
-                            notAvailable={buildNotAvailable({
-                              reasons: NOT_AVAILABLE_REASONS.seal,
+                            {...buildMissingValueField({
+                              part: "seal",
+                              valueKey: "sealNo",
+                              label: "Seal Number",
+                              whyLabel: "Seal Number Comment",
                               container: meter?.seal,
-                              basePath:
-                                "inspection.captured.ast.astData.meter.seal",
+                              lastKnownPart: lastKnownAst?.astData?.meter?.seal,
                               setFieldValue,
+                              errors,
                             })}
-                            value={meter?.seal?.sealNo}
-                            lastKnownValue={
-                              lastKnownAst?.astData?.meter?.seal?.sealNo
-                            }
-                            onChangeText={(text) =>
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.seal.sealNo",
-                                text,
-                              )
-                            }
-                            onSame={() =>
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.seal.sealNo",
-                                lastKnownAst?.astData?.meter?.seal?.sealNo ||
-                                  "",
-                              )
-                            }
-                            onDelete={() =>
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.seal.sealNo",
-                                "",
-                              )
-                            }
                           />
                         </Surface>
 
-                        <Surface style={styles.questionCard} elevation={1}>
-                          <SameDeleteTextField
-                            label="Keypad Serial Number"
-                            notAvailable={buildNotAvailable({
-                              reasons: NOT_AVAILABLE_REASONS.keypad,
-                              container: meter?.keypad,
-                              basePath:
-                                "inspection.captured.ast.astData.meter.keypad",
-                              setFieldValue,
-                            })}
-                            value={meter?.keypad?.serialNo}
-                            lastKnownValue={
-                              lastKnownAst?.astData?.meter?.keypad?.serialNo
-                            }
-                            onChangeText={(text) =>
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.keypad.serialNo",
-                                text,
-                              )
-                            }
-                            onSame={() =>
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.keypad.serialNo",
-                                lastKnownAst?.astData?.meter?.keypad
-                                  ?.serialNo || "",
-                              )
-                            }
-                            onDelete={() =>
-                              setFieldValue(
-                                "inspection.captured.ast.astData.meter.keypad.serialNo",
-                                "",
-                              )
-                            }
-                            errorText={getErrorText(
-                              errors,
-                              "inspection.captured.ast.astData.meter.keypad.serialNo",
-                            )}
-                          />
-                        </Surface>
+                        {/* As on Discovery: a keypad is asked for on prepaid
+                            meters only. */}
+                        {isPrepaidMeterKind(meter?.type) && (
+                          <Surface style={styles.questionCard} elevation={1}>
+                            <SameDeleteTextField
+                              {...buildMissingValueField({
+                                part: "keypad",
+                                valueKey: "serialNo",
+                                label: "Keypad Serial Number",
+                                whyLabel: "Keypad Serial Number Comment",
+                                container: meter?.keypad,
+                                lastKnownPart:
+                                  lastKnownAst?.astData?.meter?.keypad,
+                                setFieldValue,
+                                errors,
+                              })}
+                            />
+                          </Surface>
+                        )}
 
                         <Surface style={styles.questionCard} elevation={1}>
                           <SameDeleteSelectField
@@ -4033,7 +3929,7 @@ export default function InspectionScreen() {
                               );
                             }}
                             onSame={() => {
-                              const nextValue = makeSelectFromText(
+                              const nextValue = makeSameSelect(
                                 lastKnownAst?.location?.placement,
                                 placementLookup.options,
                               );
@@ -4088,7 +3984,7 @@ export default function InspectionScreen() {
                               );
                             }}
                             onSame={() => {
-                              const nextValue = makeSelectFromText(
+                              const nextValue = makeSameSelect(
                                 lastKnownAst?.ogs?.hasOffGridSupply,
                                 OFF_GRID_SUPPLY_OPTIONS,
                               );
@@ -4737,25 +4633,7 @@ const styles = StyleSheet.create({
   },
   reasonInput: { marginTop: 8, backgroundColor: "#fff" },
   otherAnomaliesBlock: { marginTop: 10 },
-  notAvailableBlock: { marginTop: 6 },
-  notAvailableButton: {
-    borderWidth: 1,
-    borderColor: "#B45309",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: "#FFFBEB",
-  },
-  notAvailableButtonText: { color: "#B45309", fontWeight: "800", fontSize: 12 },
-  notAvailablePill: {
-    flexShrink: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: "#FFFBEB",
-    marginRight: 8,
-  },
-  notAvailablePillText: { color: "#92400E", fontWeight: "700", fontSize: 12 },
+  whyMissingBlock: { marginTop: 8 },
   reasonError: { fontSize: 12, color: "#DC2626", paddingTop: 4 },
   container: {
     flex: 1,
