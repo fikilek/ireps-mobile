@@ -2,7 +2,8 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
@@ -965,6 +966,7 @@ export default function FormMeterRemoval() {
   const { data: allServiceProviders = [] } = useGetServiceProvidersQuery();
 
   const [editQueueItem, setEditQueueItem] = useState(undefined);
+  const pendingFieldChangesRef = useRef(null);
 
   const actionOriginChannel = String(action?.origin?.channel || "")
     .trim()
@@ -2069,13 +2071,19 @@ export default function FormMeterRemoval() {
       >
         {({
           values,
-          setFieldValue,
+          setValues,
           handleSubmit,
           resetForm,
           validateForm,
           errors,
           isValid,
         }) => {
+          // One tap, one save, one check (see batchedFormikSave).
+          const setFieldValue = makeBatchedSetFieldValue({
+            values,
+            setValues,
+            pendingRef: pendingFieldChangesRef,
+          });
           const removalErrors = errors?.removal || {};
           const assignmentErrors = errors?.assignment || {};
           const accessErrors = errors?.accessData?.access || {};

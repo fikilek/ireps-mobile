@@ -28,6 +28,7 @@ import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
 import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
 import { SubmitBlockers } from "../../../components/forms/SubmitBlockers";
+import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
 import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import IrepsSelectWithOther, {
   isSelectWithOtherFilled,
@@ -2137,6 +2138,7 @@ export default function InspectionScreen() {
     profile?.profile?.displayName || profile?.profile?.email || "Field Agent";
 
   const [editQueueItem, setEditQueueItem] = useState(undefined);
+  const pendingFieldChangesRef = useRef(null);
 
   // MN-R001 section 8 (1.1.0): a field worker who finds a meter live again
   // inspects it on the spot from the meter card. That is field work: there is no
@@ -3225,9 +3227,14 @@ export default function InspectionScreen() {
             handleSubmit,
             resetForm,
             validateForm,
-            setFieldValue,
+            setValues,
             setSubmitting,
         }) => {
+          const setFieldValue = makeBatchedSetFieldValue({
+            values,
+            setValues,
+            pendingRef: pendingFieldChangesRef,
+          });
           const noAccess = isNoAccess(values);
           const capturedAst = values?.inspection?.captured?.ast || {};
           const astData = capturedAst?.astData || {};
