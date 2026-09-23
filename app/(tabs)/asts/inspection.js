@@ -93,12 +93,17 @@ const OFF_GRID_SUPPLY_OPTIONS = getLocalSelectLookup("off_grid_supply", {
   allowOther: false,
 }).options;
 
+// Every photo this form may send. A tag missing here is thrown away before the
+// form is sent, however carefully the worker took it (UI-R003 1.5.0).
 const EXECUTION_MEDIA_TAGS = [
   "astNoPhoto",
   "meterReadingPhoto",
   "anomalyPhoto",
   "normalisationPhoto",
   "noAccessPhoto",
+  "astCbPhoto",
+  "sealPhoto",
+  "keypadPhoto",
 ];
 
 function makeEmptySelectWithOther() {
