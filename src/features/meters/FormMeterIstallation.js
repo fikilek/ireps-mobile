@@ -1007,9 +1007,12 @@ export default function FormMeterInstallation() {
               astName: "",
               meter: { category: "Normal", type: "conventional" },
             },
+            // A meter you have just installed is working, so the finding starts
+            // there and the worker only changes it if something is wrong
+            // (owner, 23 Sep 2026).
             anomalies: {
-              anomaly: "",
-              anomalyDetail: "",
+              anomaly: "Meter Ok",
+              anomalyDetail: "Operationally Ok",
             },
             location: {
               gps: null, // Placeholder for the final liveLocation capture
@@ -1052,9 +1055,10 @@ export default function FormMeterInstallation() {
               cb: { size: "", comment: "", commentOther: "" }, // 🎯 Initialized
             },
           },
+          // As above: a new meter is Ok unless the worker says otherwise.
           anomalies: {
-            anomaly: "",
-            anomalyDetail: "",
+            anomaly: "Meter Ok",
+            anomalyDetail: "Operationally Ok",
           },
           location: {
             gps: null, // 🛰️ Will be an Object {lat, lng} via the Picker
