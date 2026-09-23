@@ -1721,7 +1721,7 @@ export default function FormMeterRemoval() {
             `Meter ${meterNo}`,
             `Instruction: ${chosenInstruction?.text || "NAv"}`,
             replaces
-              ? "Next: Meter Installation opens (step 2)."
+              ? "Next: Meter Installation opens."
               : "Nothing opens after this.",
           ].join("\n"),
     });
@@ -1801,7 +1801,7 @@ export default function FormMeterRemoval() {
           await saveDraftToQueue(
             values,
             "Saved on this phone, not sent",
-            `The network was too slow, so the removal was NOT sent. It is saved on this phone. Open it from ${SAVED_FORMS_PLACE} and press SUBMIT again. The installation cannot start until the removal has been sent.`,
+            `The network was too slow, so the removal was NOT sent. It is saved on this phone. Open it from ${SAVED_FORMS_PLACE} and press SUBMIT again. The new meter cannot be installed until the removal has been sent.`,
           );
 
           setInProgress(false);
@@ -1862,7 +1862,7 @@ export default function FormMeterRemoval() {
 
         showResult({
           title: "Removal sent",
-          message: `Meter ${meterNo} is removed. Meter Installation opens now (step 2).`,
+          message: `Meter ${meterNo} is removed. Meter Installation opens now.`,
           onOk: () => {
             router.replace(getLifecycleReturnRoute());
             router.push(

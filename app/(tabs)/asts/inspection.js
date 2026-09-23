@@ -1412,7 +1412,7 @@ function describeInspectionSubmit(values = {}, { noAccess = false, next = "" } =
     next === "DISCONNECTION"
       ? "Next: the disconnection form opens."
       : next === "REPLACEMENT"
-        ? "Next: the removal form opens, then the installation."
+        ? "Next: the removal form opens. The new meter goes in after it."
         : next === "MANAGER"
           ? "The work that follows must be issued as an office instruction."
           : "Nothing opens after this.";
@@ -3328,7 +3328,7 @@ export default function InspectionScreen() {
           message:
             followOnWork === "DISCONNECTION"
               ? "The disconnection form opens now."
-              : "The removal form opens now (step 1 of the replacement).",
+              : "The removal form opens now. The new meter goes in after it.",
           onOk: () =>
             router.replace(
               followOnWork === "DISCONNECTION"
