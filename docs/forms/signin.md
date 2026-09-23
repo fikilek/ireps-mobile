@@ -1,8 +1,8 @@
-# iREPS Master Dictionary
+# signin
 
 This document is now owned by iREPS Academy.
 
-- [Canonical Academy document](https://github.com/fikilek/ireps-academy/blob/main/15-dictionary/iREPS_Master_Dictionary.md)
+- [Canonical Academy document](https://github.com/fikilek/ireps-academy/blob/main/02-user-manual/shared/signin.md)
 - [Content status and open decisions](https://github.com/fikilek/ireps-academy/blob/main/00-academy-governance/OWNER_DECISIONS.md)
 - [Original source provenance](https://github.com/fikilek/ireps-academy/blob/main/00-academy-governance/SOURCE_REGISTER.csv)
 
