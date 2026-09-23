@@ -1163,6 +1163,32 @@ function InspectionNormalisation({
   });
 
   const offered = options.map((option) => option.value);
+
+  const seededForAnomalyRef = useRef(null);
+
+  // MN-R001 2.2 (1.7.0): the finding chooses the action. When the worker picks
+  // a finding that calls for a job, that job is ticked for them; unticking it
+  // is a deliberate act, and then the reason for not acting is asked for. A
+  // draft reopened later is left exactly as the worker saved it.
+  useEffect(() => {
+    const finding = String(anomaly || "").trim();
+
+    if (seededForAnomalyRef.current === null) {
+      seededForAnomalyRef.current = finding;
+      return;
+    }
+
+    if (seededForAnomalyRef.current === finding) return;
+    seededForAnomalyRef.current = finding;
+
+    const expectedNow = getExpectedNormalisationAction(finding);
+
+    setFieldValue(`${base}.actionTaken`, [expectedNow || NORMALISATION_NONE]);
+    setFieldValue(`${base}.noActionReasonOther`, "", false);
+    setFieldValue(`${base}.noActionReason`, "");
+    // setFieldValue is stable for the life of the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anomaly]);
   const kept = actions.filter((action) => offered.includes(action));
 
   useEffect(() => {

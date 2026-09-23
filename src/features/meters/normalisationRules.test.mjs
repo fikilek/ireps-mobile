@@ -190,3 +190,23 @@ test("one job per finding: disconnect or replace, never both", () => {
     "This action is not on the list.",
   );
 });
+
+// MN-R001 2.2 (1.7.0): the finding chooses the action, so the worker finds it
+// ticked. Unticking it is deliberate, and then the reason is required.
+test("every finding that calls for a job names the job that is ticked for the worker", () => {
+  assert.equal(getExpectedNormalisationAction("Illegally Connected"), "Disconnect meter");
+  assert.equal(getExpectedNormalisationAction("Meter Damaged"), "Replace meter");
+  assert.equal(getExpectedNormalisationAction("Meter Faulty"), "Replace meter");
+  assert.equal(getExpectedNormalisationAction("Meter Ok"), "");
+
+  // what is ticked is always on the list that finding offers
+  for (const finding of ["Illegally Connected", "Meter Damaged", "Meter Faulty"]) {
+    const expected = getExpectedNormalisationAction(finding);
+    const offered = getNormalisationOptions(finding).map((option) => option.value);
+    assert.ok(offered.includes(expected), `${finding}: ${expected}`);
+    // and with it ticked, no reason is asked for
+    assert.equal(isNoActionReasonRequired({ anomaly: finding, actionTaken: [expected] }), false);
+    // unticked, it is
+    assert.equal(isNoActionReasonRequired({ anomaly: finding, actionTaken: [] }), true);
+  }
+});

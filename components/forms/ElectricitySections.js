@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Checkbox, RadioButton, Surface } from "react-native-paper";
 import FormInputMeterNo from "../../src/features/meters/FormInputMeterNo";
@@ -100,6 +100,34 @@ export const ElectricitySections = ({
   // A finding can be changed after actions were ticked. Keep the record honest:
   // drop anything the new finding does not offer, and clear a reason no longer
   // asked for.
+  const seededForAnomalyRef = useRef(null);
+
+  // MN-R001 2.2 (1.7.0): the finding chooses the action. When the worker picks
+  // a finding that calls for a job, that job is ticked for them; unticking it
+  // is a deliberate act, and then the reason for not acting is asked for. A
+  // draft reopened later is left exactly as the worker saved it.
+  useEffect(() => {
+    const finding = String(anomaly || "").trim();
+
+    if (seededForAnomalyRef.current === null) {
+      seededForAnomalyRef.current = finding;
+      return;
+    }
+
+    if (seededForAnomalyRef.current === finding) return;
+    seededForAnomalyRef.current = finding;
+
+    const expected = getExpectedNormalisationAction(finding);
+
+    setFieldValue("ast.normalisation.actionTaken", [
+      expected || NORMALISATION_NONE,
+    ]);
+    setFieldValue("ast.normalisation.noActionReasonOther", "", false);
+    setFieldValue("ast.normalisation.noActionReason", "");
+    // setFieldValue is stable for the life of the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anomaly]);
+
   useEffect(() => {
     const offered = normalisationOptionsKey.split("|");
     const current = normalisationActionsKey ? normalisationActionsKey.split("|") : [];
