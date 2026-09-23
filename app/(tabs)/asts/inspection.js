@@ -1584,6 +1584,22 @@ const InspectionSchema = object()
           });
         }
 
+        for (const [part, valueKey, label, tag] of [
+          ["cb", "size", "CB size", "astCbPhoto"],
+          ["seal", "sealNo", "seal number", "sealPhoto"],
+          ["keypad", "serialNo", "keypad serial number", "keypadPhoto"],
+        ]) {
+          if (
+            hasRecordedValue(meter?.[part]?.[valueKey]) &&
+            !hasMediaTag(media, tag)
+          ) {
+            return this.createError({
+              path: "media",
+              message: `A photo of the ${label} is required`,
+            });
+          }
+        }
+
         if (!String(capturedAst?.location?.placement || "").trim()) {
           return this.createError({
             path: "inspection.captured.ast.location.placementSelect",
@@ -2005,6 +2021,14 @@ const WHY_MISSING_REASONS = Object.freeze({
 // UI-R003 3.1: CB size, seal number and keypad serial number, the way Meter
 // Discovery captures them — a value, or (once the box is cleared) why there is
 // none. SAME copies the recorded value and the recorded why together.
+// The photo each of the three carries, using Meter Discovery's tags so the
+// office sees the same pictures from both forms.
+const MISSING_VALUE_PHOTO_TAGS = Object.freeze({
+  cb: "astCbPhoto",
+  seal: "sealPhoto",
+  keypad: "keypadPhoto",
+});
+
 function buildMissingValueField({
   part,
   valueKey,
@@ -2046,6 +2070,10 @@ function buildMissingValueField({
       clearWhy();
       setFieldValue(`${basePath}.${valueKey}`, "");
     },
+    // Owner, 23 Sep 2026: if it is there, photograph it; if it is not there,
+    // there is nothing to photograph.
+    photoTag: MISSING_VALUE_PHOTO_TAGS[part],
+    photoRequired: hasRecordedValue(container?.[valueKey]),
     whyMissing: {
       label: whyLabel,
       reasons: WHY_MISSING_REASONS[part],
@@ -2121,6 +2149,11 @@ function SameDeleteTextField({
   errorText = "",
   lastKnownReason = "",
   whyMissing = null,
+  photoTag = "",
+  photoRequired = false,
+  photoAgentName = "",
+  photoAgentUid = "",
+  photoGps = null,
 }) {
   const cleanValue = String(value || "").trim();
   const hasValue = Boolean(cleanValue);
@@ -2182,6 +2215,19 @@ function SameDeleteTextField({
           </TouchableOpacity>
         )}
       </View>
+
+      {!!photoTag && photoRequired && (
+        <View style={styles.whyMissingBlock}>
+          <IrepsMedia
+            name="media"
+            tag={photoTag}
+            agentName={photoAgentName}
+            agentUid={photoAgentUid}
+            fallbackGps={photoGps}
+            required
+          />
+        </View>
+      )}
 
       {showWhy && (
         <View style={styles.whyMissingBlock}>
@@ -4026,7 +4072,10 @@ export default function InspectionScreen() {
                               setFieldValue,
                               errors,
                               keyboardType: "numeric",
-                            })}
+                                                          photoAgentName: agentName,
+                              photoAgentUid: agentUid,
+                              photoGps: capturedAst?.location?.gps || null,
+})}
                           />
                         </Surface>
 
@@ -4041,7 +4090,10 @@ export default function InspectionScreen() {
                               lastKnownPart: lastKnownAst?.astData?.meter?.seal,
                               setFieldValue,
                               errors,
-                            })}
+                                                          photoAgentName: agentName,
+                              photoAgentUid: agentUid,
+                              photoGps: capturedAst?.location?.gps || null,
+})}
                           />
                         </Surface>
 
@@ -4060,7 +4112,10 @@ export default function InspectionScreen() {
                                   lastKnownAst?.astData?.meter?.keypad,
                                 setFieldValue,
                                 errors,
-                              })}
+                                                            photoAgentName: agentName,
+                              photoAgentUid: agentUid,
+                              photoGps: capturedAst?.location?.gps || null,
+})}
                             />
                           </Surface>
                         )}
