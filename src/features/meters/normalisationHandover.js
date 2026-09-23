@@ -176,6 +176,7 @@ export function buildInstallationRouteParams({
   replacedAstId,
   replacedMeterNo,
   meterType = "electricity",
+  returnTo = "",
 }) {
   return {
     pathname: "/(tabs)/premises/form-meter-installation",
@@ -184,6 +185,9 @@ export function buildInstallationRouteParams({
       action: JSON.stringify({
         access: "yes",
         meterType,
+        // Where the worker lands when the new meter is in: the batch they
+        // started from, when they started from one.
+        returnTo,
         origin: {
           channel: "FIELD",
           source: "METER_REMOVAL",

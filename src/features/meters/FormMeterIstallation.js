@@ -1306,7 +1306,7 @@ export default function FormMeterInstallation() {
 
         setTimeout(() => {
           updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
-          router.replace("/(tabs)/premises");
+          router.replace(action?.returnTo || "/(tabs)/premises");
         }, 1500);
 
         return true;
@@ -1464,7 +1464,7 @@ export default function FormMeterInstallation() {
 
       setTimeout(() => {
         updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
-        router.replace("/(tabs)/premises");
+        router.replace(action?.returnTo || "/(tabs)/premises");
         setInProgress(false);
       }, 2000);
     } catch (error) {

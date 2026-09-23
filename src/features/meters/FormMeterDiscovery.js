@@ -1925,11 +1925,18 @@ export default function FormMeterDiscovery() {
             premiseId: gate?.resolvedPremiseId || premise?.id,
             parentTrnId: cleanPayload.id,
             parentTrnType: "METER_DISCOVERY",
-            returnTo: "/(tabs)/asts",
+            // Where the worker lands when the work that follows is done: back
+            // to the batch they came from, or to the meters list.
+            returnTo: targetedBatchContext
+              ? targetedBatchReturnTo
+              : "/(tabs)/asts",
           };
 
-          router.replace(targetedBatchReturnTo);
-          router.push(
+          // One move, not two. Replacing the discovery and then pushing the
+          // next form meant the second navigation could be dropped while the
+          // first was still settling — from a batch it always was, and the
+          // worker saw "The action NAVIGATE ... was not handled".
+          router.replace(
             followOnWork === "DISCONNECTION"
               ? buildDisconnectionRouteParams(handover)
               : buildRemovalRouteParams(handover),

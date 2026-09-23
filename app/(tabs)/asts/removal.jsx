@@ -1863,9 +1863,11 @@ export default function FormMeterRemoval() {
         showResult({
           title: "Removal sent",
           message: `Meter ${meterNo} is removed. Meter Installation opens now.`,
-          onOk: () => {
-            router.replace(getLifecycleReturnRoute());
-            router.push(
+          // One move: replacing this form and then pushing the installation
+          // meant the second navigation could be dropped (it always was from
+          // inside a batch), and the worker was left with a navigation error.
+          onOk: () =>
+            router.replace(
               buildInstallationRouteParams({
                 premiseId: installationPremiseId,
                 removalTrnId: result?.trnId || cleanPayload?.id,
@@ -1874,9 +1876,9 @@ export default function FormMeterRemoval() {
                   astDoc?.ast?.astData?.astNo || action?.meterNo,
                 meterType:
                   astDoc?.meterType || action?.meterType || "electricity",
+                returnTo: getLifecycleReturnRoute(),
               }),
-            );
-          },
+            ),
         });
         return;
       }
