@@ -32,8 +32,8 @@ import {
 import FormInputAccountNo from "./FormInputAccountNo";
 import {
   FORM_TEXT,
-  FORM_PLACEHOLDER,
-  HINT_PENDING_REWORD,
+  FORM_PLACEHOLDER
+
 } from "../../theme/formColors";
 
 const ACCOUNT_DATA_MEDIA_TAGS = [
@@ -566,7 +566,7 @@ function TextInputProxy({ value, onChangeText, keyboardType, hasError = false })
       onChangeText={onChangeText}
       keyboardType={keyboardType}
       placeholder="NAv"
-      placeholderTextColor={HINT_PENDING_REWORD}
+      placeholderTextColor={FORM_PLACEHOLDER}
       style={[styles.textInput, hasError && styles.textInputError]}
     />
   );

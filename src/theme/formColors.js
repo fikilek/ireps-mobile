@@ -14,24 +14,8 @@ import { MD3LightTheme } from "react-native-paper";
 // "Existing iREPS value" line, helper lines and section headings.
 export const FORM_TEXT = "#000000";
 
-// The hint inside an empty box. It is always an instruction
-// ("Enter meter number"), never a value, so black cannot make an empty box
-// look filled (UI-R004 section 4).
+// The hint inside an empty box.
 export const FORM_PLACEHOLDER = "#000000";
-
-/**
- * A hint that is not yet an instruction.
- *
- * UI-R004 section 4: a hint must tell the worker what to do, never show a
- * value. A handful of boxes still show a value-shaped hint ("NAv", "10",
- * "Other"). Black would make those empty boxes look filled, so they keep the
- * old grey until the owner rewords them, and they say so here rather than
- * hiding in a screen.
- *
- * Every use of this is a box waiting to be reworded. When the list is empty,
- * delete it.
- */
-export const HINT_PENDING_REWORD = "#94a3b8";
 
 // An error stays red. It is a signal, not a word to read past.
 export const FORM_ERROR = "#b91c1c";

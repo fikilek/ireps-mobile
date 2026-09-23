@@ -24,8 +24,8 @@ import {
 } from "@/src/redux/irepsSelectLookupsApi";
 import {
   FORM_TEXT,
-  FORM_PLACEHOLDER,
-  HINT_PENDING_REWORD,
+  FORM_PLACEHOLDER
+
 } from "../../../../../src/theme/formColors";
 
 function statusUi(status) {
@@ -215,7 +215,7 @@ function EditableLookupModal({ visible, lookup, onClose, onSave, saving }) {
                 )
               }
               placeholder="METER_REMOVAL"
-              placeholderTextColor={HINT_PENDING_REWORD}
+              placeholderTextColor={FORM_PLACEHOLDER}
               style={styles.input}
               autoCapitalize="characters"
             />
@@ -225,7 +225,7 @@ function EditableLookupModal({ visible, lookup, onClose, onSave, saving }) {
               value={form.fieldKey}
               onChangeText={(text) => updateField("fieldKey", text)}
               placeholder="removal.finalReading.noReadingReason"
-              placeholderTextColor={HINT_PENDING_REWORD}
+              placeholderTextColor={FORM_PLACEHOLDER}
               style={styles.input}
               autoCapitalize="none"
             />
@@ -251,7 +251,7 @@ function EditableLookupModal({ visible, lookup, onClose, onSave, saving }) {
                   value={form.otherLabel}
                   onChangeText={(text) => updateField("otherLabel", text)}
                   placeholder="Other"
-                  placeholderTextColor={HINT_PENDING_REWORD}
+                  placeholderTextColor={FORM_PLACEHOLDER}
                   style={styles.input}
                 />
               </>

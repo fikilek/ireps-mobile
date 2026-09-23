@@ -54,7 +54,7 @@ import {
   sanitizePropertyTypeForSubmission,
   supportsUnitNo,
 } from "./premiseRepeatability";
-import { FORM_TEXT, HINT_PENDING_REWORD } from "../../theme/formColors";
+import { FORM_TEXT } from "../../theme/formColors";
 
 
 const streetTypeOptions = [
@@ -1779,7 +1779,6 @@ export default function FormPremise() {
                           label="Unit Name"
                           name="propertyType.name"
                           placeholder="Unit Name"
-                          placeholderTextColor={HINT_PENDING_REWORD}
                           keyboardType="default"
                         />
                         <Divider style={styles.divider} />
@@ -1791,7 +1790,6 @@ export default function FormPremise() {
                         label="Unit Number"
                         name="propertyType.unitNo"
                         placeholder="Unit Number"
-                        placeholderTextColor={HINT_PENDING_REWORD}
                         keyboardType="default"
                       />
                     )}
@@ -1814,7 +1812,6 @@ export default function FormPremise() {
                         label="SUBURB NAME"
                         name="address.suburbName"
                         placeholder="Suburb Name"
-                        placeholderTextColor={HINT_PENDING_REWORD}
                         keyboardType="default"
                       />
                     </View>
@@ -1827,7 +1824,6 @@ export default function FormPremise() {
                           label="STR NO"
                           name="address.strNo"
                           placeholder="Str No"
-                          placeholderTextColor={HINT_PENDING_REWORD}
                           keyboardType="default"
                         />
                       </View>
@@ -1836,7 +1832,6 @@ export default function FormPremise() {
                           label="STR NAME"
                           name="address.strName"
                           placeholder="Str Name"
-                          placeholderTextColor={HINT_PENDING_REWORD}
                           autoCapitalize="words" // 🏛️ Auto-Title Case for Street Names
                           onChangeText={(text) =>
                             setFieldValue(
