@@ -76,6 +76,7 @@ const EMPTY_SELECT_WITH_OTHER = {
 const REM_SUBMIT_TIMEOUT_MS = 15000;
 
 const EXECUTION_MEDIA_TAGS = [
+  "instructionMedia",
   "removalEvidence",
   "removalMeterReadingEvidence",
   "tokenReadingPhoto",
@@ -2223,6 +2224,23 @@ export default function FormMeterRemoval() {
                     numberOfLines={3}
                     style={styles.notesInput}
                   />
+
+                  {/* UI-R003 3.1: the same instruction section as the
+                      disconnection and the reconnection. */}
+                  <View style={styles.questionEvidenceSlot}>
+                    <Text style={styles.questionTitle}>Instruction Photo</Text>
+                    <Text style={styles.questionDescription}>
+                      Optional. Capture the written instruction if available.
+                    </Text>
+                    <IrepsMedia
+                      name="media"
+                      tag="instructionMedia"
+                      agentName={agentName}
+                      agentUid={agentUid}
+                      fallbackGps={fallbackGps}
+                      required={false}
+                    />
+                  </View>
                 </Surface>
               )}
 

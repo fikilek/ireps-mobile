@@ -4,7 +4,7 @@
 
 export const REPLACE_METER_STEP_1 = Object.freeze({
   code: "REPLACE_METER_STEP_1",
-  text: "Replace meter – step 1: remove",
+  text: "Replace meter",
 });
 
 const FINDING_FORM_NAMES = Object.freeze({

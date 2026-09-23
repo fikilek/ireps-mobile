@@ -1,4 +1,7 @@
 const option = (label, value = label) => Object.freeze({ label, value });
+// An option that says what will happen when it is chosen.
+const describedOption = (label, value, description) =>
+  Object.freeze({ label, value, description });
 const evidenceOption = (label, photoRequired, value = label) =>
   Object.freeze({ label, value, photoRequired });
 
@@ -198,8 +201,16 @@ const FORM_OPTIONS = Object.freeze({
   // MN-R001 6.1 (1.2.0): Replace meter is one instruction in two stages;
   // Meter remove decommission is retired.
   removal_instructions: Object.freeze([
-    option("Remove meter", "REMOVE_METER"),
-    option("Replace meter – step 1: remove", "REPLACE_METER_STEP_1"),
+    describedOption(
+      "Remove meter",
+      "REMOVE_METER",
+      "The meter is taken away. Nothing follows.",
+    ),
+    describedOption(
+      "Replace meter",
+      "REPLACE_METER_STEP_1",
+      "The new meter goes in: the installation opens after this.",
+    ),
   ]),
 
   meter_reading_instructions: Object.freeze([
@@ -225,7 +236,11 @@ export function getLocalSelectLookup(name, { allowOther = true } = {}) {
     .map((entry) =>
       typeof entry === "string"
         ? { code: entry, label: entry }
-        : { code: String(entry?.value ?? ""), label: String(entry?.label ?? "") },
+        : {
+            code: String(entry?.value ?? ""),
+            label: String(entry?.label ?? ""),
+            description: String(entry?.description ?? ""),
+          },
     )
     .filter((entry) => entry.code && entry.label !== "Other");
 

@@ -339,7 +339,6 @@ export default function IrepsSelectWithOther({
                           </Text>
                         ) : null}
 
-                        <Text style={styles.optionCode}>{option.code}</Text>
                       </View>
 
                       {active ? (
