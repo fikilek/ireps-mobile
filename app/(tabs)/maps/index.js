@@ -1023,8 +1023,9 @@ export default function MapsScreen() {
 
     return all?.prems
       ?.filter((prem) => {
-        if (prem?.id === geoState?.selectedPremise?.id) return false;
-
+        // The selected premise used to be left out here, because a blue label of its own was drawn over it.
+        // It is now drawn with its neighbours and says it is selected with a thick blue border, so leaving
+        // it out would take it off the map altogether (owner, 2026-09-24).
         const coordinate = getPremiseCoordinate(prem);
 
         if (coordinate?.latitude == null || coordinate?.longitude == null) {

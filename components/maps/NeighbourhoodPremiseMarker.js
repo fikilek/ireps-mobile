@@ -121,6 +121,7 @@ function NeighbourhoodPremiseMarkerBase({
     prem?.address?.strType,
     zoom,
     showAddress,
+    isSelected,
     coordinate?.latitude,
     coordinate?.longitude,
     isDragging,
