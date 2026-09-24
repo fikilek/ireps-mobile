@@ -1,5 +1,9 @@
-// TB-R051: search a batch's rows by meter number (any part), ERF number or street address.
-// Customer name and account number are never searched (TB-R042).
+// TB-R051, section 17 (1.3.74): the search box matches everything the work order card shows - the meter
+// number (any part), the number found on site, the ERF number, the address line with the shop's name and
+// unit number (TB-R067), the account number and the account holder's name. Thirteen shops at 26 Old Acre
+// Street read the same address, and at the door the worker is given an account number and a name, so those
+// are what they have to search on (owner, 2026-09-24). TB-R042 is untouched: it bars accounts from batching
+// decisions, and finding a row on a list already in the worker's hand is not one.
 const PLACEHOLDERS = new Set(["", "-", "nav", "n/a", "na", "null", "undefined"]);
 
 const collapse = (value) => String(value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -7,7 +11,19 @@ const digitsOf = (value) => String(value ?? "").replace(/\D/g, "");
 const meaningful = (value) => !PLACEHOLDERS.has(value);
 
 function meterNumbers(row) {
-  return [row.meterNo, row.raw?.meter?.numberRaw, row.raw?.meter?.numberNormalized, row.raw?.salesAllMeterId];
+  return [row.meterNo, row.raw?.meter?.numberRaw, row.raw?.meter?.numberNormalized, row.raw?.salesAllMeterId, row.foundMeterNo];
+}
+
+// The account number the worker is given at the door. Matched by its digits too, so it is found however it
+// is typed or spaced.
+function accountNumbers(row) {
+  return [row.accountNumber, row.raw?.customer?.accountNumber];
+}
+
+// What the card reads under the account: the holder's name, and the address line with the shop and its unit
+// number once the row has its premise (TB-R067).
+function cardLines(row) {
+  return [row.customerName, row.raw?.customer?.customerName, row.addressLine];
 }
 
 function erfNumbers(row) {
@@ -38,11 +54,17 @@ export function targetedBatchRowMatchesSearch(row, query) {
   if (looksLikeMeterNumber(text)) {
     const queryDigits = digitsOf(text);
     if (meterNumbers(row).some((value) => digitsOf(value).includes(queryDigits))) return true;
+    if (accountNumbers(row).some((value) => digitsOf(value).includes(queryDigits))) return true;
   } else if (meterNumbers(row).some(contains)) {
     return true;
   }
 
-  return erfNumbers(row).some(contains) || streetAddresses(row).some(contains);
+  return (
+    erfNumbers(row).some(contains) ||
+    streetAddresses(row).some(contains) ||
+    accountNumbers(row).some(contains) ||
+    cardLines(row).some(contains)
+  );
 }
 
 export function searchTargetedBatchRows(rows, query) {

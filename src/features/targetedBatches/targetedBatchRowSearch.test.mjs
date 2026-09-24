@@ -94,9 +94,9 @@ test("street address matches any part, case-insensitive with spaces collapsed", 
 
 // TB-R051: the review's rows. A house number in an address search never matches meter numbers.
 const streetRows = [
-  batchRow({ id: "a", meterNo: "04251234567", erfNo: "701", addressLine1: "5 Church Street" }),
-  batchRow({ id: "b", meterNo: "04259876543", erfNo: "702", addressLine1: "12 Main Road" }),
-  batchRow({ id: "c", meterNo: "01115555555", erfNo: "703", addressLine1: "3 Oak Ave" }),
+  batchRow({ id: "a", meterNo: "04251234567", erfNo: "701", addressLine1: "5 Church Street", accountNumber: "", customerName: "" }),
+  batchRow({ id: "b", meterNo: "04259876543", erfNo: "702", addressLine1: "12 Main Road", accountNumber: "", customerName: "" }),
+  batchRow({ id: "c", meterNo: "01115555555", erfNo: "703", addressLine1: "3 Oak Ave", accountNumber: "", customerName: "" }),
 ];
 
 test("an address search with a house number finds only that address", () => {
@@ -118,7 +118,7 @@ test("a query of digits, spaces or hyphens is a meter number search on any part"
   assert.deepEqual(ids(searchTargetedBatchRows(streetRows, "5")), ["a", "b", "c"]);
   // Digits also match ERF numbers and street lines as typed.
   assert.deepEqual(ids(searchTargetedBatchRows(streetRows, "702")), ["b"]);
-  assert.deepEqual(ids(searchTargetedBatchRows([batchRow({ id: "d", meterNo: "09990000000", addressLine1: "4567 Long Road" })], "4567")), ["d"]);
+  assert.deepEqual(ids(searchTargetedBatchRows([batchRow({ id: "d", meterNo: "09990000000", addressLine1: "4567 Long Road", accountNumber: "" })], "4567")), ["d"]);
   // Hyphens or spaces alone are not a meter number search.
   assert.deepEqual(ids(searchTargetedBatchRows(streetRows, "-")), []);
   assert.deepEqual(ids(searchTargetedBatchRows(streetRows, " - - ")), []);
@@ -143,11 +143,34 @@ test("the town fallback and NAv placeholders are not a street address", () => {
   assert.equal(targetedBatchRowMatchesSearch({ id: "X", meterNo: "NAv", erfNo: "NAv", address: "NAv" }, "nav"), false);
 });
 
-test("customer name and account number are never searched (TB-R042)", () => {
-  for (const query of ["Thandi", "nkosi", "Kaiser", "Kaiser Dlamini", "5500123456", "99123", "9912345678"]) {
-    assert.deepEqual(ids(searchTargetedBatchRows(rows, query)), [], query);
-  }
-  assert.doesNotMatch(source, /customerName|accountNumber|customer\b/);
+test("section 17 (1.3.74) the box matches everything the card shows", () => {
+  // The account holder's name, as the worker is given it at the door.
+  assert.deepEqual(ids(searchTargetedBatchRows(rows, "Kaiser")), ["R2"]);
+  assert.deepEqual(ids(searchTargetedBatchRows(rows, "kaiser dlamini")), ["R2"]);
+  assert.deepEqual(ids(searchTargetedBatchRows(rows, "nkosi")), ["R1", "R3"]);
+
+  // The account number, whole or in part, however it is spaced.
+  assert.deepEqual(ids(searchTargetedBatchRows(rows, "9912345678")), ["R2"]);
+  assert.deepEqual(ids(searchTargetedBatchRows(rows, "9912 3456")), ["R2"]);
+  assert.deepEqual(ids(searchTargetedBatchRows(rows, "5500123456")), ["R1", "R3"]);
+
+  // TB-R067: the shop and its unit number, once the row has its premise.
+  const shops = [
+    batchRow({ id: "S1", meterNo: "04297699854", addressLine1: "26 Oldacre St", accountNumber: "0002139517", customerName: "Sibiya" }),
+    batchRow({ id: "S2", meterNo: "04297699862", addressLine1: "26 Oldacre St", accountNumber: "0002011351", customerName: "Khumalo" }),
+  ];
+  shops[0].addressLine = "26 Oldacre St, Thisa Fish and Chips, 4";
+  shops[1].addressLine = "26 Oldacre St, Zol Shoes, 6";
+
+  assert.deepEqual(ids(searchTargetedBatchRows(shops, "thisa")), ["S1"]);
+  assert.deepEqual(ids(searchTargetedBatchRows(shops, "fish and chips")), ["S1"]);
+  assert.deepEqual(ids(searchTargetedBatchRows(shops, "zol")), ["S2"]);
+  assert.deepEqual(ids(searchTargetedBatchRows(shops, "oldacre")), ["S1", "S2"], "the address they share still finds both");
+
+  // The number found on site, which the card shows under the meter.
+  const found = batchRow({ id: "F1", meterNo: "04297699789", accountNumber: "" });
+  found.foundMeterNo = "042042";
+  assert.equal(targetedBatchRowMatchesSearch(found, "042042"), true);
 });
 
 test("a row without searchable fields does not match a non-blank search", () => {

@@ -3,6 +3,7 @@
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { memo, useEffect, useMemo, useState } from "react";
+import { formatStreetAddress } from "../../src/features/premises/streetAddress";
 import { StyleSheet, Text, View } from "react-native";
 import { Marker } from "react-native-maps";
 
@@ -57,13 +58,7 @@ const getOccupancyColor = (status = "") => {
   return "#64748B";
 };
 
-const formatShortAddress = (addr) => {
-  const strNo = addr?.strNo || "";
-  const strName = addr?.strName || "";
-  const strType = addr?.strType || "";
-  const s = `${strNo} ${strName} ${strType}`.trim();
-  return s || "No Address";
-};
+const formatShortAddress = (addr) => formatStreetAddress(addr) || "No Address";
 
 /* ----------------------------
    Component
@@ -76,6 +71,9 @@ function NeighbourhoodPremiseMarkerBase({
   onDragEnd,
   isDragging = false,
   isSaving = false,
+  // The premise the worker has selected. It is drawn exactly like its neighbours - same card, same words,
+  // same icon - and says it is the selected one with a thick blue border (owner, 2026-09-24).
+  isSelected = false,
   showAddressFromZoom = 18,
   showTypeFromZoom = 18,
 }) {
@@ -162,6 +160,7 @@ function NeighbourhoodPremiseMarkerBase({
         style={[
           styles.badge,
           { borderColor: statusColor },
+          isSelected && styles.badgeSelected,
           isDragging && styles.badgeDragging,
           isSaving && styles.badgeSaving,
         ]}
@@ -244,6 +243,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
+  },
+
+  badgeSelected: {
+    borderWidth: 3,
+    borderColor: "#1d4ed8",
   },
 
   badgeDragging: {

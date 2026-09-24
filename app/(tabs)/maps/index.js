@@ -21,6 +21,7 @@ import GeoCascadingSelector from "../../../components/maps/GeoCascadingSelector"
 import NeighbourhoodErfMarker from "../../../components/maps/NeighbourhoodErfMarker";
 import NeighbourhoodMeterMarker from "../../../components/maps/NeighbourhoodMeterMarker";
 import NeighbourhoodPremiseMarker from "../../../components/maps/NeighbourhoodPremiseMarker";
+import { formatStreetAddress } from "../../../src/features/premises/streetAddress";
 import PremiseMarkerActionModal from "../../../components/maps/PremiseMarkerActionModal";
 import SelectedErf from "../../../components/maps/SelectedErf";
 import SelecteMeter from "../../../components/maps/SelectedMeter";
@@ -893,11 +894,26 @@ export default function MapsScreen() {
       return null;
     }
 
+    // The selected premise is already drawn among its neighbours, with a thick blue border, so a second
+    // label of its own would only cover it (owner, 2026-09-24). This one is left for when the neighbourhood
+    // is not being drawn at all - the premises layer off, or zoomed out past it - and for a premise the
+    // phone does not hold, where the map would otherwise show nothing at all.
+    const neighbourhoodIsDrawing =
+      scopeReady && Boolean(showLayers?.premises) && Boolean(region) && zoom >= 18;
+
+    if (
+      neighbourhoodIsDrawing &&
+      (Array.isArray(all?.prems) ? all.prems : []).some(
+        (prem) => prem?.id === selectedPremise.id,
+      )
+    ) {
+      return null;
+    }
+
     const addr = selectedPremise?.address;
-    const adrLn1 = addr
-      ? `${addr?.strNo || ""} ${addr?.strName}`.trim()
-      : "NO ADR";
-    const adrLn2 = addr ? `${addr?.strType || ""}`.trim() : "";
+    // The street type is written once: "26 OLDACRE ST", never "26 OLDACRE ST Street".
+    const adrLn1 = addr ? formatStreetAddress(addr) || "NO ADR" : "NO ADR";
+    const adrLn2 = "";
 
     return (
       <SelectedPremise
@@ -1039,6 +1055,10 @@ export default function MapsScreen() {
               mapMode === "edit-premise-marker" && dragPremiseId === prem?.id
             }
             isSaving={savingDragId === prem?.id}
+            // The selected premise is one of these, with a thick blue border (owner, 2026-09-24).
+            isSelected={
+              Boolean(prem?.id) && prem?.id === geoState?.selectedPremise?.id
+            }
             onPress={(e) => handlePremiseMarkerPress(prem, e)}
             onDragEnd={(nextCoordinate) =>
               handlePremiseMarkerDragEnd(prem?.id, nextCoordinate)
