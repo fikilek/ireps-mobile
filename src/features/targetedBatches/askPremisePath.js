@@ -5,7 +5,7 @@ import {
   normalizeTargetedBatchContext,
   serializeTargetedBatchContext,
 } from "../premises/targetedBatchPremiseContext.js";
-import { runLiveBatchRowCheck } from "./askBatchOrOtherDiscovery.js";
+import { runLiveBatchRowCheck } from "./askDiscoveryPath.js";
 import {
   BATCH_PREMISE_REASONS,
   erfWithCarriedBatchContext,
@@ -19,11 +19,11 @@ function asSentence(text) {
 
 // TB-R051: a new premise on an ERF selected with a batch links to that batch
 // row, so it is checked live the same way as Discover before the premise form
-// opens. Refused: the reason, with an ordinary premise (the batch dropped from
+// opens. Refused: the reason, with a premise on the Normal Path (the batch dropped from
 // the selection) or Cancel. An ERF without a batch opens the form at once.
 // openPremiseForm({ erfId, targetedBatchContext }) opens the screen's form;
-// targetedBatchContext is the serialized batch, or null for an ordinary premise.
-export function askBatchOrOrdinaryPremise({
+// targetedBatchContext is the serialized batch, or null for a premise on the Normal Path.
+export function askPremisePath({
   erf,
   updateGeo,
   openPremiseForm,
@@ -43,9 +43,9 @@ export function askBatchOrOrdinaryPremise({
     return;
   }
 
-  // TB-R051: the form reads the batch from the selected ERF, so an ordinary
+  // TB-R051: the form reads the batch from the selected ERF, so a Normal Path
   // premise re-selects the plain ERF before the form opens.
-  const openOrdinaryPremise = () => {
+  const openNormalPathPremise = () => {
     updateGeo(
       {
         selectedErf: erfWithCarriedBatchContext({
@@ -59,15 +59,15 @@ export function askBatchOrOrdinaryPremise({
     openPremiseForm({ erfId, targetedBatchContext: null });
   };
 
-  // An empty batch key is no batch: drop it and open the ordinary form.
+  // An empty batch key is no batch: drop it and open the form on the Normal Path.
   if (erf.targetedBatchContext == null) {
-    openOrdinaryPremise();
+    openNormalPathPremise();
     return;
   }
 
-  const ordinaryButton = {
-    text: "Ordinary premise (not the batch)",
-    onPress: openOrdinaryPremise,
+  const normalPathButton = {
+    text: "Normal Path",
+    onPress: openNormalPathPremise,
   };
   const cancelButton = { text: "Cancel", style: "cancel" };
 
@@ -80,8 +80,8 @@ export function askBatchOrOrdinaryPremise({
       "Batch details incomplete",
       `This ERF is selected for a batch, but the batch details are incomplete${
         missingFields.length > 0 ? ` (${missingFields.join(", ")})` : ""
-      }. A batch premise cannot be added from here. Add an ordinary premise that is not for the batch?`,
-      [ordinaryButton, cancelButton],
+      }. This premise cannot be added on the Sales Path. Add it on the Normal Path?`,
+      [normalPathButton, cancelButton],
     );
     return;
   }
@@ -90,16 +90,16 @@ export function askBatchOrOrdinaryPremise({
     ctx.targetedMeterNo || "?"
   }).`;
 
-  // TB-R051: the batch premise is refused with the reason; only an ordinary premise or cancel remain.
+  // TB-R051: the Sales Path is refused with the reason; only the Normal Path or cancel remain.
   const showRefusal = (reason, { checkFailed = false } = {}) => {
     const next = checkFailed
-      ? "Try again when connected, or add an ordinary premise that is not for the batch?"
-      : "A batch premise cannot be added from here. Add an ordinary premise that is not for the batch?";
+      ? "Try again when connected, or add this premise on the Normal Path?"
+      : "This premise cannot be added on the Sales Path. Add it on the Normal Path?";
 
     Alert.alert(
       "Batch premise",
       `${asSentence(reason)}\n\n${batchLine} ${next}`,
-      [ordinaryButton, cancelButton],
+      [normalPathButton, cancelButton],
     );
   };
 

@@ -10,7 +10,7 @@ export const BATCH_CHECK_MESSAGES = Object.freeze({
 function ignoreRequestClose() {}
 
 // TB-R051: no silent waits. The calling screen shows this for the whole live
-// batch check (askBatchOrOtherDiscovery / askBatchOrOrdinaryPremise
+// batch check (askDiscoveryPath / askPremisePath
 // onCheckingChange), so taps cannot start another action meanwhile.
 export default function BatchCheckOverlay({ visible, message }) {
   return (

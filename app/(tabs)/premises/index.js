@@ -17,8 +17,8 @@ import { filterPremises } from "../../../src/features/premises/filterPremises";
 import BatchCheckOverlay, {
   BATCH_CHECK_MESSAGES,
 } from "../../../src/features/targetedBatches/BatchCheckOverlay";
-import { askBatchOrOrdinaryPremise } from "../../../src/features/targetedBatches/askBatchOrOrdinaryPremise";
-import { askBatchOrOtherDiscovery } from "../../../src/features/targetedBatches/askBatchOrOtherDiscovery";
+import { askPremisePath } from "../../../src/features/targetedBatches/askPremisePath";
+import { askDiscoveryPath } from "../../../src/features/targetedBatches/askDiscoveryPath";
 import { erfWithCarriedBatchContext } from "../../../src/features/targetedBatches/targetedBatchContextCarry";
 import { useAuth } from "../../../src/hooks/useAuth";
 
@@ -139,7 +139,7 @@ export default function PremisesScreen() {
       const parentErf = erfById[p?.erfId] || null;
 
       // TB-R051: read the batch before the selection changes.
-      askBatchOrOtherDiscovery({
+      askDiscoveryPath({
         premise: p,
         parentErf,
         selectedErfContext: selectedErf?.targetedBatchContext,
@@ -163,7 +163,7 @@ export default function PremisesScreen() {
 
   // TB-R051: a new premise on an ERF selected with a batch is checked live first.
   const handleAddPremise = useCallback(() => {
-    askBatchOrOrdinaryPremise({
+    askPremisePath({
       erf: selectedErf,
       updateGeo,
       actor: batchActor,

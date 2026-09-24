@@ -37,8 +37,8 @@ import { useWarehouse } from "../../../src/context/WarehouseContext";
 import BatchCheckOverlay, {
   BATCH_CHECK_MESSAGES,
 } from "../../../src/features/targetedBatches/BatchCheckOverlay";
-import { askBatchOrOrdinaryPremise } from "../../../src/features/targetedBatches/askBatchOrOrdinaryPremise";
-import { askBatchOrOtherDiscovery } from "../../../src/features/targetedBatches/askBatchOrOtherDiscovery";
+import { askPremisePath } from "../../../src/features/targetedBatches/askPremisePath";
+import { askDiscoveryPath } from "../../../src/features/targetedBatches/askDiscoveryPath";
 import { erfWithCarriedBatchContext } from "../../../src/features/targetedBatches/targetedBatchContextCarry";
 import { useAuth } from "../../../src/hooks/useAuth";
 import { useUpdatePremiseMutation } from "../../../src/redux/premisesApi";
@@ -364,7 +364,7 @@ export default function MapsScreen() {
 
     setPremiseActionPrem(null);
 
-    askBatchOrOtherDiscovery({
+    askDiscoveryPath({
       premise: prem,
       parentErf,
       selectedErfContext,
@@ -404,7 +404,7 @@ export default function MapsScreen() {
 
     // TB-R051: a new premise on an ERF selected with a batch is checked live
     // first; the checked batch goes to the form, the same as the Premises tab.
-    askBatchOrOrdinaryPremise({
+    askPremisePath({
       erf: selectedErf,
       updateGeo,
       actor: batchActor,

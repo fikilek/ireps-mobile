@@ -7,11 +7,11 @@ import * as carry from "./targetedBatchContextCarry.js";
 import { resolveTargetedBatchSalesPoint } from "./targetedBatchMapPoints.js";
 import { readRowLastWorkedMillis } from "./rowLastWorked.js";
 
-// askBatchOrOrdinaryPremise and the live check it reuses (askBatchOrOtherDiscovery)
+// askPremisePath and the live check it reuses (askDiscoveryPath)
 // import React Native and Firebase, so both are evaluated from their source text
 // with the pure modules they import and fakes for the rest.
-const premiseSource = await readFile(new URL("./askBatchOrOrdinaryPremise.js", import.meta.url), "utf8");
-const askSource = await readFile(new URL("./askBatchOrOtherDiscovery.js", import.meta.url), "utf8");
+const premiseSource = await readFile(new URL("./askPremisePath.js", import.meta.url), "utf8");
+const askSource = await readFile(new URL("./askDiscoveryPath.js", import.meta.url), "utf8");
 const apiSource = await readFile(new URL("../../redux/targetedBatchApi.js", import.meta.url), "utf8");
 
 const IMPORT_PATTERN = /import\s*\{([^}]*)\}\s*from\s*"([^"]+)";/g;
@@ -47,7 +47,7 @@ const moduleBody = (source, returns) =>
   `${source.replace(IMPORT_PATTERN, "").replace(/^export (function|const) /gm, "$1 ")}
 return { ${returns.join(", ")} };`;
 
-test("the harness binds exactly what askBatchOrOrdinaryPremise imports", () => {
+test("the harness binds exactly what askPremisePath imports", () => {
   assert.deepEqual(readImports(premiseSource), {
     "react-native": ["Alert"],
     "../premises/targetedBatchPremiseContext.js": [
@@ -55,7 +55,7 @@ test("the harness binds exactly what askBatchOrOrdinaryPremise imports", () => {
       "normalizeTargetedBatchContext",
       "serializeTargetedBatchContext",
     ],
-    "./askBatchOrOtherDiscovery.js": ["runLiveBatchRowCheck"],
+    "./askDiscoveryPath.js": ["runLiveBatchRowCheck"],
     "./targetedBatchContextCarry.js": [
       "BATCH_PREMISE_REASONS",
       "erfWithCarriedBatchContext",
@@ -154,13 +154,13 @@ function createHarness({ docs = openDocs(), failures = {}, pending = [], os = "a
     ...premiseContext,
     ...carry,
   };
-  const discovery = new Function(...Object.keys(askDeps), moduleBody(askSource, ["askBatchOrOtherDiscovery", "runLiveBatchRowCheck"]))(
+  const discovery = new Function(...Object.keys(askDeps), moduleBody(askSource, ["askDiscoveryPath", "runLiveBatchRowCheck"]))(
     ...Object.values(askDeps),
   );
   const premiseDeps = { Alert: rn.Alert, ...premiseContext, runLiveBatchRowCheck: discovery.runLiveBatchRowCheck, ...carry };
-  const { askBatchOrOrdinaryPremise } = new Function(
+  const { askPremisePath } = new Function(
     ...Object.keys(premiseDeps),
-    moduleBody(premiseSource, ["askBatchOrOrdinaryPremise"]),
+    moduleBody(premiseSource, ["askPremisePath"]),
   )(...Object.values(premiseDeps));
 
   const onCheckingChange = (checking) => {
@@ -172,7 +172,7 @@ function createHarness({ docs = openDocs(), failures = {}, pending = [], os = "a
     calls.events.push("geo");
   };
   const run = (args = {}) =>
-    askBatchOrOrdinaryPremise({
+    askPremisePath({
       erf: batchErf(),
       updateGeo,
       openPremiseForm: (form) => {
@@ -184,7 +184,7 @@ function createHarness({ docs = openDocs(), failures = {}, pending = [], os = "a
       ...args,
     });
   const discover = (args = {}) =>
-    discovery.askBatchOrOtherDiscovery({
+    discovery.askDiscoveryPath({
       premise: { id: "P1", erfId: "ERF1" },
       parentErf: { id: "ERF1", erfNo: "485" },
       selectedErfContext: batchContext({ premiseId: "P1" }),
@@ -203,22 +203,22 @@ const flush = async () => {
 };
 const buttonTexts = (alert) => alert.buttons.map((button) => button.text);
 const press = (alert, text) => alert.buttons.find((button) => button.text === text).onPress();
-const ORDINARY_ONLY = ["Ordinary premise (not the batch)", "Cancel"];
+const NORMAL_PATH_ONLY = ["Normal Path", "Cancel"];
 
 function assertRefusal(calls, reason, title = "Batch premise") {
   assert.equal(calls.alerts.length, 1);
   const [alert] = calls.alerts;
   assert.equal(alert.title, title);
   assert.ok(alert.message.startsWith(reason), alert.message);
-  assert.deepEqual(buttonTexts(alert), ORDINARY_ONLY);
+  assert.deepEqual(buttonTexts(alert), NORMAL_PATH_ONLY);
   assert.equal(alert.buttons[1].style, "cancel");
   assert.equal(calls.forms.length, 0, "no form before the worker chooses");
   assert.equal(calls.geo.length, 0);
   return alert;
 }
 
-function assertOrdinaryChosen(calls, alert) {
-  press(alert, "Ordinary premise (not the batch)");
+function assertNormalPathChosen(calls, alert) {
+  press(alert, "Normal Path");
   assert.equal(calls.geo.length, 1);
   assert.deepEqual(calls.geo[0].update, { selectedErf: { id: "ERF1", erfNo: "485" } });
   assert.equal(Object.hasOwn(calls.geo[0].update.selectedErf, "targetedBatchContext"), false);
@@ -278,9 +278,9 @@ test("review scenario: the meter turned Completed (Sales VISIBLE) after the row'
   run();
   await flush();
   const alert = assertRefusal(calls, "This batch meter is Completed.");
-  assert.match(alert.message, /Batch TB1 row 3 \(meter 04298112659\)\. A batch premise cannot be added from here\./);
+  assert.match(alert.message, /Batch TB1 row 3 \(meter 04298112659\)\. This premise cannot be added on the Sales Path\./);
   assert.deepEqual(calls.events, ["checking:true", "checking:false", "alert:Batch premise"]);
-  assertOrdinaryChosen(calls, alert);
+  assertNormalPathChosen(calls, alert);
 });
 
 test("review scenario: the batch row already has a premise, so + is not forced into the batch", async () => {
@@ -288,7 +288,7 @@ test("review scenario: the batch row already has a premise, so + is not forced i
   run({ erf: batchErf({ targetedBatchContext: batchContext({ premiseId: "P1" }) }) });
   await flush();
   const alert = assertRefusal(calls, "This batch meter already has a premise; open it from My Work Orders.");
-  assertOrdinaryChosen(calls, alert);
+  assertNormalPathChosen(calls, alert);
 });
 
 test("Cancel opens nothing and keeps the batch selection", async () => {
@@ -317,19 +317,19 @@ test("premise refusals from the live batch and row", async () => {
     await flush();
     const alert = assertRefusal(calls, reason);
     assert.deepEqual(calls.checking, [true, false], name);
-    assertOrdinaryChosen(calls, alert);
+    assertNormalPathChosen(calls, alert);
   }
 });
 
-test("a failed read says to check the connection, with an ordinary premise still possible", async () => {
+test("a failed read says to check the connection, with the Normal Path still possible", async () => {
   mock.method(console, "error", () => {});
   for (const path of ["tb_rows/ROW1", "tb_uploads/TB1", "teams/TEAM1"]) {
     const { run, calls } = createHarness({ failures: { [path]: new Error("unavailable") } });
     run();
     await flush();
     const alert = assertRefusal(calls, "Could not check the batch meter. Check your connection.");
-    assert.match(alert.message, /Try again when connected, or add an ordinary premise/, path);
-    assertOrdinaryChosen(calls, alert);
+    assert.match(alert.message, /Try again when connected, or add this premise on the Normal Path/, path);
+    assertNormalPathChosen(calls, alert);
   }
   mock.restoreAll();
 });
@@ -361,7 +361,7 @@ test("the batch of another ERF is refused without reading", async () => {
   assert.deepEqual(calls.reads, []);
   assert.deepEqual(calls.checking, []);
   const alert = assertRefusal(calls, "This batch meter is not on this ERF.");
-  assertOrdinaryChosen(calls, alert);
+  assertNormalPathChosen(calls, alert);
 });
 
 test("incomplete batch details are refused without reading", async () => {
@@ -372,7 +372,7 @@ test("incomplete batch details are refused without reading", async () => {
     assert.deepEqual(calls.reads, []);
     assert.deepEqual(calls.checking, []);
     const alert = assertRefusal(calls, "This ERF is selected for a batch, but the batch details are incomplete", "Batch details incomplete");
-    assertOrdinaryChosen(calls, alert);
+    assertNormalPathChosen(calls, alert);
   }
 });
 

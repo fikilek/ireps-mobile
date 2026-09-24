@@ -673,7 +673,7 @@ export default function FormPremise() {
   // checked context and wins over the selected ERF's; without it, the selected ERF's context when the form
   // opened. A later change of the selected ERF neither drops nor swaps it, and an ordinary form ignores a
   // context that appears on the selected ERF after it opened. When the router reuses this open form with
-  // new params (e.g. "Ordinary premise" chosen from the Maps tab), the batch is captured again for them.
+  // new params (e.g. the Normal Path chosen from the Maps tab), the batch is captured again for them.
   const openedRouteKey = JSON.stringify([
     id ?? null,
     premiseId ?? null,

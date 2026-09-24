@@ -166,8 +166,8 @@ function asSentence(text) {
 }
 
 // TB-R051: Discover on a premise linked to a Sales batch row asks whether the
-// work is the batch meter or other work. Other work drops the batch.
-export function askBatchOrOtherDiscovery({
+// work is done on the Sales Path or the Normal Path. The Normal Path drops the batch.
+export function askDiscoveryPath({
   premise,
   parentErf,
   selectedErfContext,
@@ -212,8 +212,8 @@ export function askBatchOrOtherDiscovery({
     return;
   }
 
-  const otherWorkButton = {
-    text: "Other work (not the batch)",
+  const normalPathButton = {
+    text: "Normal Path",
     onPress: openOtherWork,
   };
   const cancelButton = { text: "Cancel", style: "cancel" };
@@ -226,8 +226,8 @@ export function askBatchOrOtherDiscovery({
       "Batch details incomplete",
       `This premise is linked to a batch, but the batch details are incomplete${
         missingFields.length > 0 ? ` (${missingFields.join(", ")})` : ""
-      }. The batch meter cannot be discovered from here. Do other work that is not for the batch?`,
-      [otherWorkButton, cancelButton],
+      }. This meter cannot be done on the Sales Path. Do it on the Normal Path?`,
+      [normalPathButton, cancelButton],
     );
     return;
   }
@@ -236,18 +236,18 @@ export function askBatchOrOtherDiscovery({
     ctx.targetedMeterNo || "?"
   }).`;
 
-  // TB-R051: the batch option is refused with the reason; only other work or cancel remain.
+  // TB-R051: the Sales Path is refused with the reason; only the Normal Path or cancel remain.
   const showRefusal = (reason, { openAst = false, checkFailed = false } = {}) => {
     const next = checkFailed
-      ? "Try again when connected, or do other work that is not for the batch?"
+      ? "Try again when connected, or do this meter on the Normal Path?"
       : openAst
-        ? "Do other work that is not for the batch?"
-        : "The batch meter cannot be discovered from here. Do other work that is not for the batch?";
+        ? "Do this meter on the Normal Path?"
+        : "This meter cannot be done on the Sales Path. Do it on the Normal Path?";
 
     Alert.alert(
       "Batch meter",
       `${asSentence(reason)}\n\n${batchLine} ${next}`,
-      [otherWorkButton, cancelButton],
+      [normalPathButton, cancelButton],
     );
   };
 
@@ -269,10 +269,10 @@ export function askBatchOrOtherDiscovery({
         ctx.rowNo ?? "?"
       } (meter ${
         ctx.targetedMeterNo || "?"
-      }). Discover the batch meter, or do other work that is not for the batch?`,
+      }). Do this meter on the Sales Path or the Normal Path?`,
       [
         {
-          text: "Discover batch meter",
+          text: "Sales Path",
           onPress: () => {
             updateGeo({
               selectedErf: parentErf
@@ -296,7 +296,7 @@ export function askBatchOrOtherDiscovery({
             });
           },
         },
-        otherWorkButton,
+        normalPathButton,
         cancelButton,
       ],
     );
