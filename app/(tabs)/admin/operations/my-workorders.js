@@ -34,6 +34,8 @@ import RowPremiseChoiceModal from "../../../../src/features/targetedBatches/RowP
 import TargetedBatchMapModal from "../../../../src/features/targetedBatches/TargetedBatchMapModal";
 import {
   buildRowPremiseChoices,
+  premiseId as readPremiseId,
+  rowAddressLine,
   rowPremiseChoiceNeeded,
 } from "../../../../src/features/targetedBatches/rowPremiseChoice";
 import { isFieldWorkorderActor } from "../../../../src/features/targetedBatches/fieldWorkorderActor";
@@ -1367,6 +1369,14 @@ export default function WorkorderManagementSystem() {
       ? targetedBatchRowsData.rows
       : [];
     const erfs = Array.isArray(all?.erfs) ? all.erfs : [];
+    // TB-R067 (1.3.73): the shop this row is, once it has a premise. Thirteen rows at 26 Old Acre Street
+    // read the same address, so the address alone cannot tell the worker which door to knock on.
+    const premisesById = new Map(
+      (Array.isArray(all?.prems) ? all.prems : []).map((premise) => [
+        readPremiseId(premise),
+        premise,
+      ]),
+    );
 
     return rows.map((row) => {
       const erfId = cleanId(row?.erfId || row?.refs?.erfId);
@@ -1385,12 +1395,17 @@ export default function WorkorderManagementSystem() {
         ...row,
         erfId,
         erfNo,
+        addressLine: rowAddressLine({
+          address: readFirstString(row?.address, row?.town),
+          premise: premisesById.get(cleanId(row?.refs?.premiseId)) || null,
+        }),
       };
     });
   }, [
     targetedBatchRowsData?.rows,
     all?.erfs,
     all?.geoLibrary,
+    all?.prems,
   ]);
 
   // TB-R051: search by meter number, ERF number or street address, inside the header's status filter (1.3.42);
@@ -5018,8 +5033,8 @@ function TargetedBatchRowCardBase({
             Account {row?.accountNumber || "NAv"} •{" "}
             {row?.customerName || "NAv"}
           </Text>
-          <Text style={styles.mdBgoErfSub} numberOfLines={1}>
-            {row?.address || row?.town || "NAv"}
+          <Text style={styles.mdBgoErfSub} numberOfLines={2}>
+            {row?.addressLine || row?.address || row?.town || "NAv"}
           </Text>
         </View>
 
@@ -5065,6 +5080,7 @@ const TARGETED_BATCH_ROW_CARD_FIELDS = [
   (row) => row?.accountNumber,
   (row) => row?.customerName,
   (row) => row?.address,
+  (row) => row?.addressLine,
   (row) => row?.town,
   (row) => row?.fieldWorkMeterId,
   (row) => row?.raw?.fieldWorkMeterId,

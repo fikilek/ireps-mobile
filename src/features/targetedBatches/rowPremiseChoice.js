@@ -52,6 +52,21 @@ export function premiseTitle(premise = {}) {
   return parts.join(" · ") || premiseId(premise) || "Premise";
 }
 
+// TB-R067 (1.3.73): what the worker reads on the work order card. At a commercial ERF every row carries the
+// same street address, so the address alone says nothing about which shop this is. Once the row has its
+// premise, the shop's name and its unit number are read beside the address: "26 OLDACRE ST, Thisa Fish and
+// Chips, 4" (owner, 2026-09-24). Until then it is the address on its own, as before.
+export function rowAddressLine({ address = "", premise = null } = {}) {
+  const parts = [clean(address)];
+  const name = clean(premise?.propertyType?.name);
+  const unitNo = clean(premise?.propertyType?.unitNo);
+
+  if (name) parts.push(name);
+  if (unitNo) parts.push(unitNo);
+
+  return parts.filter(Boolean).join(", ");
+}
+
 // The row a premise is joined to, if any, and the meter that row was sent for.
 function joinedRow(id, rows = []) {
   return (Array.isArray(rows) ? rows : []).find(

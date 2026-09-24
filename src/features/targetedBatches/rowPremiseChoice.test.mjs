@@ -118,3 +118,26 @@ test("a premise whose own row is this row is still its own", () => {
   assert.equal(choice.isOwnRow, true);
   assert.equal(choice.selectable, true);
 });
+
+test("the work order card reads the shop beside the address once the row has its premise", async () => {
+  const { rowAddressLine } = await import("./rowPremiseChoice.js");
+
+  assert.equal(
+    rowAddressLine({
+      address: "26 OLDACRE ST",
+      premise: { propertyType: { type: "Commercial", name: "Thisa Fish and Chips", unitNo: "4" } },
+    }),
+    "26 OLDACRE ST, Thisa Fish and Chips, 4",
+  );
+
+  assert.equal(rowAddressLine({ address: "26 OLDACRE ST" }), "26 OLDACRE ST", "no premise yet");
+  assert.equal(
+    rowAddressLine({ address: "26 OLDACRE ST", premise: { propertyType: { name: "Zol Shoes" } } }),
+    "26 OLDACRE ST, Zol Shoes",
+    "a shop with no unit number",
+  );
+  assert.equal(
+    rowAddressLine({ address: "", premise: { propertyType: { name: "Zol Shoes", unitNo: "6" } } }),
+    "Zol Shoes, 6",
+  );
+});
