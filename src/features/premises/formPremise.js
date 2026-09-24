@@ -54,6 +54,8 @@ import {
   sanitizePropertyTypeForSubmission,
   supportsUnitNo,
 } from "./premiseRepeatability";
+// TB-R067 (1.3.73): Commercial and Industrial are asked for a business name, not a unit name.
+import { premiseNameLabel } from "../targetedBatches/rowPremiseChoice";
 
 const streetTypeOptions = [
   "Select...",
@@ -694,6 +696,19 @@ export default function FormPremise() {
     setOpenedTargetedBatch(captureOpenedTargetedBatch());
   }
 
+  // TB-R067 (1.3.73): the form was opened from a batch row, so whatever it does here belongs to that row —
+  // a new premise, a copy of the shop next door, or a premise that was already standing there. Until now a
+  // copy and an edit both dropped the row, which is how ERF 689 ended up with four premises joined to
+  // nothing (owner, 2026-09-24). It is kept apart from targetedBatchContext below, because a copy still
+  // takes its address from the premise it was copied from, never from the Sales row.
+  const rowPremiseJoin = useMemo(
+    () =>
+      routeTargetedBatchContext !== undefined
+        ? parseTargetedBatchContextRouteParam(routeTargetedBatchContext)
+        : null,
+    [routeTargetedBatchContext],
+  );
+
   const queueTargetedBatchContext = isDuplicate
     ? undefined
     : queueItem?.payload?.targetedBatchContext;
@@ -1228,8 +1243,10 @@ export default function FormPremise() {
     try {
       const systemFields = buildSystemFields();
       const premiseDocId = systemFields.id;
+      // TB-R067 (1.3.73): a premise opened from a row joins that row, whether it is being made, copied or
+      // picked from the ones already on the ERF.
       const linkedTargetedBatchContext =
-        !isEdit && !isDuplicate ? targetedBatchContext : null;
+        (!isEdit && !isDuplicate ? targetedBatchContext : null) || rowPremiseJoin;
 
       // TB-R051: a batch row selected elsewhere after the form opened never replaces the form's batch.
       const laterSelectedErfContext = normalizeTargetedBatchContext(
@@ -1460,7 +1477,11 @@ export default function FormPremise() {
       try {
         // const firestoreSubmitStartedAtMs = Date.now();
 
-        if (isEdit) {
+        // TB-R067 (1.3.73): a premise picked from a row's list is joined by the server, which only the
+        // create callable reaches - updatePremise writes to Firestore from the phone and would leave the
+        // row joined to nothing. The callable knows the premise already exists: it links it and leaves
+        // everything else alone.
+        if (isEdit && !rowPremiseJoin) {
           result = await withSubmitTimeout(
             updatePremise(finalValues).unwrap(),
             15000,
@@ -1774,9 +1795,11 @@ export default function FormPremise() {
                     {requiresPropertyName(values?.propertyType?.type) && (
                       <>
                         <FormInput
-                          label="Unit Name"
+                          label={premiseNameLabel(values?.propertyType?.type)}
                           name="propertyType.name"
-                          placeholder="Unit Name"
+                          placeholder={premiseNameLabel(
+                            values?.propertyType?.type,
+                          )}
                           keyboardType="default"
                         />
                         <Divider style={styles.divider} />

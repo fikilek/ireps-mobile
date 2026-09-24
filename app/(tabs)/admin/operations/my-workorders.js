@@ -30,7 +30,12 @@ import {
   serializeTargetedBatchContext,
 } from "../../../../src/features/premises/targetedBatchPremiseContext";
 import TargetedBatchActionTile from "../../../../src/features/targetedBatches/TargetedBatchActionTile";
+import RowPremiseChoiceModal from "../../../../src/features/targetedBatches/RowPremiseChoiceModal";
 import TargetedBatchMapModal from "../../../../src/features/targetedBatches/TargetedBatchMapModal";
+import {
+  buildRowPremiseChoices,
+  rowPremiseChoiceNeeded,
+} from "../../../../src/features/targetedBatches/rowPremiseChoice";
 import { isFieldWorkorderActor } from "../../../../src/features/targetedBatches/fieldWorkorderActor";
 import {
   getTargetedBatchRowActionState,
@@ -990,6 +995,38 @@ export default function WorkorderManagementSystem() {
     );
   }, []);
   const [targetedBatchMapOpen, setTargetedBatchMapOpen] = useState(false);
+  // TB-R067 (1.3.73): the premise choice a row opens when it has no premise of its own yet.
+  const [rowPremiseChoice, setRowPremiseChoice] = useState(null);
+
+  // TB-R067 (1.3.73): the premise form, opened from a row and carrying it. Whatever the worker does there -
+  // makes a premise, copies the shop next door, or finishes one that was already standing - it is joined to
+  // this row when it is submitted. Without the row the premise belongs to nobody, which is what happened at
+  // ERF 689.
+  const openRowPremiseForm = useCallback(
+    ({ row, params = {} }) => {
+      const context = serializeTargetedBatchContext(
+        buildTargetedBatchContextFromRow({ bucket: selectedBucket, row }),
+      );
+
+      if (!context) {
+        Alert.alert(
+          "Targeted Batch Row Not Ready",
+          "The premise could not be joined to this meter. Please try again.",
+        );
+        return;
+      }
+
+      router.push({
+        pathname: "/premises/formPremise",
+        params: {
+          id: cleanId(row?.erfId || row?.refs?.erfId),
+          ...params,
+          targetedBatchContext: context,
+        },
+      });
+    },
+    [router, selectedBucket],
+  );
   const netInfo = useNetInfo();
   // TB-R051: online only.
   const offline =
@@ -1730,6 +1767,36 @@ export default function WorkorderManagementSystem() {
               targetedBatchContext: serializedTargetedBatchContext,
             },
           };
+        } else if (
+          pending.intent === TARGETED_BATCH_INTENTS.OPEN_PREMISE &&
+          !premiseId
+        ) {
+          // TB-R067 (1.3.73): the row has no premise yet. Every premise on its ERF is offered, with the
+          // meter each one is already joined to, so the worker says which shop this row is. With nothing on
+          // the ERF there is nothing to choose from, and the New premise form opens as it always has.
+          const choices = buildRowPremiseChoices({
+            premises: all?.prems || [],
+            rows: targetedBatchRows,
+            currentRowId: currentRow?.id,
+            erfId: pending.erfId,
+          });
+
+          clearPendingTargetedBatchAction(pending.requestKey);
+          setTargetedBatchMapOpen(false);
+          updateGeo({
+            selectedWard: pending.ward,
+            selectedErf,
+            selectedPremise: null,
+            lastSelectionType: "ERF",
+          });
+
+          if (!rowPremiseChoiceNeeded(choices)) {
+            openRowPremiseForm({ row: currentRow, params: {} });
+            return;
+          }
+
+          setRowPremiseChoice({ row: currentRow, erfId: pending.erfId, choices });
+          return;
         } else {
           navigationTarget = "/(tabs)/premises";
         }
@@ -1823,6 +1890,7 @@ export default function WorkorderManagementSystem() {
     router,
     updateGeo,
     clearPendingTargetedBatchAction,
+    openRowPremiseForm,
   ]);
 
   const pendingTargetedBatchRequestKey =
@@ -3483,6 +3551,31 @@ export default function WorkorderManagementSystem() {
         error={targetedBatchRowsError}
         onClose={() => setTargetedBatchMapOpen(false)}
         renderRowCard={renderTargetedBatchMapRowCard}
+      />
+
+      {/* TB-R067 (1.3.73): which premise is this row's? The worker picks; iREPS never guesses. */}
+      <RowPremiseChoiceModal
+        visible={Boolean(rowPremiseChoice)}
+        meterNo={rowPremiseChoice?.row?.meterNo}
+        accountNo={rowPremiseChoice?.row?.accountNumber}
+        customerName={rowPremiseChoice?.row?.customerName}
+        choices={rowPremiseChoice?.choices || []}
+        onPick={(premiseId) => {
+          const row = rowPremiseChoice?.row;
+          setRowPremiseChoice(null);
+          openRowPremiseForm({ row, params: { premiseId } });
+        }}
+        onCopy={(premiseId) => {
+          const row = rowPremiseChoice?.row;
+          setRowPremiseChoice(null);
+          openRowPremiseForm({ row, params: { duplicateId: premiseId } });
+        }}
+        onNew={() => {
+          const row = rowPremiseChoice?.row;
+          setRowPremiseChoice(null);
+          openRowPremiseForm({ row, params: {} });
+        }}
+        onClose={() => setRowPremiseChoice(null)}
       />
     </SafeAreaView>
   );
