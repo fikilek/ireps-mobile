@@ -30,7 +30,7 @@ import {
   serializeTargetedBatchContext,
 } from "../../../../src/features/premises/targetedBatchPremiseContext";
 import TargetedBatchActionTile from "../../../../src/features/targetedBatches/TargetedBatchActionTile";
-import RowPremiseChoiceModal from "../../../../src/features/targetedBatches/RowPremiseChoiceModal";
+import PremisePicker from "../../../../src/features/targetedBatches/PremisePicker";
 import TargetedBatchMapModal from "../../../../src/features/targetedBatches/TargetedBatchMapModal";
 import {
   buildRowPremiseChoices,
@@ -3615,8 +3615,8 @@ export default function WorkorderManagementSystem() {
         renderRowCard={renderTargetedBatchMapRowCard}
       />
 
-      {/* TB-R067 (1.3.73): which premise is this row's? The worker picks; iREPS never guesses. */}
-      <RowPremiseChoiceModal
+      {/* The Premise Picker (TB-R067, 1.3.73): which premise is this row's? The worker picks; iREPS never guesses. */}
+      <PremisePicker
         visible={Boolean(rowPremiseChoice && rowPremiseChoiceRow)}
         meterNo={rowPremiseChoiceRow?.meterNo}
         accountNo={rowPremiseChoiceRow?.accountNumber}

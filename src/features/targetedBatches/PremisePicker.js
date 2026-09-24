@@ -1,4 +1,7 @@
-// Targeted Batch rules TB-R067 (1.3.73): pressing Premise on a batch row opens this choice, not a premise.
+// The Premise Picker (owner's name, 2026-09-24).
+//
+// Targeted Batch rules TB-R067 (1.3.73): pressing Premise on a batch row with no premise opens this, not a
+// premise. The worker picks which premise the row is, makes a new one, or copies one at the same address.
 //
 // At ERF 689 thirteen businesses share one street address. The row knows the meter, the account and the
 // account holder; the premise knows its business name and its unit number. Nothing in iREPS can match the
@@ -11,7 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { choiceStatusText } from "./rowPremiseChoice";
 
-export default function RowPremiseChoiceModal({
+export default function PremisePicker({
   visible,
   meterNo = "",
   accountNo = "",

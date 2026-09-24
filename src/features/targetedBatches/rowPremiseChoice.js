@@ -1,4 +1,4 @@
-// Targeted Batch rules TB-R067 (1.3.73): a batch row and its premise.
+// What the Premise Picker is made of (TB-R067, 1.3.73): a batch row and its premise.
 //
 // One commercial ERF holds many businesses: one address, one ERF, a Sales meter and a row for each shop.
 // Pressing Premise on a row used to go straight to the ERF's premises, so the second row had no way to say
