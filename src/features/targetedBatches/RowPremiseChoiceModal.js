@@ -7,6 +7,7 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { choiceStatusText } from "./rowPremiseChoice";
 
@@ -25,6 +26,8 @@ export default function RowPremiseChoiceModal({
   // another shop can be copied - that is the usual way, one shop copied to make the one next door - it just
   // cannot be joined twice (TB-R067 4, 5).
   const [copying, setCopying] = useState(false);
+  // The phone's own bar sits over the bottom of the sheet, and the two buttons were under it.
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (!visible) setCopying(false);
@@ -44,7 +47,7 @@ export default function RowPremiseChoiceModal({
   return (
     <Modal visible={Boolean(visible)} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: 16 + insets.bottom }]}>
           <View style={styles.header}>
             <View style={styles.icon}>
               <MaterialCommunityIcons name="home-search-outline" size={22} color="#1d4ed8" />
@@ -99,6 +102,12 @@ export default function RowPremiseChoiceModal({
             })}
           </ScrollView>
 
+          {copying ? null : (
+            <Text style={styles.helper}>
+              Not in the list? Make a new one, or copy one at this address and change its name and number.
+            </Text>
+          )}
+
           {copying ? (
             <Pressable style={styles.secondaryButton} onPress={() => setCopying(false)}>
               <Text style={styles.secondaryButtonText}>Back</Text>
@@ -135,7 +144,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, fontWeight: "700", color: "#0f172a" },
   sub: { fontSize: 12, color: "#475569", marginTop: 2 },
   close: { padding: 4 },
-  list: { maxHeight: 340 },
+  list: { flexShrink: 1 },
   listContent: { gap: 8, paddingBottom: 4 },
   row: {
     flexDirection: "row", alignItems: "center", gap: 10, padding: 12,
@@ -147,7 +156,8 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 14, fontWeight: "600", color: "#0f172a" },
   rowStatus: { fontSize: 12, color: "#475569", marginTop: 2 },
   rowTextDisabled: { color: "#94a3b8" },
-  buttons: { flexDirection: "row", gap: 10, marginTop: 14 },
+  helper: { fontSize: 12, color: "#475569", marginTop: 14, lineHeight: 17 },
+  buttons: { flexDirection: "row", gap: 10, marginTop: 10 },
   primaryButton: {
     flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
     paddingVertical: 12, borderRadius: 12, backgroundColor: "#1d4ed8",
