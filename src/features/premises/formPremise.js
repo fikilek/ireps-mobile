@@ -56,6 +56,7 @@ import {
 } from "./premiseRepeatability";
 // TB-R067 (1.3.73): Commercial and Industrial are asked for a business name, not a unit name.
 import { premiseNameLabel } from "../targetedBatches/rowPremiseChoice";
+import { returnAfterLifecycleWork } from "../../utils/lifecycleReturn";
 
 const streetTypeOptions = [
   "Select...",
@@ -1606,7 +1607,8 @@ export default function FormPremise() {
       ToastAndroid.show("Premise saved.", ToastAndroid.LONG);
 
       if (originatedFromTargetedBatch || isQueueEdit || rowPremiseJoin) {
-        router.replace(successRoute);
+        // My Work Orders is in the Admin tab and this form is in Premises, and REPLACE cannot cross tabs.
+        returnAfterLifecycleWork(router, successRoute, "/(tabs)/premises");
       } else {
         router.back();
       }

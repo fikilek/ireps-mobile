@@ -3,6 +3,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
 import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
+import { returnAfterLifecycleWork } from "../../../src/utils/lifecycleReturn";
 import {
   SAVED_FORMS_PLACE,
   confirmSubmit,
@@ -983,7 +984,9 @@ export default function FormMeterRemoval() {
   }
 
   function navigateAfterRemoval() {
-    router.replace(getLifecycleReturnRoute());
+    // REPLACE cannot cross tabs: from a batch this route is in the Admin tab, and the worker was shown
+    // "The action 'REPLACE' ... was not handled by any navigator" after a submit that had worked.
+    returnAfterLifecycleWork(router, getLifecycleReturnRoute());
   }
 
   useEffect(() => {

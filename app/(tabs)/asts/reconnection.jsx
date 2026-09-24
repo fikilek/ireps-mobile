@@ -27,6 +27,7 @@ import { array, object, string } from "yup";
 import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
+import { returnAfterLifecycleWork } from "../../../src/utils/lifecycleReturn";
 import { IrepsFieldCommentSection } from "../../../components/forms/IrepsFieldCommentSection";
 import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
 import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
@@ -869,7 +870,9 @@ export default function FormMeterReconnection() {
   }
 
   function navigateAfterReconnection() {
-    router.replace(getLifecycleReturnRoute());
+    // REPLACE cannot cross tabs: from a batch this route is in the Admin tab, and the worker was shown
+    // "The action 'REPLACE' ... was not handled by any navigator" after a submit that had worked.
+    returnAfterLifecycleWork(router, getLifecycleReturnRoute());
   }
 
   useEffect(() => {

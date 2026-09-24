@@ -245,8 +245,11 @@ test("guards Government card identity against leading separators", () => {
 });
 
 test("preserves successful save navigation regression fix", () => {
+  // A premise that came from a batch goes back to where it came from; anything else goes back one screen.
+  // The return is made with returnAfterLifecycleWork because My Work Orders is in another tab and REPLACE
+  // cannot cross tabs (2026-09-24).
   assert.match(
     formSource,
-    /if \(originatedFromTargetedBatch \|\| isQueueEdit \|\| rowPremiseJoin\) \{\s*router\.replace\(successRoute\);\s*\} else \{\s*router\.back\(\);/,
+    /if \(originatedFromTargetedBatch \|\| isQueueEdit \|\| rowPremiseJoin\) \{[\s\S]{0,240}?returnAfterLifecycleWork\(router, successRoute, "\/\(tabs\)\/premises"\);\s*\} else \{\s*router\.back\(\);/,
   );
 });
