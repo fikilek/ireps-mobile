@@ -237,12 +237,10 @@ export function askDiscoveryPath({
   }).`;
 
   // TB-R051: the Sales Path is refused with the reason; only the Normal Path or cancel remain.
-  const showRefusal = (reason, { openAst = false, checkFailed = false } = {}) => {
-    const next = checkFailed
-      ? "Try again when connected, or do this meter on the Normal Path?"
-      : openAst
-        ? "Do this meter on the Normal Path?"
-        : "This meter cannot be done on the Sales Path. Do it on the Normal Path?";
+  const showRefusal = (reason, { openAst = false } = {}) => {
+    const next = openAst
+      ? "Do this meter on the Normal Path?"
+      : "This meter cannot be done on the Sales Path. Do it on the Normal Path?";
 
     Alert.alert(
       "Batch meter",
@@ -262,10 +260,19 @@ export function askDiscoveryPath({
     return;
   }
 
-  const offerBatchMeter = () => {
+  // A check that could not be made does not shut the Sales Path (owner, 2026-09-24). The phone already
+  // holds the row, the Normal Path leaves the worker typing a number iREPS knows, and the server checks the
+  // batch again on submit - so a row that really has closed is refused there, and nothing is risked here.
+  const offerBatchMeter = ({ checkFailed = false } = {}) => {
+    const opening = checkFailed
+      ? `${BATCH_DISCOVERY_REASONS.CHECK_FAILED}
+
+`
+      : "";
+
     Alert.alert(
       "Batch meter",
-      `This premise belongs to batch ${ctx.tbId} row ${
+      `${opening}This premise belongs to batch ${ctx.tbId} row ${
         ctx.rowNo ?? "?"
       } (meter ${
         ctx.targetedMeterNo || "?"
@@ -310,9 +317,7 @@ export function askDiscoveryPath({
     onCheckingChange,
     onResult: ({ failed, row, batch, team }) => {
       if (failed) {
-        showRefusal(BATCH_DISCOVERY_REASONS.CHECK_FAILED, {
-          checkFailed: true,
-        });
+        offerBatchMeter({ checkFailed: true });
         return;
       }
 

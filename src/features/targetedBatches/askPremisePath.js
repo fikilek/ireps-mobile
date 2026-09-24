@@ -91,10 +91,8 @@ export function askPremisePath({
   }).`;
 
   // TB-R051: the Sales Path is refused with the reason; only the Normal Path or cancel remain.
-  const showRefusal = (reason, { checkFailed = false } = {}) => {
-    const next = checkFailed
-      ? "Try again when connected, or add this premise on the Normal Path?"
-      : "This premise cannot be added on the Sales Path. Add it on the Normal Path?";
+  const showRefusal = (reason) => {
+    const next = "This premise cannot be added on the Sales Path. Add it on the Normal Path?";
 
     Alert.alert(
       "Batch premise",
@@ -117,7 +115,25 @@ export function askPremisePath({
     onCheckingChange,
     onResult: ({ failed, row, batch, team }) => {
       if (failed) {
-        showRefusal(BATCH_PREMISE_REASONS.CHECK_FAILED, { checkFailed: true });
+        // A check that could not be made does not shut the Sales Path (owner, 2026-09-24). The ERF already
+        // carries its row, and the server checks the batch again when the premise is submitted, so a row
+        // that really has closed is refused there. On a good check this window is not shown at all: the
+        // form simply opens, as it always has.
+        Alert.alert(
+          "Batch premise",
+          `${asSentence(BATCH_PREMISE_REASONS.CHECK_FAILED)}
+
+${batchLine} Add this premise on the Sales Path or the Normal Path?`,
+          [
+            {
+              text: "Sales Path",
+              onPress: () =>
+                openPremiseForm({ erfId, targetedBatchContext: serialized }),
+            },
+            normalPathButton,
+            cancelButton,
+          ],
+        );
         return;
       }
 

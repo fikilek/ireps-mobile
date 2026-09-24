@@ -177,6 +177,20 @@ const buttonTexts = (alert) => alert.buttons.map((button) => button.text);
 const press = (alert, text) => alert.buttons.find((button) => button.text === text).onPress();
 const NORMAL_PATH_ONLY = ["Normal Path", "Cancel"];
 
+function assertCheckFailedOffer(calls) {
+  assert.equal(calls.alerts.length, 1);
+  const [alert] = calls.alerts;
+  assert.equal(alert.title, "Batch meter");
+  assert.ok(
+    alert.message.startsWith("Could not check the batch meter. Check your connection."),
+    alert.message,
+  );
+  assert.match(alert.message, /Do this meter on the Sales Path or the Normal Path\?/);
+  assert.deepEqual(buttonTexts(alert), ["Sales Path", ...NORMAL_PATH_ONLY]);
+  assert.equal(calls.pushes.length, 0);
+  return alert;
+}
+
 function assertRefusal(calls, reason) {
   assert.equal(calls.alerts.length, 1);
   const [alert] = calls.alerts;
@@ -362,11 +376,11 @@ test("a failed row, batch or team read says to check the connection", async () =
     const { run, calls } = createHarness({ failures: { [path]: new Error("unavailable") } });
     run();
     await flush();
-    const alert = assertRefusal(calls, "Could not check the batch meter. Check your connection.");
-    assert.match(alert.message, /Try again when connected/, path);
+    // The Sales Path stays open: the phone holds the row, and the server checks the batch again on submit.
+    const alert = assertCheckFailedOffer(calls);
     assert.deepEqual(calls.checking, [true, false], path);
-    press(alert, "Normal Path");
-    assert.equal(calls.missions.length, 1, path);
+    press(alert, "Sales Path");
+    assert.equal(calls.pushes.length, 1, path);
   }
   mock.restoreAll();
 });
@@ -385,7 +399,7 @@ test("the check gives up after 10 seconds, with progress shown until then", asyn
       assert.deepEqual(calls.checking, [true], "still checking");
       mock.timers.tick(1);
       await flush();
-      assertRefusal(calls, "Could not check the batch meter. Check your connection.");
+      assertCheckFailedOffer(calls);
       assert.deepEqual(calls.events, ["checking:true", "checking:false", "alert:Batch meter"]);
     }
   } finally {

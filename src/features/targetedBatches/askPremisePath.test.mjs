@@ -205,6 +205,22 @@ const buttonTexts = (alert) => alert.buttons.map((button) => button.text);
 const press = (alert, text) => alert.buttons.find((button) => button.text === text).onPress();
 const NORMAL_PATH_ONLY = ["Normal Path", "Cancel"];
 
+// A check that could not be made offers both paths (owner, 2026-09-24): the ERF carries its row, and the
+// server checks the batch again when the premise is submitted.
+function assertCheckFailedOffer(calls) {
+  assert.equal(calls.alerts.length, 1);
+  const [alert] = calls.alerts;
+  assert.equal(alert.title, "Batch premise");
+  assert.ok(
+    alert.message.startsWith("Could not check the batch meter. Check your connection."),
+    alert.message,
+  );
+  assert.match(alert.message, /Add this premise on the Sales Path or the Normal Path\?/);
+  assert.deepEqual(buttonTexts(alert), ["Sales Path", ...NORMAL_PATH_ONLY]);
+  assert.equal(calls.forms.length, 0, "no form before the worker chooses");
+  return alert;
+}
+
 function assertRefusal(calls, reason, title = "Batch premise") {
   assert.equal(calls.alerts.length, 1);
   const [alert] = calls.alerts;
@@ -321,16 +337,23 @@ test("premise refusals from the live batch and row", async () => {
   }
 });
 
-test("a failed read says to check the connection, with the Normal Path still possible", async () => {
+test("a failed read still offers the Sales Path, and the Normal Path with it", async () => {
   mock.method(console, "error", () => {});
   for (const path of ["tb_rows/ROW1", "tb_uploads/TB1", "teams/TEAM1"]) {
     const { run, calls } = createHarness({ failures: { [path]: new Error("unavailable") } });
     run();
     await flush();
-    const alert = assertRefusal(calls, "Could not check the batch meter. Check your connection.");
-    assert.match(alert.message, /Try again when connected, or add this premise on the Normal Path/, path);
-    assertNormalPathChosen(calls, alert);
+    const alert = assertCheckFailedOffer(calls);
+    press(alert, "Sales Path");
+    assert.equal(calls.forms.length, 1, path);
+    assert.equal(calls.forms[0].targetedBatchContext === null, false, "the batch goes with it");
   }
+
+  // And the Normal Path is still there for a worker who says it is not the batch's premise.
+  const { run, calls } = createHarness({ failures: { "tb_rows/ROW1": new Error("unavailable") } });
+  run();
+  await flush();
+  assertNormalPathChosen(calls, calls.alerts[0]);
   mock.restoreAll();
 });
 
@@ -347,7 +370,7 @@ test("the check gives up after 10 seconds", async () => {
     assert.deepEqual(calls.forms, []);
     mock.timers.tick(1);
     await flush();
-    assertRefusal(calls, "Could not check the batch meter. Check your connection.");
+    assertCheckFailedOffer(calls);
   } finally {
     mock.timers.reset();
     mock.restoreAll();
