@@ -59,6 +59,14 @@ function joinedRow(id, rows = []) {
   );
 }
 
+// The row a premise says it belongs to. The phone only holds the rows of the batch open in front of the
+// worker, so a premise joined to a row of ANOTHER batch - the same ERF split between a GPS and a Non-GPS
+// batch - would otherwise read Not joined, be picked, and be refused by the server with a raw error, or
+// worse be joined twice. The premise carries its own row, so it is asked (reviewer, 2026-09-24).
+function ownJoinRowId(premise = {}) {
+  return clean(premise?.targetedBatchContext?.rowId);
+}
+
 // Every premise on the row's ERF, with what it is joined to. A premise already joined to another row is
 // listed and greyed, never hidden: the worker must see that the shop is taken, not wonder where it went
 // (TB-R067 1). The row's own premise is listed as its own and can be opened.
@@ -76,7 +84,7 @@ export function buildRowPremiseChoices({
     .map((premise) => {
       const id = premiseId(premise);
       const row = joinedRow(id, rows);
-      const joinedRowId = clean(row?.id);
+      const joinedRowId = clean(row?.id) || ownJoinRowId(premise);
       const isOwnRow = Boolean(joinedRowId) && joinedRowId === rowId;
 
       return {
@@ -85,7 +93,7 @@ export function buildRowPremiseChoices({
         propertyType: premiseType(premise),
         nameLabel: premiseNameLabel(premiseType(premise)),
         joinedRowId: joinedRowId || null,
-        joinedMeterNo: clean(row?.meterNo) || null,
+        joinedMeterNo: clean(row?.meterNo) || clean(premise?.targetedBatchContext?.targetedMeterNo) || null,
         // TB-R067 5: one premise, one row. A premise on another row cannot be picked.
         selectable: !joinedRowId || isOwnRow,
         isOwnRow,

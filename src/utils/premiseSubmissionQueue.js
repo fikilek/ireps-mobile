@@ -52,6 +52,10 @@ export const addPremiseQueueItem = async ({
   payload = {},
   createdByUid = "SYSTEM",
   createdByUser = "SYSTEM",
+  // TB-R067 (1.3.73): this item joins a premise that is already in Firestore to a batch row. Its premise
+  // document therefore exists from the moment it is queued, so the document being there proves nothing and
+  // only the callable can finish the job.
+  joinsExistingPremise = false,
 }) => {
   try {
     const queue = readQueue();
@@ -64,6 +68,7 @@ export const addPremiseQueueItem = async ({
       premiseId,
 
       type: "PREMISE_CREATE",
+      joinsExistingPremise: Boolean(joinsExistingPremise),
       status: "PENDING",
 
       payload,

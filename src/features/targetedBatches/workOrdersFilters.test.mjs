@@ -74,7 +74,7 @@ test("TB-R051 1.3.42 the header: four filters Total, Not Started, In Progress, C
 test("TB-R051 1.3.42 the list follows the filter; another batch, or an action from the map, starts on Total", () => {
   assert.match(screenSource, /filterTargetedBatchRowsByStatus\(targetedBatchRows, targetedBatchStatusFilter\),\s*targetedBatchSearchText,/);
   // TB-R051 (1.3.68): another batch also opens on the order a batch opens on.
-  assert.match(screenSource, /setTargetedBatchSearchText\(""\);\s*setTargetedBatchStatusFilter\(TARGETED_BATCH_STATUS_FILTERS\.TOTAL\);\s*setTargetedBatchRowOrder\(DEFAULT_TARGETED_BATCH_ROW_ORDER\);\s*setTargetedBatchMapOpen\(false\);\s*\}, \[selectedTargetedBatchId\]\);/);
+  assert.match(screenSource, /setTargetedBatchSearchText\(""\);\s*setTargetedBatchStatusFilter\(TARGETED_BATCH_STATUS_FILTERS\.TOTAL\);\s*setTargetedBatchRowOrder\(DEFAULT_TARGETED_BATCH_ROW_ORDER\);\s*setTargetedBatchMapOpen\(false\);[\s\S]{0,200}?setRowPremiseChoice\(null\);\s*\}, \[selectedTargetedBatchId\]\);/);
   const mapAction = screenSource.slice(screenSource.indexOf("const handleTargetedBatchMapRowAction"), screenSource.indexOf("const pendingTargetedBatchRowId"));
   assert.match(mapAction, /setTargetedBatchStatusFilter\(TARGETED_BATCH_STATUS_FILTERS\.TOTAL\);/);
   // The batch map always gets every meter.

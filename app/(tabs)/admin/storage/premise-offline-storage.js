@@ -283,6 +283,12 @@ export default function PremiseOfflineStorageScreen() {
       const status = String(item?.status || "PENDING").toUpperCase();
       const premiseId = item?.premiseId || item?.payload?.id || null;
 
+      // TB-R067 (1.3.73): a premise document that exists is proof the work arrived only when this item was
+      // going to create it. An item that joins a premise already standing there finds its document there
+      // from the start, so this watch would mark it Sent while the row was never joined and the worker was
+      // told it had worked (reviewer, 2026-09-24). Those wait for the callable, like any other send.
+      if (item?.joinsExistingPremise) return false;
+
       return premiseId && premiseId !== "NAv" && status !== "SUCCESS";
     });
 

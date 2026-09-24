@@ -77,3 +77,44 @@ test("a premise with no id is never offered", () => {
   });
   assert.equal(choices.length, 3);
 });
+
+test("a premise joined to a row of another batch is not offered as free", () => {
+  // The same ERF split between a GPS and a Non-GPS batch: the phone holds only the open batch's rows, so
+  // the premise itself has to say who it belongs to.
+  const otherBatch = {
+    id: "P4",
+    erfId: "E689",
+    propertyType: { type: "Commercial", name: "Veg Shop", unitNo: "4" },
+    targetedBatchContext: { rowId: "R_GPS_7", targetedMeterNo: "04297700488" },
+  };
+
+  const choices = buildRowPremiseChoices({
+    premises: [...premises, otherBatch],
+    rows,
+    currentRowId: "R2",
+    erfId: "E689",
+  });
+  const veg = choices.find((choice) => choice.premiseId === "P4");
+
+  assert.equal(veg.selectable, false, "it belongs to a row this phone cannot see");
+  assert.equal(choiceStatusText(veg), "Joined to meter 04297700488");
+});
+
+test("a premise whose own row is this row is still its own", () => {
+  const carried = {
+    id: "P5",
+    erfId: "E689",
+    propertyType: { type: "Commercial", name: "Kwik Fit 2", unitNo: "5" },
+    targetedBatchContext: { rowId: "R2" },
+  };
+
+  const choice = buildRowPremiseChoices({
+    premises: [carried],
+    rows,
+    currentRowId: "R2",
+    erfId: "E689",
+  })[0];
+
+  assert.equal(choice.isOwnRow, true);
+  assert.equal(choice.selectable, true);
+});

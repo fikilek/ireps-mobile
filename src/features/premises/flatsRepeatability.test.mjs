@@ -247,6 +247,6 @@ test("guards Government card identity against leading separators", () => {
 test("preserves successful save navigation regression fix", () => {
   assert.match(
     formSource,
-    /if \(originatedFromTargetedBatch \|\| isQueueEdit\) \{\s*router\.replace\(successRoute\);\s*\} else \{\s*router\.back\(\);/,
+    /if \(originatedFromTargetedBatch \|\| isQueueEdit \|\| rowPremiseJoin\) \{\s*router\.replace\(successRoute\);\s*\} else \{\s*router\.back\(\);/,
   );
 });

@@ -995,7 +995,9 @@ export default function WorkorderManagementSystem() {
     );
   }, []);
   const [targetedBatchMapOpen, setTargetedBatchMapOpen] = useState(false);
-  // TB-R067 (1.3.73): the premise choice a row opens when it has no premise of its own yet.
+  // TB-R067 (1.3.73): the row whose premise is being chosen. Only the row is kept: the list itself is
+  // worked out again from what the phone holds now, so a premise joined a moment ago by somebody else does
+  // not go on reading Not joined under an open list.
   const [rowPremiseChoice, setRowPremiseChoice] = useState(null);
 
   // TB-R067 (1.3.73): the premise form, opened from a row and carrying it. Whatever the worker does there -
@@ -1166,6 +1168,8 @@ export default function WorkorderManagementSystem() {
         // map's Modal on Android, and a map still marked open would swallow back and never show again.
         if (targetedBatchScreenMountedRef.current) {
           setTargetedBatchMapOpen(false);
+          // TB-R067: and the premise choice with it, for the same reason.
+          setRowPremiseChoice(null);
         }
       };
     }, [clearOpeningTargetedBatch, clearPendingTargetedBatchAction]),
@@ -1321,6 +1325,8 @@ export default function WorkorderManagementSystem() {
     setTargetedBatchStatusFilter(TARGETED_BATCH_STATUS_FILTERS.TOTAL);
     setTargetedBatchRowOrder(DEFAULT_TARGETED_BATCH_ROW_ORDER);
     setTargetedBatchMapOpen(false);
+    // TB-R067 (1.3.73): a choice left open would send the new batch's id with the old batch's row.
+    setRowPremiseChoice(null);
   }, [selectedTargetedBatchId]);
 
 
@@ -1419,6 +1425,50 @@ export default function WorkorderManagementSystem() {
       ),
     [targetedBatchRows],
   );
+
+  // TB-R067 (1.3.73) 6: when the row is being moved off a premise, the one it is leaving travels with the
+  // form, so the server knows the worker asked for the move and did not stumble into it.
+  const leavingPremiseParam = useCallback((row, picked = "") => {
+    const current = cleanId(row?.refs?.premiseId);
+    return current && current !== cleanId(picked)
+      ? { targetedBatchReplacesPremiseId: current }
+      : {};
+  }, []);
+
+  // TB-R067 (1.3.73): the row the premise choice is open on, and its list, both worked out from what the
+  // phone holds right now. The row closes the choice by itself once it has a premise, so the list never
+  // outlives the job it was opened for.
+  const rowPremiseChoiceRow = useMemo(
+    () =>
+      rowPremiseChoice?.rowId
+        ? targetedBatchRows.find((row) => row?.id === rowPremiseChoice.rowId) || null
+        : null,
+    [rowPremiseChoice?.rowId, targetedBatchRows],
+  );
+
+  const rowPremiseChoices = useMemo(
+    () =>
+      rowPremiseChoice
+        ? buildRowPremiseChoices({
+            premises: all?.prems || [],
+            rows: targetedBatchRows,
+            currentRowId: rowPremiseChoice.rowId,
+            erfId: rowPremiseChoice.erfId,
+          })
+        : [],
+    [rowPremiseChoice, all?.prems, targetedBatchRows],
+  );
+
+  useEffect(() => {
+    if (!rowPremiseChoice) return;
+    // The row went away with the batch, or it has its premise now - either way there is nothing to choose.
+    if (
+      !rowPremiseChoiceRow ||
+      (!rowPremiseChoice.changing && cleanId(rowPremiseChoiceRow?.refs?.premiseId))
+    ) {
+      setRowPremiseChoice(null);
+    }
+  }, [rowPremiseChoice, rowPremiseChoiceRow]);
 
   // TB-R051: ERF centres (E) for the batch map, from the phone's geoLibrary.
   const targetedBatchErfCentroidById = useMemo(() => {
@@ -1769,6 +1819,41 @@ export default function WorkorderManagementSystem() {
           };
         } else if (
           pending.intent === TARGETED_BATCH_INTENTS.OPEN_PREMISE &&
+          premiseId &&
+          !cleanId(currentRow?.refs?.meterId)
+        ) {
+          // TB-R067 (1.3.73) 6: the row has a premise. Usually the worker wants to look at it; sometimes
+          // they joined the wrong shop and need to move. Once a meter has been captured there the premise
+          // is part of that work, so the offer is not made and Premise opens it as before.
+          clearPendingTargetedBatchAction(pending.requestKey);
+          setTargetedBatchMapOpen(false);
+          updateGeo({
+            selectedWard: pending.ward,
+            selectedErf,
+            selectedPremise: premise || null,
+            lastSelectionType: "PREMISE",
+          });
+
+          Alert.alert(
+            "Premise",
+            "Open this row's premise, or join this row to a different one?",
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Change premise",
+                onPress: () =>
+                  setRowPremiseChoice({
+                    rowId: currentRow.id,
+                    erfId: pending.erfId,
+                    changing: true,
+                  }),
+              },
+              { text: "Open premise", onPress: () => router.push("/(tabs)/premises") },
+            ],
+          );
+          return;
+        } else if (
+          pending.intent === TARGETED_BATCH_INTENTS.OPEN_PREMISE &&
           !premiseId
         ) {
           // TB-R067 (1.3.73): the row has no premise yet. Every premise on its ERF is offered, with the
@@ -1795,7 +1880,7 @@ export default function WorkorderManagementSystem() {
             return;
           }
 
-          setRowPremiseChoice({ row: currentRow, erfId: pending.erfId, choices });
+          setRowPremiseChoice({ rowId: currentRow.id, erfId: pending.erfId });
           return;
         } else {
           navigationTarget = "/(tabs)/premises";
@@ -3555,25 +3640,25 @@ export default function WorkorderManagementSystem() {
 
       {/* TB-R067 (1.3.73): which premise is this row's? The worker picks; iREPS never guesses. */}
       <RowPremiseChoiceModal
-        visible={Boolean(rowPremiseChoice)}
-        meterNo={rowPremiseChoice?.row?.meterNo}
-        accountNo={rowPremiseChoice?.row?.accountNumber}
-        customerName={rowPremiseChoice?.row?.customerName}
-        choices={rowPremiseChoice?.choices || []}
+        visible={Boolean(rowPremiseChoice && rowPremiseChoiceRow)}
+        meterNo={rowPremiseChoiceRow?.meterNo}
+        accountNo={rowPremiseChoiceRow?.accountNumber}
+        customerName={rowPremiseChoiceRow?.customerName}
+        choices={rowPremiseChoices}
         onPick={(premiseId) => {
-          const row = rowPremiseChoice?.row;
+          const row = rowPremiseChoiceRow;
           setRowPremiseChoice(null);
-          openRowPremiseForm({ row, params: { premiseId } });
+          openRowPremiseForm({ row, params: { premiseId, ...leavingPremiseParam(row, premiseId) } });
         }}
         onCopy={(premiseId) => {
-          const row = rowPremiseChoice?.row;
+          const row = rowPremiseChoiceRow;
           setRowPremiseChoice(null);
-          openRowPremiseForm({ row, params: { duplicateId: premiseId } });
+          openRowPremiseForm({ row, params: { duplicateId: premiseId, ...leavingPremiseParam(row) } });
         }}
         onNew={() => {
-          const row = rowPremiseChoice?.row;
+          const row = rowPremiseChoiceRow;
           setRowPremiseChoice(null);
-          openRowPremiseForm({ row, params: {} });
+          openRowPremiseForm({ row, params: leavingPremiseParam(row) });
         }}
         onClose={() => setRowPremiseChoice(null)}
       />
