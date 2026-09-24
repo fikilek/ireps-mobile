@@ -19,6 +19,9 @@ import {
   premiseTargetedBatchContext,
 } from "./targetedBatchContextCarry.js";
 
+// A worker never sees an internal code. Everything here is logged with console.log, not console.error:
+// an error log paints a red box across the field worker's screen, and the window beside it has already
+// said the same thing in words they can act on (owner, 2026-09-24: "can you remove the error?").
 // TB-R051: the live row check gives up after 10 seconds.
 const LIVE_BATCH_ROW_TIMEOUT_MS = 10000;
 
@@ -78,7 +81,7 @@ async function readLiveBatchRow(ctx) {
   let salesLoadState = "MISSING";
   if (salesResult.status === "rejected") {
     salesLoadState = "ERROR";
-    console.error("[TARGETED_BATCH_DISCOVER_SALES_CHECK_ERROR]", {
+    console.log("[TARGETED_BATCH_DISCOVER_SALES_CHECK_ERROR]", {
       salesDocId: ctx.salesDocId,
       error: salesResult.reason,
     });
@@ -105,7 +108,7 @@ function setChecking(onCheckingChange, checking) {
   try {
     onCheckingChange(checking);
   } catch (error) {
-    console.error("[TARGETED_BATCH_CHECK_PROGRESS_ERROR]", error);
+    console.log("[TARGETED_BATCH_CHECK_PROGRESS_ERROR]", error);
   }
 }
 
@@ -137,7 +140,7 @@ export function runLiveBatchRowCheck({ ctx, onCheckingChange, onResult }) {
     .then(
       ({ row, batch, team }) => ({ failed: false, row, batch, team }),
       (error) => {
-        console.error("[TARGETED_BATCH_LIVE_ROW_CHECK_ERROR]", {
+        console.log("[TARGETED_BATCH_LIVE_ROW_CHECK_ERROR]", {
           tbId: ctx?.tbId,
           rowId: ctx?.rowId,
           error,
@@ -151,7 +154,7 @@ export function runLiveBatchRowCheck({ ctx, onCheckingChange, onResult }) {
       onResult(result);
     })
     .catch((error) => {
-      console.error("[TARGETED_BATCH_LIVE_ROW_RESULT_ERROR]", error);
+      console.log("[TARGETED_BATCH_LIVE_ROW_RESULT_ERROR]", error);
     });
 
   return true;

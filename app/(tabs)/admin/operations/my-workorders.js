@@ -1477,10 +1477,7 @@ export default function WorkorderManagementSystem() {
   useEffect(() => {
     if (!rowPremiseChoice) return;
     // The row went away with the batch, or it has its premise now - either way there is nothing to choose.
-    if (
-      !rowPremiseChoiceRow ||
-      (!rowPremiseChoice.changing && cleanId(rowPremiseChoiceRow?.refs?.premiseId))
-    ) {
+    if (!rowPremiseChoiceRow || cleanId(rowPremiseChoiceRow?.refs?.premiseId)) {
       setRowPremiseChoice(null);
     }
   }, [rowPremiseChoice, rowPremiseChoiceRow]);
@@ -1832,41 +1829,6 @@ export default function WorkorderManagementSystem() {
               targetedBatchContext: serializedTargetedBatchContext,
             },
           };
-        } else if (
-          pending.intent === TARGETED_BATCH_INTENTS.OPEN_PREMISE &&
-          premiseId &&
-          !cleanId(currentRow?.refs?.meterId)
-        ) {
-          // TB-R067 (1.3.73) 6: the row has a premise. Usually the worker wants to look at it; sometimes
-          // they joined the wrong shop and need to move. Once a meter has been captured there the premise
-          // is part of that work, so the offer is not made and Premise opens it as before.
-          clearPendingTargetedBatchAction(pending.requestKey);
-          setTargetedBatchMapOpen(false);
-          updateGeo({
-            selectedWard: pending.ward,
-            selectedErf,
-            selectedPremise: premise || null,
-            lastSelectionType: "PREMISE",
-          });
-
-          Alert.alert(
-            "Premise",
-            "Open this row's premise, or join this row to a different one?",
-            [
-              { text: "Cancel", style: "cancel" },
-              {
-                text: "Change premise",
-                onPress: () =>
-                  setRowPremiseChoice({
-                    rowId: currentRow.id,
-                    erfId: pending.erfId,
-                    changing: true,
-                  }),
-              },
-              { text: "Open premise", onPress: () => router.push("/(tabs)/premises") },
-            ],
-          );
-          return;
         } else if (
           pending.intent === TARGETED_BATCH_INTENTS.OPEN_PREMISE &&
           !premiseId
