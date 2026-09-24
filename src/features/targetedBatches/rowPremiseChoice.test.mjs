@@ -141,3 +141,26 @@ test("the work order card reads the shop beside the address once the row has its
     "Zol Shoes, 6",
   );
 });
+
+test("a house with no business name is named by its street address, never by its id", () => {
+  const house = {
+    id: "PRM_1790289128060_568_W002_1955",
+    erfId: "E1955",
+    propertyType: { type: "Residential" },
+    address: { strNo: "1955", strName: "Fouche", strType: "Street" },
+  };
+
+  assert.equal(premiseTitle(house), "1955 Fouche Street");
+
+  // A shop keeps its business name and unit number; the address is the fallback, not a replacement.
+  assert.equal(
+    premiseTitle({ ...house, propertyType: { type: "Commercial", name: "Zol Shoes", unitNo: "6" } }),
+    "Zol Shoes · No 6",
+  );
+
+  // The street type is not written twice.
+  assert.equal(
+    premiseTitle({ ...house, address: { strNo: "26", strName: "Oldacre St", strType: "Street" } }),
+    "26 Oldacre St",
+  );
+});

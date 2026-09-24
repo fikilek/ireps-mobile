@@ -8,6 +8,8 @@
 // This is what the choice on the row is made of. iREPS never matches a premise to a row by address, name or
 // anything else: at one address with thirteen businesses a wrong join is worse than none, so the worker,
 // who is standing in the shop, picks (TB-R067 2).
+import { formatStreetAddress } from "../premises/streetAddress.js";
+
 const clean = (value) => String(value ?? "").trim();
 const upper = (value) => clean(value).toUpperCase();
 
@@ -40,7 +42,9 @@ function premiseType(premise = {}) {
   return clean(premise?.propertyType?.type || premise?.propertyType);
 }
 
-// What a premise knows about itself, and nothing else: its unit name and its unit number (TB-R067 1).
+// What a premise knows about itself (TB-R067 1): the business or unit name and the unit number where it
+// has them, and otherwise its street address - a house has neither, and a worker was shown the premise's
+// document id instead of "1955 Fouche Street" (owner, 25 Sep 2026). A worker never reads an id.
 export function premiseTitle(premise = {}) {
   const name = clean(premise?.propertyType?.name);
   const unitNo = clean(premise?.propertyType?.unitNo);
@@ -48,8 +52,9 @@ export function premiseTitle(premise = {}) {
 
   if (name) parts.push(name);
   if (unitNo) parts.push(`No ${unitNo}`);
+  if (parts.length) return parts.join(" · ");
 
-  return parts.join(" · ") || premiseId(premise) || "Premise";
+  return formatStreetAddress(premise?.address) || premiseId(premise) || "Premise";
 }
 
 // TB-R067 (1.3.73): what the worker reads on the work order card. At a commercial ERF every row carries the
