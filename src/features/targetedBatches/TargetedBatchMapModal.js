@@ -123,7 +123,6 @@ const NO_POSITION_MESSAGE = "No meters of this batch have a position";
 const SHEET_INITIAL_RENDER = 6;
 const SHEET_WINDOW_SIZE = 5;
 const SINGLE_POINT_DELTA = 0.004;
-const PIN_ANCHOR = { x: 12 / 34, y: 22 / 34 };
 const CENTRE_ANCHOR = { x: 0.5, y: 0.5 };
 // TB-R051 (1.3.83): the map draws a marker into a picture of a fixed 100 PIXELS square when it was never
 // told the marker's size, which under this app's React Native architecture it never is
@@ -136,6 +135,16 @@ const CENTRE_ANCHOR = { x: 0.5, y: 0.5 };
 // the view and nothing else, and the middle of the square — which is the middle of the label — sits
 // exactly on the label's own place, at every zoom.
 const MARKER_PICTURE_DP = 100 / PixelRatio.get();
+
+// TB-R051 (1.3.83): the pin's circle and, under it, its ERF's number — one marker, the owner's own
+// drawing. They cannot drift apart, the number can never cover the S, G or E, and the circle's centre
+// still sits exactly on the meter. Laid from the top of the square, so the anchor points at the circle's
+// centre rather than at the middle of the square.
+const PIN_CIRCLE_DP = 24;
+const PIN_IN_PICTURE_ANCHOR = {
+  x: 0.5,
+  y: PIN_CIRCLE_DP / 2 / MARKER_PICTURE_DP,
+};
 const EMPTY_POINTS = Object.freeze({ groups: [], unplaced: [], coordinates: [] });
 const EMPTY_LIST = [];
 const EMPTY_ERF_LAYER = Object.freeze({ erfs: EMPTY_LIST, capped: false });
@@ -435,10 +444,11 @@ function BatchGroupMarkerBase({
   source,
   count,
   selected,
+  erfNo = "",
   onPress,
 }) {
   const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(
-    `${status}|${source}|${count}|${selected ? "1" : "0"}`,
+    `${status}|${source}|${count}|${selected ? "1" : "0"}|${erfNo || ""}`,
   );
 
   const coordinate = useMemo(
@@ -451,28 +461,39 @@ function BatchGroupMarkerBase({
   return (
     <Marker
       coordinate={coordinate}
-      anchor={PIN_ANCHOR}
+      anchor={PIN_IN_PICTURE_ANCHOR}
       tracksViewChanges={tracksViewChanges}
       onPress={handlePress}
       zIndex={selected ? 300 : 200}
     >
-      <View style={styles.pinWrap} onLayout={onLayout}>
-        <View
-          style={[
-            styles.pin,
-            { backgroundColor: color },
-            selected && styles.pinSelected,
-          ]}
-        >
-          <Text style={styles.pinText}>
-            {TARGETED_BATCH_MAP_SOURCE_LABELS[source] || "?"}
-          </Text>
+      <View style={styles.pinPicture} onLayout={onLayout}>
+        <View style={styles.pinWrap}>
+          <View
+            style={[
+              styles.pin,
+              { backgroundColor: color },
+              selected && styles.pinSelected,
+            ]}
+          >
+            <Text style={styles.pinText}>
+              {TARGETED_BATCH_MAP_SOURCE_LABELS[source] || "?"}
+            </Text>
+          </View>
+
+          {count > 1 ? (
+            <View style={styles.pinBadge}>
+              <Text style={styles.pinBadgeText}>
+                {count > 99 ? "99+" : count}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
-        {count > 1 ? (
-          <View style={styles.pinBadge}>
-            <Text style={styles.pinBadgeText}>
-              {count > 99 ? "99+" : count}
+        {/* The ERF's number, under its own pin. Only there when the ERFs layer is on. */}
+        {erfNo ? (
+          <View style={styles.pinErfLabel}>
+            <Text style={styles.pinErfLabelText} numberOfLines={1}>
+              {erfNo}
             </Text>
           </View>
         ) : null}
@@ -1202,6 +1223,28 @@ export default function TargetedBatchMapModal({
     return (delta * 111320) / mapAreaHeight;
   }, [region?.latitudeDelta, initialRegion?.latitudeDelta, mapAreaHeight]);
 
+  // TB-R051 (1.3.83): an ERF with a meter on it has its number on that meter's pin, so it is never drawn
+  // twice and never lands on top of the pin. Only the first pin on an ERF carries the number.
+  const erfNumbersOnPins = useMemo(() => {
+    const byGroup = {};
+    const taken = new Set();
+    if (!erfLabels.length) return { byGroup, taken };
+
+    const numberByErf = {};
+    for (const label of erfLabels) numberByErf[label.id] = label.erfNo;
+
+    for (const group of groups) {
+      for (const row of group?.rows || []) {
+        const id = readFirstString(row?.erfId, row?.refs?.erfId);
+        if (!id || !numberByErf[id] || taken.has(id)) continue;
+        byGroup[group.key] = numberByErf[id];
+        taken.add(id);
+        break;
+      }
+    }
+    return { byGroup, taken };
+  }, [groups, erfLabels]);
+
   // The size each number is drawn at. 0 leaves it out: its ERF has no room for it at this zoom.
   const erfLabelSizes = useMemo(() => {
     if (!metresPerPixel) return {};
@@ -1752,6 +1795,9 @@ export default function TargetedBatchMapModal({
             ) : null}
 
             {erfLabels.map((label) => {
+              // Its own pin carries it (1.3.83).
+              if (erfNumbersOnPins.taken.has(label.id)) return null;
+
               const fontSize = erfLabelSizes[label.id] || 0;
               if (!fontSize) return null;
 
@@ -1799,6 +1845,7 @@ export default function TargetedBatchMapModal({
                 source={group.source}
                 count={group.rows?.length || 0}
                 selected={selectedGroup?.key === group.key}
+                erfNo={erfNumbersOnPins.byGroup[group.key] || ""}
                 onPress={handleGroupPress}
               />
             ))}
@@ -2245,13 +2292,34 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
 
+  // TB-R051 (1.3.83): the square the map's picture is made from. The pin sits at the top of it, so the
+  // anchor can point at the circle's centre, and its ERF number hangs underneath with room to spare.
+  pinPicture: {
+    width: MARKER_PICTURE_DP,
+    height: MARKER_PICTURE_DP,
+    alignItems: "center",
+  },
   pinWrap: {
     width: 34,
-    height: 34,
+    height: PIN_CIRCLE_DP,
+  },
+  pinErfLabel: {
+    marginTop: 2,
+    maxWidth: MARKER_PICTURE_DP,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "#94a3b8",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    paddingHorizontal: 3,
+  },
+  pinErfLabelText: {
+    color: "#1e293b",
+    fontSize: ERF_LABEL_BASE_FONT_SIZE,
+    fontWeight: "800",
   },
   pin: {
     position: "absolute",
-    left: 0,
+    left: 5,
     bottom: 0,
     width: 24,
     height: 24,

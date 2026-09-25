@@ -182,6 +182,37 @@ test("nothing is hidden and shown again as the map moves (1.3.82)", () => {
   assert.doesNotMatch(modalSource, /mapMoving|onRegionChange=\{handleRegionChanging\}/);
 });
 
+test("a pin carries its own ERF's number underneath it (1.3.83)", () => {
+  const pin = modalSource.slice(
+    modalSource.indexOf("function BatchGroupMarkerBase("),
+    modalSource.indexOf("const BatchGroupMarker = memo("),
+  );
+  // One marker: the circle, then the number under it, inside the square the picture is made from.
+  assert.match(pin, /styles\.pinPicture/);
+  assert.match(pin, /styles\.pinErfLabel[\s\S]{0,200}\{erfNo\}/);
+  // The anchor points at the circle's centre, not at the middle of the square, so the pin still sits
+  // exactly on its meter with the number hanging below.
+  assert.match(pin, /anchor=\{PIN_IN_PICTURE_ANCHOR\}/);
+  assert.match(modalSource, /y: PIN_CIRCLE_DP \/ 2 \/ MARKER_PICTURE_DP/);
+  // A new number means a new picture of the marker.
+  assert.match(pin, /\$\{erfNo \|\| ""\}/);
+});
+
+test("an ERF with a meter on it shows its number once, on the pin (1.3.83)", () => {
+  // Never twice, and never a loose number for the map to put on top of the pin.
+  assert.match(modalSource, /if \(erfNumbersOnPins\.taken\.has\(label\.id\)\) return null;/);
+  assert.match(modalSource, /erfNo=\{erfNumbersOnPins\.byGroup\[group\.key\] \|\| ""\}/);
+  // Only the first pin on an ERF takes the number, so two meters on one ERF do not both carry it.
+  const memo = modalSource.slice(
+    modalSource.indexOf("const erfNumbersOnPins = useMemo("),
+    modalSource.indexOf("// The size each number is drawn at"),
+  );
+  assert.match(memo, /taken\.has\(id\)\) continue;/);
+  assert.match(memo, /taken\.add\(id\);/);
+  // With the ERFs layer off there are no numbers at all, so no pin carries one.
+  assert.match(memo, /if \(!erfLabels\.length\) return \{ byGroup, taken \};/);
+});
+
 test("a number is laid in the middle of the picture the map makes of it (1.3.83)", () => {
   // The map draws a marker into a 100 PIXEL square when it was never told the marker's size, and reads
   // the anchor as a fraction of that square. A bare label lands up-left of its own place by a fixed
