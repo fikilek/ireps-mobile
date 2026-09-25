@@ -4,7 +4,6 @@ import {
   useUpdateSettingsMutation,
 } from "@/src/redux/settingsApi";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { router } from "expo-router";
 import { useState } from "react";
 import {
   Alert,

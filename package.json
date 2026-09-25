@@ -11,7 +11,8 @@
     "lint": "expo lint",
     "ci:verify-mobile-env": "node scripts/ci/verify-mobile-env.cjs",
     "postinstall": "patch-package",
-    "ci:verify-form-colours": "node scripts/ci/verify-form-colours.cjs"
+    "ci:verify-form-colours": "node scripts/ci/verify-form-colours.cjs",
+    "test": "node --test src/**/*.test.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
