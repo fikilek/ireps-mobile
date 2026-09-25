@@ -2,12 +2,16 @@
 //
 // A map label keeps its size on screen at every zoom, so a label moved by screen pixels lands in another ERF when
 // the map is zoomed out. The ERF number is therefore placed on a fixed point on the ground inside its own ERF:
-// straight above a base point, part of the way to the ERF's boundary, so a pin or icon at the centre does not hide
+// just below a base point (1.3.70), a little of the way to the ERF's boundary, beside the pin rather than under
 // it. The base point is the ERF centre when it is inside the ERF, else the middle of the widest stretch of the ERF
 // on a line across it. An ERF lying inside another counts as a hole in the outer one.
 
-// How far from the base point towards the boundary above it the ERF number sits.
-export const ERF_LABEL_RISE = 0.6;
+// TB-R051 (1.3.70; replaces "60% of the way up" of 1.3.40): the ERF number sits just below the ERF's centre,
+// beside the pin, and never up against the ERF's edge. Up at 60% it had the least room in the ERF, so it was
+// the first thing to cross into the neighbour's ERF as the map zoomed out (owner, 2026-09-21: "make it closer
+// to S, and the S is at the center"). It goes below the centre because a pin grows upward from its point, so
+// that is the side the pin does not cover. This is how far towards the boundary below it the number sits.
+export const ERF_LABEL_DROP = 0.3;
 
 function isPoint(point) {
   return (
@@ -57,14 +61,14 @@ export function ringContainsPoint(ring, point) {
   return ringsContainPoint([ring], point);
 }
 
-// The latitude where the boundary first meets the line straight above the point, or null.
-function boundaryAbove(rings, point) {
-  let top = Infinity;
+// The latitude where the boundary first meets the line straight below the point, or null.
+function boundaryBelow(rings, point) {
+  let bottom = -Infinity;
   for (const [a, b] of edgesOf(rings)) {
     let latitude = null;
     if (a.longitude === point.longitude && b.longitude === point.longitude) {
-      // A north-south edge on the line itself: the boundary starts at its lower end.
-      latitude = Math.min(a.latitude, b.latitude);
+      // A north-south edge on the line itself: the boundary starts at its upper end.
+      latitude = Math.max(a.latitude, b.latitude);
     } else {
       const crosses =
         (a.longitude <= point.longitude && point.longitude < b.longitude) ||
@@ -75,9 +79,9 @@ function boundaryAbove(rings, point) {
         ((point.longitude - a.longitude) * (b.latitude - a.latitude)) /
           (b.longitude - a.longitude);
     }
-    if (latitude > point.latitude && latitude < top) top = latitude;
+    if (latitude < point.latitude && latitude > bottom) bottom = latitude;
   }
-  return Number.isFinite(top) ? top : null;
+  return Number.isFinite(bottom) ? bottom : null;
 }
 
 // The middle of the widest stretch inside the rings on the east-west line at this latitude, or null.
@@ -121,7 +125,7 @@ function basePoint(rings, centroid) {
 // erf: { centroid: { latitude, longitude }, polygons: [[{ latitude, longitude }, ...], ...] }.
 // holes: outlines of other ERFs that lie inside this one.
 // Returns the point to draw the ERF number at, or null when the ERF has no centre.
-export function erfLabelPoint(erf, { holes = [], rise = ERF_LABEL_RISE } = {}) {
+export function erfLabelPoint(erf, { holes = [], drop = ERF_LABEL_DROP } = {}) {
   const centroid = erf?.centroid;
   if (!isPoint(centroid)) return null;
 
@@ -132,12 +136,12 @@ export function erfLabelPoint(erf, { holes = [], rise = ERF_LABEL_RISE } = {}) {
   const base = basePoint(rings, centroid);
   if (!base) return centroid;
 
-  const top = boundaryAbove(rings, base);
-  if (top === null) return base;
+  const bottom = boundaryBelow(rings, base);
+  if (bottom === null) return base;
 
-  // Every point between the base point and the first boundary above it is inside the ERF.
+  // Every point between the base point and the first boundary below it is inside the ERF.
   return {
-    latitude: base.latitude + (top - base.latitude) * rise,
+    latitude: base.latitude - (base.latitude - bottom) * drop,
     longitude: base.longitude,
   };
 }
@@ -182,4 +186,105 @@ export function holesByErf(erfs = []) {
     });
     return holes;
   });
+}
+
+// TB-R051 (1.3.70): the ERF number keeps itself inside its own ERF at every zoom.
+//
+// A map label is a picture pinned to a point and keeps its size on screen, while the ERF shrinks as the map
+// zooms out, so a label of a fixed size ends up over the neighbour's ERF. The number is therefore drawn at the
+// largest size that still fits in the room its own ERF gives it: the circle around the label point that
+// touches the nearest edge of the ERF (its outline, or an ERF lying inside it). A circle is used rather than
+// the ERF's width, because it is right whichever way the ERF runs.
+
+const METRES_PER_DEGREE_LATITUDE = 111320;
+
+// The ERF number's own measurements, in pixels at font size 1.
+export const ERF_LABEL_BASE_FONT_SIZE = 9;
+const ERF_LABEL_WIDTH_PER_CHARACTER = 0.68; // of the font size, for the heavy digits a number is made of
+const ERF_LABEL_LINE_HEIGHT = 1.25;
+// Padding and border on each side of the box. The label's horizontal edge; its vertical edge is smaller,
+// so measuring the height with this one makes the fit cautious rather than tight.
+const ERF_LABEL_EDGE = 4;
+// Below this the label has no readable pixels left, so nothing is drawn rather than a smudge.
+const ERF_LABEL_SMALLEST_FONT_SIZE = 3;
+
+// The distance in metres from an ERF's label point to the nearest edge of that ERF.
+export function erfLabelRoomMetres(erf, { holes = [], point = null } = {}) {
+  const at = isPoint(point) ? point : erfLabelPoint(erf, { holes });
+  if (!isPoint(at)) return 0;
+
+  const edges = edgesOf([...usableRings(erf?.polygons), ...usableRings(holes)]);
+  if (!edges.length) return 0;
+
+  // A degree of longitude is shorter away from the equator, by the cosine of the latitude.
+  const longitudeScale = Math.cos((at.latitude * Math.PI) / 180);
+  const metres = (point_, from) => ({
+    x:
+      (point_.longitude - from.longitude) *
+      METRES_PER_DEGREE_LATITUDE *
+      longitudeScale,
+    y: (point_.latitude - from.latitude) * METRES_PER_DEGREE_LATITUDE,
+  });
+
+  let nearest = Infinity;
+  for (const [a, b] of edges) {
+    const toPoint = metres(at, a);
+    const edge = metres(b, a);
+    const edgeLengthSquared = edge.x * edge.x + edge.y * edge.y;
+    // How far along the edge the nearest point lies, kept between its two ends.
+    const along =
+      edgeLengthSquared > 0
+        ? Math.max(
+            0,
+            Math.min(
+              1,
+              (toPoint.x * edge.x + toPoint.y * edge.y) / edgeLengthSquared,
+            ),
+          )
+        : 0;
+    const x = toPoint.x - edge.x * along;
+    const y = toPoint.y - edge.y * along;
+    const distance = Math.sqrt(x * x + y * y);
+    if (distance < nearest) nearest = distance;
+  }
+
+  return Number.isFinite(nearest) ? nearest : 0;
+}
+
+// How wide the ERF number's box is, in the same units the map is measured in.
+export function erfLabelBoxWidth(characters, fontSize) {
+  const count = Math.max(1, Math.trunc(Number(characters) || 0));
+  const size = Number(fontSize);
+  if (!Number.isFinite(size) || size <= 0) return 0;
+  return count * ERF_LABEL_WIDTH_PER_CHARACTER * size + 2 * ERF_LABEL_EDGE;
+}
+
+// The largest font size, never above the base, whose label box fits inside a circle of `roomPixels`.
+// 0 means the ERF has no room left for a number worth drawing.
+export function erfLabelFontSize(
+  characters,
+  roomPixels,
+  base = ERF_LABEL_BASE_FONT_SIZE,
+) {
+  const count = Math.max(1, Math.trunc(Number(characters) || 0));
+  const room = Number(roomPixels);
+  if (!Number.isFinite(room) || room <= 0) return 0;
+
+  // The box at font size f is (count * w * f + 2e) wide and (h * f + 2e) high; it fits when half its
+  // diagonal is within the room. Solving that for f is the quadratic below.
+  const width = count * ERF_LABEL_WIDTH_PER_CHARACTER;
+  const height = ERF_LABEL_LINE_HEIGHT;
+  const a = width * width + height * height;
+  const b = 4 * ERF_LABEL_EDGE * (width + height);
+  const c = 8 * ERF_LABEL_EDGE * ERF_LABEL_EDGE - 4 * room * room;
+
+  const discriminant = b * b - 4 * a * c;
+  if (discriminant <= 0) return 0;
+
+  const fitted = (-b + Math.sqrt(discriminant)) / (2 * a);
+  if (!Number.isFinite(fitted) || fitted < ERF_LABEL_SMALLEST_FONT_SIZE) return 0;
+
+  // Whole pixels, so a small pan or zoom does not redraw every number on the map. Rounded DOWN: rounding
+  // up would hand back a box a fraction wider than the room that was measured for it.
+  return Math.min(Math.floor(fitted), base);
 }

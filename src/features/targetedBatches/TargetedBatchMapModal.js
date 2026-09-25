@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
+  PixelRatio,
   Pressable,
   StyleSheet,
   Text,
@@ -22,7 +23,13 @@ import {
 } from "./loadBatchAreaLayers";
 import { loadLatestSalesCategoryMonth } from "./loadLatestSalesCategoryMonth";
 import { loadOtherSalesMeters } from "./loadOtherSalesMeters";
-import { erfLabelPoint, holesByErf } from "./erfLabelPoint";
+import {
+  ERF_LABEL_BASE_FONT_SIZE,
+  erfLabelFontSize,
+  erfLabelPoint,
+  erfLabelRoomMetres,
+  holesByErf,
+} from "./erfLabelPoint";
 import { isBatchMapOpeningZoomReached } from "./targetedBatchMapOpening";
 import { isCatSalesMeter } from "./salesCategory";
 import {
@@ -57,16 +64,6 @@ const SOURCE_LEGEND = [
   { source: "GEOCODED", label: MAP_PIN_LABELS.GEOCODED },
   { source: "ERF", label: MAP_PIN_LABELS.ERF },
 ];
-
-// TB-R051 (1.3.38): other Sales meters show ▲ ★ ■ in the same status colours as the batch pins.
-const OTHER_SALES_LEGEND = ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"].map(
-  (status) => ({
-    status,
-    symbol: SALES_STATUS_ICONS[status].symbol,
-    label: SALES_STATUS_ICONS[status].label,
-    color: MAP_STATUS_COLORS[status],
-  }),
-);
 
 // TB-R043: the batch geofence is purple.
 const GEOFENCE_COLOR = "#7c3aed";
@@ -126,9 +123,28 @@ const NO_POSITION_MESSAGE = "No meters of this batch have a position";
 const SHEET_INITIAL_RENDER = 6;
 const SHEET_WINDOW_SIZE = 5;
 const SINGLE_POINT_DELTA = 0.004;
-const PIN_ANCHOR = { x: 12 / 34, y: 22 / 34 };
-const LABEL_ANCHOR = { x: 0.5, y: 1 };
 const CENTRE_ANCHOR = { x: 0.5, y: 0.5 };
+// TB-R051 (1.3.83): the map draws a marker into a picture of a fixed 100 PIXELS square when it was never
+// told the marker's size, which under this app's React Native architecture it never is
+// (react-native-maps MapMarker.java: `this.width <= 0 ? 100`). The view is drawn at that picture's
+// top-left corner, and the anchor is read as a fraction of the PICTURE, not of the view. A small label
+// therefore lands up and to the left of its own place, by a fixed number of screen pixels — a sliver of
+// an ERF zoomed in, a whole ERF zoomed out. That is the drift.
+//
+// So a label is laid in the middle of a transparent square of exactly that size. The picture then holds
+// the view and nothing else, and the middle of the square — which is the middle of the label — sits
+// exactly on the label's own place, at every zoom.
+const MARKER_PICTURE_DP = 100 / PixelRatio.get();
+
+// TB-R051 (1.3.83): the pin's circle and, under it, its ERF's number — one marker, the owner's own
+// drawing. They cannot drift apart, the number can never cover the S, G or E, and the circle's centre
+// still sits exactly on the meter. Laid from the top of the square, so the anchor points at the circle's
+// centre rather than at the middle of the square.
+const PIN_CIRCLE_DP = 24;
+const PIN_IN_PICTURE_ANCHOR = {
+  x: 0.5,
+  y: PIN_CIRCLE_DP / 2 / MARKER_PICTURE_DP,
+};
 const EMPTY_POINTS = Object.freeze({ groups: [], unplaced: [], coordinates: [] });
 const EMPTY_LIST = [];
 const EMPTY_ERF_LAYER = Object.freeze({ erfs: EMPTY_LIST, capped: false });
@@ -194,13 +210,6 @@ function readGeofencePolygon(geofence) {
     );
 
   return coords.length >= 3 ? coords : EMPTY_LIST;
-}
-
-function getTopCoordinate(coords = []) {
-  return coords.reduce(
-    (top, point) => (!top || point.latitude > top.latitude ? point : top),
-    null,
-  );
 }
 
 function regionForCoordinates(coords = []) {
@@ -389,21 +398,42 @@ function withTimeout(promise, ms) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-// Custom marker views draw once, then stop tracking, so a long layer does not redraw on every frame.
+// TB-R051 (1.3.70): a custom marker view is drawn once into a picture and then stops tracking, so a long
+// layer does not redraw on every frame. The picture must be taken AFTER the view has laid out: taken on a
+// timer alone it caught a long geofence name still being measured, and the map drew "Gf W6 Cr" where the
+// name reads "Gf W6 Craigside1". Tracking therefore stops a moment after the view reports its layout, and
+// on a plain timer only for a view that never reports one.
+// (1.3.70) Never longer than the 0.3 s every marker had before: each tick of tracking draws a new picture,
+// and on a field phone with a 256 MB limit a longer budget ran the app out of memory (21 Sep, SM-A065F:
+// OutOfMemoryError in MapMarker.updateCustomForTracking).
+const MARKER_SETTLE_MS = 150;
+const MARKER_SETTLE_WITHOUT_LAYOUT_MS = 300;
+
 function useSettledTracksViewChanges(signature) {
   const [tracksViewChanges, setTracksViewChanges] = useState(true);
+  const timerRef = useRef(null);
+
+  const stopTrackingIn = useCallback((wait) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setTracksViewChanges(false), wait);
+  }, []);
 
   useEffect(() => {
     setTracksViewChanges(true);
+    stopTrackingIn(MARKER_SETTLE_WITHOUT_LAYOUT_MS);
 
-    const timer = setTimeout(() => {
-      setTracksViewChanges(false);
-    }, 300);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [signature, stopTrackingIn]);
 
-    return () => clearTimeout(timer);
-  }, [signature]);
+  // The view has been measured, so the picture taken now holds the whole label.
+  const onLayout = useCallback(
+    () => stopTrackingIn(MARKER_SETTLE_MS),
+    [stopTrackingIn],
+  );
 
-  return tracksViewChanges;
+  return { tracksViewChanges, onLayout };
 }
 
 function BatchGroupMarkerBase({
@@ -414,19 +444,12 @@ function BatchGroupMarkerBase({
   source,
   count,
   selected,
+  erfNo = "",
   onPress,
 }) {
-  const [tracksViewChanges, setTracksViewChanges] = useState(true);
-
-  useEffect(() => {
-    setTracksViewChanges(true);
-
-    const timer = setTimeout(() => {
-      setTracksViewChanges(false);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [status, source, count, selected]);
+  const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(
+    `${status}|${source}|${count}|${selected ? "1" : "0"}|${erfNo || ""}`,
+  );
 
   const coordinate = useMemo(
     () => ({ latitude, longitude }),
@@ -438,28 +461,39 @@ function BatchGroupMarkerBase({
   return (
     <Marker
       coordinate={coordinate}
-      anchor={PIN_ANCHOR}
+      anchor={PIN_IN_PICTURE_ANCHOR}
       tracksViewChanges={tracksViewChanges}
       onPress={handlePress}
       zIndex={selected ? 300 : 200}
     >
-      <View style={styles.pinWrap}>
-        <View
-          style={[
-            styles.pin,
-            { backgroundColor: color },
-            selected && styles.pinSelected,
-          ]}
-        >
-          <Text style={styles.pinText}>
-            {TARGETED_BATCH_MAP_SOURCE_LABELS[source] || "?"}
-          </Text>
+      <View style={styles.pinPicture} onLayout={onLayout}>
+        <View style={styles.pinWrap}>
+          <View
+            style={[
+              styles.pin,
+              { backgroundColor: color },
+              selected && styles.pinSelected,
+            ]}
+          >
+            <Text style={styles.pinText}>
+              {TARGETED_BATCH_MAP_SOURCE_LABELS[source] || "?"}
+            </Text>
+          </View>
+
+          {count > 1 ? (
+            <View style={styles.pinBadge}>
+              <Text style={styles.pinBadgeText}>
+                {count > 99 ? "99+" : count}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
-        {count > 1 ? (
-          <View style={styles.pinBadge}>
-            <Text style={styles.pinBadgeText}>
-              {count > 99 ? "99+" : count}
+        {/* The ERF's number, under its own pin. Only there when the ERFs layer is on. */}
+        {erfNo ? (
+          <View style={styles.pinErfLabel}>
+            <Text style={styles.pinErfLabelText} numberOfLines={1}>
+              {erfNo}
             </Text>
           </View>
         ) : null}
@@ -471,46 +505,18 @@ function BatchGroupMarkerBase({
 const BatchGroupMarker = memo(BatchGroupMarkerBase);
 BatchGroupMarker.displayName = "BatchGroupMarker";
 
-function GeofenceNameMarkerBase({ latitude, longitude, name }) {
-  const [tracksViewChanges, setTracksViewChanges] = useState(true);
-
-  useEffect(() => {
-    setTracksViewChanges(true);
-
-    const timer = setTimeout(() => {
-      setTracksViewChanges(false);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [name]);
-
-  const coordinate = useMemo(
-    () => ({ latitude, longitude }),
-    [latitude, longitude],
-  );
-
-  return (
-    <Marker
-      coordinate={coordinate}
-      anchor={LABEL_ANCHOR}
-      tracksViewChanges={tracksViewChanges}
-      zIndex={150}
-    >
-      <View style={styles.geofenceLabel}>
-        <Text style={styles.geofenceLabelText} numberOfLines={1}>
-          {name}
-        </Text>
-      </View>
-    </Marker>
-  );
-}
-
-const GeofenceNameMarker = memo(GeofenceNameMarkerBase);
-GeofenceNameMarker.displayName = "GeofenceNameMarker";
-
 // TB-R051 (1.3.38, 1.3.40): the ERF number, centred on its label point inside the ERF (erfLabelPoint.js).
-function ErfLabelMarkerBase({ latitude, longitude, erfNo }) {
-  const tracksViewChanges = useSettledTracksViewChanges(erfNo);
+// (1.3.70) It is drawn at the size that fits the room its own ERF gives it at this zoom, so it never reaches
+// the neighbour's ERF. The size is part of the signature: a new size means a new picture of the marker.
+function ErfLabelMarkerBase({
+  latitude,
+  longitude,
+  erfNo,
+  fontSize = ERF_LABEL_BASE_FONT_SIZE,
+}) {
+  const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(
+    `${erfNo}:${fontSize}`,
+  );
   const coordinate = useMemo(
     () => ({ latitude, longitude }),
     [latitude, longitude],
@@ -521,12 +527,19 @@ function ErfLabelMarkerBase({ latitude, longitude, erfNo }) {
       coordinate={coordinate}
       anchor={CENTRE_ANCHOR}
       tracksViewChanges={tracksViewChanges}
-      zIndex={100}
+      // (1.3.70) Over the batch pins (200), below a selected pin (300).
+      zIndex={250}
     >
-      <View style={styles.erfLabel}>
-        <Text style={styles.erfLabelText} numberOfLines={1}>
-          {erfNo}
-        </Text>
+      {/* The square the map's picture is made from; the number sits in the middle of it. */}
+      <View style={styles.markerPicture} onLayout={onLayout}>
+        <View style={[styles.erfLabel, { borderRadius: Math.max(2, fontSize / 2) }]}>
+          <Text
+            style={[styles.erfLabelText, { fontSize, lineHeight: fontSize * 1.25 }]}
+            numberOfLines={1}
+          >
+            {erfNo}
+          </Text>
+        </View>
       </View>
     </Marker>
   );
@@ -537,7 +550,8 @@ ErfLabelMarker.displayName = "ErfLabelMarker";
 
 // TB-R051 (1.3.38): a premise in the batch area; tapping shows its label.
 function PremiseMarkerBase({ premiseId, latitude, longitude, selected, onPress }) {
-  const tracksViewChanges = useSettledTracksViewChanges(Boolean(selected));
+  const { tracksViewChanges, onLayout } =
+    useSettledTracksViewChanges(Boolean(selected));
   const coordinate = useMemo(
     () => ({ latitude, longitude }),
     [latitude, longitude],
@@ -555,8 +569,10 @@ function PremiseMarkerBase({ premiseId, latitude, longitude, selected, onPress }
       onPress={handlePress}
       zIndex={selected ? 190 : 120}
     >
-      <View style={[styles.premisePin, selected && styles.layerPinSelected]}>
-        <MaterialCommunityIcons name="home" size={12} color="#ffffff" />
+      <View style={styles.markerPicture} onLayout={onLayout}>
+        <View style={[styles.premisePin, selected && styles.layerPinSelected]}>
+          <MaterialCommunityIcons name="home" size={12} color="#ffffff" />
+        </View>
       </View>
     </Marker>
   );
@@ -576,7 +592,7 @@ function OtherSalesMarkerBase({
 }) {
   const icon = SALES_STATUS_ICONS[status] || SALES_STATUS_ICONS.NOT_STARTED;
   const color = MAP_STATUS_COLORS[status] || MAP_STATUS_COLORS.NOT_STARTED;
-  const tracksViewChanges = useSettledTracksViewChanges(
+  const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(
     `${status}:${Boolean(selected)}`,
   );
   const coordinate = useMemo(
@@ -594,16 +610,18 @@ function OtherSalesMarkerBase({
       onPress={handlePress}
       zIndex={selected ? 195 : 180}
     >
-      <View
-        style={[
-          styles.otherSalesPin,
-          { borderColor: color },
-          selected && styles.layerPinSelected,
-        ]}
-      >
-        <Text style={[styles.otherSalesPinText, { color }]}>
-          {icon.symbol}
-        </Text>
+      <View style={styles.markerPicture} onLayout={onLayout}>
+        <View
+          style={[
+            styles.otherSalesPin,
+            { borderColor: color },
+            selected && styles.layerPinSelected,
+          ]}
+        >
+          <Text style={[styles.otherSalesPinText, { color }]}>
+            {icon.symbol}
+          </Text>
+        </View>
       </View>
     </Marker>
   );
@@ -723,10 +741,14 @@ export default function TargetedBatchMapModal({
   }
   const [sheet, setSheet] = useState(null);
   const [mapAreaHeight, setMapAreaHeight] = useState(0);
+  // TB-R051 (1.3.70): the ERF numbers are sized from the zoom, so the map keeps the region it settles on.
+  const [region, setRegion] = useState(null);
   const [geofenceWaitOver, setGeofenceWaitOver] = useState(false);
   const [salesWaitDoneKey, setSalesWaitDoneKey] = useState("");
   // TB-R051 (1.3.38): ERFs on, Premises and Other Sales meters off, Normal map when the map opens.
-  const [erfsOn, setErfsOn] = useState(true);
+  // TB-R051 (1.3.81): the map opens on the batch's Sales meters alone. The ERF boundaries and numbers
+  // are a heavy read and the worker asks for them with the ERFs button.
+  const [erfsOn, setErfsOn] = useState(false);
   const [premisesOn, setPremisesOn] = useState(false);
   const [otherSalesOn, setOtherSalesOn] = useState(false);
   const [mapType, setMapType] = useState("standard");
@@ -792,10 +814,6 @@ export default function TargetedBatchMapModal({
     );
   }, [wardGeofences, geofenceId]);
   const geofencePolygon = useMemo(() => readGeofencePolygon(geofence), [geofence]);
-  const geofenceLabelPoint = useMemo(
-    () => getTopCoordinate(geofencePolygon),
-    [geofencePolygon],
-  );
   const geofenceName = readFirstString(geofence?.name, geofenceId);
 
   // TB-R051: no silent waits; a geofence that never arrives is reported, not "loading" forever.
@@ -970,7 +988,15 @@ export default function TargetedBatchMapModal({
       .map((erf, index) => {
         const erfNo = readFirstString(erf?.erfNo);
         const point = erfNo ? erfLabelPoint(erf, { holes: holes[index] }) : null;
-        return point ? { id: erf.id, erfNo, point } : null;
+        return point
+          ? {
+              id: erf.id,
+              erfNo,
+              point,
+              // TB-R051 (1.3.70): how much room this ERF gives its own number, in metres.
+              roomMetres: erfLabelRoomMetres(erf, { holes: holes[index], point }),
+            }
+          : null;
       })
       .filter(Boolean);
   }, [drawnErfs]);
@@ -1175,8 +1201,9 @@ export default function TargetedBatchMapModal({
     // TB-R051 (1.3.40): every opening shows the spinner until the map has zoomed to the batch area.
     setOpeningZoom(NO_OPENING_ZOOM);
     setOpeningSettled(false);
-    // TB-R051 (1.3.38): every opening starts with ERFs on, Premises and Other Sales meters off and the Normal map.
-    setErfsOn(true);
+    // TB-R051 (1.3.81): every opening starts with ERFs, Premises and Other Sales meters off, and the
+    // Normal map: only the batch's own Sales meters are drawn until the worker asks for more.
+    setErfsOn(false);
     setPremisesOn(false);
     setOtherSalesOn(false);
     setMapType("standard");
@@ -1185,6 +1212,51 @@ export default function TargetedBatchMapModal({
     locatingRef.current = false;
     setLocating(false);
   }, [visible, bucketId]);
+
+  // TB-R051 (1.3.70): how many metres one pixel covers at the zoom the map is at. The region's latitude
+  // delta spans the height of the map area, measured in the same pixels the label is drawn in. Until the
+  // map has settled on a region of its own, the one it opened at is used, so the numbers are sized from
+  // the first frame rather than missing until the first pan.
+  const metresPerPixel = useMemo(() => {
+    const delta = Number(region?.latitudeDelta ?? initialRegion?.latitudeDelta);
+    if (!Number.isFinite(delta) || delta <= 0 || mapAreaHeight <= 0) return 0;
+    return (delta * 111320) / mapAreaHeight;
+  }, [region?.latitudeDelta, initialRegion?.latitudeDelta, mapAreaHeight]);
+
+  // TB-R051 (1.3.83): an ERF with a meter on it has its number on that meter's pin, so it is never drawn
+  // twice and never lands on top of the pin. Only the first pin on an ERF carries the number.
+  const erfNumbersOnPins = useMemo(() => {
+    const byGroup = {};
+    const taken = new Set();
+    if (!erfLabels.length) return { byGroup, taken };
+
+    const numberByErf = {};
+    for (const label of erfLabels) numberByErf[label.id] = label.erfNo;
+
+    for (const group of groups) {
+      for (const row of group?.rows || []) {
+        const id = readFirstString(row?.erfId, row?.refs?.erfId);
+        if (!id || !numberByErf[id] || taken.has(id)) continue;
+        byGroup[group.key] = numberByErf[id];
+        taken.add(id);
+        break;
+      }
+    }
+    return { byGroup, taken };
+  }, [groups, erfLabels]);
+
+  // The size each number is drawn at. 0 leaves it out: its ERF has no room for it at this zoom.
+  const erfLabelSizes = useMemo(() => {
+    if (!metresPerPixel) return {};
+    const sizes = {};
+    for (const label of erfLabels) {
+      sizes[label.id] = erfLabelFontSize(
+        String(label.erfNo).length,
+        label.roomMetres / metresPerPixel,
+      );
+    }
+    return sizes;
+  }, [erfLabels, metresPerPixel]);
 
   // Fit once to the meters and once more when the geofence arrives; later row updates never move the map.
   useEffect(() => {
@@ -1296,6 +1368,22 @@ export default function TargetedBatchMapModal({
   );
   const handleMapAreaLayout = useCallback((event) => {
     setMapAreaHeight(Math.round(event?.nativeEvent?.layout?.height || 0));
+  }, []);
+
+  // Only when the pan or zoom has settled, so nothing is recomputed on every frame of a gesture.
+  const handleRegionSettled = useCallback((next) => {
+    const delta = Number(next?.latitudeDelta);
+    if (!Number.isFinite(delta) || delta <= 0) return;
+
+    setRegion((current) => {
+      // A pan does not change the zoom, and a hair of drift is no new size for any number. Holding the
+      // same region keeps a pan from redrawing every ERF number on the map.
+      const held = Number(current?.latitudeDelta);
+      if (Number.isFinite(held) && Math.abs(delta - held) <= held * 0.01) {
+        return current;
+      }
+      return { latitudeDelta: delta };
+    });
   }, []);
 
   const toggleErfs = useCallback(() => setErfsOn((on) => !on), []);
@@ -1580,50 +1668,56 @@ export default function TargetedBatchMapModal({
               <MaterialCommunityIcons name="close" size={22} color="#0f172a" />
             </Pressable>
 
+            {/* TB-R051 (1.3.81): the batch ID has the first line to itself, so the whole ID reads; the
+                geofence name sits with the counts on the second. */}
             <View style={styles.headerMain}>
               <Text style={styles.headerTitle} numberOfLines={1}>
                 {bucketId || "Targeted Batch"}
               </Text>
-              <Text style={styles.headerSub} numberOfLines={1}>
-                {headerCounts}
-              </Text>
+
+              <View style={styles.headerSubRow}>
+                <Text style={styles.headerSub} numberOfLines={1}>
+                  {headerCounts}
+                </Text>
+
+                {/* TB-R043: a batch without a geofence shows No geofence. */}
+                {!geofenceId ? (
+                  <View style={[styles.geofenceChip, styles.geofenceChipMissing]}>
+                    <MaterialCommunityIcons
+                      name="vector-polygon"
+                      size={13}
+                      color="#64748b"
+                    />
+                    <Text style={styles.geofenceChipMissingText}>No geofence</Text>
+                  </View>
+                ) : geofence ? (
+                  <View style={styles.geofenceChip}>
+                    <MaterialCommunityIcons
+                      name="vector-polygon"
+                      size={13}
+                      color={GEOFENCE_COLOR}
+                    />
+                    <Text style={styles.geofenceChipText} numberOfLines={1}>
+                      {geofenceName}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={[styles.geofenceChip, styles.geofenceChipMissing]}>
+                    <MaterialCommunityIcons
+                      name="vector-polygon"
+                      size={13}
+                      color="#64748b"
+                    />
+                    <Text style={styles.geofenceChipMissingText} numberOfLines={1}>
+                      {geofenceNotFound
+                        ? "Geofence not found"
+                        : "Geofence not loaded yet"}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
 
-            {/* TB-R043: a batch without a geofence shows No geofence. */}
-            {!geofenceId ? (
-              <View style={[styles.geofenceChip, styles.geofenceChipMissing]}>
-                <MaterialCommunityIcons
-                  name="vector-polygon"
-                  size={13}
-                  color="#64748b"
-                />
-                <Text style={styles.geofenceChipMissingText}>No geofence</Text>
-              </View>
-            ) : geofence ? (
-              <View style={styles.geofenceChip}>
-                <MaterialCommunityIcons
-                  name="vector-polygon"
-                  size={13}
-                  color={GEOFENCE_COLOR}
-                />
-                <Text style={styles.geofenceChipText} numberOfLines={1}>
-                  {geofenceName}
-                </Text>
-              </View>
-            ) : (
-              <View style={[styles.geofenceChip, styles.geofenceChipMissing]}>
-                <MaterialCommunityIcons
-                  name="vector-polygon"
-                  size={13}
-                  color="#64748b"
-                />
-                <Text style={styles.geofenceChipMissingText} numberOfLines={1}>
-                  {geofenceNotFound
-                    ? "Geofence not found"
-                    : "Geofence not loaded yet"}
-                </Text>
-              </View>
-            )}
           </View>
 
           <View style={styles.legendRow}>
@@ -1652,18 +1746,6 @@ export default function TargetedBatchMapModal({
               </View>
             ))}
           </View>
-
-          {otherSalesOn ? (
-            <View style={styles.legendRow}>
-              <Text style={styles.legendHeading}>Other CAT Sales meters</Text>
-              {OTHER_SALES_LEGEND.map(({ status, symbol, color, label }) => (
-                <View key={status} style={styles.legendItem}>
-                  <Text style={[styles.legendSymbol, { color }]}>{symbol}</Text>
-                  <Text style={styles.legendText}>{label}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
         </View>
 
         {offline ? (
@@ -1689,6 +1771,7 @@ export default function TargetedBatchMapModal({
             mapPadding={MAP_PADDING}
             initialRegion={initialRegion}
             onMapReady={handleMapReady}
+            onRegionChangeComplete={handleRegionSettled}
           >
             {erfPolygons.map(({ key, ring }) => (
               <Polygon
@@ -1711,22 +1794,23 @@ export default function TargetedBatchMapModal({
               />
             ) : null}
 
-            {erfLabels.map((label) => (
-              <ErfLabelMarker
-                key={`erf-label-${label.id}`}
-                latitude={label.point.latitude}
-                longitude={label.point.longitude}
-                erfNo={label.erfNo}
-              />
-            ))}
+            {erfLabels.map((label) => {
+              // Its own pin carries it (1.3.83).
+              if (erfNumbersOnPins.taken.has(label.id)) return null;
 
-            {geofenceLabelPoint && geofenceName ? (
-              <GeofenceNameMarker
-                latitude={geofenceLabelPoint.latitude}
-                longitude={geofenceLabelPoint.longitude}
-                name={geofenceName}
-              />
-            ) : null}
+              const fontSize = erfLabelSizes[label.id] || 0;
+              if (!fontSize) return null;
+
+              return (
+                <ErfLabelMarker
+                  key={`erf-label-${label.id}`}
+                  latitude={label.point.latitude}
+                  longitude={label.point.longitude}
+                  erfNo={label.erfNo}
+                  fontSize={fontSize}
+                />
+              );
+            })}
 
             {drawnPremises.map((premise) => (
               <PremiseMarker
@@ -1761,6 +1845,7 @@ export default function TargetedBatchMapModal({
                 source={group.source}
                 count={group.rows?.length || 0}
                 selected={selectedGroup?.key === group.key}
+                erfNo={erfNumbersOnPins.byGroup[group.key] || ""}
                 onPress={handleGroupPress}
               />
             ))}
@@ -2100,11 +2185,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900",
   },
+  // TB-R051 (1.3.81): the counts and the geofence name share the second line.
+  headerSubRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 3,
+  },
   headerSub: {
     color: "#64748b",
     fontSize: 11,
     fontWeight: "800",
-    marginTop: 2,
+    flexShrink: 1,
   },
 
   geofenceChip: {
@@ -2171,15 +2263,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
   },
-  legendHeading: {
-    color: "#0f172a",
-    fontSize: 10,
-    fontWeight: "900",
-  },
-  legendSymbol: {
-    fontSize: 12,
-    fontWeight: "900",
-  },
 
   offlineBanner: {
     marginHorizontal: 12,
@@ -2209,13 +2292,34 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
 
+  // TB-R051 (1.3.83): the square the map's picture is made from. The pin sits at the top of it, so the
+  // anchor can point at the circle's centre, and its ERF number hangs underneath with room to spare.
+  pinPicture: {
+    width: MARKER_PICTURE_DP,
+    height: MARKER_PICTURE_DP,
+    alignItems: "center",
+  },
   pinWrap: {
     width: 34,
-    height: 34,
+    height: PIN_CIRCLE_DP,
+  },
+  pinErfLabel: {
+    marginTop: 2,
+    maxWidth: MARKER_PICTURE_DP,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "#94a3b8",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    paddingHorizontal: 3,
+  },
+  pinErfLabelText: {
+    color: "#1e293b",
+    fontSize: ERF_LABEL_BASE_FONT_SIZE,
+    fontWeight: "800",
   },
   pin: {
     position: "absolute",
-    left: 0,
+    left: 5,
     bottom: 0,
     width: 24,
     height: 24,
@@ -2253,23 +2357,18 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
-  geofenceLabel: {
-    maxWidth: 220,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: GEOFENCE_COLOR,
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
-  geofenceLabelText: {
-    color: GEOFENCE_COLOR,
-    fontSize: 11,
-    fontWeight: "900",
-  },
 
+  // TB-R051 (1.3.83): the square the map's picture is made from, for every marker centred on its own
+  // position. Without it the marker is drawn in the picture's top-left and the anchor, read against the
+  // picture, leaves it up and to the left of where it belongs.
+  markerPicture: {
+    width: MARKER_PICTURE_DP,
+    height: MARKER_PICTURE_DP,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   erfLabel: {
-    maxWidth: 120,
+    maxWidth: MARKER_PICTURE_DP,
     borderRadius: 5,
     borderWidth: 1,
     borderColor: "#94a3b8",
@@ -2279,7 +2378,9 @@ const styles = StyleSheet.create({
   },
   erfLabelText: {
     color: "#1e293b",
-    fontSize: 9,
+    // TB-R051 (1.3.70): the size the number is drawn at when its ERF has room for it; the marker sets a
+    // smaller one when it has not, so this and the geometry must stay the same number.
+    fontSize: ERF_LABEL_BASE_FONT_SIZE,
     fontWeight: "800",
   },
   premisePin: {
