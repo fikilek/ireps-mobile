@@ -138,19 +138,15 @@ test("the size is worked out after the region it reads, not before it", () => {
   );
 });
 
-test("the geofence name is measured and never frozen into a stale picture", () => {
-  const marker = modalSource.slice(
-    modalSource.indexOf("function GeofenceNameMarkerBase("),
-    modalSource.indexOf("const GeofenceNameMarker = memo("),
-  );
-  // It stops redrawing like every other marker: redrawing for good ran a field phone out of memory.
-  assert.match(marker, /useSettledTracksViewChanges\(name\)/);
-  assert.doesNotMatch(marker, /\n {6}tracksViewChanges\n/);
-  // It is given the width its name needs, rather than leaving the map to measure it.
-  assert.match(marker, /GEOFENCE_LABEL_CHARACTER_WIDTH/);
-  assert.match(marker, /style=\{\[styles\.geofenceLabel, \{ width \}\]\}/);
-  // A new name gets a new marker, so no marker keeps the size it was made with.
-  assert.match(modalSource, /key=\{`geofence-name-\$\{geofenceName\}`\}/);
+test("the geofence name is not drawn on the map at all: the header carries it", () => {
+  // The map draws a marker into a 100px picture (react-native-maps MapMarker.java:525 under the new
+  // architecture), so a name of about 175px was always cut: "Gf W6 Cr", "Gf W6 All", "Gf W4 J". The owner
+  // took it off the map on 25 Sep rather than have it there and wrong: the header shows it in full.
+  assert.doesNotMatch(modalSource, /GeofenceNameMarker|geofenceLabelPoint|GEOFENCE_LABEL_CHARACTER_WIDTH/);
+  assert.doesNotMatch(modalSource, /styles\.geofenceLabel/);
+  // The header still names the geofence, and says so plainly when there is none.
+  assert.match(modalSource, /styles\.geofenceChipText[\s\S]{0,120}\{geofenceName\}/);
+  assert.match(modalSource, /No geofence/);
 });
 
 test("an ERF number is drawn over the batch pins, so a pin never hides it", () => {

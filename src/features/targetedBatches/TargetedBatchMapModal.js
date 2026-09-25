@@ -64,13 +64,6 @@ const SOURCE_LEGEND = [
   { source: "ERF", label: MAP_PIN_LABELS.ERF },
 ];
 
-// TB-R051 (1.3.70): the geofence name is measured rather than left to the map. A marker drawn once into a
-// picture came out cut off ("Gf W6 Cr" for "Gf W6 Craigside1"), so the label is given the width its name
-// needs. A heavy character at this size is about this wide, plus the padding and border on each side.
-const GEOFENCE_LABEL_CHARACTER_WIDTH = 7;
-const GEOFENCE_LABEL_EDGES = 16;
-const GEOFENCE_LABEL_MAX_WIDTH = 220;
-
 // TB-R043: the batch geofence is purple.
 const GEOFENCE_COLOR = "#7c3aed";
 const GEOFENCE_FILL = "rgba(124,58,237,0.10)";
@@ -130,7 +123,6 @@ const SHEET_INITIAL_RENDER = 6;
 const SHEET_WINDOW_SIZE = 5;
 const SINGLE_POINT_DELTA = 0.004;
 const PIN_ANCHOR = { x: 12 / 34, y: 22 / 34 };
-const LABEL_ANCHOR = { x: 0.5, y: 1 };
 const CENTRE_ANCHOR = { x: 0.5, y: 0.5 };
 const EMPTY_POINTS = Object.freeze({ groups: [], unplaced: [], coordinates: [] });
 const EMPTY_LIST = [];
@@ -197,13 +189,6 @@ function readGeofencePolygon(geofence) {
     );
 
   return coords.length >= 3 ? coords : EMPTY_LIST;
-}
-
-function getTopCoordinate(coords = []) {
-  return coords.reduce(
-    (top, point) => (!top || point.latitude > top.latitude ? point : top),
-    null,
-  );
 }
 
 function regionForCoordinates(coords = []) {
@@ -486,47 +471,6 @@ function BatchGroupMarkerBase({
 
 const BatchGroupMarker = memo(BatchGroupMarkerBase);
 BatchGroupMarker.displayName = "BatchGroupMarker";
-
-// TB-R051 (1.3.70): the batch's geofence name, drawn whole. It was coming out cut off, so it is given the
-// width its name needs instead of leaving the map to measure it, and a new name makes a new marker. It is
-// drawn into a picture like every other marker: keeping it redrawing for good ran a field phone out of
-// memory.
-function GeofenceNameMarkerBase({ latitude, longitude, name }) {
-  const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(name);
-
-  const coordinate = useMemo(
-    () => ({ latitude, longitude }),
-    [latitude, longitude],
-  );
-
-  const width = useMemo(
-    () =>
-      Math.min(
-        GEOFENCE_LABEL_MAX_WIDTH,
-        Math.ceil(String(name ?? "").length * GEOFENCE_LABEL_CHARACTER_WIDTH) +
-          GEOFENCE_LABEL_EDGES,
-      ),
-    [name],
-  );
-
-  return (
-    <Marker
-      coordinate={coordinate}
-      anchor={LABEL_ANCHOR}
-      tracksViewChanges={tracksViewChanges}
-      zIndex={150}
-    >
-      <View style={[styles.geofenceLabel, { width }]} onLayout={onLayout}>
-        <Text style={styles.geofenceLabelText} numberOfLines={1}>
-          {name}
-        </Text>
-      </View>
-    </Marker>
-  );
-}
-
-const GeofenceNameMarker = memo(GeofenceNameMarkerBase);
-GeofenceNameMarker.displayName = "GeofenceNameMarker";
 
 // TB-R051 (1.3.38, 1.3.40): the ERF number, centred on its label point inside the ERF (erfLabelPoint.js).
 // (1.3.70) It is drawn at the size that fits the room its own ERF gives it at this zoom, so it never reaches
@@ -837,10 +781,6 @@ export default function TargetedBatchMapModal({
     );
   }, [wardGeofences, geofenceId]);
   const geofencePolygon = useMemo(() => readGeofencePolygon(geofence), [geofence]);
-  const geofenceLabelPoint = useMemo(
-    () => getTopCoordinate(geofencePolygon),
-    [geofencePolygon],
-  );
   const geofenceName = readFirstString(geofence?.name, geofenceId);
 
   // TB-R051: no silent waits; a geofence that never arrives is reported, not "loading" forever.
@@ -1807,17 +1747,6 @@ export default function TargetedBatchMapModal({
               );
             })}
 
-            {geofenceLabelPoint && geofenceName ? (
-              <GeofenceNameMarker
-                // A new name gets a new marker: the map kept the size the marker was made with, which is
-                // one of the ways the name came out cut off.
-                key={`geofence-name-${geofenceName}`}
-                latitude={geofenceLabelPoint.latitude}
-                longitude={geofenceLabelPoint.longitude}
-                name={geofenceName}
-              />
-            ) : null}
-
             {drawnPremises.map((premise) => (
               <PremiseMarker
                 key={`premise-${premise.id}`}
@@ -2334,22 +2263,6 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
-  geofenceLabel: {
-    maxWidth: 220,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: GEOFENCE_COLOR,
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
-  geofenceLabelText: {
-    color: GEOFENCE_COLOR,
-    fontSize: 11,
-    fontWeight: "900",
-    // The label is given its width, so the name sits in the middle of it.
-    textAlign: "center",
-  },
 
   erfLabel: {
     maxWidth: 120,
