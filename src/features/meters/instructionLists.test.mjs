@@ -65,21 +65,30 @@ test("a retired instruction is not offered", () => {
   assert.ok(!codes.includes("METER_REMOVE_DECOMMISION"));
 });
 
-test("the Reconnection form reads the shared list, not a copy of its own", async () => {
-  // UI-R003 section 2, one list one set of words. The worker's form and the
-  // manager's screen ask the same question and write the same field, so they
-  // must offer the same words. The field form used to carry its own wording.
-  const { readFile } = await import("node:fs/promises");
-  const source = await readFile(
-    new URL("../../../app/(tabs)/asts/reconnection.jsx", import.meta.url),
-    "utf8",
-  );
-  assert.ok(
-    source.includes('getFormOptions("reconnection_instructions")'),
-    "the Reconnection form should read reconnection_instructions",
-  );
-  assert.ok(
-    !source.includes("FIELD_RECONNECTION_INSTRUCTION_OPTIONS"),
-    "the Reconnection form should not keep its own list of instructions",
-  );
-});
+// UI-R003 section 2, one list one set of words. The owner, 25 September 2026:
+// they must drink from the same well. A form that keeps its own copy of a
+// list looks right the day it is written and drifts the first time the words
+// change on one side only - which is exactly what happened to the
+// reconnection instruction.
+const FORMS_AND_THEIR_LISTS = [
+  ["reconnection.jsx", "reconnection_instructions"],
+  ["disconnection.jsx", "disconnection_instructions"],
+];
+
+for (const [form, listName] of FORMS_AND_THEIR_LISTS) {
+  test(`the ${form} form drinks from the same well`, async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(
+      new URL(`../../../app/(tabs)/asts/${form}`, import.meta.url),
+      "utf8",
+    );
+    assert.ok(
+      source.includes(`getFormOptions("${listName}")`),
+      `${form} should read ${listName} from formOptions`,
+    );
+    assert.ok(
+      !/const FIELD_[A-Z_]*INSTRUCTION_OPTIONS/.test(source),
+      `${form} should not keep its own list of instructions`,
+    );
+  });
+}

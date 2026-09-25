@@ -59,6 +59,7 @@ import {
   updateSubmissionQueueItem,
 } from "../../../src/utils/submissionQueue";
 import { FORM_TEXT } from "../../../src/theme/formColors";
+import { getFormOptions } from "../../../src/features/meters/formOptions";
 
 const EMPTY_SELECT_WITH_OTHER = {
   code: "",
@@ -75,12 +76,6 @@ const EXECUTION_MEDIA_TAGS = [
   "fieldCommentPhoto",
   "fieldCommentVoice",
   "fieldCommentVideo",
-];
-
-const FIELD_DISCONNECTION_INSTRUCTION_OPTIONS = [
-  { code: "CREDIT_CONTROL_INSTRUCTION", label: "Credit Control Instruction" },
-  { code: "ILLEGAL_CONNECTION", label: "Illegal Connection" },
-  { code: "NON_PAYMENT", label: "Non Payment" },
 ];
 
 const FIELD_DISCONNECTION_LEVEL_OPTIONS = [
@@ -2119,7 +2114,7 @@ export default function FormMeterDisconnection() {
                   <IrepsSelectWithOther
                     label="Disconnection Instruction"
                     placeholder="Select disconnection instruction"
-                    options={FIELD_DISCONNECTION_INSTRUCTION_OPTIONS}
+                    options={getFormOptions("disconnection_instructions")}
                     includeOther={true}
                     otherCode="OTHER"
                     otherLabel="Other"
