@@ -297,6 +297,79 @@ export const markSubmissionQueueItemSuccess = async (
   );
 };
 
+// m06: a callable that THROWS is usually "we never reached the server" — no signal, a timeout — and that
+// waits, to be sent again. But a callable also throws when the server REFUSES, and those are decisions:
+// waiting for a different answer only loops for ever. Kept deliberately short — anything not named here
+// waits, so a temporary fault is never mistaken for a refusal.
+export const THROWN_REFUSALS = new Set([
+  "permission-denied",
+  "failed-precondition",
+  "invalid-argument",
+  "already-exists",
+]);
+
+// The Firebase client reports these as "functions/permission-denied".
+export function isThrownRefusal(code) {
+  return THROWN_REFUSALS.has(
+    String(code || "").trim().toLowerCase().replace(/^functions\//, ""),
+  );
+}
+
+// m06: the server answered and refused. Trying again cannot change its mind, so the job stops here and
+// the worker is shown the server's own words. A job that never reached the server goes to
+// markSubmissionQueueItemFailed instead, and waits.
+export const markSubmissionQueueItemRefused = async (
+  queueItemId,
+  result = {},
+  updatedByUid = "SYSTEM",
+  updatedByUser = "SYSTEM",
+) => {
+  const existingItem = await getSubmissionQueueItemById(queueItemId);
+
+  // Work the server has already accepted is never turned into a refusal.
+  if (
+    existingItem?.status === "SUCCESS" &&
+    existingItem?.result?.success === true
+  ) {
+    return {
+      success: true,
+      message: "Queue item is already server-confirmed.",
+      queueItem: existingItem,
+    };
+  }
+
+  console.log("markSubmissionQueueItemRefused -- the server refused this job", {
+    queueItemId,
+    previousStatus: existingItem?.status,
+    code: result?.code || "SUBMISSION_REFUSED",
+    message: result?.message || "Submission requires review.",
+    trnId: result?.trnId || "NAv",
+  });
+
+  return await updateSubmissionQueueItem(
+    queueItemId,
+    {
+      status: "CONFLICT",
+      result: {
+        success: false,
+        code: result?.code || "SUBMISSION_REFUSED",
+        message: result?.message || "Submission requires review.",
+        trnId: result?.trnId || "NAv",
+      },
+      sync: {
+        ...(existingItem?.sync || {}),
+        nextRetryAt: "NAv",
+      },
+    },
+    updatedByUid,
+    updatedByUser,
+  );
+};
+
+// m06: this keeps the job WAITING, to be sent again. It is only for a job that never reached the server
+// — no connection, a timeout, a transport error. A job the server ANSWERED and refused must never come
+// here: it would be retried for ever while the worker read "Draft saved locally". Use
+// markSubmissionQueueItemRefused for that.
 export const markSubmissionQueueItemFailed = async (
   queueItemId,
   result = {},

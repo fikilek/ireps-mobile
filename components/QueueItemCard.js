@@ -12,6 +12,8 @@ const getStatusColor = (status) => {
   if (status === "SYNCING") return "#2563eb";
   if (status === "SUCCESS") return "#16a34a";
   if (status === "FAILED") return "#dc2626";
+  // m06: a refused job needs a person to look at it. Grey read as though it were resting.
+  if (status === "CONFLICT") return "#dc2626";
   return "#64748b";
 };
 
@@ -40,7 +42,12 @@ export default function QueueItemCard({
   const statusColor = getStatusColor(item?.status);
 
   const premiseId = item?.context?.premiseId || "NAv";
-  const canEdit = item?.status === "PENDING" || item?.status === "FAILED";
+  // m06: a refused job stops being SENT again, but the worker must still be able to open it. Leaving
+  // only Remove would make throwing the work away the only way out of a refusal.
+  const canEdit =
+    item?.status === "PENDING" ||
+    item?.status === "FAILED" ||
+    item?.status === "CONFLICT";
 
   const premiseAddress =
     item?.payload?.accessData?.premise?.address ||
@@ -106,7 +113,11 @@ export default function QueueItemCard({
         ? "Synced"
         : item?.status === "PENDING"
           ? "Sync"
-          : "Pending Only";
+          : // x11: a job the server refused is not waiting for anything. "Pending Only" read as though
+            // it still had a chance, on work that will never be accepted.
+            item?.status === "CONFLICT"
+            ? "Refused"
+            : "Pending Only";
 
   const syncDisabled = busy || !isOnline || item?.status !== "PENDING";
 
