@@ -49,6 +49,7 @@ import {
   updateSubmissionQueueItem,
 } from "../../../src/utils/submissionQueue";
 import { FORM_TEXT } from "../../../src/theme/formColors";
+import { getFormOptions } from "../../../src/features/meters/formOptions";
 
 const EMPTY_SELECT_WITH_OTHER = {
   code: "",
@@ -65,14 +66,6 @@ const EXECUTION_MEDIA_TAGS = [
   "fieldCommentPhoto",
   "fieldCommentVoice",
   "fieldCommentVideo",
-];
-
-const FIELD_RECONNECTION_INSTRUCTION_OPTIONS = [
-  {
-    code: "METER_RECONNECTION",
-    label:
-      "Reconnect meter supply and confirm the supply has been made good again",
-  },
 ];
 
 function makeEmptySelectWithOther() {
@@ -1974,7 +1967,7 @@ export default function FormMeterReconnection() {
                   <IrepsSelectWithOther
                     label="Reconnection Instruction"
                     placeholder="Select reconnection instruction"
-                    options={FIELD_RECONNECTION_INSTRUCTION_OPTIONS}
+                    options={getFormOptions("reconnection_instructions")}
                     includeOther={true}
                     otherCode="OTHER"
                     otherLabel="Other"

@@ -64,3 +64,22 @@ test("a retired instruction is not offered", () => {
   const codes = getFormOptions("removal_instructions").map((o) => o.value);
   assert.ok(!codes.includes("METER_REMOVE_DECOMMISION"));
 });
+
+test("the Reconnection form reads the shared list, not a copy of its own", async () => {
+  // UI-R003 section 2, one list one set of words. The worker's form and the
+  // manager's screen ask the same question and write the same field, so they
+  // must offer the same words. The field form used to carry its own wording.
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(
+    new URL("../../../app/(tabs)/asts/reconnection.jsx", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    source.includes('getFormOptions("reconnection_instructions")'),
+    "the Reconnection form should read reconnection_instructions",
+  );
+  assert.ok(
+    !source.includes("FIELD_RECONNECTION_INSTRUCTION_OPTIONS"),
+    "the Reconnection form should not keep its own list of instructions",
+  );
+});
