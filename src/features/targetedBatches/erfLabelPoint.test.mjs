@@ -154,9 +154,9 @@ test("TB-R051 1.3.40 on the map: icons centred exactly on their position, ERF nu
   assert.match(modalSource, /const point = erfNo \? erfLabelPoint\(erf, \{ holes: holes\[index\] \}\) : null;/);
   // (1.3.69) each number is drawn at the size its ERF has room for; (1.3.82) beside the ERF's own pin
   // where it has one, and on its own point where it has none.
-  assert.match(modalSource, /latitude=\{pin \? pin\.latitude : label\.point\.latitude\}/);
-  assert.match(modalSource, /besidePin=\{Boolean\(pin\)\}/);
-  // An ERF with no meter on it keeps its number centred on its own point.
+  assert.match(modalSource, /latitude=\{label\.point\.latitude\}/);
+  // The number is centred on its own place, in the middle of the picture the map makes of it (1.3.83).
   const erfLabel = modalSource.slice(modalSource.indexOf("function ErfLabelMarkerBase("), modalSource.indexOf("const ErfLabelMarker = memo("));
-  assert.match(erfLabel, /if \(!besidePin\) return CENTRE_ANCHOR;/);
+  assert.match(erfLabel, /anchor=\{CENTRE_ANCHOR\}/);
+  assert.match(erfLabel, /styles\.erfLabelPicture/);
 });

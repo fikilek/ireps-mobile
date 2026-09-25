@@ -182,21 +182,25 @@ test("nothing is hidden and shown again as the map moves (1.3.82)", () => {
   assert.doesNotMatch(modalSource, /mapMoving|onRegionChange=\{handleRegionChanging\}/);
 });
 
-test("an ERF number is drawn beside its pin, never over it (1.3.82)", () => {
+test("a number is laid in the middle of the picture the map makes of it (1.3.83)", () => {
+  // The map draws a marker into a 100 PIXEL square when it was never told the marker's size, and reads
+  // the anchor as a fraction of that square. A bare label lands up-left of its own place by a fixed
+  // number of screen pixels - a sliver of an ERF zoomed in, a whole ERF zoomed out. That is the drift.
+  assert.match(modalSource, /const MARKER_PICTURE_DP = 100 \/ PixelRatio\.get\(\);/);
   const erfLabel = modalSource.slice(
     modalSource.indexOf("function ErfLabelMarkerBase("),
     modalSource.indexOf("const ErfLabelMarker = memo("),
   );
-  // The gap is made by the anchor, which is in screen units, so it never changes with the zoom.
-  assert.match(erfLabel, /x: -ERF_LABEL_PIN_GAP \/ width/);
-  assert.match(modalSource, /const ERF_LABEL_PIN_GAP = 20;/);
-  // It clears the pin's circle, which reaches 12 either side of the pin's own point.
-  const gap = Number(modalSource.match(/const ERF_LABEL_PIN_GAP = (\d+);/)[1]);
-  const pinReach = Number(modalSource.match(/ {2}pin: \{[\s\S]*?width: (\d+),/)[1]) / 2;
-  assert.ok(gap > pinReach, `a ${gap} gap does not clear a pin reaching ${pinReach}`);
-  // The number the worker reads is the one on that ERF's own pin.
-  assert.match(modalSource, /const pinByErf = useMemo\(/);
-  assert.match(modalSource, /if \(id && !byErf\[id\]\)/);
+  assert.match(erfLabel, /styles\.erfLabelPicture/);
+  assert.match(erfLabel, /anchor=\{CENTRE_ANCHOR\}/);
+  // The square is exactly the picture's size, with the number centred in it.
+  const picture = modalSource.slice(modalSource.indexOf("  erfLabelPicture: {"), modalSource.indexOf("  erfLabel: {"));
+  assert.match(picture, /width: MARKER_PICTURE_DP/);
+  assert.match(picture, /height: MARKER_PICTURE_DP/);
+  assert.match(picture, /alignItems: "center"/);
+  assert.match(picture, /justifyContent: "center"/);
+  // Nothing may be drawn outside the square: the picture would crop it.
+  assert.match(modalSource, /maxWidth: MARKER_PICTURE_DP/);
 });
 
 
@@ -239,7 +243,7 @@ test("the map sizes each number from the zoom it has settled on", () => {
     modalSource.indexOf("function ErfLabelMarkerBase("),
     modalSource.indexOf("const ErfLabelMarker = memo("),
   );
-  assert.match(erfLabel, /if \(!besidePin\) return CENTRE_ANCHOR;/);
+  assert.match(erfLabel, /anchor=\{CENTRE_ANCHOR\}/);
   // A new size means a new picture of the marker, or the map would keep the old one.
-  assert.match(erfLabel, /useSettledTracksViewChanges\(\s*`\$\{erfNo\}:\$\{fontSize\}:\$\{besidePin \? "pin" : "erf"\}`,?\s*\)/);
+  assert.match(erfLabel, /useSettledTracksViewChanges\(\s*`\$\{erfNo\}:\$\{fontSize\}`,?\s*\)/);
 });

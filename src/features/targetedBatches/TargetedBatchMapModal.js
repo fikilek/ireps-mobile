@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
+  PixelRatio,
   Pressable,
   StyleSheet,
   Text,
@@ -24,7 +25,6 @@ import { loadLatestSalesCategoryMonth } from "./loadLatestSalesCategoryMonth";
 import { loadOtherSalesMeters } from "./loadOtherSalesMeters";
 import {
   ERF_LABEL_BASE_FONT_SIZE,
-  erfLabelBoxWidth,
   erfLabelFontSize,
   erfLabelPoint,
   erfLabelRoomMetres,
@@ -125,10 +125,17 @@ const SHEET_WINDOW_SIZE = 5;
 const SINGLE_POINT_DELTA = 0.004;
 const PIN_ANCHOR = { x: 12 / 34, y: 22 / 34 };
 const CENTRE_ANCHOR = { x: 0.5, y: 0.5 };
-// TB-R051 (1.3.82): an ERF with a meter on it reads as a pair, the pin and its number beside it. The
-// pin's circle reaches 12 either side of its own point, so the number starts clear of it and never
-// covers the S, G or E the worker is looking for.
-const ERF_LABEL_PIN_GAP = 20;
+// TB-R051 (1.3.83): the map draws a marker into a picture of a fixed 100 PIXELS square when it was never
+// told the marker's size, which under this app's React Native architecture it never is
+// (react-native-maps MapMarker.java: `this.width <= 0 ? 100`). The view is drawn at that picture's
+// top-left corner, and the anchor is read as a fraction of the PICTURE, not of the view. A small label
+// therefore lands up and to the left of its own place, by a fixed number of screen pixels — a sliver of
+// an ERF zoomed in, a whole ERF zoomed out. That is the drift.
+//
+// So a label is laid in the middle of a transparent square of exactly that size. The picture then holds
+// the view and nothing else, and the middle of the square — which is the middle of the label — sits
+// exactly on the label's own place, at every zoom.
+const MARKER_PICTURE_DP = 100 / PixelRatio.get();
 const EMPTY_POINTS = Object.freeze({ groups: [], unplaced: [], coordinates: [] });
 const EMPTY_LIST = [];
 const EMPTY_ERF_LAYER = Object.freeze({ erfs: EMPTY_LIST, capped: false });
@@ -485,20 +492,10 @@ function ErfLabelMarkerBase({
   longitude,
   erfNo,
   fontSize = ERF_LABEL_BASE_FONT_SIZE,
-  besidePin = false,
 }) {
   const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(
-    `${erfNo}:${fontSize}:${besidePin ? "pin" : "erf"}`,
+    `${erfNo}:${fontSize}`,
   );
-
-  // Beside a pin the number is moved off the pin's point by the anchor, which is in screen units, so
-  // the gap never changes with the zoom. On an ERF with no meter it stays centred on its own point.
-  const anchor = useMemo(() => {
-    if (!besidePin) return CENTRE_ANCHOR;
-    const width = erfLabelBoxWidth(String(erfNo ?? "").length, fontSize);
-    if (!width) return CENTRE_ANCHOR;
-    return { x: -ERF_LABEL_PIN_GAP / width, y: 0.5 };
-  }, [besidePin, erfNo, fontSize]);
   const coordinate = useMemo(
     () => ({ latitude, longitude }),
     [latitude, longitude],
@@ -507,21 +504,21 @@ function ErfLabelMarkerBase({
   return (
     <Marker
       coordinate={coordinate}
-      anchor={anchor}
+      anchor={CENTRE_ANCHOR}
       tracksViewChanges={tracksViewChanges}
       // (1.3.70) Over the batch pins (200), below a selected pin (300).
       zIndex={250}
     >
-      <View
-        style={[styles.erfLabel, { borderRadius: Math.max(2, fontSize / 2) }]}
-        onLayout={onLayout}
-      >
-        <Text
-          style={[styles.erfLabelText, { fontSize, lineHeight: fontSize * 1.25 }]}
-          numberOfLines={1}
-        >
-          {erfNo}
-        </Text>
+      {/* The square the map's picture is made from; the number sits in the middle of it. */}
+      <View style={styles.erfLabelPicture} onLayout={onLayout}>
+        <View style={[styles.erfLabel, { borderRadius: Math.max(2, fontSize / 2) }]}>
+          <Text
+            style={[styles.erfLabelText, { fontSize, lineHeight: fontSize * 1.25 }]}
+            numberOfLines={1}
+          >
+            {erfNo}
+          </Text>
+        </View>
       </View>
     </Marker>
   );
@@ -767,21 +764,6 @@ export default function TargetedBatchMapModal({
     [visible, safeRows, erfCentroidById],
   );
   const groups = mapPoints?.groups || EMPTY_LIST;
-
-  // TB-R051 (1.3.82): the pin standing on each ERF, so its number can be drawn beside it instead of over
-  // it. Several meters on one ERF share a pin, so the first one found is the pin the worker sees.
-  const pinByErf = useMemo(() => {
-    const byErf = {};
-    for (const group of groups) {
-      for (const row of group?.rows || []) {
-        const id = readFirstString(row?.erfId, row?.refs?.erfId);
-        if (id && !byErf[id]) {
-          byErf[id] = { latitude: group.latitude, longitude: group.longitude };
-        }
-      }
-    }
-    return byErf;
-  }, [groups]);
   const unplaced = mapPoints?.unplaced || EMPTY_LIST;
   const coordinates = mapPoints?.coordinates || EMPTY_LIST;
 
@@ -1773,17 +1755,13 @@ export default function TargetedBatchMapModal({
               const fontSize = erfLabelSizes[label.id] || 0;
               if (!fontSize) return null;
 
-              // TB-R051 (1.3.82): beside the ERF's own pin where it has one, else on its own point.
-              const pin = pinByErf[label.id];
-
               return (
                 <ErfLabelMarker
                   key={`erf-label-${label.id}`}
-                  latitude={pin ? pin.latitude : label.point.latitude}
-                  longitude={pin ? pin.longitude : label.point.longitude}
+                  latitude={label.point.latitude}
+                  longitude={label.point.longitude}
                   erfNo={label.erfNo}
                   fontSize={fontSize}
-                  besidePin={Boolean(pin)}
                 />
               );
             })}
@@ -2312,8 +2290,14 @@ const styles = StyleSheet.create({
   },
 
 
+  erfLabelPicture: {
+    width: MARKER_PICTURE_DP,
+    height: MARKER_PICTURE_DP,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   erfLabel: {
-    maxWidth: 120,
+    maxWidth: MARKER_PICTURE_DP,
     borderRadius: 5,
     borderWidth: 1,
     borderColor: "#94a3b8",
