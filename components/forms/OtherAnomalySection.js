@@ -1,6 +1,7 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Checkbox } from "react-native-paper";
 import { FormSection } from "./FormSection";
+import { FORM_TEXT } from "../../src/theme/formColors";
 
 function normalizeOption(option) {
   if (option && typeof option === "object") {
@@ -89,7 +90,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontWeight: "600",
-    color: "#475569",
+    color: FORM_TEXT,
   },
   checkLabelActive: {
     color: "#1d4ed8",

@@ -9,6 +9,7 @@ import {
   Portal,
   Text,
 } from "react-native-paper";
+import { FORM_TEXT } from "../../theme/formColors";
 
 export const PremiseFilterModal = ({
   visible,
@@ -263,7 +264,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
   },
-  title: { fontSize: 20, fontWeight: "900", color: "#1e293b" },
+  title: { fontSize: 20, fontWeight: "900", color: FORM_TEXT },
   scroll: { paddingBottom: 20 },
   rowItem: {
     paddingVertical: 4,
@@ -275,7 +276,7 @@ const styles = StyleSheet.create({
   typeTitle: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#334155",
+    color: FORM_TEXT,
   },
   selectedText: {
     color: "#2563eb",
@@ -309,7 +310,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#2563eb",
   },
   rowDescription: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -320,7 +321,7 @@ const styles = StyleSheet.create({
   },
 
   emptySectionText: {
-    color: "#94a3b8",
+    color: FORM_TEXT,
     fontSize: 13,
     fontWeight: "600",
   },

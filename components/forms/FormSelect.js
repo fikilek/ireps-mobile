@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { Divider, List, Modal, Portal, Surface } from "react-native-paper";
+import { FORM_TEXT } from "../../src/theme/formColors";
 
 function normalizeOption(option) {
   if (option && typeof option === "object") {
@@ -145,10 +146,10 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 10,
     fontWeight: "800",
-    color: "#94a3b8",
+    color: FORM_TEXT,
     textTransform: "uppercase",
   },
-  value: { fontSize: 15, fontWeight: "600", color: "#1e293b" },
+  value: { fontSize: 15, fontWeight: "600", color: FORM_TEXT },
   modalSurface: {
     borderRadius: 12,
     backgroundColor: "white",
@@ -157,7 +158,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     padding: 16,
     fontWeight: "900",
-    color: "#475569",
+    color: FORM_TEXT,
     textAlign: "center",
   },
 });

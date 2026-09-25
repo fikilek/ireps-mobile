@@ -15,6 +15,7 @@ import {
 import { useAuth } from "../../../../src/hooks/useAuth";
 import { useUpdateProfileMutation } from "../../../../src/redux/authApi";
 import { useGetUsersQuery } from "../../../../src/redux/usersApi";
+import { FORM_TEXT } from "../../../../src/theme/formColors";
 
 export default function UsersListScreen() {
   const router = useRouter();
@@ -500,7 +501,7 @@ const styles = StyleSheet.create({
     borderColor: "#e2e8f0",
   },
   filterTriggerText: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontWeight: "700",
   },
   summaryRow: {
@@ -528,8 +529,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   avatar: { backgroundColor: "#e2e8f0" },
-  name: { fontSize: 16, fontWeight: "900", color: "#1e293b" },
-  email: { fontSize: 12, color: "#64748b" },
+  name: { fontSize: 16, fontWeight: "900", color: FORM_TEXT },
+  email: { fontSize: 12, color: FORM_TEXT },
   roleChip: {
     backgroundColor: "#eff6ff",
     borderWidth: 1,
@@ -547,13 +548,13 @@ const styles = StyleSheet.create({
   contextLabel: {
     fontSize: 8,
     fontWeight: "900",
-    color: "#94a3b8",
+    color: FORM_TEXT,
     letterSpacing: 0.5,
   },
   contextValue: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#475569",
+    color: FORM_TEXT,
     marginTop: 2,
   },
   cardFooter: {
@@ -580,7 +581,7 @@ const styles = StyleSheet.create({
   center: {
     textAlign: "center",
     marginTop: 40,
-    color: "#64748b",
+    color: FORM_TEXT,
     fontWeight: "700",
   },
   modal: {
@@ -593,14 +594,14 @@ const styles = StyleSheet.create({
   modalTitle: {
     marginBottom: 16,
     fontWeight: "900",
-    color: "#1e293b",
+    color: FORM_TEXT,
   },
   modalSectionTitle: {
     marginTop: 8,
     marginBottom: 10,
     fontSize: 12,
     fontWeight: "900",
-    color: "#64748b",
+    color: FORM_TEXT,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },

@@ -17,6 +17,7 @@ import { useAuth } from "../../../../src/hooks/useAuth";
 import { useUpdateProfileMutation } from "../../../../src/redux/authApi";
 import { useGetLmsByCountryQuery } from "../../../../src/redux/geoApi";
 import { useGetUsersQuery } from "../../../../src/redux/usersApi";
+import { FORM_TEXT } from "../../../../src/theme/formColors";
 
 export default function UserDetailEditor() {
   const { uid } = useLocalSearchParams();
@@ -300,7 +301,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 12,
     fontWeight: "900",
-    color: "#94a3b8",
+    color: FORM_TEXT,
     marginBottom: 10,
     letterSpacing: 1,
   },
@@ -311,7 +312,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e2e8f0",
   },
-  currentWb: { fontWeight: "700", color: "#1e293b", marginBottom: 12 },
+  currentWb: { fontWeight: "700", color: FORM_TEXT, marginBottom: 12 },
   search: { elevation: 0, backgroundColor: "#f1f5f9", borderRadius: 8 },
   results: { marginTop: 10 },
   // listItem: { borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
@@ -322,7 +323,7 @@ const styles = StyleSheet.create({
   subLabel: {
     fontSize: 10,
     fontWeight: "900",
-    color: "#64748b",
+    color: FORM_TEXT,
     marginBottom: 8,
     textTransform: "uppercase",
   },
@@ -337,7 +338,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 12,
     fontStyle: "italic",
-    color: "#94a3b8",
+    color: FORM_TEXT,
     marginBottom: 10,
   },
   innerDivider: { marginVertical: 15, backgroundColor: "#f1f5f9" },
@@ -363,8 +364,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
   },
-  modalTitle: { fontSize: 18, fontWeight: "900", color: "#1e293b" },
-  modalSub: { fontSize: 11, color: "#64748b", marginTop: 2 },
+  modalTitle: { fontSize: 18, fontWeight: "900", color: FORM_TEXT },
+  modalSub: { fontSize: 11, color: FORM_TEXT, marginTop: 2 },
   modalItem: { borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
   modalActions: {
     flexDirection: "row",

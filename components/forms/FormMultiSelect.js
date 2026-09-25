@@ -1,6 +1,7 @@
 import { getIn, useFormikContext } from "formik";
 import { StyleSheet, View } from "react-native";
 import { Chip, HelperText, Text } from "react-native-paper";
+import { FORM_TEXT } from "../../src/theme/formColors";
 
 export const FormMultiSelect = ({ name, label, options, disabled }) => {
   const { values, setFieldValue, errors, touched } = useFormikContext();
@@ -56,7 +57,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#64748b",
+    color: FORM_TEXT,
     marginBottom: 8,
     textTransform: "uppercase",
   },

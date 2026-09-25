@@ -54,13 +54,20 @@ let checked = 0;
 
 for (const file of files) {
   const source = fs.readFileSync(file, "utf8");
-  // A form is a file with a box in it, or one that fills a shared box.
-  if (!source.includes("TextInput") && !source.includes("placeholder=")) {
-    continue;
-  }
+  // A form is a file with a box in it, a dropdown, or one that fills a
+  // shared box. FormSelect.js taught this the hard way: it holds the field
+  // name above every dropdown in the app and the checker walked past it
+  // because it contains no TextInput.
+  const isForm =
+    source.includes("TextInput") ||
+    source.includes("placeholder=") ||
+    source.includes("List.Item") ||
+    source.includes("onValueChange") ||
+    file.startsWith("components/forms/");
+  if (!isForm) continue;
   checked += 1;
 
-  const isForm = FORMS.some((pattern) => pattern.test(file));
+  const everyWordBlack = FORMS.some((pattern) => pattern.test(file));
   let styleKey = "";
 
   source.split(/\r?\n/).forEach((line, index) => {
@@ -73,7 +80,7 @@ for (const file of files) {
       colour &&
       GREY.test(colour[1]) &&
       !isSignal &&
-      (isForm || BOX.test(styleKey))
+      (everyWordBlack || BOX.test(styleKey))
     ) {
       offenders.push(`${file}:${index + 1}  ${colour[1]}`);
     }

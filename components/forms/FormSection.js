@@ -1,5 +1,6 @@
 import { StyleSheet, View } from "react-native";
 import { Divider, Surface, Text } from "react-native-paper";
+import { FORM_TEXT } from "../../src/theme/formColors";
 
 export const FormSection = ({ title, children }) => (
   <Surface style={styles.sectionCard} elevation={2}>
@@ -25,7 +26,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
-  sectionTitle: { fontSize: 14, fontWeight: "bold", color: "#475569" },
+  sectionTitle: { fontSize: 14, fontWeight: "bold", color: FORM_TEXT },
   input: { marginBottom: 10, backgroundColor: "#fff" },
   selector: {
     flexDirection: "row",
@@ -60,7 +61,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 12,
     fontWeight: "800",
-    color: "#475569",
+    color: FORM_TEXT,
     marginBottom: 12,
     textTransform: "uppercase",
   },
@@ -69,10 +70,10 @@ const styles = StyleSheet.create({
   actionText: {
     fontSize: 10,
     fontWeight: "bold",
-    color: "#475569",
+    color: FORM_TEXT,
     marginTop: 4,
   },
-  selectorValue: { fontSize: 16, fontWeight: "600", color: "#1E293B" },
+  selectorValue: { fontSize: 16, fontWeight: "600", color: FORM_TEXT },
   footer: { flexDirection: "row", gap: 12, marginTop: 20, padding: 20 },
   submitBtn: { flex: 2, borderRadius: 10 },
   resetBtn: { flex: 1, borderRadius: 10 },
@@ -114,7 +115,7 @@ const styles = StyleSheet.create({
   },
   gpsBadgeText: { fontSize: 10, color: "#166534", fontWeight: "bold" },
 
-  headerMeterText: { fontSize: 14, color: "#64748b", fontWeight: "bold" },
+  headerMeterText: { fontSize: 14, color: FORM_TEXT, fontWeight: "bold" },
 
   actionBlock: {
     backgroundColor: "#fff",
@@ -257,7 +258,7 @@ const styles = StyleSheet.create({
   },
   successSub: {
     fontSize: 14,
-    color: "#64748B",
+    color: FORM_TEXT,
     textAlign: "center",
     marginTop: 8,
     marginBottom: 24,
@@ -301,7 +302,7 @@ const styles = StyleSheet.create({
   tinyLabel: {
     fontSize: 9,
     fontWeight: "bold",
-    color: "#475569",
+    color: FORM_TEXT,
     marginTop: 2,
   },
   inputContainer: {
@@ -373,14 +374,14 @@ const styles = StyleSheet.create({
   // label: {
   //   fontSize: 11,
   //   fontWeight: "900",
-  //   color: "#475569",
+  //   color: FORM_TEXT,
   //   marginBottom: 8,
   //   textTransform: "uppercase",
   //   letterSpacing: 1,
   // },
   // actionText: {
   //   fontSize: 10,
-  //   color: "#94a3b8",
+  //   color: FORM_TEXT,
   //   fontWeight: "600",
   //   marginTop: 2,
   // },

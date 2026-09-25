@@ -11,6 +11,7 @@ import {
 import MapView, { Marker, Polygon, PROVIDER_GOOGLE } from "react-native-maps";
 import { Button, Menu, Modal, Portal } from "react-native-paper";
 import { useWarehouse } from "../../src/context/WarehouseContext";
+import { FORM_TEXT } from "../../src/theme/formColors";
 
 const { height } = Dimensions.get("window");
 
@@ -437,7 +438,7 @@ const styles = StyleSheet.create({
   topLabel: {
     fontSize: 10,
     fontWeight: "900",
-    color: "#64748b",
+    color: FORM_TEXT,
     marginBottom: 6,
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -472,7 +473,7 @@ const styles = StyleSheet.create({
 
   actionText: {
     fontSize: 11,
-    color: "#94a3b8",
+    color: FORM_TEXT,
     marginTop: 2,
     fontWeight: "600",
   },
@@ -514,7 +515,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 12,
     fontWeight: "900",
-    color: "#64748b",
+    color: FORM_TEXT,
     letterSpacing: 1,
     marginBottom: 10,
     textAlign: "center",
