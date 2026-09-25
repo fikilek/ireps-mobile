@@ -152,17 +152,11 @@ const FORM_OPTIONS = Object.freeze({
     "Keypad Faulty",
   ]),
 
-  // MN-R001: one list for Meter Discovery and Meter Inspection. What is offered
-  // depends on the anomaly — see getNormalisationOptions below.
-  norm_actions: Object.freeze([
-    option("None"),
-    option("Disconnect meter"),
-    option("Replace meter"),
-    option("Tamper removed"),
-    option("Keypad normalised"),
-    option("Service point completed"),
-    option("Meter registered"),
-  ]),
+  // MN-R001: the normalisation list a worker actually sees is built by
+  // getNormalisationOptions below, from NORMALISATION_JOB_ACTIONS and
+  // NORMALISATION_ON_SITE_FIXES, because what is offered depends on the finding. There used
+  // to be a second copy of it here called norm_actions that nothing read - a trap for
+  // anyone sent to this file by the rules, and a place for the two to drift apart. Removed.
 
   no_action_reasons: Object.freeze([
     "Threatened or chased away",
