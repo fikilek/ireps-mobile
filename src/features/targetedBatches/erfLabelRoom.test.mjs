@@ -170,21 +170,35 @@ test("no marker keeps drawing pictures for longer than it did before", () => {
   assert.doesNotMatch(modalSource, /\n\s+tracksViewChanges\n/, "no marker tracks for good");
 });
 
-test("the map opens on the Sales meters alone, and hides the numbers while it moves (1.3.81)", () => {
-  // The ERF boundaries and numbers are a heavy read; the worker asks for them with the ERFs button.
+test("the map opens on the Sales meters alone (1.3.81)", () => {
+  // The ERF boundaries and numbers are the slow part of the map; the worker asks for them with the button.
   assert.match(modalSource, /const \[erfsOn, setErfsOn\] = useState\(false\);/);
   assert.doesNotMatch(modalSource, /setErfsOn\(true\)/);
-  // A number carries the size of the zoom the map has settled on, so none is drawn mid-gesture.
-  assert.match(modalSource, /onRegionChange=\{handleRegionChanging\}/);
-  assert.match(modalSource, /mapMoving \? EMPTY_LIST : erfLabels/);
-  const changing = modalSource.slice(
-    modalSource.indexOf("const handleRegionChanging"),
-    modalSource.indexOf("const handleRegionSettled"),
-  );
-  assert.match(changing, /if \(mapMovingRef\.current\) return;/, "the flag flips once, not every frame");
-  const settledAt = modalSource.indexOf("const handleRegionSettled");
-  assert.match(modalSource.slice(settledAt, settledAt + 900), /setMapMoving\(false\);/);
 });
+
+test("nothing is hidden and shown again as the map moves (1.3.82)", () => {
+  // Hiding the numbers mid-gesture flickered and froze the map on the owner's phone: "this thing of
+  // showing and hiding introduces too much chitter ... then the map freezes".
+  assert.doesNotMatch(modalSource, /mapMoving|onRegionChange=\{handleRegionChanging\}/);
+});
+
+test("an ERF number is drawn beside its pin, never over it (1.3.82)", () => {
+  const erfLabel = modalSource.slice(
+    modalSource.indexOf("function ErfLabelMarkerBase("),
+    modalSource.indexOf("const ErfLabelMarker = memo("),
+  );
+  // The gap is made by the anchor, which is in screen units, so it never changes with the zoom.
+  assert.match(erfLabel, /x: -ERF_LABEL_PIN_GAP \/ width/);
+  assert.match(modalSource, /const ERF_LABEL_PIN_GAP = 20;/);
+  // It clears the pin's circle, which reaches 12 either side of the pin's own point.
+  const gap = Number(modalSource.match(/const ERF_LABEL_PIN_GAP = (\d+);/)[1]);
+  const pinReach = Number(modalSource.match(/ {2}pin: \{[\s\S]*?width: (\d+),/)[1]) / 2;
+  assert.ok(gap > pinReach, `a ${gap} gap does not clear a pin reaching ${pinReach}`);
+  // The number the worker reads is the one on that ERF's own pin.
+  assert.match(modalSource, /const pinByErf = useMemo\(/);
+  assert.match(modalSource, /if \(id && !byErf\[id\]\)/);
+});
+
 
 test("the batch ID has the header's first line to itself (1.3.81)", () => {
   const header = modalSource.slice(
@@ -225,7 +239,7 @@ test("the map sizes each number from the zoom it has settled on", () => {
     modalSource.indexOf("function ErfLabelMarkerBase("),
     modalSource.indexOf("const ErfLabelMarker = memo("),
   );
-  assert.match(erfLabel, /anchor=\{CENTRE_ANCHOR\}/);
+  assert.match(erfLabel, /if \(!besidePin\) return CENTRE_ANCHOR;/);
   // A new size means a new picture of the marker, or the map would keep the old one.
-  assert.match(erfLabel, /useSettledTracksViewChanges\(\s*`\$\{erfNo\}:\$\{fontSize\}`,?\s*\)/);
+  assert.match(erfLabel, /useSettledTracksViewChanges\(\s*`\$\{erfNo\}:\$\{fontSize\}:\$\{besidePin \? "pin" : "erf"\}`,?\s*\)/);
 });

@@ -251,6 +251,14 @@ export function erfLabelRoomMetres(erf, { holes = [], point = null } = {}) {
   return Number.isFinite(nearest) ? nearest : 0;
 }
 
+// How wide the ERF number's box is, in the same units the map is measured in.
+export function erfLabelBoxWidth(characters, fontSize) {
+  const count = Math.max(1, Math.trunc(Number(characters) || 0));
+  const size = Number(fontSize);
+  if (!Number.isFinite(size) || size <= 0) return 0;
+  return count * ERF_LABEL_WIDTH_PER_CHARACTER * size + 2 * ERF_LABEL_EDGE;
+}
+
 // The largest font size, never above the base, whose label box fits inside a circle of `roomPixels`.
 // 0 means the ERF has no room left for a number worth drawing.
 export function erfLabelFontSize(

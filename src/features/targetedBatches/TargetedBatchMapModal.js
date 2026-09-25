@@ -24,6 +24,7 @@ import { loadLatestSalesCategoryMonth } from "./loadLatestSalesCategoryMonth";
 import { loadOtherSalesMeters } from "./loadOtherSalesMeters";
 import {
   ERF_LABEL_BASE_FONT_SIZE,
+  erfLabelBoxWidth,
   erfLabelFontSize,
   erfLabelPoint,
   erfLabelRoomMetres,
@@ -124,6 +125,10 @@ const SHEET_WINDOW_SIZE = 5;
 const SINGLE_POINT_DELTA = 0.004;
 const PIN_ANCHOR = { x: 12 / 34, y: 22 / 34 };
 const CENTRE_ANCHOR = { x: 0.5, y: 0.5 };
+// TB-R051 (1.3.82): an ERF with a meter on it reads as a pair, the pin and its number beside it. The
+// pin's circle reaches 12 either side of its own point, so the number starts clear of it and never
+// covers the S, G or E the worker is looking for.
+const ERF_LABEL_PIN_GAP = 20;
 const EMPTY_POINTS = Object.freeze({ groups: [], unplaced: [], coordinates: [] });
 const EMPTY_LIST = [];
 const EMPTY_ERF_LAYER = Object.freeze({ erfs: EMPTY_LIST, capped: false });
@@ -480,10 +485,20 @@ function ErfLabelMarkerBase({
   longitude,
   erfNo,
   fontSize = ERF_LABEL_BASE_FONT_SIZE,
+  besidePin = false,
 }) {
   const { tracksViewChanges, onLayout } = useSettledTracksViewChanges(
-    `${erfNo}:${fontSize}`,
+    `${erfNo}:${fontSize}:${besidePin ? "pin" : "erf"}`,
   );
+
+  // Beside a pin the number is moved off the pin's point by the anchor, which is in screen units, so
+  // the gap never changes with the zoom. On an ERF with no meter it stays centred on its own point.
+  const anchor = useMemo(() => {
+    if (!besidePin) return CENTRE_ANCHOR;
+    const width = erfLabelBoxWidth(String(erfNo ?? "").length, fontSize);
+    if (!width) return CENTRE_ANCHOR;
+    return { x: -ERF_LABEL_PIN_GAP / width, y: 0.5 };
+  }, [besidePin, erfNo, fontSize]);
   const coordinate = useMemo(
     () => ({ latitude, longitude }),
     [latitude, longitude],
@@ -492,11 +507,9 @@ function ErfLabelMarkerBase({
   return (
     <Marker
       coordinate={coordinate}
-      anchor={CENTRE_ANCHOR}
+      anchor={anchor}
       tracksViewChanges={tracksViewChanges}
-      // (1.3.70) Drawn over the batch pins (200), below a selected pin (300). Sitting just below the centre,
-      // the number is where a pin often is, and a pin drawn over it hid the number entirely (owner's phone,
-      // 21 Sep: five ERFs of batch X70E).
+      // (1.3.70) Over the batch pins (200), below a selected pin (300).
       zIndex={250}
     >
       <View
@@ -712,11 +725,6 @@ export default function TargetedBatchMapModal({
   const [mapAreaHeight, setMapAreaHeight] = useState(0);
   // TB-R051 (1.3.70): the ERF numbers are sized from the zoom, so the map keeps the region it settles on.
   const [region, setRegion] = useState(null);
-  // TB-R051 (1.3.81): a number is sized from the zoom the map has settled on, so during a pinch it
-  // still carries the size of the zoom before and would cross into the neighbour's ERF. The numbers
-  // are not drawn while the map is moving; they come back, correctly sized, when it stops.
-  const [mapMoving, setMapMoving] = useState(false);
-  const mapMovingRef = useRef(false);
   const [geofenceWaitOver, setGeofenceWaitOver] = useState(false);
   const [salesWaitDoneKey, setSalesWaitDoneKey] = useState("");
   // TB-R051 (1.3.38): ERFs on, Premises and Other Sales meters off, Normal map when the map opens.
@@ -759,6 +767,21 @@ export default function TargetedBatchMapModal({
     [visible, safeRows, erfCentroidById],
   );
   const groups = mapPoints?.groups || EMPTY_LIST;
+
+  // TB-R051 (1.3.82): the pin standing on each ERF, so its number can be drawn beside it instead of over
+  // it. Several meters on one ERF share a pin, so the first one found is the pin the worker sees.
+  const pinByErf = useMemo(() => {
+    const byErf = {};
+    for (const group of groups) {
+      for (const row of group?.rows || []) {
+        const id = readFirstString(row?.erfId, row?.refs?.erfId);
+        if (id && !byErf[id]) {
+          byErf[id] = { latitude: group.latitude, longitude: group.longitude };
+        }
+      }
+    }
+    return byErf;
+  }, [groups]);
   const unplaced = mapPoints?.unplaced || EMPTY_LIST;
   const coordinates = mapPoints?.coordinates || EMPTY_LIST;
 
@@ -1322,18 +1345,8 @@ export default function TargetedBatchMapModal({
     setMapAreaHeight(Math.round(event?.nativeEvent?.layout?.height || 0));
   }, []);
 
-  // Fires on every frame of a gesture, so it only ever flips the flag once.
-  const handleRegionChanging = useCallback(() => {
-    if (mapMovingRef.current) return;
-    mapMovingRef.current = true;
-    setMapMoving(true);
-  }, []);
-
   // Only when the pan or zoom has settled, so nothing is recomputed on every frame of a gesture.
   const handleRegionSettled = useCallback((next) => {
-    mapMovingRef.current = false;
-    setMapMoving(false);
-
     const delta = Number(next?.latitudeDelta);
     if (!Number.isFinite(delta) || delta <= 0) return;
 
@@ -1733,7 +1746,6 @@ export default function TargetedBatchMapModal({
             mapPadding={MAP_PADDING}
             initialRegion={initialRegion}
             onMapReady={handleMapReady}
-            onRegionChange={handleRegionChanging}
             onRegionChangeComplete={handleRegionSettled}
           >
             {erfPolygons.map(({ key, ring }) => (
@@ -1757,17 +1769,21 @@ export default function TargetedBatchMapModal({
               />
             ) : null}
 
-            {(mapMoving ? EMPTY_LIST : erfLabels).map((label) => {
+            {erfLabels.map((label) => {
               const fontSize = erfLabelSizes[label.id] || 0;
               if (!fontSize) return null;
+
+              // TB-R051 (1.3.82): beside the ERF's own pin where it has one, else on its own point.
+              const pin = pinByErf[label.id];
 
               return (
                 <ErfLabelMarker
                   key={`erf-label-${label.id}`}
-                  latitude={label.point.latitude}
-                  longitude={label.point.longitude}
+                  latitude={pin ? pin.latitude : label.point.latitude}
+                  longitude={pin ? pin.longitude : label.point.longitude}
                   erfNo={label.erfNo}
                   fontSize={fontSize}
+                  besidePin={Boolean(pin)}
                 />
               );
             })}
