@@ -86,7 +86,7 @@ const FormSelect = ({
         <MaterialCommunityIcons
           name={isDisabled ? "lock" : "chevron-down"}
           size={20}
-          color={hasError ? "#ef4444" : "#64748b"}
+          color={hasError ? "#ef4444" : "#000000"}
         />
       </TouchableOpacity>
 
@@ -104,6 +104,11 @@ const FormSelect = ({
                 <List.Item
                   key={`${String(option.value)}_${index}`}
                   title={option.label}
+                  // The choices a worker picks from, in black, said here rather than left to
+                  // react-native-paper's own colour. The owner photographed this list pale five times over
+                  // (25 September 2026): "field workers can't see grey". Nothing grey is written in this
+                  // file to find, which is exactly why it survived every sweep - so it is written now.
+                  titleStyle={styles.optionTitle}
                   onPress={() => {
                     setFieldValue(name, option.value, true);
                     onValueChange?.(option.value);
@@ -145,10 +150,11 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 10,
     fontWeight: "800",
-    color: "#94a3b8",
+    color: "#000000",
     textTransform: "uppercase",
   },
-  value: { fontSize: 15, fontWeight: "600", color: "#1e293b" },
+  value: { fontSize: 15, fontWeight: "600", color: "#000000" },
+  optionTitle: { color: "#000000", fontSize: 15, fontWeight: "600" },
   modalSurface: {
     borderRadius: 12,
     backgroundColor: "white",
@@ -157,7 +163,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     padding: 16,
     fontWeight: "900",
-    color: "#475569",
+    color: "#000000",
     textAlign: "center",
   },
 });
