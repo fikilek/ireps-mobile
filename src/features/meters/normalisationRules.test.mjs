@@ -58,7 +58,7 @@ test("not doing the work asks for a reason, doing it does not", () => {
   assert.equal(
     isNoActionReasonRequired({
       anomaly: "Illegally Connected",
-      actionTaken: ["none"],
+      actionTaken: ["None"],
     }),
     true,
   );
@@ -81,7 +81,7 @@ test("not doing the work asks for a reason, doing it does not", () => {
   );
 
   assert.equal(
-    isNoActionReasonRequired({ anomaly: "Meter Ok", actionTaken: ["none"] }),
+    isNoActionReasonRequired({ anomaly: "Meter Ok", actionTaken: ["None"] }),
     false,
   );
 });
@@ -90,7 +90,7 @@ test("what the worker is told when something is missing", () => {
   assert.equal(
     getNormalisationValidationError({
       anomaly: "Illegally Connected",
-      actionTaken: ["none"],
+      actionTaken: ["None"],
     })?.message,
     "Say why the meter was not disconnected.",
   );
@@ -98,7 +98,7 @@ test("what the worker is told when something is missing", () => {
   assert.equal(
     getNormalisationValidationError({
       anomaly: "Meter Damaged",
-      actionTaken: ["none"],
+      actionTaken: ["None"],
     })?.message,
     "Say why the meter was not replaced.",
   );
@@ -106,7 +106,7 @@ test("what the worker is told when something is missing", () => {
   assert.equal(
     getNormalisationValidationError({
       anomaly: "Illegally Connected",
-      actionTaken: ["none"],
+      actionTaken: ["None"],
       noActionReason: "Other",
       noActionReasonOther: "  ",
     })?.message,
@@ -116,7 +116,7 @@ test("what the worker is told when something is missing", () => {
   assert.equal(
     getNormalisationValidationError({
       anomaly: "Meter Ok",
-      actionTaken: ["none", "Tamper removed"],
+      actionTaken: ["None", "Tamper removed"],
     })?.message,
     "None cannot be used with another action.",
   );
@@ -142,20 +142,20 @@ test("nothing is wrong when the work was done or properly explained", () => {
   assert.equal(
     getNormalisationValidationError({
       anomaly: "Illegally Connected",
-      actionTaken: ["none"],
+      actionTaken: ["None"],
       noActionReason: "Threatened or chased away",
     }),
     null,
   );
 
   assert.equal(
-    getNormalisationValidationError({ anomaly: "Meter Ok", actionTaken: ["none"] }),
+    getNormalisationValidationError({ anomaly: "Meter Ok", actionTaken: ["None"] }),
     null,
   );
 });
 
 test("a photo for work that leaves a mark, never for a job the next forms prove", () => {
-  assert.equal(normalisationPhotoRequired(["none"]), false);
+  assert.equal(normalisationPhotoRequired(["None"]), false);
   assert.equal(normalisationPhotoRequired(["Disconnect meter"]), false);
   assert.equal(normalisationPhotoRequired(["Replace meter"]), false);
   assert.equal(normalisationPhotoRequired(["Replace meter", "Keypad normalised"]), true);
