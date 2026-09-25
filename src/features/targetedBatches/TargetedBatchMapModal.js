@@ -712,10 +712,17 @@ export default function TargetedBatchMapModal({
   const [mapAreaHeight, setMapAreaHeight] = useState(0);
   // TB-R051 (1.3.70): the ERF numbers are sized from the zoom, so the map keeps the region it settles on.
   const [region, setRegion] = useState(null);
+  // TB-R051 (1.3.81): a number is sized from the zoom the map has settled on, so during a pinch it
+  // still carries the size of the zoom before and would cross into the neighbour's ERF. The numbers
+  // are not drawn while the map is moving; they come back, correctly sized, when it stops.
+  const [mapMoving, setMapMoving] = useState(false);
+  const mapMovingRef = useRef(false);
   const [geofenceWaitOver, setGeofenceWaitOver] = useState(false);
   const [salesWaitDoneKey, setSalesWaitDoneKey] = useState("");
   // TB-R051 (1.3.38): ERFs on, Premises and Other Sales meters off, Normal map when the map opens.
-  const [erfsOn, setErfsOn] = useState(true);
+  // TB-R051 (1.3.81): the map opens on the batch's Sales meters alone. The ERF boundaries and numbers
+  // are a heavy read and the worker asks for them with the ERFs button.
+  const [erfsOn, setErfsOn] = useState(false);
   const [premisesOn, setPremisesOn] = useState(false);
   const [otherSalesOn, setOtherSalesOn] = useState(false);
   const [mapType, setMapType] = useState("standard");
@@ -1168,8 +1175,9 @@ export default function TargetedBatchMapModal({
     // TB-R051 (1.3.40): every opening shows the spinner until the map has zoomed to the batch area.
     setOpeningZoom(NO_OPENING_ZOOM);
     setOpeningSettled(false);
-    // TB-R051 (1.3.38): every opening starts with ERFs on, Premises and Other Sales meters off and the Normal map.
-    setErfsOn(true);
+    // TB-R051 (1.3.81): every opening starts with ERFs, Premises and Other Sales meters off, and the
+    // Normal map: only the batch's own Sales meters are drawn until the worker asks for more.
+    setErfsOn(false);
     setPremisesOn(false);
     setOtherSalesOn(false);
     setMapType("standard");
@@ -1314,8 +1322,18 @@ export default function TargetedBatchMapModal({
     setMapAreaHeight(Math.round(event?.nativeEvent?.layout?.height || 0));
   }, []);
 
+  // Fires on every frame of a gesture, so it only ever flips the flag once.
+  const handleRegionChanging = useCallback(() => {
+    if (mapMovingRef.current) return;
+    mapMovingRef.current = true;
+    setMapMoving(true);
+  }, []);
+
   // Only when the pan or zoom has settled, so nothing is recomputed on every frame of a gesture.
   const handleRegionSettled = useCallback((next) => {
+    mapMovingRef.current = false;
+    setMapMoving(false);
+
     const delta = Number(next?.latitudeDelta);
     if (!Number.isFinite(delta) || delta <= 0) return;
 
@@ -1612,50 +1630,56 @@ export default function TargetedBatchMapModal({
               <MaterialCommunityIcons name="close" size={22} color="#0f172a" />
             </Pressable>
 
+            {/* TB-R051 (1.3.81): the batch ID has the first line to itself, so the whole ID reads; the
+                geofence name sits with the counts on the second. */}
             <View style={styles.headerMain}>
               <Text style={styles.headerTitle} numberOfLines={1}>
                 {bucketId || "Targeted Batch"}
               </Text>
-              <Text style={styles.headerSub} numberOfLines={1}>
-                {headerCounts}
-              </Text>
+
+              <View style={styles.headerSubRow}>
+                <Text style={styles.headerSub} numberOfLines={1}>
+                  {headerCounts}
+                </Text>
+
+                {/* TB-R043: a batch without a geofence shows No geofence. */}
+                {!geofenceId ? (
+                  <View style={[styles.geofenceChip, styles.geofenceChipMissing]}>
+                    <MaterialCommunityIcons
+                      name="vector-polygon"
+                      size={13}
+                      color="#64748b"
+                    />
+                    <Text style={styles.geofenceChipMissingText}>No geofence</Text>
+                  </View>
+                ) : geofence ? (
+                  <View style={styles.geofenceChip}>
+                    <MaterialCommunityIcons
+                      name="vector-polygon"
+                      size={13}
+                      color={GEOFENCE_COLOR}
+                    />
+                    <Text style={styles.geofenceChipText} numberOfLines={1}>
+                      {geofenceName}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={[styles.geofenceChip, styles.geofenceChipMissing]}>
+                    <MaterialCommunityIcons
+                      name="vector-polygon"
+                      size={13}
+                      color="#64748b"
+                    />
+                    <Text style={styles.geofenceChipMissingText} numberOfLines={1}>
+                      {geofenceNotFound
+                        ? "Geofence not found"
+                        : "Geofence not loaded yet"}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
 
-            {/* TB-R043: a batch without a geofence shows No geofence. */}
-            {!geofenceId ? (
-              <View style={[styles.geofenceChip, styles.geofenceChipMissing]}>
-                <MaterialCommunityIcons
-                  name="vector-polygon"
-                  size={13}
-                  color="#64748b"
-                />
-                <Text style={styles.geofenceChipMissingText}>No geofence</Text>
-              </View>
-            ) : geofence ? (
-              <View style={styles.geofenceChip}>
-                <MaterialCommunityIcons
-                  name="vector-polygon"
-                  size={13}
-                  color={GEOFENCE_COLOR}
-                />
-                <Text style={styles.geofenceChipText} numberOfLines={1}>
-                  {geofenceName}
-                </Text>
-              </View>
-            ) : (
-              <View style={[styles.geofenceChip, styles.geofenceChipMissing]}>
-                <MaterialCommunityIcons
-                  name="vector-polygon"
-                  size={13}
-                  color="#64748b"
-                />
-                <Text style={styles.geofenceChipMissingText} numberOfLines={1}>
-                  {geofenceNotFound
-                    ? "Geofence not found"
-                    : "Geofence not loaded yet"}
-                </Text>
-              </View>
-            )}
           </View>
 
           <View style={styles.legendRow}>
@@ -1709,6 +1733,7 @@ export default function TargetedBatchMapModal({
             mapPadding={MAP_PADDING}
             initialRegion={initialRegion}
             onMapReady={handleMapReady}
+            onRegionChange={handleRegionChanging}
             onRegionChangeComplete={handleRegionSettled}
           >
             {erfPolygons.map(({ key, ring }) => (
@@ -1732,7 +1757,7 @@ export default function TargetedBatchMapModal({
               />
             ) : null}
 
-            {erfLabels.map((label) => {
+            {(mapMoving ? EMPTY_LIST : erfLabels).map((label) => {
               const fontSize = erfLabelSizes[label.id] || 0;
               if (!fontSize) return null;
 
@@ -2119,11 +2144,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900",
   },
+  // TB-R051 (1.3.81): the counts and the geofence name share the second line.
+  headerSubRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 3,
+  },
   headerSub: {
     color: "#64748b",
     fontSize: 11,
     fontWeight: "800",
-    marginTop: 2,
+    flexShrink: 1,
   },
 
   geofenceChip: {

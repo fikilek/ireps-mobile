@@ -276,6 +276,7 @@ export function erfLabelFontSize(
   const fitted = (-b + Math.sqrt(discriminant)) / (2 * a);
   if (!Number.isFinite(fitted) || fitted < ERF_LABEL_SMALLEST_FONT_SIZE) return 0;
 
-  // Whole pixels, so a small pan or zoom does not redraw every number on the map.
-  return Math.min(Math.round(fitted), base);
+  // Whole pixels, so a small pan or zoom does not redraw every number on the map. Rounded DOWN: rounding
+  // up would hand back a box a fraction wider than the room that was measured for it.
+  return Math.min(Math.floor(fitted), base);
 }

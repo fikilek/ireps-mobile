@@ -153,7 +153,8 @@ test("TB-R051 1.3.40 on the map: icons centred exactly on their position, ERF nu
   assert.match(modalSource, /const holes = holesByErf\(drawnErfs\);/);
   assert.match(modalSource, /const point = erfNo \? erfLabelPoint\(erf, \{ holes: holes\[index\] \}\) : null;/);
   // (1.3.69) each number is drawn at its own point, at the size its ERF has room for.
-  assert.match(modalSource, /\{erfLabels\.map\(\(label\) => \{[\s\S]*?<ErfLabelMarker\s*key=\{`erf-label-\$\{label\.id\}`\}\s*latitude=\{label\.point\.latitude\}\s*longitude=\{label\.point\.longitude\}/);
+  // (1.3.81) none is drawn while the map is moving, because a number is sized from the settled zoom.
+  assert.match(modalSource, /\{\(mapMoving \? EMPTY_LIST : erfLabels\)\.map\(\(label\) => \{[\s\S]*?<ErfLabelMarker\s*key=\{`erf-label-\$\{label\.id\}`\}\s*latitude=\{label\.point\.latitude\}\s*longitude=\{label\.point\.longitude\}/);
   // The ERF label itself stays centred on its point.
   const erfLabel = modalSource.slice(modalSource.indexOf("function ErfLabelMarkerBase("), modalSource.indexOf("const ErfLabelMarker = memo("));
   assert.match(erfLabel, /anchor=\{CENTRE_ANCHOR\}/);

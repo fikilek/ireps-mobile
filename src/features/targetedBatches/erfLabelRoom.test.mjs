@@ -170,6 +170,38 @@ test("no marker keeps drawing pictures for longer than it did before", () => {
   assert.doesNotMatch(modalSource, /\n\s+tracksViewChanges\n/, "no marker tracks for good");
 });
 
+test("the map opens on the Sales meters alone, and hides the numbers while it moves (1.3.81)", () => {
+  // The ERF boundaries and numbers are a heavy read; the worker asks for them with the ERFs button.
+  assert.match(modalSource, /const \[erfsOn, setErfsOn\] = useState\(false\);/);
+  assert.doesNotMatch(modalSource, /setErfsOn\(true\)/);
+  // A number carries the size of the zoom the map has settled on, so none is drawn mid-gesture.
+  assert.match(modalSource, /onRegionChange=\{handleRegionChanging\}/);
+  assert.match(modalSource, /mapMoving \? EMPTY_LIST : erfLabels/);
+  const changing = modalSource.slice(
+    modalSource.indexOf("const handleRegionChanging"),
+    modalSource.indexOf("const handleRegionSettled"),
+  );
+  assert.match(changing, /if \(mapMovingRef\.current\) return;/, "the flag flips once, not every frame");
+  const settledAt = modalSource.indexOf("const handleRegionSettled");
+  assert.match(modalSource.slice(settledAt, settledAt + 900), /setMapMoving\(false\);/);
+});
+
+test("the batch ID has the header's first line to itself (1.3.81)", () => {
+  const header = modalSource.slice(
+    modalSource.indexOf("<View style={styles.headerRow}>"),
+    modalSource.indexOf("<View style={styles.legendRow}>"),
+  );
+  assert.ok(
+    header.indexOf("styles.headerTitle") < header.indexOf("styles.headerSubRow"),
+    "the ID comes first, on its own line",
+  );
+  assert.ok(
+    header.indexOf("styles.headerSubRow") < header.indexOf("styles.geofenceChip"),
+    "the geofence name sits inside the second line, not beside the ID",
+  );
+  assert.match(header, /styles\.headerSubRow[\s\S]{0,220}\{headerCounts\}/, "the counts open the second line");
+});
+
 test("a pan does not resize anything: only a real change of zoom is kept", () => {
   const start = modalSource.indexOf("const handleRegionSettled");
   const settled = modalSource.slice(start, start + 800);
