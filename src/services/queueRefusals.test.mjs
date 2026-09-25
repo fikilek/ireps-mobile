@@ -67,6 +67,43 @@ test("every form that goes through the queue is covered, in one place", () => {
   assert.doesNotMatch(queueSource, /REFUSED_BY_THE_SERVER/, "the old list is gone");
 });
 
+test("a refusal the server THROWS also stops, and a lost connection still waits", () => {
+  // A callable throws both when we never reached the server and when the server refuses. Treating them
+  // alike is the same trap: a refusal that arrives thrown would be retried for ever.
+  const thrown = failedSource.slice(
+    failedSource.indexOf("export const THROWN_REFUSALS"),
+    failedSource.indexOf("// m06: the server answered and refused."),
+  );
+  for (const code of ["permission-denied", "failed-precondition", "invalid-argument", "already-exists"]) {
+    assert.ok(thrown.includes(`"${code}"`), `${code} should stop, not wait`);
+  }
+  // Kept short on purpose: a temporary fault must never be mistaken for a refusal.
+  for (const code of ["unavailable", "deadline-exceeded", "internal", "unknown", "unauthenticated"]) {
+    assert.ok(!thrown.includes(`"${code}"`), `${code} is temporary and must keep waiting`);
+  }
+  // The Firebase client reports these prefixed.
+  assert.ok(
+    thrown.includes('replace(/^functions\\//'),
+    "the Firebase client prefixes these, so the prefix must be stripped",
+  );
+
+  // Both catch blocks ask it, and both keep their fallback as waiting.
+  for (const source of [queueSource, storageSource]) {
+    assert.match(source, /isThrownRefusal\(code\)/);
+    assert.match(source, /markSubmissionQueueItemFailed\(/);
+  }
+});
+
+test("waiting is decided by the code, never by words in the message", () => {
+  // It used to match "premise" anywhere in the sentence, so any refusal that mentioned a premise was
+  // forced back into waiting and retried for ever — the one path where m06's trap could be re-made.
+  for (const source of [queueSource, storageSource]) {
+    assert.doesNotMatch(source, /message\.includes\("PREMISE"\)/);
+    assert.doesNotMatch(source, /message\.includes\("premise"\)/);
+    assert.doesNotMatch(source, /isPremiseError/);
+  }
+});
+
 test("m06 is closed: nothing the server refuses is written back as waiting", () => {
   // The trap was that markSubmissionQueueItemFailed writes PENDING for everything, and every code the
   // phone did not recognise went to it. It is now only for a job that never reached the server.

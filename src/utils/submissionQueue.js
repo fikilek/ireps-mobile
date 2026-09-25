@@ -297,6 +297,24 @@ export const markSubmissionQueueItemSuccess = async (
   );
 };
 
+// m06: a callable that THROWS is usually "we never reached the server" — no signal, a timeout — and that
+// waits, to be sent again. But a callable also throws when the server REFUSES, and those are decisions:
+// waiting for a different answer only loops for ever. Kept deliberately short — anything not named here
+// waits, so a temporary fault is never mistaken for a refusal.
+export const THROWN_REFUSALS = new Set([
+  "permission-denied",
+  "failed-precondition",
+  "invalid-argument",
+  "already-exists",
+]);
+
+// The Firebase client reports these as "functions/permission-denied".
+export function isThrownRefusal(code) {
+  return THROWN_REFUSALS.has(
+    String(code || "").trim().toLowerCase().replace(/^functions\//, ""),
+  );
+}
+
 // m06: the server answered and refused. Trying again cannot change its mind, so the job stops here and
 // the worker is shown the server's own words. A job that never reached the server goes to
 // markSubmissionQueueItemFailed instead, and waits.

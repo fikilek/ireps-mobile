@@ -9,6 +9,7 @@ import {
   getCallableNameForSubmissionQueueItem,
   getSubmissionQueue,
   markSubmissionQueueItemFailed,
+  isThrownRefusal,
   markSubmissionQueueItemRefused,
   markSubmissionQueueItemSuccess,
   markSubmissionQueueItemSyncing,
@@ -48,6 +49,7 @@ function isStandardMeterDiscoveryQueueItem(item = {}) {
 // locally" — so every code anybody added later fell into the same trap, silently. Now the trap cannot
 // be re-made: an unknown refusal stops, like every other refusal.
 const KEEP_WAITING_CODES = ["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND"];
+
 
 export const processSubmissionQueue = async ({
   agentUid = "SYSTEM",
@@ -320,13 +322,9 @@ export const processSubmissionQueue = async ({
         const message = error?.message || "";
         const code = error?.code || "";
 
-        const isPremiseError =
-          message.includes("PREMISE") ||
-          message.includes("premise") ||
-          code === "INVALID_PREMISE_ID" ||
-          code === "PREMISE_NOT_FOUND";
-
-        if (isPremiseError) {
+        // m06: matched on the code alone. It used to match the word "premise" anywhere in the message,
+        // so a refusal that merely mentioned a premise was forced back into waiting and retried for ever.
+        if (KEEP_WAITING_CODES.includes(code)) {
           console.log("processSubmissionQueue -- catch → keeping PENDING");
 
           await updateSubmissionQueueItem(
@@ -348,6 +346,23 @@ export const processSubmissionQueue = async ({
           continue;
         }
 
+        // The server threw because it refused. It stops here, in the server's own words.
+        if (isThrownRefusal(code)) {
+          await markSubmissionQueueItemRefused(
+            item.id,
+            {
+              code,
+              message: message || "Submission requires review.",
+              trnId: "NAv",
+            },
+            agentUid,
+            agentName,
+          );
+
+          continue;
+        }
+
+        // Never reached the server: it waits, and is sent again.
         await markSubmissionQueueItemFailed(
           item.id,
           {

@@ -25,6 +25,7 @@ import {
   getCallableNameForSubmissionQueueItem,
   getSubmissionQueue,
   getSubmissionQueueItemById,
+  isThrownRefusal,
   markSubmissionQueueItemFailed,
   markSubmissionQueueItemRefused,
   markSubmissionQueueItemSuccess,
@@ -354,13 +355,9 @@ const processSingleSubmissionQueueItem = async (
     const message = error?.message || "";
     const code = error?.code || "";
 
-    const isPremiseError =
-      message.includes("PREMISE") ||
-      message.includes("premise") ||
-      code === "INVALID_PREMISE_ID" ||
-      code === "PREMISE_NOT_FOUND";
-
-    if (isPremiseError) {
+    // m06: matched on the code alone. It used to match the word "premise" anywhere in the message, so a
+    // refusal that merely mentioned a premise was forced back into waiting and retried for ever.
+    if (code === "INVALID_PREMISE_ID" || code === "PREMISE_NOT_FOUND") {
       await updateSubmissionQueueItem(
         queueItemId,
         {
@@ -381,6 +378,22 @@ const processSingleSubmissionQueueItem = async (
         success: false,
         message:
           "Parent premise is not ready yet. This draft will retry later.",
+      };
+    }
+
+    // The server threw because it refused: it stops here, in the server's own words. Anything else never
+    // reached the server, so it waits and is sent again.
+    if (isThrownRefusal(code)) {
+      await markSubmissionQueueItemRefused(
+        queueItemId,
+        { code, message: message || "Submission requires review.", trnId: "NAv" },
+        agentUid,
+        agentName,
+      );
+
+      return {
+        success: false,
+        message: message || "Submission requires review.",
       };
     }
 
