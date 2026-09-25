@@ -19,81 +19,76 @@ const failedSource = await readFile(
   new URL("../utils/submissionQueue.js", import.meta.url),
   "utf8",
 );
+const storageSource = await readFile(
+  new URL("../../app/(tabs)/admin/storage/forms-submission-queue.js", import.meta.url),
+  "utf8",
+);
 
-// The list as the file declares it.
-const refusedCodes = (() => {
-  const start = queueSource.indexOf("const REFUSED_BY_THE_SERVER = [");
-  assert.notEqual(start, -1, "the refusal list is gone");
-  const end = queueSource.indexOf("];", start);
-  return queueSource
-    .slice(start, end)
-    .split("\n")
-    .map((line) => line.match(/"([A-Z_]+)"/)?.[1])
-    .filter(Boolean);
+// The codes that still mean "not yet, try later".
+const keepWaiting = (() => {
+  const line = queueSource.match(/const KEEP_WAITING_CODES = \[([^\]]*)\]/);
+  assert.ok(line, "the waiting list is gone");
+  return line[1].split(",").map((part) => part.trim().replace(/"/g, "")).filter(Boolean);
 })();
 
-test("the phone knows both codes the batch guard refuses with", () => {
-  assert.ok(
-    refusedCodes.includes("METER_IN_ANOTHER_TEAMS_BATCH"),
-    "the meter is in another team's batch",
-  );
-  assert.ok(
-    refusedCodes.includes("BATCH_CHECK_UNAVAILABLE"),
-    "iREPS could not read the batch and refused rather than let the work through",
-  );
+test("a refusal the phone has never heard of still stops (x11 and m06)", () => {
+  // The two the batch guard uses are not named anywhere, and do not need to be: anything the server
+  // refuses stops. That is the point - the next code anybody adds cannot fall into the old trap.
+  assert.doesNotMatch(queueSource, /METER_IN_ANOTHER_TEAMS_BATCH|BATCH_CHECK_UNAVAILABLE/);
+  assert.match(queueSource, /markSubmissionQueueItemRefused\(/);
 });
 
-test("the refusals the phone already knew are still there", () => {
-  for (const code of [
-    "TARGETED_BATCH_ACCESS_DENIED",
-    "TARGETED_BATCH_NOT_ASSIGNED_TO_ACTOR",
-    "TARGETED_BATCH_METER_ALREADY_LINKED",
-    "TARGETED_BATCH_ROW_NOT_EXECUTABLE",
-    "IDEMPOTENCY_CONFLICT",
-    "SALES_DOCUMENT_NOT_FOUND",
-  ]) {
-    assert.ok(refusedCodes.includes(code), `${code} was dropped from the list`);
-  }
-  assert.equal(new Set(refusedCodes).size, refusedCodes.length, "a code is listed twice");
+test("only a job that is genuinely not ready yet keeps waiting", () => {
+  assert.deepEqual(keepWaiting, ["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND"]);
+  const branch = queueSource.slice(
+    queueSource.indexOf("if (KEEP_WAITING_CODES.includes(code)) {"),
+    queueSource.indexOf("// The server answered and refused"),
+  );
+  assert.match(branch, /status: "PENDING"/);
 });
 
 test("a refused job is kept as a conflict, never retried, with the server's own sentence", () => {
-  assert.match(queueSource, /if \(REFUSED_BY_THE_SERVER\.includes\(code\)\) \{/);
-  const branch = queueSource.slice(
-    queueSource.indexOf("if (REFUSED_BY_THE_SERVER.includes(code)) {"),
-    queueSource.indexOf("// Parent premise not ready yet"),
+  const refused = failedSource.slice(
+    failedSource.indexOf("export const markSubmissionQueueItemRefused"),
+    failedSource.indexOf("export const markSubmissionQueueItemFailed"),
   );
-  assert.match(branch, /status: "CONFLICT"/);
+  assert.match(refused, /status: "CONFLICT"/);
   // Word for word: the server's message is kept, and only stood in for when it sent none.
-  assert.match(branch, /message: result\?\.message \|\|/);
-  // It does not fall through to the retrying path.
-  assert.match(branch, /continue;/);
+  assert.match(refused, /message: result\?\.message \|\|/);
+  // Work the server has already accepted is never turned into a refusal.
+  assert.match(refused, /Queue item is already server-confirmed/);
 });
 
-test("every form that goes through the queue is covered by that one list", () => {
-  // Meter Discovery's No Access queue runs the same processor with a filter, so the codes cover it too.
-  assert.doesNotMatch(queueSource, /METER_IN_ANOTHER_TEAMS_BATCH[\s\S]{0,400}formType/);
-  assert.equal(
-    (queueSource.match(/REFUSED_BY_THE_SERVER/g) || []).length,
-    2,
-    "the list is declared once and read once",
-  );
+test("every form that goes through the queue is covered, in one place", () => {
+  // Meter Discovery's No Access queue runs the same processor with a filter, so one rule serves
+  // Discovery, Installation, Removal, Disconnection, Reconnection, Inspection, Reading and
+  // Commissioning. Nothing here is per form.
+  assert.doesNotMatch(queueSource, /formType[\s\S]{0,80}REFUSED|REFUSED[\s\S]{0,80}formType/);
+  assert.doesNotMatch(queueSource, /REFUSED_BY_THE_SERVER/, "the old list is gone");
 });
 
-test("the card calls a refused job refused, not still pending", () => {
+test("m06 is closed: nothing the server refuses is written back as waiting", () => {
+  // The trap was that markSubmissionQueueItemFailed writes PENDING for everything, and every code the
+  // phone did not recognise went to it. It is now only for a job that never reached the server.
+  assert.match(failedSource, /keeping item PENDING/);
+  const failed = failedSource.slice(failedSource.indexOf("export const markSubmissionQueueItemFailed"));
+  assert.match(failed, /status: "PENDING"/);
+
+  // Both files send a refusal to the refusal marker, and keep the waiting marker for their catch block.
+  for (const source of [queueSource, storageSource]) {
+    const waiting = (source.match(/markSubmissionQueueItemFailed\(/g) || []).length;
+    assert.equal(waiting, 1, "only the catch block may keep a job waiting");
+    assert.match(source, /markSubmissionQueueItemRefused\(/);
+  }
+});
+
+test("a refused card is red and says Refused, and the worker is never told it is saved", () => {
   assert.match(cardSource, /item\?\.status === "CONFLICT"\s*\?\s*"Refused"/);
-  // And it shows what the server said, rather than "Draft saved locally".
+  assert.match(cardSource, /if \(status === "CONFLICT"\) return "#dc2626";/);
   assert.match(cardSource, /message: item\?\.result\?\.message/);
   const pending = cardSource.slice(
     cardSource.indexOf('if (item?.status === "PENDING")'),
     cardSource.indexOf('if (item?.status === "SYNCING")'),
   );
   assert.match(pending, /Draft saved locally/, "PENDING keeps its own wording");
-});
-
-test("the wider trap is still open, and is m06 — not silently assumed fixed", () => {
-  // Any code NOT on the list is still written back as PENDING and retried for ever. x11 covers the two
-  // the guard uses; the owner kept the wider fix as its own job so it does not delay the LIVE release.
-  assert.match(failedSource, /keeping item PENDING/);
-  assert.match(failedSource, /status: "PENDING"/);
 });

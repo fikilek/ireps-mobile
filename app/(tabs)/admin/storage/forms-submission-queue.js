@@ -26,6 +26,7 @@ import {
   getSubmissionQueue,
   getSubmissionQueueItemById,
   markSubmissionQueueItemFailed,
+  markSubmissionQueueItemRefused,
   markSubmissionQueueItemSuccess,
   markSubmissionQueueItemSyncing,
   removeSubmissionQueueItem,
@@ -201,7 +202,8 @@ const processSingleSubmissionQueueItem = async (
     const callableName = getCallableNameForSubmissionQueueItem(item);
 
     if (!callableName) {
-      await markSubmissionQueueItemFailed(
+      // m06: nothing about waiting will give this item a form type. It stops.
+      await markSubmissionQueueItemRefused(
         queueItemId,
         {
           code: "UNKNOWN_QUEUE_FORM_TYPE",
@@ -304,11 +306,12 @@ const processSingleSubmissionQueueItem = async (
         };
       }
 
-      await markSubmissionQueueItemFailed(
+      // m06: the server answered and refused. It stops here, in the server's own words.
+      await markSubmissionQueueItemRefused(
         queueItemId,
         {
           code,
-          message: result?.message || "Submission sync failed",
+          message: result?.message || "Submission requires review.",
           trnId: result?.trnId || "NAv",
         },
         agentUid,

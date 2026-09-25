@@ -12,6 +12,8 @@ const getStatusColor = (status) => {
   if (status === "SYNCING") return "#2563eb";
   if (status === "SUCCESS") return "#16a34a";
   if (status === "FAILED") return "#dc2626";
+  // m06: a refused job needs a person to look at it. Grey read as though it were resting.
+  if (status === "CONFLICT") return "#dc2626";
   return "#64748b";
 };
 

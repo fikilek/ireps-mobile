@@ -9,6 +9,7 @@ import {
   getCallableNameForSubmissionQueueItem,
   getSubmissionQueue,
   markSubmissionQueueItemFailed,
+  markSubmissionQueueItemRefused,
   markSubmissionQueueItemSuccess,
   markSubmissionQueueItemSyncing,
   updateSubmissionQueueItem,
@@ -37,29 +38,16 @@ function isStandardMeterDiscoveryQueueItem(item = {}) {
   return trnType === "METER_DISCOVERY";
 }
 
-// x11 (TB-R059): the server has decided, and trying again cannot change its mind. These are kept as
-// CONFLICT: never retried, and the card shows the server's own sentence to the worker.
+// x11 and m06 (TB-R059): when the server answers, it has decided, and sending the job again cannot
+// change its mind. The job is kept as a refusal — never sent again — with the server's own sentence for
+// the worker to read. Only these few codes mean "not yet, try later"; a job that never reached the
+// server at all is a different thing and keeps waiting (the catch below).
 //
-// METER_IN_ANOTHER_TEAMS_BATCH and BATCH_CHECK_UNAVAILABLE are the two the guard refuses with. Without
-// them the phone read a refusal as a network problem: it wrote the job back to PENDING, told the worker
-// "Draft saved locally", and retried for ever while the work was never accepted.
-const REFUSED_BY_THE_SERVER = [
-  "METER_IN_ANOTHER_TEAMS_BATCH",
-  "BATCH_CHECK_UNAVAILABLE",
-  "TARGETED_BATCH_ACCESS_DENIED",
-  "TARGETED_BATCH_NOT_ASSIGNED_TO_ACTOR",
-  "TARGETED_BATCH_METER_ALREADY_LINKED",
-  "TARGETED_BATCH_ROW_NOT_EXECUTABLE",
-  "TARGETED_BATCH_ROW_EXECUTION_STATE_INVALID",
-  "TARGETED_BATCH_ROW_CORRELATION_MISMATCH",
-  "TARGETED_BATCH_SALES_LINK_MISMATCH",
-  "TARGETED_BATCH_ERF_LINK_MISMATCH",
-  "TARGETED_BATCH_PREMISE_LINK_MISMATCH",
-  "SALES_DOCUMENT_NOT_FOUND",
-  "SALES_TB_REF_NOT_FOUND",
-  "SALES_TB_REF_DUPLICATE",
-  "IDEMPOTENCY_CONFLICT",
-];
+// It is written this way round on purpose. It used to be a list of refusals the phone recognised, and
+// anything not on it was put back to waiting and retried for ever while the card read "Draft saved
+// locally" — so every code anybody added later fell into the same trap, silently. Now the trap cannot
+// be re-made: an unknown refusal stops, like every other refusal.
+const KEEP_WAITING_CODES = ["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND"];
 
 export const processSubmissionQueue = async ({
   agentUid = "SYSTEM",
@@ -215,7 +203,8 @@ export const processSubmissionQueue = async ({
         const callableName = getCallableNameForSubmissionQueueItem(item);
 
         if (!callableName) {
-          await markSubmissionQueueItemFailed(
+          // m06: nothing about waiting will give this item a form type. It stops.
+          await markSubmissionQueueItemRefused(
             item.id,
             {
               code: "UNKNOWN_QUEUE_FORM_TYPE",
@@ -252,16 +241,8 @@ export const processSubmissionQueue = async ({
         if (!result?.success) {
           const code = result?.code || "SYNC_FAILED";
 
-          if (REFUSED_BY_THE_SERVER.includes(code)) {
-            await updateSubmissionQueueItem(item.id, {
-              status: "CONFLICT",
-              result: { success: false, code, message: result?.message || "Submission requires review.", trnId: finalPayload?.trnId || "NAv" },
-            }, agentUid, agentName);
-            continue;
-          }
-
           // Parent premise not ready yet -> keep retryable
-          if (code === "INVALID_PREMISE_ID" || code === "PREMISE_NOT_FOUND") {
+          if (KEEP_WAITING_CODES.includes(code)) {
             await updateSubmissionQueueItem(
               item.id,
               {
@@ -282,12 +263,13 @@ export const processSubmissionQueue = async ({
             continue;
           }
 
-          await markSubmissionQueueItemFailed(
+          // The server answered and refused: it stops here, in the server's own words.
+          await markSubmissionQueueItemRefused(
             item.id,
             {
               code,
-              message: result?.message || "Submission sync failed",
-              trnId: result?.trnId || "NAv",
+              message: result?.message || "Submission requires review.",
+              trnId: result?.trnId || finalPayload?.trnId || "NAv",
             },
             agentUid,
             agentName,
