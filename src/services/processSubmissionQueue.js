@@ -37,6 +37,30 @@ function isStandardMeterDiscoveryQueueItem(item = {}) {
   return trnType === "METER_DISCOVERY";
 }
 
+// x11 (TB-R059): the server has decided, and trying again cannot change its mind. These are kept as
+// CONFLICT: never retried, and the card shows the server's own sentence to the worker.
+//
+// METER_IN_ANOTHER_TEAMS_BATCH and BATCH_CHECK_UNAVAILABLE are the two the guard refuses with. Without
+// them the phone read a refusal as a network problem: it wrote the job back to PENDING, told the worker
+// "Draft saved locally", and retried for ever while the work was never accepted.
+const REFUSED_BY_THE_SERVER = [
+  "METER_IN_ANOTHER_TEAMS_BATCH",
+  "BATCH_CHECK_UNAVAILABLE",
+  "TARGETED_BATCH_ACCESS_DENIED",
+  "TARGETED_BATCH_NOT_ASSIGNED_TO_ACTOR",
+  "TARGETED_BATCH_METER_ALREADY_LINKED",
+  "TARGETED_BATCH_ROW_NOT_EXECUTABLE",
+  "TARGETED_BATCH_ROW_EXECUTION_STATE_INVALID",
+  "TARGETED_BATCH_ROW_CORRELATION_MISMATCH",
+  "TARGETED_BATCH_SALES_LINK_MISMATCH",
+  "TARGETED_BATCH_ERF_LINK_MISMATCH",
+  "TARGETED_BATCH_PREMISE_LINK_MISMATCH",
+  "SALES_DOCUMENT_NOT_FOUND",
+  "SALES_TB_REF_NOT_FOUND",
+  "SALES_TB_REF_DUPLICATE",
+  "IDEMPOTENCY_CONFLICT",
+];
+
 export const processSubmissionQueue = async ({
   agentUid = "SYSTEM",
   agentName = "SYSTEM",
@@ -228,14 +252,7 @@ export const processSubmissionQueue = async ({
         if (!result?.success) {
           const code = result?.code || "SYNC_FAILED";
 
-          if ([
-            "TARGETED_BATCH_METER_ALREADY_LINKED", "TARGETED_BATCH_ROW_NOT_EXECUTABLE",
-            "TARGETED_BATCH_ROW_EXECUTION_STATE_INVALID", "TARGETED_BATCH_ROW_CORRELATION_MISMATCH",
-            "TARGETED_BATCH_SALES_LINK_MISMATCH", "TARGETED_BATCH_ERF_LINK_MISMATCH",
-            "TARGETED_BATCH_PREMISE_LINK_MISMATCH", "SALES_DOCUMENT_NOT_FOUND",
-            "SALES_TB_REF_NOT_FOUND", "SALES_TB_REF_DUPLICATE", "IDEMPOTENCY_CONFLICT",
-            "TARGETED_BATCH_ACCESS_DENIED", "TARGETED_BATCH_NOT_ASSIGNED_TO_ACTOR",
-          ].includes(code)) {
+          if (REFUSED_BY_THE_SERVER.includes(code)) {
             await updateSubmissionQueueItem(item.id, {
               status: "CONFLICT",
               result: { success: false, code, message: result?.message || "Submission requires review.", trnId: finalPayload?.trnId || "NAv" },

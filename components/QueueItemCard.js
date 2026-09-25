@@ -106,7 +106,11 @@ export default function QueueItemCard({
         ? "Synced"
         : item?.status === "PENDING"
           ? "Sync"
-          : "Pending Only";
+          : // x11: a job the server refused is not waiting for anything. "Pending Only" read as though
+            // it still had a chance, on work that will never be accepted.
+            item?.status === "CONFLICT"
+            ? "Refused"
+            : "Pending Only";
 
   const syncDisabled = busy || !isOnline || item?.status !== "PENDING";
 
