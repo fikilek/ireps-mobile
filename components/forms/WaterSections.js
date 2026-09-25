@@ -28,11 +28,8 @@ export const WaterSections = ({
   nearbyMeters = [],
   isDiscovery = false,
 }) => {
-  // UI-R004: a locked section is not faded. Its fade multiplied with the
-  // input's own and left the meter number unreadable, which is what the
-  // owner photographed. The boxes say locked on their own.
   return (
-    <View>
+    <View style={disabled && { opacity: 0.7 }}>
       <FormSection title="Water Meter Description">
         <FormInputMeterNo
           label="Meter Number"

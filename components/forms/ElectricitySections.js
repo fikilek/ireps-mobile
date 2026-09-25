@@ -158,11 +158,8 @@ export const ElectricitySections = ({
     setFieldValue("ast.normalisation.noActionReason", reason);
   };
 
-  // UI-R004: a locked section is not faded. Its fade multiplied with the
-  // input's own and left the meter number unreadable, which is what the
-  // owner photographed. The boxes say locked on their own.
   return (
-    <View>
+    <View style={disabled && { opacity: 0.7 }}>
       {/* ⚡ SECTION 1: CORE METER DATA */}
       <FormSection
         title={`${isInstallation ? "INSTALLATION" : "DISCOVERY"} - Electricity Meter Details`}
