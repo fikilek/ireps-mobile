@@ -24,6 +24,7 @@ import { OtherAnomalySection } from "./OtherAnomalySection";
 import { FormSection } from "./FormSection";
 import FormSelect from "./FormSelect";
 import { RemainingCreditSection } from "./RemainingCreditSection";
+import { FORM_TEXT } from "../../src/theme/formColors";
 
 export const ElectricitySections = ({
   values,
@@ -157,8 +158,11 @@ export const ElectricitySections = ({
     setFieldValue("ast.normalisation.noActionReason", reason);
   };
 
+  // UI-R004: a locked section is not faded. Its fade multiplied with the
+  // input's own and left the meter number unreadable, which is what the
+  // owner photographed. The boxes say locked on their own.
   return (
-    <View style={disabled && { opacity: 0.7 }}>
+    <View>
       {/* ⚡ SECTION 1: CORE METER DATA */}
       <FormSection
         title={`${isInstallation ? "INSTALLATION" : "DISCOVERY"} - Electricity Meter Details`}
@@ -609,7 +613,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
-  sectionTitle: { fontSize: 14, fontWeight: "bold", color: "#475569" },
+  sectionTitle: { fontSize: 14, fontWeight: "bold", color: FORM_TEXT },
   input: { marginBottom: 10, backgroundColor: "#fff" },
   selector: {
     flexDirection: "row",
@@ -644,7 +648,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 12,
     fontWeight: "800",
-    color: "#475569",
+    color: FORM_TEXT,
     marginBottom: 12,
     textTransform: "uppercase",
   },
@@ -653,10 +657,10 @@ const styles = StyleSheet.create({
   actionText: {
     fontSize: 10,
     fontWeight: "bold",
-    color: "#475569",
+    color: FORM_TEXT,
     marginTop: 4,
   },
-  selectorValue: { fontSize: 16, fontWeight: "600", color: "#1E293B" },
+  selectorValue: { fontSize: 16, fontWeight: "600", color: FORM_TEXT },
   footer: { flexDirection: "row", gap: 12, marginTop: 20, padding: 20 },
   submitBtn: { flex: 2, borderRadius: 10 },
   resetBtn: { flex: 1, borderRadius: 10 },
@@ -698,7 +702,7 @@ const styles = StyleSheet.create({
   },
   gpsBadgeText: { fontSize: 10, color: "#166534", fontWeight: "bold" },
 
-  headerMeterText: { fontSize: 14, color: "#64748b", fontWeight: "bold" },
+  headerMeterText: { fontSize: 14, color: FORM_TEXT, fontWeight: "bold" },
 
   actionBlock: {
     backgroundColor: "#fff",
@@ -841,7 +845,7 @@ const styles = StyleSheet.create({
   },
   successSub: {
     fontSize: 14,
-    color: "#64748B",
+    color: FORM_TEXT,
     textAlign: "center",
     marginTop: 8,
     marginBottom: 24,
@@ -885,7 +889,7 @@ const styles = StyleSheet.create({
   tinyLabel: {
     fontSize: 9,
     fontWeight: "bold",
-    color: "#475569",
+    color: FORM_TEXT,
     marginTop: 2,
   },
   inputContainer: {
@@ -976,11 +980,11 @@ const styles = StyleSheet.create({
   checkLabel: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#64748B",
+    color: FORM_TEXT,
     marginLeft: 10,
   },
   checkLabelActive: {
-    color: "#1E293B",
+    color: FORM_TEXT,
   },
   normalisationNote: {
     fontSize: 13,
@@ -997,7 +1001,7 @@ const styles = StyleSheet.create({
   reasonTitle: {
     fontSize: 13,
     fontWeight: "bold",
-    color: "#475569",
+    color: FORM_TEXT,
     paddingHorizontal: 10,
     paddingBottom: 4,
   },

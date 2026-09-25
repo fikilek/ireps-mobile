@@ -77,6 +77,7 @@ import {
   getSubmissionQueueItemById,
   updateSubmissionQueueItem,
 } from "../../../src/utils/submissionQueue";
+import { FORM_TEXT } from "../../../src/theme/formColors";
 
 const EMPTY_SELECT_WITH_OTHER = {
   code: "",
@@ -4856,7 +4857,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     fontSize: 14,
     fontWeight: "800",
-    color: "#111827",
+    color: FORM_TEXT,
   },
   normalisationRow: {
     flexDirection: "row",
@@ -4864,7 +4865,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 8,
   },
-  normalisationLabel: { fontSize: 14, color: "#1E293B", flexShrink: 1 },
+  normalisationLabel: { fontSize: 14, color: FORM_TEXT, flexShrink: 1 },
   normalisationNote: { fontSize: 13, color: "#B45309", paddingTop: 4 },
   reasonBlock: {
     borderTopWidth: 1,
@@ -4875,7 +4876,7 @@ const styles = StyleSheet.create({
   reasonTitle: {
     fontSize: 13,
     fontWeight: "bold",
-    color: "#475569",
+    color: FORM_TEXT,
     paddingBottom: 4,
   },
   reasonInput: { marginTop: 8, backgroundColor: "#fff" },
@@ -4899,7 +4900,7 @@ const styles = StyleSheet.create({
   },
   loaderText: {
     marginTop: 10,
-    color: "#475569",
+    color: FORM_TEXT,
     fontWeight: "700",
   },
   emptyState: {
@@ -4918,7 +4919,7 @@ const styles = StyleSheet.create({
   emptyText: {
     marginTop: 6,
     textAlign: "center",
-    color: "#64748b",
+    color: FORM_TEXT,
     lineHeight: 20,
   },
   summaryGrid: {
@@ -4936,7 +4937,7 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 10,
-    color: "#64748B",
+    color: FORM_TEXT,
     fontWeight: "900",
     textTransform: "uppercase",
     marginBottom: 4,
@@ -4952,7 +4953,7 @@ const styles = StyleSheet.create({
   },
   addressText: {
     marginLeft: 6,
-    color: "#334155",
+    color: FORM_TEXT,
     fontSize: 12,
     fontWeight: "700",
     flex: 1,
@@ -5019,7 +5020,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   infoLabel: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontWeight: "700",
     fontSize: 12,
   },
@@ -5031,7 +5032,7 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   helperText: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 12,
     marginTop: 8,
   },
@@ -5074,7 +5075,7 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   lastKnownText: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 12,
     fontWeight: "700",
     flex: 1,
@@ -5160,7 +5161,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   questionDescription: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 12,
     lineHeight: 18,
     marginTop: 2,
@@ -5196,7 +5197,7 @@ const styles = StyleSheet.create({
   readOnlyLabel: {
     fontSize: 10,
     fontWeight: "900",
-    color: "#64748B",
+    color: FORM_TEXT,
     textTransform: "uppercase",
   },
 
@@ -5226,14 +5227,14 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     fontWeight: "800",
-    color: "#334155",
+    color: FORM_TEXT,
   },
 
   mediaReadOnlyMeta: {
     marginTop: 2,
     fontSize: 10,
     fontWeight: "700",
-    color: "#64748B",
+    color: FORM_TEXT,
   },
 
   mediaReadOnlyThumbWrap: {
@@ -5299,7 +5300,7 @@ const styles = StyleSheet.create({
   },
 
   instructionMediaModalSub: {
-    color: "#64748B",
+    color: FORM_TEXT,
     fontSize: 11,
     fontWeight: "800",
     marginTop: 2,
@@ -5338,7 +5339,7 @@ const styles = StyleSheet.create({
   },
 
   instructionMediaMetaText: {
-    color: "#475569",
+    color: FORM_TEXT,
     fontSize: 11,
     fontWeight: "800",
     marginBottom: 2,
@@ -5395,7 +5396,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
   },
   comparisonSub: {
-    color: "#64748b",
+    color: FORM_TEXT,
     marginTop: 2,
   },
   comparisonList: {
@@ -5426,7 +5427,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   confirmWarning: {
-    color: "#64748b",
+    color: FORM_TEXT,
     fontSize: 12,
     lineHeight: 18,
     marginTop: 8,
@@ -5480,7 +5481,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   outcomeMessage: {
-    color: "#475569",
+    color: FORM_TEXT,
     textAlign: "center",
     lineHeight: 20,
     marginTop: 8,

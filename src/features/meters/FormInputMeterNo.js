@@ -14,6 +14,7 @@ import {
 import { Button, Modal, Portal } from "react-native-paper";
 import { useWarehouse } from "../../context/WarehouseContext";
 import { cleanMeterNumberInput } from "./meterNumberRule";
+import { FORM_TEXT, FORM_PLACEHOLDER } from "../../theme/formColors";
 
 const FormInputMeterNo = ({ label, name, disabled }) => {
   const { setFieldValue, values, errors, handleBlur, isSubmitting } =
@@ -94,11 +95,13 @@ const FormInputMeterNo = ({ label, name, disabled }) => {
             editable={!disabled && !isSubmitting}
             autoCapitalize="characters"
             placeholder="Enter or Scan Meter No"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={FORM_PLACEHOLDER}
           />
 
           {/* 🔄 DYNAMIC ICON OVERLAY */}
           <View style={styles.iconOverlay}>
+            {/* A clear button never offers what it cannot do. */}
+            {!disabled && (
             <TouchableOpacity
               onPress={
                 currentValue ? () => setFieldValue(name, "") : handleOpenScanner
@@ -111,6 +114,7 @@ const FormInputMeterNo = ({ label, name, disabled }) => {
                 color={currentValue ? "#ef4444" : "#3b82f6"}
               />
             </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
@@ -152,7 +156,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 10,
     fontWeight: "900",
-    color: "#64748b",
+    color: FORM_TEXT,
     marginBottom: 4,
     textTransform: "uppercase",
   },
@@ -173,7 +177,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    color: "#1e293b",
+    color: FORM_TEXT,
     fontWeight: "600",
     height: 50,
   },
@@ -192,7 +196,13 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: "700",
   },
-  disabledInput: { opacity: 0.5, backgroundColor: "#e2e8f0" },
+  // A locked box keeps its value at full strength and says it is locked with
+  // its fill and border. The worker still has to read the number off it.
+  disabledInput: {
+    backgroundColor: "#f1f5f9",
+    borderColor: "#94a3b8",
+    borderStyle: "dashed",
+  },
 
   // SCANNER STYLES
   scannerModal: { flex: 1, backgroundColor: "black" },

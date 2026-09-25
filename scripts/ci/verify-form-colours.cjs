@@ -40,21 +40,6 @@ const BOX = /input|label|hint|placeholder|field|search|value|caption|helper/i;
 // words to read (UI-R004 section 2).
 const SIGNAL = /button|disabled|error|pill|badge|chip/i;
 
-/**
- * Meter Inspection, Disconnection, Removal and the meter fields are frozen for
- * the Normalisation release (Sunday 27 September 2026). Their input boxes are
- * already black through the Paper theme; the remaining grey words on them are
- * done in the same pass that unfreezes them. Delete this list then.
- */
-const FROZEN_UNTIL_NORMALISATION = [
-  "app/(tabs)/asts/inspection.js",
-  "app/(tabs)/asts/disconnection.jsx",
-  "app/(tabs)/asts/removal.jsx",
-  "src/features/meters/FormInputMeterNo.js",
-  "components/forms/ElectricitySections.js",
-  "components/forms/WaterSections.js",
-];
-
 function fail(message) {
   console.error(`\n[iREPS CI] ${message}`);
   process.exit(1);
@@ -62,8 +47,7 @@ function fail(message) {
 
 const files = execSync("git ls-files app components src", { encoding: "utf8" })
   .split("\n")
-  .filter((f) => /\.(js|jsx)$/.test(f))
-  .filter((f) => !FROZEN_UNTIL_NORMALISATION.includes(f));
+  .filter((f) => /\.(js|jsx)$/.test(f));
 
 const offenders = [];
 let checked = 0;

@@ -58,6 +58,7 @@ import {
   removeSubmissionQueueItem,
   updateSubmissionQueueItem,
 } from "../../../src/utils/submissionQueue";
+import { FORM_TEXT } from "../../../src/theme/formColors";
 
 const EMPTY_SELECT_WITH_OTHER = {
   code: "",
@@ -2411,7 +2412,7 @@ const styles = StyleSheet.create({
   loaderText: {
     marginTop: 12,
     fontSize: 14,
-    color: "#64748B",
+    color: FORM_TEXT,
     fontWeight: "700",
     textAlign: "center",
   },
@@ -2439,7 +2440,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: "900",
-    color: "#1E293B",
+    color: FORM_TEXT,
     textTransform: "uppercase",
   },
 
@@ -2460,7 +2461,7 @@ const styles = StyleSheet.create({
 
   summaryLabel: {
     fontSize: 10,
-    color: "#64748B",
+    color: FORM_TEXT,
     fontWeight: "900",
     textTransform: "uppercase",
     marginBottom: 4,
@@ -2479,14 +2480,14 @@ const styles = StyleSheet.create({
 
   addressText: {
     marginLeft: 6,
-    color: "#334155",
+    color: FORM_TEXT,
     fontSize: 12,
     fontWeight: "700",
     flex: 1,
   },
 
   accessHelpText: {
-    color: "#475569",
+    color: FORM_TEXT,
     fontSize: 12,
     fontWeight: "700",
     lineHeight: 17,
@@ -2533,7 +2534,7 @@ const styles = StyleSheet.create({
   accessChoiceSub: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#64748B",
+    color: FORM_TEXT,
     marginTop: 2,
   },
 
@@ -2558,7 +2559,7 @@ const styles = StyleSheet.create({
 
   questionDescription: {
     fontSize: 11,
-    color: "#64748B",
+    color: FORM_TEXT,
     fontWeight: "600",
     marginTop: 3,
   },
@@ -2593,7 +2594,7 @@ const styles = StyleSheet.create({
   radioText: {
     fontSize: 12,
     fontWeight: "900",
-    color: "#334155",
+    color: FORM_TEXT,
   },
 
   notesInput: {
@@ -2629,7 +2630,7 @@ const styles = StyleSheet.create({
   readOnlyLabel: {
     fontSize: 10,
     fontWeight: "900",
-    color: "#64748B",
+    color: FORM_TEXT,
     textTransform: "uppercase",
   },
 
@@ -2659,14 +2660,14 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     fontWeight: "800",
-    color: "#334155",
+    color: FORM_TEXT,
   },
 
   mediaReadOnlyMeta: {
     marginTop: 2,
     fontSize: 10,
     fontWeight: "700",
-    color: "#64748B",
+    color: FORM_TEXT,
   },
 
   successModal: {
@@ -2745,7 +2746,7 @@ const styles = StyleSheet.create({
 
   notEligibleText: {
     marginTop: 8,
-    color: "#64748B",
+    color: FORM_TEXT,
     fontSize: 13,
     fontWeight: "700",
     textAlign: "center",
@@ -2753,7 +2754,7 @@ const styles = StyleSheet.create({
 
   summaryLine: {
     fontSize: 13,
-    color: "#334155",
+    color: FORM_TEXT,
     fontWeight: "800",
     marginVertical: 2,
   },
@@ -2796,7 +2797,7 @@ const styles = StyleSheet.create({
 
   outcomeMessage: {
     fontSize: 13,
-    color: "#334155",
+    color: FORM_TEXT,
     marginTop: 12,
     textAlign: "left",
     lineHeight: 19,
@@ -2874,7 +2875,7 @@ const styles = StyleSheet.create({
   },
 
   instructionMediaModalSub: {
-    color: "#64748B",
+    color: FORM_TEXT,
     fontSize: 11,
     fontWeight: "800",
     marginTop: 2,
@@ -2913,7 +2914,7 @@ const styles = StyleSheet.create({
   },
 
   instructionMediaMetaText: {
-    color: "#475569",
+    color: FORM_TEXT,
     fontSize: 11,
     fontWeight: "800",
     marginBottom: 2,
