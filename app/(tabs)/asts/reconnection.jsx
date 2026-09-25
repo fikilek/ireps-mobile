@@ -27,6 +27,7 @@ import { array, object, string } from "yup";
 import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
+import { returnAfterLifecycleWork } from "../../../src/utils/lifecycleReturn";
 import { IrepsFieldCommentSection } from "../../../components/forms/IrepsFieldCommentSection";
 import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
 import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
@@ -296,8 +297,9 @@ function buildBackendReconnectionPayload(
   }
 
   return {
+    // The worker confirms by submitting the form.
     supplyReconnected: {
-      answer: reconnection?.supplyReconnected?.answer || "",
+      answer: "yes",
       notes: reconnection?.supplyReconnected?.notes || "",
     },
   };
@@ -453,92 +455,16 @@ const ReconnectionSchema = object()
       return true;
     }
 
-    if (!["yes", "no"].includes(reconnection?.supplyReconnected?.answer)) {
-      return this.createError({
-        path: "reconnection.supplyReconnected.answer",
-        message: "Supply reconnected answer is required",
-      });
-    }
-
-    if (reconnection?.supplyReconnected?.answer !== "yes") {
-      return this.createError({
-        path: "reconnection.supplyReconnected.answer",
-        message: "Supply must be confirmed as reconnected before submit",
-      });
-    }
-
     if (!hasMediaTag(media, "reconnectionEvidence")) {
       return this.createError({
         path: "media",
-        message: "Reconnection evidence required",
+        message: "The photo showing the supply is back on is required",
       });
     }
 
     return true;
   });
 
-const YesNoQuestion = ({
-  title,
-  description,
-  value,
-  notes,
-  answerPath,
-  notesPath,
-  setFieldValue,
-  errorText,
-  children,
-}) => {
-  return (
-    <Surface style={styles.questionCard} elevation={1}>
-      <View style={styles.questionHeader}>
-        <Text style={styles.questionTitle}>{title}</Text>
-        <Text style={styles.questionDescription}>{description}</Text>
-      </View>
-
-      <RadioButton.Group
-        value={value}
-        onValueChange={(nextValue) => setFieldValue(answerPath, nextValue)}
-      >
-        <View style={styles.radioRow}>
-          <TouchableOpacity
-            style={[
-              styles.radioChoice,
-              value === "yes" && styles.radioChoiceYes,
-            ]}
-            onPress={() => setFieldValue(answerPath, "yes")}
-          >
-            <RadioButton value="yes" />
-            <Text style={styles.radioText}>YES</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.radioChoice, value === "no" && styles.radioChoiceNo]}
-            onPress={() => setFieldValue(answerPath, "no")}
-          >
-            <RadioButton value="no" />
-            <Text style={styles.radioText}>NO</Text>
-          </TouchableOpacity>
-        </View>
-      </RadioButton.Group>
-
-      {value === "no" && (
-        <TextInput
-          mode="outlined"
-          label="Reason / Notes"
-          value={notes}
-          onChangeText={(text) => setFieldValue(notesPath, text)}
-          multiline
-          numberOfLines={3}
-          style={styles.notesInput}
-        />
-      )}
-
-      <View style={styles.questionEvidenceSlot}>{children}</View>
-
-      {!!errorText && <Text style={styles.errorText}>{errorText}</Text>}
-    </Surface>
-  );
-};
 
 const AccessOutcomeCard = ({ value, setFieldValue }) => {
   return (
@@ -945,7 +871,9 @@ export default function FormMeterReconnection() {
   }
 
   function navigateAfterReconnection() {
-    router.replace(getLifecycleReturnRoute());
+    // REPLACE cannot cross tabs: from a batch this route is in the Admin tab, and the worker was shown
+    // "The action 'REPLACE' ... was not handled by any navigator" after a submit that had worked.
+    returnAfterLifecycleWork(router, getLifecycleReturnRoute());
   }
 
   useEffect(() => {
@@ -1520,8 +1448,9 @@ export default function FormMeterReconnection() {
       },
 
       reconnection: {
+        // The worker confirms by submitting the form.
         supplyReconnected: {
-          answer: "",
+          answer: "yes",
           notes: "",
         },
       },
@@ -2143,31 +2072,39 @@ export default function FormMeterReconnection() {
                   />
                 ) : (
                   <>
-                    <YesNoQuestion
-                      title="Supply reconnected"
-                      description="Confirm that the supply was reconnected and made safe for use."
-                      value={values?.reconnection?.supplyReconnected?.answer}
-                      notes={values?.reconnection?.supplyReconnected?.notes}
-                      answerPath="reconnection.supplyReconnected.answer"
-                      notesPath="reconnection.supplyReconnected.notes"
-                      setFieldValue={setFieldValue}
-                      errorText={
-                        reconnectionErrors?.supplyReconnected?.answer ||
-                        reconnectionErrors?.supplyReconnected?.notes
-                      }
-                    >
-                      <IrepsMedia
-                        name="media"
-                        tag="reconnectionEvidence"
-                        agentName={agentName}
-                        agentUid={agentUid}
-                        fallbackGps={fallbackGps}
-                        required={
-                          values?.reconnection?.supplyReconnected?.answer ===
-                          "yes"
-                        }
-                      />
-                    </YesNoQuestion>
+                    {/* The reconnection form is filled in because the supply
+                        is back on, so submitting it is the confirmation. One
+                        photo is the proof — the same as the removal
+                        (MN-R001 6.1, 1.3.2). */}
+                    <Surface style={styles.questionCard} elevation={1}>
+                      <View style={styles.questionHeader}>
+                        <Text style={styles.questionTitle}>
+                          Confirm supply reconnected
+                        </Text>
+
+                        <Text style={styles.questionDescription}>
+                          Take the photo that shows the supply is back on and
+                          safe. Submitting this form confirms the reconnection.
+                        </Text>
+                      </View>
+
+                      <View style={styles.questionEvidenceSlot}>
+                        <IrepsMedia
+                          name="media"
+                          tag="reconnectionEvidence"
+                          agentName={agentName}
+                          agentUid={agentUid}
+                          fallbackGps={fallbackGps}
+                          required
+                        />
+                      </View>
+
+                      {!!reconnectionErrors?.supplyReconnected?.answer && (
+                        <Text style={styles.errorText}>
+                          {reconnectionErrors.supplyReconnected.answer}
+                        </Text>
+                      )}
+                    </Surface>
 
                   </>
                 )}

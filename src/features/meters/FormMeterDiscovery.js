@@ -58,15 +58,30 @@ import {
 import { ForensicFooter } from "./ForensicFooter";
 import { isCompleteNoAccessReason } from "./noAccessReasons";
 import {
+  MANAGER_DISCONNECTION_MESSAGE,
+  MANAGER_REPLACEMENT_MESSAGE,
+  buildRemovalRouteParams,
+  getFollowOnWork,
+  buildDisconnectionRouteParams,
+  canDoFieldDisconnection,
+  leadsToDisconnection,
+  waitForMeterRecord,
+} from "./normalisationHandover";
+import {
   canonicalizeRemainingCredit,
   getRemainingCreditValidationError,
   hydrateRemainingCreditMeter,
 } from "./remainingCreditContract";
 import {
+  NORMALISATION_NONE,
+  NO_ACTION_REASONS,
+  NO_ACTION_REASON_OTHER,
   anomalyPhotoRequired,
   getFormOptionValues,
   getFormOptions,
+  getNormalisationValidationError,
   isFormOptionPhotoRequired,
+  normalisationPhotoRequired,
 } from "./formOptions";
 
 function buildMeterDiscoveryTrnId({ wardPcode, erfNo, meterType }) {
@@ -146,7 +161,6 @@ function isValidMeterGps(value) {
 }
 
 const OTHER_ANOMALY_VALUES = getFormOptionValues("other_anomalies");
-const NORMALISATION_ACTION_VALUES = getFormOptionValues("norm_actions");
 const STANDARD_ELECTRICITY_MANUFACTURERS = getFormOptionValues(
   "elec_manufacturers",
 ).filter((value) => value !== "Other");
@@ -264,6 +278,22 @@ function hydrateMeterDiscoveryEditPayload(payload) {
   };
 
   if (hydrated?.meterType === "electricity") {
+    // A draft saved earlier holds the typed words in the reason itself; put them
+    // back behind Other so the worker sees what they wrote.
+    const normalisation = hydrated?.ast?.normalisation || {};
+    const storedReason = String(normalisation.noActionReason || "").trim();
+    const isListedReason =
+      !storedReason || NO_ACTION_REASONS.includes(storedReason);
+
+    hydrated.ast.normalisation = {
+      ...normalisation,
+      actionTaken: Array.isArray(normalisation.actionTaken)
+        ? [...normalisation.actionTaken]
+        : [NORMALISATION_NONE],
+      noActionReason: isListedReason ? storedReason : NO_ACTION_REASON_OTHER,
+      noActionReasonOther: isListedReason ? "" : storedReason,
+    };
+
     hydrated.ast.astData = {
       ...(hydrated.ast.astData || {}),
     };
@@ -321,6 +351,24 @@ function buildCanonicalMeterDiscoveryAst(values) {
   };
 
   if (values?.meterType === "electricity") {
+    // MN-R001: the reason is stored as the reason, with Other replaced by the
+    // words the worker typed.
+    const normalisation = canonicalAst.normalisation || {};
+    const reason = String(normalisation.noActionReason || "").trim();
+
+    canonicalAst.normalisation = {
+      ...normalisation,
+      actionTaken: Array.isArray(normalisation.actionTaken)
+        ? [...normalisation.actionTaken]
+        : [NORMALISATION_NONE],
+      noActionReason:
+        reason === NO_ACTION_REASON_OTHER
+          ? String(normalisation.noActionReasonOther || "").trim()
+          : reason,
+    };
+
+    delete canonicalAst.normalisation.noActionReasonOther;
+
     canonicalAst.astData = {
       ...(canonicalAst.astData || {}),
     };
@@ -495,6 +543,7 @@ export default function FormMeterDiscovery() {
     `${premise?.propertyType?.type || ""} ${premise?.propertyType?.name || ""} ${premise?.propertyType?.unitNo || ""}`.trim();
 
   const [showSuccess, setShowSuccess] = useState(false);
+  const [preparingFollowOn, setPreparingFollowOn] = useState("");
   // console.log(`FormMeterDiscovery ----showSuccess`, showSuccess);
 
   const finalErfNo = premise?.erfNo || "NAv";
@@ -972,34 +1021,37 @@ export default function FormMeterDiscovery() {
         hasOffGridSupply: string().required("Off Grid Status Required"),
       }),
 
-      normalisation: object().shape({
-        actionTaken: array()
-          .strict()
-          .of(
-            string()
-              .strict()
-              .oneOf(
-                NORMALISATION_ACTION_VALUES,
-                "Select a valid Normalisation action",
-              ),
-          )
-          .min(1, "Select at least one Normalisation action")
-          .required("Normalisation action is required")
-          .test(
-            "unique-normalisation-actions",
-            "Normalisation actions cannot contain duplicates",
-            (value) =>
-              !Array.isArray(value) || new Set(value).size === value.length,
-          )
-          .test(
-            "normalisation-none-exclusive",
-            "None cannot be combined with another Normalisation action",
-            (value) =>
-              !Array.isArray(value) ||
-              !value.includes("none") ||
-              value.length === 1,
-          ),
-      }),
+      // MN-R001: the anomaly decides what must follow. One place holds the rule
+      // (formOptions), so the phone, the inspection and the back end agree.
+      normalisation: object()
+        .shape({
+          actionTaken: array()
+            .strict()
+            .of(string().strict())
+            .min(1, "Say what was done about this finding.")
+            .required("Say what was done about this finding."),
+          noActionReason: string().nullable(),
+          noActionReasonOther: string().nullable(),
+        })
+        .test(
+          "normalisation-follows-the-anomaly",
+          "Normalisation is incomplete",
+          function (value) {
+            const validationError = getNormalisationValidationError({
+              anomaly: this.parent?.anomalies?.anomaly,
+              actionTaken: value?.actionTaken,
+              noActionReason: value?.noActionReason,
+              noActionReasonOther: value?.noActionReasonOther,
+            });
+
+            if (!validationError) return true;
+
+            return this.createError({
+              path: `${this.path}.${validationError.path}`,
+              message: validationError.message,
+            });
+          },
+        ),
 
       location: object().shape({
         placement: string()
@@ -1102,12 +1154,8 @@ export default function FormMeterDiscovery() {
             return this.createError({ message: "Anomaly photo required" });
           }
 
-          const hasIntervention = Array.isArray(normalisationActions)
-            ? normalisationActions.some((a) => a !== "none")
-            : false;
-
           if (
-            hasIntervention &&
+            normalisationPhotoRequired(normalisationActions) &&
             !value?.some((m) => m.tag === "normalisationPhoto")
           ) {
             return this.createError({
@@ -1268,7 +1316,11 @@ export default function FormMeterDiscovery() {
             placement: "",
           },
           ogs: { hasOffGridSupply: "no" },
-          normalisation: { actionTaken: ["none"] },
+          normalisation: {
+            actionTaken: [NORMALISATION_NONE],
+            noActionReason: "",
+            noActionReasonOther: "",
+          },
         },
         meterType: "electricity",
         fieldComment: { text: "" },
@@ -1695,9 +1747,17 @@ export default function FormMeterDiscovery() {
       const isOnline = netState.isConnected && netState.isInternetReachable;
 
       if (!isOnline) {
+        const followOnWork = getFollowOnWork(
+          cleanPayload?.ast?.normalisation?.actionTaken,
+        );
+
         await saveMeterDraftToQueue(
           "Saved Offline",
-          "No internet connection. This submission was saved locally and will sync automatically when online.",
+          followOnWork
+            ? `No internet connection. This meter was saved on the phone and will be sent when you are online. The ${
+                followOnWork === "DISCONNECTION" ? "disconnection" : "removal"
+              } cannot be started until it has been sent.`
+            : "No internet connection. This submission was saved locally and will sync automatically when online.",
         );
 
         setInProgress(false);
@@ -1816,6 +1876,84 @@ export default function FormMeterDiscovery() {
 
       if (queueItemId) {
         await removeSubmissionQueueItem(queueItemId);
+      }
+
+      // MN-R001 section 6: the finding calls for a disconnection or a
+      // replacement, so the form for that work follows on from here. It is that
+      // form that is the record, not the word on this one.
+      const followOnWork = getFollowOnWork(
+        cleanPayload?.ast?.normalisation?.actionTaken,
+      );
+
+      if (followOnWork && !canDoFieldDisconnection(profile?.employment?.role)) {
+        setInProgress(false);
+        Alert.alert(
+          "Meter saved",
+          followOnWork === "DISCONNECTION"
+            ? MANAGER_DISCONNECTION_MESSAGE
+            : MANAGER_REPLACEMENT_MESSAGE,
+          [
+          {
+            text: "OK",
+            onPress: () => {
+              updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
+              router.replace(targetedBatchReturnTo);
+            },
+          },
+          ],
+        );
+        return;
+      }
+
+      if (followOnWork) {
+        setPreparingFollowOn(followOnWork);
+
+        const astDoc = await waitForMeterRecord({ astId: cleanPayload.id });
+
+        setPreparingFollowOn("");
+        updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
+        setInProgress(false);
+
+        if (astDoc) {
+          // Close the discovery in the Premises tab first, so it is not left
+          // sitting there, then open the disconnection in the ASTs tab. When the
+          // disconnection is done it returns to the meters list, where the meter
+          // now reads disconnected.
+          const handover = {
+            astDoc,
+            astId: cleanPayload.id,
+            premiseId: gate?.resolvedPremiseId || premise?.id,
+            parentTrnId: cleanPayload.id,
+            parentTrnType: "METER_DISCOVERY",
+            // Where the worker lands when the work that follows is done: back
+            // to the batch they came from, or to the meters list.
+            returnTo: targetedBatchContext
+              ? targetedBatchReturnTo
+              : "/(tabs)/asts",
+          };
+
+          // One move, not two. Replacing the discovery and then pushing the
+          // next form meant the second navigation could be dropped while the
+          // first was still settling — from a batch it always was, and the
+          // worker saw "The action NAVIGATE ... was not handled".
+          router.replace(
+            followOnWork === "DISCONNECTION"
+              ? buildDisconnectionRouteParams(handover)
+              : buildRemovalRouteParams(handover),
+          );
+          return;
+        }
+
+        const workName =
+          followOnWork === "DISCONNECTION" ? "disconnection" : "removal";
+
+        Alert.alert(
+          `Meter saved, ${workName} still to do`,
+          `The meter is not ready yet. Open the ${workName} from the meter card on the ASTs screen.`,
+          [{ text: "OK", onPress: () => router.replace(targetedBatchReturnTo) }],
+        );
+
+        return;
       }
 
       setShowSuccess(true);
@@ -2193,6 +2331,26 @@ export default function FormMeterDiscovery() {
                     >
                       <Text style={styles.continueBtnText}>CONTINUE</Text>
                     </TouchableOpacity>
+                  </View>
+                </Modal>
+              </Portal>
+
+              {/* MN-R001 section 6: never a silent wait between the meter being
+                  saved and the disconnection form opening. */}
+              <Portal>
+                <Modal
+                  visible={!!preparingFollowOn}
+                  dismissable={false}
+                  contentContainerStyle={styles.successModal}
+                >
+                  <View style={styles.successContent}>
+                    <ActivityIndicator size="large" color="#2563eb" />
+                    <Text style={styles.successTitle}>METER SAVED</Text>
+                    <Text style={styles.successSub}>
+                      {preparingFollowOn === "REPLACEMENT"
+                        ? "Preparing the removal…"
+                        : "Preparing the disconnection…"}
+                    </Text>
                   </View>
                 </Modal>
               </Portal>

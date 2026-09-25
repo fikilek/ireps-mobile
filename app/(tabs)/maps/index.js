@@ -21,6 +21,7 @@ import GeoCascadingSelector from "../../../components/maps/GeoCascadingSelector"
 import NeighbourhoodErfMarker from "../../../components/maps/NeighbourhoodErfMarker";
 import NeighbourhoodMeterMarker from "../../../components/maps/NeighbourhoodMeterMarker";
 import NeighbourhoodPremiseMarker from "../../../components/maps/NeighbourhoodPremiseMarker";
+import { formatStreetAddress } from "../../../src/features/premises/streetAddress";
 import PremiseMarkerActionModal from "../../../components/maps/PremiseMarkerActionModal";
 import SelectedErf from "../../../components/maps/SelectedErf";
 import SelecteMeter from "../../../components/maps/SelectedMeter";
@@ -36,8 +37,8 @@ import { useWarehouse } from "../../../src/context/WarehouseContext";
 import BatchCheckOverlay, {
   BATCH_CHECK_MESSAGES,
 } from "../../../src/features/targetedBatches/BatchCheckOverlay";
-import { askBatchOrOrdinaryPremise } from "../../../src/features/targetedBatches/askBatchOrOrdinaryPremise";
-import { askBatchOrOtherDiscovery } from "../../../src/features/targetedBatches/askBatchOrOtherDiscovery";
+import { askPremisePath } from "../../../src/features/targetedBatches/askPremisePath";
+import { askDiscoveryPath } from "../../../src/features/targetedBatches/askDiscoveryPath";
 import { erfWithCarriedBatchContext } from "../../../src/features/targetedBatches/targetedBatchContextCarry";
 import { useAuth } from "../../../src/hooks/useAuth";
 import { useUpdatePremiseMutation } from "../../../src/redux/premisesApi";
@@ -363,7 +364,7 @@ export default function MapsScreen() {
 
     setPremiseActionPrem(null);
 
-    askBatchOrOtherDiscovery({
+    askDiscoveryPath({
       premise: prem,
       parentErf,
       selectedErfContext,
@@ -403,7 +404,7 @@ export default function MapsScreen() {
 
     // TB-R051: a new premise on an ERF selected with a batch is checked live
     // first; the checked batch goes to the form, the same as the Premises tab.
-    askBatchOrOrdinaryPremise({
+    askPremisePath({
       erf: selectedErf,
       updateGeo,
       actor: batchActor,
@@ -893,11 +894,26 @@ export default function MapsScreen() {
       return null;
     }
 
+    // The selected premise is already drawn among its neighbours, with a thick blue border, so a second
+    // label of its own would only cover it (owner, 2026-09-24). This one is left for when the neighbourhood
+    // is not being drawn at all - the premises layer off, or zoomed out past it - and for a premise the
+    // phone does not hold, where the map would otherwise show nothing at all.
+    const neighbourhoodIsDrawing =
+      scopeReady && Boolean(showLayers?.premises) && Boolean(region) && zoom >= 18;
+
+    if (
+      neighbourhoodIsDrawing &&
+      (Array.isArray(all?.prems) ? all.prems : []).some(
+        (prem) => prem?.id === selectedPremise.id,
+      )
+    ) {
+      return null;
+    }
+
     const addr = selectedPremise?.address;
-    const adrLn1 = addr
-      ? `${addr?.strNo || ""} ${addr?.strName}`.trim()
-      : "NO ADR";
-    const adrLn2 = addr ? `${addr?.strType || ""}`.trim() : "";
+    // The street type is written once: "26 OLDACRE ST", never "26 OLDACRE ST Street".
+    const adrLn1 = addr ? formatStreetAddress(addr) || "NO ADR" : "NO ADR";
+    const adrLn2 = "";
 
     return (
       <SelectedPremise
@@ -1007,8 +1023,9 @@ export default function MapsScreen() {
 
     return all?.prems
       ?.filter((prem) => {
-        if (prem?.id === geoState?.selectedPremise?.id) return false;
-
+        // The selected premise used to be left out here, because a blue label of its own was drawn over it.
+        // It is now drawn with its neighbours and says it is selected with a thick blue border, so leaving
+        // it out would take it off the map altogether (owner, 2026-09-24).
         const coordinate = getPremiseCoordinate(prem);
 
         if (coordinate?.latitude == null || coordinate?.longitude == null) {
@@ -1039,6 +1056,10 @@ export default function MapsScreen() {
               mapMode === "edit-premise-marker" && dragPremiseId === prem?.id
             }
             isSaving={savingDragId === prem?.id}
+            // The selected premise is one of these, with a thick blue border (owner, 2026-09-24).
+            isSelected={
+              Boolean(prem?.id) && prem?.id === geoState?.selectedPremise?.id
+            }
             onPress={(e) => handlePremiseMarkerPress(prem, e)}
             onDragEnd={(nextCoordinate) =>
               handlePremiseMarkerDragEnd(prem?.id, nextCoordinate)

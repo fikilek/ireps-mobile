@@ -1,7 +1,19 @@
+import { useEffect, useRef } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { Checkbox, Surface } from "react-native-paper";
+import { Checkbox, RadioButton, Surface } from "react-native-paper";
 import FormInputMeterNo from "../../src/features/meters/FormInputMeterNo";
-import { getFormOptions } from "../../src/features/meters/formOptions";
+import {
+  NORMALISATION_JOB_ACTIONS,
+  NORMALISATION_NONE,
+  NO_ACTION_REASONS,
+  NO_ACTION_REASON_OTHER,
+  getExpectedNormalisationAction,
+  getFormOptions,
+  getNormalisationOptions,
+  isNoActionReasonRequired,
+  isNormalisationRequired,
+  normalisationPhotoRequired,
+} from "../../src/features/meters/formOptions";
 import { removeRemainingCreditPhoto } from "../../src/features/meters/remainingCreditContract";
 import SovereignLocationPicker from "../maps/SovereignLocationPicker";
 import { IrepsMedia } from "../media/IrepsMedia";
@@ -35,73 +47,121 @@ export const ElectricitySections = ({
   const isInstallation = trnId.startsWith("TRN_MINST_");
   const showNormalisation = !isInstallation;
 
-  const rawNormalizationOptions = getOptions("norm_actions") || [];
-
-  const normalizationOptions = rawNormalizationOptions.map((opt) => {
-    if (opt && typeof opt === "object") {
-      const value = opt.value ?? opt.label;
-      return {
-        label: String(opt.label ?? value ?? ""),
-        value,
-      };
-    }
-
-    if (isDiscovery) {
-      return {
-        label: opt === "none" ? "None" : String(opt),
-        value: opt,
-      };
-    }
-
-    return {
-      label: opt === "none" ? "NONE (SAFE)" : String(opt).toUpperCase(),
-      value: opt,
-    };
+  // MN-R001: the finding decides what is offered. None disappears as soon as the
+  // anomaly is not Meter Ok.
+  const anomaly = values?.ast?.anomalies?.anomaly;
+  const normalisationActions = values?.ast?.normalisation?.actionTaken || [];
+  const normalizationOptions = getNormalisationOptions(anomaly);
+  const expectedAction = getExpectedNormalisationAction(anomaly);
+  const needsReason = isNoActionReasonRequired({
+    anomaly,
+    actionTaken: normalisationActions,
   });
 
+  const normalisationActionsKey = normalisationActions.join("|");
+  const normalisationOptionsKey = normalizationOptions
+    .map((opt) => opt.value)
+    .join("|");
+
   const handleToggle = (optionValue) => {
-    // 🏛️ 1. Get current actions, ensuring we handle undefined safely
-    const currentActions = values?.ast?.normalisation?.actionTaken || ["none"];
+    const currentActions = values?.ast?.normalisation?.actionTaken || [
+      NORMALISATION_NONE,
+    ];
 
     let newActions = [];
 
-    // Standardize the incoming value for comparison
-    const incomingValue = optionValue.toLowerCase();
-    console.log(`incomingValue`, incomingValue);
-
-    if (incomingValue === "none") {
-      // ⚔️ If 'NONE' is tapped, it nukes every other selection immediately
-      newActions = ["none"];
+    if (optionValue === NORMALISATION_NONE) {
+      // None clears everything else, and only Meter Ok can reach it.
+      newActions = [NORMALISATION_NONE];
+    } else if (currentActions.includes(optionValue)) {
+      newActions = currentActions.filter((a) => a !== optionValue);
     } else {
-      // ⚔️ If a REAL action is tapped
-      if (currentActions.includes(optionValue)) {
-        // Toggle OFF: Remove the action
-        newActions = currentActions.filter((a) => a !== optionValue);
-      } else {
-        // Toggle ON: Add the action AND filter out any variation of "none"
-        // We use a case-insensitive filter to catch "none", "NONE", or "None"
-        newActions = [
-          ...currentActions.filter((a) => a.toLowerCase() !== "none"),
-          optionValue,
-        ];
-      }
+      // One job per finding: ticking one job clears the other.
+      const isJob = NORMALISATION_JOB_ACTIONS.includes(optionValue);
+      newActions = [
+        ...currentActions.filter(
+          (a) =>
+            a !== NORMALISATION_NONE &&
+            !(isJob && NORMALISATION_JOB_ACTIONS.includes(a)),
+        ),
+        optionValue,
+      ];
     }
 
-    // ⚔️ FINAL GUARD: If the user unchecks everything, force "none" back in
+    // Nothing ticked means nothing was done: the record says none, and where the
+    // finding is not Meter Ok the reason below becomes compulsory.
     if (newActions.length === 0) {
-      newActions = ["none"];
+      newActions = [NORMALISATION_NONE];
     }
-
-    console.log(`newActions`, newActions);
 
     setFieldValue("ast.normalisation.actionTaken", newActions);
+  };
+
+  // A finding can be changed after actions were ticked. Keep the record honest:
+  // drop anything the new finding does not offer, and clear a reason no longer
+  // asked for.
+  const seededForAnomalyRef = useRef(null);
+
+  // MN-R001 2.2 (1.7.0): the finding chooses the action. When the worker picks
+  // a finding that calls for a job, that job is ticked for them; unticking it
+  // is a deliberate act, and then the reason for not acting is asked for. A
+  // draft reopened later is left exactly as the worker saved it.
+  useEffect(() => {
+    const finding = String(anomaly || "").trim();
+
+    if (seededForAnomalyRef.current === null) {
+      seededForAnomalyRef.current = finding;
+      return;
+    }
+
+    if (seededForAnomalyRef.current === finding) return;
+    seededForAnomalyRef.current = finding;
+
+    const expected = getExpectedNormalisationAction(finding);
+
+    setFieldValue("ast.normalisation.actionTaken", [
+      expected || NORMALISATION_NONE,
+    ]);
+    setFieldValue("ast.normalisation.noActionReasonOther", "", false);
+    setFieldValue("ast.normalisation.noActionReason", "");
+    // setFieldValue is stable for the life of the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anomaly]);
+
+  useEffect(() => {
+    const offered = normalisationOptionsKey.split("|");
+    const current = normalisationActionsKey ? normalisationActionsKey.split("|") : [];
+    const kept = current.filter((action) => offered.includes(action));
+    const next = kept.length ? kept : [NORMALISATION_NONE];
+
+    if (next.join("|") !== normalisationActionsKey) {
+      setFieldValue("ast.normalisation.actionTaken", next);
+      return;
+    }
+
+    if (!needsReason && values?.ast?.normalisation?.noActionReason) {
+      setFieldValue("ast.normalisation.noActionReasonOther", "", false);
+      setFieldValue("ast.normalisation.noActionReason", "");
+    }
+    // setFieldValue is stable for the life of the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [normalisationOptionsKey, normalisationActionsKey, needsReason]);
+
+  // One reason only. The typed words are cleared first, without a check, so the
+  // check that runs on the reason itself sees the whole answer.
+  const handleReasonSelect = (reason) => {
+    if (reason !== NO_ACTION_REASON_OTHER) {
+      setFieldValue("ast.normalisation.noActionReasonOther", "", false);
+    }
+
+    setFieldValue("ast.normalisation.noActionReason", reason);
   };
 
   return (
     <View style={disabled && { opacity: 0.7 }}>
       {/* ⚡ SECTION 1: CORE METER DATA */}
       <FormSection
-        title={`${isInstallation ? "INSTALLTION" : "DISCOVERY"} - Electricity Meter Details`}
+        title={`${isInstallation ? "INSTALLATION" : "DISCOVERY"} - Electricity Meter Details`}
       >
         <Surface style={styles.section} elevation={2}>
           <FormInputMeterNo
@@ -150,9 +210,7 @@ export const ElectricitySections = ({
                 label="PHASE"
                 name="ast.astData.meter.phase"
                 options={
-                  isDiscovery
-                    ? getOptions("meter_phases")
-                    : ["single", "three"]
+                  getFormOptions("meter_phases")
                 }
                 disabled={disabled}
               />
@@ -163,9 +221,7 @@ export const ElectricitySections = ({
                 label="TYPE"
                 name="ast.astData.meter.type"
                 options={
-                  isDiscovery
-                    ? getOptions("meter_types")
-                    : ["prepaid", "conventional"]
+                  getFormOptions("meter_types")
                 }
                 disabled={disabled}
                 onValueChange={(nextValue) => {
@@ -200,9 +256,7 @@ export const ElectricitySections = ({
             label="CATEGORY"
             name="ast.astData.meter.category"
             options={
-              isDiscovery
-                ? getOptions("meter_categories")
-                : ["Normal", "Bulk"]
+              getFormOptions("meter_categories")
             }
             disabled={disabled}
           />
@@ -397,7 +451,7 @@ export const ElectricitySections = ({
           label="OFF-GRID SUPPLY?"
           name="ast.ogs.hasOffGridSupply"
           options={
-            isDiscovery ? getOptions("off_grid_supply") : ["yes", "no"]
+            getFormOptions("off_grid_supply")
           }
           disabled={disabled}
         />
@@ -461,10 +515,73 @@ export const ElectricitySections = ({
             })}
           </View>
 
-          {/* 📸 Evidence Logic: Show only if actions > "none" */}
-          {values?.ast?.normalisation?.actionTaken?.some(
-            (a) => a !== "none",
-          ) && (
+          {isNormalisationRequired(anomaly) && !!expectedAction && (
+            <Text style={styles.normalisationNote}>
+              {needsReason
+                ? `This meter needs to be ${
+                    expectedAction === "Disconnect meter"
+                      ? "disconnected"
+                      : "replaced"
+                  }. Tick it, or say below why it was not done.`
+                : `${expectedAction} recorded.`}
+            </Text>
+          )}
+
+          {needsReason && (
+            <View style={styles.reasonBlock}>
+              <Text style={styles.reasonTitle}>Reason for not acting</Text>
+
+              {NO_ACTION_REASONS.map((reason) => {
+                const isChosen =
+                  values?.ast?.normalisation?.noActionReason === reason;
+
+                return (
+                  <TouchableOpacity
+                    key={reason}
+                    style={[styles.checkRow, isChosen && styles.checkRowActive]}
+                    onPress={() => handleReasonSelect(reason)}
+                    disabled={disabled}
+                  >
+                    <RadioButton.Android
+                      value={reason}
+                      status={isChosen ? "checked" : "unchecked"}
+                      color="#2563eb"
+                      onPress={() => handleReasonSelect(reason)}
+                      disabled={disabled}
+                    />
+                    <Text
+                      style={[
+                        styles.checkLabel,
+                        isChosen && styles.checkLabelActive,
+                      ]}
+                    >
+                      {reason}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {values?.ast?.normalisation?.noActionReason ===
+                NO_ACTION_REASON_OTHER && (
+                <FormInput
+                  label="Type the reason"
+                  name="ast.normalisation.noActionReasonOther"
+                  placeholder="What stopped the work"
+                  editable={!disabled}
+                />
+              )}
+
+              {!!errors?.ast?.normalisation?.noActionReason && (
+                <Text style={styles.reasonError}>
+                  {errors.ast.normalisation.noActionReason}
+                </Text>
+              )}
+            </View>
+          )}
+
+          {/* 📸 A photo for work that leaves a mark. A disconnection proves
+              itself in the disconnection form that follows. */}
+          {normalisationPhotoRequired(normalisationActions) && (
             <IrepsMedia
               tag="normalisationPhoto"
               agentName={agentName}
@@ -864,6 +981,31 @@ const styles = StyleSheet.create({
   },
   checkLabelActive: {
     color: "#1E293B",
+  },
+  normalisationNote: {
+    fontSize: 13,
+    color: "#B45309",
+    paddingHorizontal: 10,
+    paddingBottom: 6,
+  },
+  reasonBlock: {
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    paddingTop: 8,
+    marginTop: 4,
+  },
+  reasonTitle: {
+    fontSize: 13,
+    fontWeight: "bold",
+    color: "#475569",
+    paddingHorizontal: 10,
+    paddingBottom: 4,
+  },
+  reasonError: {
+    fontSize: 12,
+    color: "#DC2626",
+    paddingHorizontal: 10,
+    paddingTop: 4,
   },
   mediaContainer: {
     marginTop: 10,

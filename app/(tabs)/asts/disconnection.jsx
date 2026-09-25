@@ -2,7 +2,18 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
+import { returnAfterLifecycleWork } from "../../../src/utils/lifecycleReturn";
+import {
+  SAVED_FORMS_PLACE,
+  confirmSubmit,
+  showResult,
+} from "../../../src/utils/submitWindows";
+import {
+  findingFormName,
+  findingInstruction,
+} from "../../../src/features/meters/findingInstructions";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
@@ -432,11 +443,19 @@ const DisconnectionSchema = object()
     }),
 
     assignment: object().shape({
-      instructionSelect: object().shape({
-        code: string().notRequired(),
-        label: string().notRequired(),
-        otherText: string().notRequired(),
-      }),
+      // MN-R001 1.3.0: every disconnection says why. A locked instruction (office
+      // or finding) is already filled in.
+      instructionSelect: object()
+        .shape({
+          code: string().notRequired(),
+          label: string().notRequired(),
+          otherText: string().notRequired(),
+        })
+        .test(
+          "disconnection-instruction-required",
+          "Disconnection instruction is required",
+          (value) => isSelectWithOtherFilled(value),
+        ),
     }),
 
     disconnection: object().shape({
@@ -576,6 +595,7 @@ const OfficeInstructionSection = ({
   color,
   instruction,
   media,
+  fromLabel = "",
 }) => {
   const [activeMedia, setActiveMedia] = useState(null);
 
@@ -616,6 +636,13 @@ const OfficeInstructionSection = ({
       <View style={styles.readOnlyBox}>
         <Text style={styles.readOnlyLabel}>Instruction</Text>
         <Text style={styles.readOnlyValue}>{instruction?.text || "NAv"}</Text>
+
+        {!!fromLabel && (
+          <>
+            <Text style={styles.readOnlyLabel}>From</Text>
+            <Text style={styles.readOnlyValue}>{fromLabel}</Text>
+          </>
+        )}
 
         <Text style={styles.readOnlyLabel}>Instruction Notes</Text>
         <Text style={styles.readOnlyValue}>
@@ -827,7 +854,7 @@ export default function FormMeterDisconnection() {
     action?.ast?.astData?.astId,
   );
 
-  const officeInstruction = useMemo(() => {
+  const rawOfficeInstruction = useMemo(() => {
     return action?.officeInstruction || action?.assignment?.instruction || {};
   }, [action]);
 
@@ -849,6 +876,7 @@ export default function FormMeterDisconnection() {
   const { data: allServiceProviders = [] } = useGetServiceProvidersQuery();
 
   const [editQueueItem, setEditQueueItem] = useState(undefined);
+  const pendingFieldChangesRef = useRef(null);
 
   const actionOriginChannel = String(action?.origin?.channel || "")
     .trim()
@@ -867,16 +895,55 @@ export default function FormMeterDisconnection() {
     .trim()
     .toUpperCase();
 
+  // Field work starts from the meter card, or follows on from a finding on a
+  // Meter Discovery or Meter Inspection (MN-R001 section 6). Either way there is
+  // no office instruction behind it.
+  const FIELD_ORIGIN_SOURCES = ["AST_ITEM", "METER_DISCOVERY", "METER_INSPECTION"];
+
   const isFieldOrigin =
-    (actionOriginChannel === "FIELD" && actionOriginSource === "AST_ITEM") ||
-    (queuedOriginChannel === "FIELD" && queuedOriginSource === "AST_ITEM");
+    (actionOriginChannel === "FIELD" &&
+      FIELD_ORIGIN_SOURCES.includes(actionOriginSource)) ||
+    (queuedOriginChannel === "FIELD" &&
+      FIELD_ORIGIN_SOURCES.includes(queuedOriginSource));
+
+  // Where this disconnection came from, kept through a save on the phone.
+  const fieldOrigin = {
+    source: actionOriginSource || queuedOriginSource || "AST_ITEM",
+    parentTrnId:
+      action?.origin?.parentTrnId ||
+      editQueueItem?.payload?.origin?.parentTrnId ||
+      null,
+    parentTrnType:
+      action?.origin?.parentTrnType ||
+      editQueueItem?.payload?.origin?.parentTrnType ||
+      null,
+  };
 
   const instructionTrnId = isFieldOrigin ? "" : instructionTrnIdCandidate;
   const returnTo = readFirstString(routeReturnTo, action?.returnTo);
 
+  // MN-R001 1.2.0: work that follows a finding carries the finding's
+  // instruction, locked, with the form it came from.
+  const findingFrom =
+    isFieldOrigin && fieldOrigin.parentTrnId
+      ? findingFormName(fieldOrigin.parentTrnType)
+      : "";
+
+  const officeInstruction = useMemo(
+    () =>
+      findingFrom
+        ? findingInstruction("METER_DISCONNECTION")
+        : rawOfficeInstruction,
+    [findingFrom, rawOfficeInstruction],
+  );
+
   const instructionLocked = useMemo(() => {
-    return Boolean(instructionTrnId) || isLifecycleInstructionLocked(action);
-  }, [action, instructionTrnId]);
+    return (
+      Boolean(instructionTrnId) ||
+      isLifecycleInstructionLocked(action) ||
+      Boolean(findingFrom)
+    );
+  }, [action, instructionTrnId, findingFrom]);
 
   const [inProgress, setInProgress] = useState(false);
   const [saveInProgress, setSaveInProgress] = useState(false);
@@ -903,7 +970,9 @@ export default function FormMeterDisconnection() {
   }
 
   function navigateAfterDisconnection() {
-    router.replace(getLifecycleReturnRoute());
+    // REPLACE cannot cross tabs: from a batch this route is in the Admin tab, and the worker was shown
+    // "The action 'REPLACE' ... was not handled by any navigator" after a submit that had worked.
+    returnAfterLifecycleWork(router, getLifecycleReturnRoute());
   }
 
   useEffect(() => {
@@ -1073,8 +1142,22 @@ export default function FormMeterDisconnection() {
     readFirstString(meter?.type, action?.meterKind, "NAv"),
   ).toLowerCase();
 
+  // MN-R001 section 8: an inspection has just recorded the status the worker
+  // found. The phone's meter list can lag behind the server for a moment, so a
+  // disconnection that follows an inspection trusts the status it was handed.
+  const statusFromInspection =
+    String(action?.origin?.parentTrnType || "").trim().toUpperCase() ===
+    "METER_INSPECTION"
+      ? String(action?.status?.state || "").trim().toUpperCase()
+      : "";
+
   const currentStatus = String(
-    readFirstString(astDoc?.status?.state, action?.meterPreStatus, "UNKNOWN"),
+    readFirstString(
+      statusFromInspection,
+      astDoc?.status?.state,
+      action?.meterPreStatus,
+      "UNKNOWN",
+    ),
   ).toUpperCase();
 
   const parents = astDoc?.accessData?.parents || premise?.parents || {};
@@ -1096,17 +1179,27 @@ export default function FormMeterDisconnection() {
     if (!astDoc?.id) return;
 
     const firstStatus = String(
-      astDoc?.status?.state || action?.meterPreStatus || "",
+      statusFromInspection ||
+        astDoc?.status?.state ||
+        action?.meterPreStatus ||
+        "",
     ).toUpperCase();
 
     if (!firstStatus) return;
 
-    setInitialEligible(firstStatus === "CONNECTED");
+    // MN-R001 1.3.0, the bypass: an illegal connection can be found while
+    // the meter itself is off, so work that follows a finding may disconnect
+    // a meter recorded as Disconnected.
+    setInitialEligible(
+      firstStatus === "CONNECTED" ||
+        (Boolean(findingFrom) && firstStatus === "DISCONNECTED"),
+    );
   }, [
     initialEligible,
     astDoc?.id,
     astDoc?.status?.state,
     action?.meterPreStatus,
+    findingFrom,
   ]);
 
   const isEligible = initialEligible === true;
@@ -1263,8 +1356,10 @@ export default function FormMeterDisconnection() {
       origin: isFieldOrigin
         ? {
             channel: "FIELD",
-            source: "AST_ITEM",
+            source: fieldOrigin.source,
             parentInspectionTrnId: null,
+            parentTrnId: fieldOrigin.parentTrnId,
+            parentTrnType: fieldOrigin.parentTrnType,
           }
         : {
             channel: "OFFICE",
@@ -1364,7 +1459,7 @@ export default function FormMeterDisconnection() {
     setSubmitOutcome({
       visible: true,
       type: "savedLocally",
-      title: messageTitle || "SAVED LOCALLY",
+      title: messageTitle || "Saved on this phone",
       message:
         messageBody ||
         "This DCN execution form was saved locally only. No backend update was made.",
@@ -1380,8 +1475,8 @@ export default function FormMeterDisconnection() {
 
       await saveDraftToQueue(
         values,
-        "SAVED LOCALLY",
-        "This DCN execution form was saved locally only. It was not submitted and no backend update was made.",
+        "Saved on this phone",
+        `This disconnection is saved on this phone only. It has NOT been sent. To send it, open it from ${SAVED_FORMS_PLACE} and press SUBMIT.`,
       );
 
       setSaveInProgress(false);
@@ -1581,6 +1676,29 @@ export default function FormMeterDisconnection() {
       return;
     }
 
+    const noAccessChosen =
+      String(values?.accessData?.access?.hasAccess || "").toLowerCase() ===
+      "no";
+    const meterNo = astDoc?.ast?.astData?.astNo || "";
+
+    // MN-R001 13.1: a confirmation window before sending.
+    const go = await confirmSubmit({
+      title: "Submit this disconnection?",
+      message: noAccessChosen
+        ? `Meter ${meterNo}\nNo Access: the meter does not change.`
+        : [
+            `Meter ${meterNo}`,
+            `Instruction: ${
+              (instructionLocked
+                ? officeInstruction?.text
+                : selectWithOtherToText(values?.assignment?.instructionSelect)) ||
+              "NAv"
+            }`,
+            `Level: ${values?.disconnection?.level?.label || "NAv"}`,
+          ].join("\n"),
+    });
+    if (!go) return;
+
     try {
       setInProgress(true);
 
@@ -1591,8 +1709,8 @@ export default function FormMeterDisconnection() {
         setInProgress(false);
 
         Alert.alert(
-          "Offline",
-          "You are offline. Use SAVE to keep this DCN execution form locally, then submit when online.",
+          "Offline: nothing was sent",
+          "You are offline. Press SAVE to keep this disconnection on the phone, then submit it when you are online.",
         );
 
         return;
@@ -1656,8 +1774,8 @@ export default function FormMeterDisconnection() {
         if (error?.message === "SUBMISSION_TIMEOUT") {
           await saveDraftToQueue(
             values,
-            "SAVED LOCALLY",
-            "The submission took too long. The DCN form was saved locally only and was not confirmed by the backend.",
+            "Saved on this phone, not sent",
+            `The network was too slow, so the disconnection was NOT sent. It is saved on this phone. Open it from ${SAVED_FORMS_PLACE} and press SUBMIT again.`,
           );
 
           setInProgress(false);
@@ -1691,7 +1809,13 @@ export default function FormMeterDisconnection() {
 
       setInProgress(false);
 
-      navigateAfterDisconnection();
+      showResult({
+        title: "Disconnection sent",
+        message: noAccessChosen
+          ? "Saved as No Access. The meter does not change."
+          : `Meter ${meterNo} is now Disconnected.`,
+        onOk: navigateAfterDisconnection,
+      });
       return;
     } catch (error) {
       console.error("Disconnection Submission Error:", error);
@@ -1854,13 +1978,19 @@ export default function FormMeterDisconnection() {
       >
         {({
           values,
-          setFieldValue,
+          setValues,
           handleSubmit,
           resetForm,
           validateForm,
           errors,
           isValid,
         }) => {
+          // One tap, one save, one check (see batchedFormikSave).
+          const setFieldValue = makeBatchedSetFieldValue({
+            values,
+            setValues,
+            pendingRef: pendingFieldChangesRef,
+          });
           const disconnectionErrors = errors?.disconnection || {};
           const assignmentErrors = errors?.assignment || {};
           const accessErrors = errors?.accessData?.access || {};
@@ -1969,6 +2099,7 @@ export default function FormMeterDisconnection() {
                   icon="text-box-remove-outline"
                   color="#ef4444"
                   instruction={officeInstruction}
+                  fromLabel={findingFrom}
                   media={officeInstructionMedia}
                 />
               ) : (

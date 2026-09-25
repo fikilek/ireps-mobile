@@ -36,7 +36,6 @@ import { getSafeCoords } from "../../context/MapContext";
 import { useWarehouse } from "../../context/WarehouseContext";
 import { functions } from "../../firebase";
 import { useAuth } from "../../hooks/useAuth";
-import { useMeterFormLookupOptions } from "../../hooks/useMeterFormLookupOptions";
 import { useGetServiceProvidersQuery } from "../../redux/spApi";
 import { useAddTrnMutation } from "../../redux/trnsApi";
 import { getPremiseQueueItemByPremiseId } from "../../utils/premiseSubmissionQueue";
@@ -51,10 +50,23 @@ import { isCompleteNoAccessReason } from "./noAccessReasons";
 import {
   anomalyPhotoRequired,
   getFormOptionValues,
+  getFormOptions,
   isFormOptionPhotoRequired,
 } from "./formOptions";
 
 const METER_PLACEMENT_VALUES = getFormOptionValues("placements");
+
+// UI-R003: Meter Discovery's lists, on the phone. The installation has no box
+// to type another make, so it offers the named makes only, as before.
+function getOptions(name) {
+  const list = getFormOptions(name);
+
+  if (name === "elec_manufacturers" || name === "water_manufacturers") {
+    return list.filter((entry) => entry !== "Other");
+  }
+
+  return list;
+}
 
 function buildMeterInstallationTrnId({ wardPcode, erfNo, meterType }) {
   const ts = Date.now();
@@ -352,7 +364,6 @@ export default function FormMeterInstallation() {
   const currentMissionType =
     action?.access === "no" ? "NA" : action?.meterType || "NA";
 
-  const { getOptions } = useMeterFormLookupOptions(currentMissionType);
 
   const premiseAddress =
     `${premise?.address?.strNo || ""} ${premise?.address?.strName || ""} ${premise?.address?.strType || ""}`.trim();
@@ -996,9 +1007,12 @@ export default function FormMeterInstallation() {
               astName: "",
               meter: { category: "Normal", type: "conventional" },
             },
+            // A meter you have just installed is working, so the finding starts
+            // there and the worker only changes it if something is wrong
+            // (owner, 23 Sep 2026).
             anomalies: {
-              anomaly: "",
-              anomalyDetail: "",
+              anomaly: "Meter Ok",
+              anomalyDetail: "Operationally Ok",
             },
             location: {
               gps: null, // Placeholder for the final liveLocation capture
@@ -1029,7 +1043,8 @@ export default function FormMeterInstallation() {
         ast: {
           astData: {
             astNo: "",
-            astManufacturer: "Colog",
+            // UI-R003 1.3.0: no make chosen until the worker picks one.
+            astManufacturer: "",
             astName: "",
             meter: {
               phase: "",
@@ -1040,9 +1055,10 @@ export default function FormMeterInstallation() {
               cb: { size: "", comment: "", commentOther: "" }, // 🎯 Initialized
             },
           },
+          // As above: a new meter is Ok unless the worker says otherwise.
           anomalies: {
-            anomaly: "",
-            anomalyDetail: "",
+            anomaly: "Meter Ok",
+            anomalyDetail: "Operationally Ok",
           },
           location: {
             gps: null, // 🛰️ Will be an Object {lat, lng} via the Picker
@@ -1203,6 +1219,27 @@ export default function FormMeterInstallation() {
         throw new Error("Unable to determine transaction payload.");
       }
 
+      // MN-R001 section 6.1: an installation that completes a replacement says
+      // which removal it follows and which meter it replaces. A new installation
+      // on its own carries no origin.
+      const replacementOrigin =
+        action?.origin?.parentTrnType === "METER_REMOVAL"
+          ? action.origin
+          : editQueueItem?.payload?.origin?.parentTrnType === "METER_REMOVAL"
+            ? editQueueItem.payload.origin
+            : null;
+
+      if (replacementOrigin) {
+        cleanPayload.origin = {
+          channel: "FIELD",
+          source: "METER_REMOVAL",
+          parentTrnId: replacementOrigin.parentTrnId || null,
+          parentTrnType: "METER_REMOVAL",
+          replacesAstId: replacementOrigin.replacesAstId || null,
+          replacesMeterNo: replacementOrigin.replacesMeterNo || null,
+        };
+      }
+
       cleanPayload = JSON.parse(
         JSON.stringify(cleanPayload, (key, value) =>
           value === undefined ? null : value,
@@ -1273,7 +1310,7 @@ export default function FormMeterInstallation() {
 
         setTimeout(() => {
           updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
-          router.replace("/(tabs)/premises");
+          router.replace(action?.returnTo || "/(tabs)/premises");
         }, 1500);
 
         return true;
@@ -1431,7 +1468,7 @@ export default function FormMeterInstallation() {
 
       setTimeout(() => {
         updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
-        router.replace("/(tabs)/premises");
+        router.replace(action?.returnTo || "/(tabs)/premises");
         setInProgress(false);
       }, 2000);
     } catch (error) {

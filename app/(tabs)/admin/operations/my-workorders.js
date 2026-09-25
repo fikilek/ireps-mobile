@@ -30,7 +30,14 @@ import {
   serializeTargetedBatchContext,
 } from "../../../../src/features/premises/targetedBatchPremiseContext";
 import TargetedBatchActionTile from "../../../../src/features/targetedBatches/TargetedBatchActionTile";
+import PremisePicker from "../../../../src/features/targetedBatches/PremisePicker";
 import TargetedBatchMapModal from "../../../../src/features/targetedBatches/TargetedBatchMapModal";
+import {
+  buildRowPremiseChoices,
+  premiseId as readPremiseId,
+  rowAddressLine,
+  rowPremiseChoiceNeeded,
+} from "../../../../src/features/targetedBatches/rowPremiseChoice";
 import { isFieldWorkorderActor } from "../../../../src/features/targetedBatches/fieldWorkorderActor";
 import {
   getTargetedBatchRowActionState,
@@ -991,6 +998,40 @@ export default function WorkorderManagementSystem() {
     );
   }, []);
   const [targetedBatchMapOpen, setTargetedBatchMapOpen] = useState(false);
+  // TB-R067 (1.3.73): the row whose premise is being chosen. Only the row is kept: the list itself is
+  // worked out again from what the phone holds now, so a premise joined a moment ago by somebody else does
+  // not go on reading Not joined under an open list.
+  const [rowPremiseChoice, setRowPremiseChoice] = useState(null);
+
+  // TB-R067 (1.3.73): the premise form, opened from a row and carrying it. Whatever the worker does there -
+  // makes a premise, copies the shop next door, or finishes one that was already standing - it is joined to
+  // this row when it is submitted. Without the row the premise belongs to nobody, which is what happened at
+  // ERF 689.
+  const openRowPremiseForm = useCallback(
+    ({ row, params = {} }) => {
+      const context = serializeTargetedBatchContext(
+        buildTargetedBatchContextFromRow({ bucket: selectedBucket, row }),
+      );
+
+      if (!context) {
+        Alert.alert(
+          "Targeted Batch Row Not Ready",
+          "The premise could not be joined to this meter. Please try again.",
+        );
+        return;
+      }
+
+      router.push({
+        pathname: "/premises/formPremise",
+        params: {
+          id: cleanId(row?.erfId || row?.refs?.erfId),
+          ...params,
+          targetedBatchContext: context,
+        },
+      });
+    },
+    [router, selectedBucket],
+  );
   const netInfo = useNetInfo();
   // TB-R051: online only.
   const offline =
@@ -1130,6 +1171,8 @@ export default function WorkorderManagementSystem() {
         // map's Modal on Android, and a map still marked open would swallow back and never show again.
         if (targetedBatchScreenMountedRef.current) {
           setTargetedBatchMapOpen(false);
+          // TB-R067: and the premise choice with it, for the same reason.
+          setRowPremiseChoice(null);
         }
       };
     }, [clearOpeningTargetedBatch, clearPendingTargetedBatchAction]),
@@ -1285,6 +1328,8 @@ export default function WorkorderManagementSystem() {
     setTargetedBatchStatusFilter(TARGETED_BATCH_STATUS_FILTERS.TOTAL);
     setTargetedBatchRowOrder(DEFAULT_TARGETED_BATCH_ROW_ORDER);
     setTargetedBatchMapOpen(false);
+    // TB-R067 (1.3.73): a choice left open would send the new batch's id with the old batch's row.
+    setRowPremiseChoice(null);
   }, [selectedTargetedBatchId]);
 
 
@@ -1325,6 +1370,14 @@ export default function WorkorderManagementSystem() {
       ? targetedBatchRowsData.rows
       : [];
     const erfs = Array.isArray(all?.erfs) ? all.erfs : [];
+    // TB-R067 (1.3.73): the shop this row is, once it has a premise. Thirteen rows at 26 Old Acre Street
+    // read the same address, so the address alone cannot tell the worker which door to knock on.
+    const premisesById = new Map(
+      (Array.isArray(all?.prems) ? all.prems : []).map((premise) => [
+        readPremiseId(premise),
+        premise,
+      ]),
+    );
 
     return rows.map((row) => {
       const erfId = cleanId(row?.erfId || row?.refs?.erfId);
@@ -1343,12 +1396,17 @@ export default function WorkorderManagementSystem() {
         ...row,
         erfId,
         erfNo,
+        addressLine: rowAddressLine({
+          address: readFirstString(row?.address, row?.town),
+          premise: premisesById.get(cleanId(row?.refs?.premiseId)) || null,
+        }),
       };
     });
   }, [
     targetedBatchRowsData?.rows,
     all?.erfs,
     all?.geoLibrary,
+    all?.prems,
   ]);
 
   // TB-R051: search by meter number, ERF number or street address, inside the header's status filter (1.3.42);
@@ -1383,6 +1441,47 @@ export default function WorkorderManagementSystem() {
       ),
     [targetedBatchRows],
   );
+
+  // TB-R067 (1.3.73) 6: when the row is being moved off a premise, the one it is leaving travels with the
+  // form, so the server knows the worker asked for the move and did not stumble into it.
+  const leavingPremiseParam = useCallback((row, picked = "") => {
+    const current = cleanId(row?.refs?.premiseId);
+    return current && current !== cleanId(picked)
+      ? { targetedBatchReplacesPremiseId: current }
+      : {};
+  }, []);
+
+  // TB-R067 (1.3.73): the row the premise choice is open on, and its list, both worked out from what the
+  // phone holds right now. The row closes the choice by itself once it has a premise, so the list never
+  // outlives the job it was opened for.
+  const rowPremiseChoiceRow = useMemo(
+    () =>
+      rowPremiseChoice?.rowId
+        ? targetedBatchRows.find((row) => row?.id === rowPremiseChoice.rowId) || null
+        : null,
+    [rowPremiseChoice?.rowId, targetedBatchRows],
+  );
+
+  const rowPremiseChoices = useMemo(
+    () =>
+      rowPremiseChoice
+        ? buildRowPremiseChoices({
+            premises: all?.prems || [],
+            rows: targetedBatchRows,
+            currentRowId: rowPremiseChoice.rowId,
+            erfId: rowPremiseChoice.erfId,
+          })
+        : [],
+    [rowPremiseChoice, all?.prems, targetedBatchRows],
+  );
+
+  useEffect(() => {
+    if (!rowPremiseChoice) return;
+    // The row went away with the batch, or it has its premise now - either way there is nothing to choose.
+    if (!rowPremiseChoiceRow || cleanId(rowPremiseChoiceRow?.refs?.premiseId)) {
+      setRowPremiseChoice(null);
+    }
+  }, [rowPremiseChoice, rowPremiseChoiceRow]);
 
   // TB-R051: ERF centres (E) for the batch map, from the phone's geoLibrary.
   const targetedBatchErfCentroidById = useMemo(() => {
@@ -1731,6 +1830,36 @@ export default function WorkorderManagementSystem() {
               targetedBatchContext: serializedTargetedBatchContext,
             },
           };
+        } else if (
+          pending.intent === TARGETED_BATCH_INTENTS.OPEN_PREMISE &&
+          !premiseId
+        ) {
+          // TB-R067 (1.3.73): the row has no premise yet. Every premise on its ERF is offered, with the
+          // meter each one is already joined to, so the worker says which shop this row is. With nothing on
+          // the ERF there is nothing to choose from, and the New premise form opens as it always has.
+          const choices = buildRowPremiseChoices({
+            premises: all?.prems || [],
+            rows: targetedBatchRows,
+            currentRowId: currentRow?.id,
+            erfId: pending.erfId,
+          });
+
+          clearPendingTargetedBatchAction(pending.requestKey);
+          setTargetedBatchMapOpen(false);
+          updateGeo({
+            selectedWard: pending.ward,
+            selectedErf,
+            selectedPremise: null,
+            lastSelectionType: "ERF",
+          });
+
+          if (!rowPremiseChoiceNeeded(choices)) {
+            openRowPremiseForm({ row: currentRow, params: {} });
+            return;
+          }
+
+          setRowPremiseChoice({ rowId: currentRow.id, erfId: pending.erfId });
+          return;
         } else {
           navigationTarget = "/(tabs)/premises";
         }
@@ -1824,6 +1953,7 @@ export default function WorkorderManagementSystem() {
     router,
     updateGeo,
     clearPendingTargetedBatchAction,
+    openRowPremiseForm,
   ]);
 
   const pendingTargetedBatchRequestKey =
@@ -3485,6 +3615,31 @@ export default function WorkorderManagementSystem() {
         onClose={() => setTargetedBatchMapOpen(false)}
         renderRowCard={renderTargetedBatchMapRowCard}
       />
+
+      {/* The Premise Picker (TB-R067, 1.3.73): which premise is this row's? The worker picks; iREPS never guesses. */}
+      <PremisePicker
+        visible={Boolean(rowPremiseChoice && rowPremiseChoiceRow)}
+        meterNo={rowPremiseChoiceRow?.meterNo}
+        accountNo={rowPremiseChoiceRow?.accountNumber}
+        customerName={rowPremiseChoiceRow?.customerName}
+        choices={rowPremiseChoices}
+        onPick={(premiseId) => {
+          const row = rowPremiseChoiceRow;
+          setRowPremiseChoice(null);
+          openRowPremiseForm({ row, params: { premiseId, ...leavingPremiseParam(row, premiseId) } });
+        }}
+        onCopy={(premiseId) => {
+          const row = rowPremiseChoiceRow;
+          setRowPremiseChoice(null);
+          openRowPremiseForm({ row, params: { duplicateId: premiseId, ...leavingPremiseParam(row) } });
+        }}
+        onNew={() => {
+          const row = rowPremiseChoiceRow;
+          setRowPremiseChoice(null);
+          openRowPremiseForm({ row, params: leavingPremiseParam(row) });
+        }}
+        onClose={() => setRowPremiseChoice(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -4841,8 +4996,8 @@ function TargetedBatchRowCardBase({
             Account {row?.accountNumber || "NAv"} •{" "}
             {row?.customerName || "NAv"}
           </Text>
-          <Text style={styles.mdBgoErfSub} numberOfLines={1}>
-            {row?.address || row?.town || "NAv"}
+          <Text style={styles.mdBgoErfSub} numberOfLines={2}>
+            {row?.addressLine || row?.address || row?.town || "NAv"}
           </Text>
         </View>
 
@@ -4888,6 +5043,7 @@ const TARGETED_BATCH_ROW_CARD_FIELDS = [
   (row) => row?.accountNumber,
   (row) => row?.customerName,
   (row) => row?.address,
+  (row) => row?.addressLine,
   (row) => row?.town,
   (row) => row?.fieldWorkMeterId,
   (row) => row?.raw?.fieldWorkMeterId,

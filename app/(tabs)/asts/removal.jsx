@@ -2,7 +2,19 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
+import { returnAfterLifecycleWork } from "../../../src/utils/lifecycleReturn";
+import {
+  SAVED_FORMS_PLACE,
+  confirmSubmit,
+  showResult,
+} from "../../../src/utils/submitWindows";
+import {
+  findingFormName,
+  findingInstruction,
+  isReplaceMeterInstruction,
+} from "../../../src/features/meters/findingInstructions";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
@@ -37,9 +49,10 @@ import IrepsSelectWithOther, {
 import { IrepsMedia } from "../../../components/media/IrepsMedia";
 import { ScreenLock } from "../../../components/SceenLock";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
+import { buildInstallationRouteParams } from "../../../src/features/meters/normalisationHandover";
 import { functions } from "../../../src/firebase";
 import { useAuth } from "../../../src/hooks/useAuth";
-import { useIrepsLookupOptions } from "../../../src/hooks/useIrepsLookupOptions";
+import { getLocalSelectLookup } from "../../../src/features/meters/formOptions";
 import { useGetServiceProvidersQuery } from "../../../src/redux/spApi";
 import {
   addSubmissionQueueItem,
@@ -47,6 +60,13 @@ import {
   removeSubmissionQueueItem,
   updateSubmissionQueueItem,
 } from "../../../src/utils/submissionQueue";
+
+const REMOVAL_INSTRUCTION_LOOKUP = getLocalSelectLookup("removal_instructions");
+const NO_READING_REASON_LOOKUP = getLocalSelectLookup("no_reading_reasons");
+// UI-R003 3.1: a prepaid meter's reading is Remaining Credit, as on Discovery.
+const REMAINING_CREDIT_REASON_LOOKUP = getLocalSelectLookup(
+  "remaining_credit_comment_reasons",
+);
 
 const EMPTY_SELECT_WITH_OTHER = {
   code: "",
@@ -57,10 +77,10 @@ const EMPTY_SELECT_WITH_OTHER = {
 const REM_SUBMIT_TIMEOUT_MS = 15000;
 
 const EXECUTION_MEDIA_TAGS = [
+  "instructionMedia",
   "removalEvidence",
   "removalMeterReadingEvidence",
   "tokenReadingPhoto",
-  "safetyEvidence",
   "noAccessPhoto",
 ];
 
@@ -288,17 +308,12 @@ function buildBackendRemovalPayload(
       meterReading: "",
       tokenReading: "",
       noReadingReason: "",
-
-      safetyConfirmed: {
-        answer: "",
-        notes: "",
-      },
     };
   }
 
   return {
     meterRemoved: {
-      answer: removal?.meterRemoved?.answer || "",
+      answer: "yes",
       notes: removal?.meterRemoved?.notes || "",
     },
 
@@ -306,11 +321,6 @@ function buildBackendRemovalPayload(
     tokenReading: isPrepaid ? String(removal?.tokenReading || "") : "",
 
     noReadingReason: selectWithOtherToText(removal?.noReadingReason),
-
-    safetyConfirmed: {
-      answer: removal?.safetyConfirmed?.answer || "",
-      notes: removal?.safetyConfirmed?.notes || "",
-    },
   };
 }
 
@@ -421,11 +431,19 @@ const RemovalSchema = object()
     }),
 
     assignment: object().shape({
-      instructionSelect: object().shape({
-        code: string().notRequired(),
-        label: string().notRequired(),
-        otherText: string().notRequired(),
-      }),
+      // MN-R001 6.1: every removal says why. A locked instruction (office or
+      // finding) is already filled in.
+      instructionSelect: object()
+        .shape({
+          code: string().notRequired(),
+          label: string().notRequired(),
+          otherText: string().notRequired(),
+        })
+        .test(
+          "removal-instruction-required",
+          "Removal instruction is required",
+          (value) => isSelectWithOtherFilled(value),
+        ),
     }),
 
     removal: object().shape({
@@ -441,11 +459,6 @@ const RemovalSchema = object()
         code: string().notRequired(),
         label: string().notRequired(),
         otherText: string().notRequired(),
-      }),
-
-      safetyConfirmed: object().shape({
-        answer: string().notRequired(),
-        notes: string().notRequired(),
       }),
     }),
 
@@ -474,24 +487,10 @@ const RemovalSchema = object()
       return true;
     }
 
-    if (!["yes", "no"].includes(removal?.meterRemoved?.answer)) {
-      return this.createError({
-        path: "removal.meterRemoved.answer",
-        message: "Meter removed answer is required",
-      });
-    }
-
-    if (removal?.meterRemoved?.answer !== "yes") {
-      return this.createError({
-        path: "removal.meterRemoved.answer",
-        message: "Meter must be confirmed as removed before submit",
-      });
-    }
-
     if (!hasMediaTag(media, "removalEvidence")) {
       return this.createError({
         path: "media",
-        message: "Removal evidence required",
+        message: "The photo showing the meter is out is required",
       });
     }
 
@@ -505,8 +504,7 @@ const RemovalSchema = object()
     ) {
       return this.createError({
         path: "removal.noReadingReason",
-        message:
-          "Meter reading, token reading, or no-reading reason is required",
+        message: "The reading, or why it could not be captured, is required",
       });
     }
 
@@ -520,96 +518,13 @@ const RemovalSchema = object()
     if (tokenReading && !hasMediaTag(media, "tokenReadingPhoto")) {
       return this.createError({
         path: "media",
-        message: "Token reading photo is required",
-      });
-    }
-
-    if (!["yes", "no"].includes(removal?.safetyConfirmed?.answer)) {
-      return this.createError({
-        path: "removal.safetyConfirmed.answer",
-        message: "Safety confirmed answer is required",
-      });
-    }
-
-    if (removal?.safetyConfirmed?.answer !== "yes") {
-      return this.createError({
-        path: "removal.safetyConfirmed.answer",
-        message: "Safety must be confirmed before submit",
-      });
-    }
-
-    if (!hasMediaTag(media, "safetyEvidence")) {
-      return this.createError({
-        path: "media",
-        message: "Safety evidence required",
+        message: "Remaining credit photo is required",
       });
     }
 
     return true;
   });
 
-const YesNoQuestion = ({
-  title,
-  description,
-  value,
-  notes,
-  answerPath,
-  notesPath,
-  setFieldValue,
-  errorText,
-  children,
-}) => {
-  return (
-    <Surface style={styles.questionCard} elevation={1}>
-      <View style={styles.questionHeader}>
-        <Text style={styles.questionTitle}>{title}</Text>
-        <Text style={styles.questionDescription}>{description}</Text>
-      </View>
-
-      <RadioButton.Group
-        value={value}
-        onValueChange={(nextValue) => setFieldValue(answerPath, nextValue)}
-      >
-        <View style={styles.radioRow}>
-          <TouchableOpacity
-            style={[
-              styles.radioChoice,
-              value === "yes" && styles.radioChoiceYes,
-            ]}
-            onPress={() => setFieldValue(answerPath, "yes")}
-          >
-            <RadioButton value="yes" />
-            <Text style={styles.radioText}>YES</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.radioChoice, value === "no" && styles.radioChoiceNo]}
-            onPress={() => setFieldValue(answerPath, "no")}
-          >
-            <RadioButton value="no" />
-            <Text style={styles.radioText}>NO</Text>
-          </TouchableOpacity>
-        </View>
-      </RadioButton.Group>
-
-      {value === "no" && (
-        <TextInput
-          mode="outlined"
-          label="Reason / Notes"
-          value={notes}
-          onChangeText={(text) => setFieldValue(notesPath, text)}
-          multiline
-          numberOfLines={3}
-          style={styles.notesInput}
-        />
-      )}
-
-      <View style={styles.questionEvidenceSlot}>{children}</View>
-
-      {!!errorText && <Text style={styles.errorText}>{errorText}</Text>}
-    </Surface>
-  );
-};
 
 const AccessOutcomeCard = ({ value, setFieldValue }) => {
   return (
@@ -691,6 +606,7 @@ const OfficeInstructionSection = ({
   color,
   instruction,
   media,
+  fromLabel = "",
 }) => {
   const [activeMedia, setActiveMedia] = useState(null);
 
@@ -731,6 +647,13 @@ const OfficeInstructionSection = ({
       <View style={styles.readOnlyBox}>
         <Text style={styles.readOnlyLabel}>Instruction</Text>
         <Text style={styles.readOnlyValue}>{instruction?.text || "NAv"}</Text>
+
+        {!!fromLabel && (
+          <>
+            <Text style={styles.readOnlyLabel}>From</Text>
+            <Text style={styles.readOnlyValue}>{fromLabel}</Text>
+          </>
+        )}
 
         <Text style={styles.readOnlyLabel}>Instruction Notes</Text>
         <Text style={styles.readOnlyValue}>
@@ -942,7 +865,7 @@ export default function FormMeterRemoval() {
     action?.ast?.astData?.astId,
   );
 
-  const officeInstruction = useMemo(() => {
+  const rawOfficeInstruction = useMemo(() => {
     return action?.officeInstruction || action?.assignment?.instruction || {};
   }, [action]);
 
@@ -964,6 +887,7 @@ export default function FormMeterRemoval() {
   const { data: allServiceProviders = [] } = useGetServiceProvidersQuery();
 
   const [editQueueItem, setEditQueueItem] = useState(undefined);
+  const pendingFieldChangesRef = useRef(null);
 
   const actionOriginChannel = String(action?.origin?.channel || "")
     .trim()
@@ -980,16 +904,60 @@ export default function FormMeterRemoval() {
     .trim()
     .toUpperCase();
 
+  // Field work starts from the meter card, or follows on from a finding on a
+  // Meter Discovery or Meter Inspection (MN-R001 section 6.1). Either way there
+  // is no office instruction behind it.
+  const FIELD_ORIGIN_SOURCES = ["AST_ITEM", "METER_DISCOVERY", "METER_INSPECTION"];
+
   const isFieldOrigin =
-    (actionOriginChannel === "FIELD" && actionOriginSource === "AST_ITEM") ||
-    (queuedOriginChannel === "FIELD" && queuedOriginSource === "AST_ITEM");
+    (actionOriginChannel === "FIELD" &&
+      FIELD_ORIGIN_SOURCES.includes(actionOriginSource)) ||
+    (queuedOriginChannel === "FIELD" &&
+      FIELD_ORIGIN_SOURCES.includes(queuedOriginSource));
+
+  // Where this removal came from, kept through a save on the phone.
+  const fieldOrigin = {
+    source: actionOriginSource || queuedOriginSource || "AST_ITEM",
+    parentTrnId:
+      action?.origin?.parentTrnId ||
+      editQueueItem?.payload?.origin?.parentTrnId ||
+      null,
+    parentTrnType:
+      action?.origin?.parentTrnType ||
+      editQueueItem?.payload?.origin?.parentTrnType ||
+      null,
+  };
+
+  // A removal that is part of a replacement is followed by the installation.
+  const installationFollows =
+    action?.followOn === "METER_INSTALLATION" ||
+    editQueueItem?.payload?.followOn === "METER_INSTALLATION";
 
   const instructionTrnId = isFieldOrigin ? "" : instructionTrnIdCandidate;
   const returnTo = readFirstString(routeReturnTo, action?.returnTo);
 
+  // MN-R001 1.2.0: work that follows a finding carries the finding's
+  // instruction, locked, with the form it came from.
+  const findingFrom =
+    isFieldOrigin && fieldOrigin.parentTrnId
+      ? findingFormName(fieldOrigin.parentTrnType)
+      : "";
+
+  const officeInstruction = useMemo(
+    () =>
+      findingFrom
+        ? findingInstruction("METER_REMOVAL")
+        : rawOfficeInstruction,
+    [findingFrom, rawOfficeInstruction],
+  );
+
   const instructionLocked = useMemo(() => {
-    return Boolean(instructionTrnId) || isLifecycleInstructionLocked(action);
-  }, [action, instructionTrnId]);
+    return (
+      Boolean(instructionTrnId) ||
+      isLifecycleInstructionLocked(action) ||
+      Boolean(findingFrom)
+    );
+  }, [action, instructionTrnId, findingFrom]);
 
   const [inProgress, setInProgress] = useState(false);
   const [saveInProgress, setSaveInProgress] = useState(false);
@@ -1016,7 +984,9 @@ export default function FormMeterRemoval() {
   }
 
   function navigateAfterRemoval() {
-    router.replace(getLifecycleReturnRoute());
+    // REPLACE cannot cross tabs: from a batch this route is in the Admin tab, and the worker was shown
+    // "The action 'REPLACE' ... was not handled by any navigator" after a submit that had worked.
+    returnAfterLifecycleWork(router, getLifecycleReturnRoute());
   }
 
   useEffect(() => {
@@ -1274,13 +1244,9 @@ export default function FormMeterRemoval() {
     return `TRN_MREM_${Date.now()}_${serviceCode}_${safeWardPcode}_${safeErfNo}`;
   }, [instructionTrnId, isFieldOrigin, meterType, wardPcode, erfNo]);
 
-  const removalInstructionLookup = useIrepsLookupOptions(
-    "METER_REMOVAL_INSTRUCTION",
-  );
-
-  const noReadingReasonLookup = useIrepsLookupOptions(
-    "METER_NO_READING_REASON",
-  );
+  // UI-R003: lists on the phone, never from the server.
+  const removalInstructionLookup = REMOVAL_INSTRUCTION_LOOKUP;
+  const noReadingReasonLookup = NO_READING_REASON_LOOKUP;
 
   function buildTrnSystemFields() {
     return {
@@ -1381,11 +1347,25 @@ export default function FormMeterRemoval() {
       status: values.status,
       serviceProvider,
 
+      // Kept through a save on the phone, so a resumed removal still leads on.
+      // Replace meter, from any channel, is followed by the installation
+      // (MN-R001 6.1, 1.2.0).
+      ...(installationFollows ||
+      isReplaceMeterInstruction({
+        code: values?.assignment?.instructionSelect?.code,
+        text: selectWithOtherToText(values?.assignment?.instructionSelect),
+      }) ||
+      isReplaceMeterInstruction(instructionLocked ? officeInstruction : {})
+        ? { followOn: "METER_INSTALLATION" }
+        : {}),
+
       origin: isFieldOrigin
         ? {
             channel: "FIELD",
-            source: "AST_ITEM",
+            source: fieldOrigin.source,
             parentInspectionTrnId: null,
+            parentTrnId: fieldOrigin.parentTrnId,
+            parentTrnType: fieldOrigin.parentTrnType,
           }
         : {
             channel: "OFFICE",
@@ -1482,7 +1462,7 @@ export default function FormMeterRemoval() {
     setSubmitOutcome({
       visible: true,
       type: "savedLocally",
-      title: messageTitle || "SAVED LOCALLY",
+      title: messageTitle || "Saved on this phone",
       message:
         messageBody ||
         "This REMOVAL execution form was saved locally only. No backend update was made.",
@@ -1498,8 +1478,8 @@ export default function FormMeterRemoval() {
 
       await saveDraftToQueue(
         values,
-        "SAVED LOCALLY",
-        "This REM execution form was saved locally only. It was not submitted and no backend update was made.",
+        "Saved on this phone",
+        `This removal is saved on this phone only. It has NOT been sent. To send it, open it from ${SAVED_FORMS_PLACE} and press SUBMIT.`,
       );
 
       setSaveInProgress(false);
@@ -1568,14 +1548,9 @@ export default function FormMeterRemoval() {
               editRemoval?.meterReading?.noReadingReason,
           ),
 
-          meterRemoved: editRemoval?.meterRemoved || {
-            answer: "",
-            notes: "",
-          },
-
-          safetyConfirmed: editRemoval?.safetyConfirmed || {
-            answer: "",
-            notes: "",
+          meterRemoved: {
+            answer: "yes",
+            notes: editRemoval?.meterRemoved?.notes || "",
           },
         },
 
@@ -1610,19 +1585,15 @@ export default function FormMeterRemoval() {
       },
 
       removal: {
+        // The worker confirms by submitting (MN-R001 6.1, 1.3.2).
         meterRemoved: {
-          answer: "",
+          answer: "yes",
           notes: "",
         },
 
         meterReading: "",
         tokenReading: "",
         noReadingReason: makeEmptySelectWithOther(),
-
-        safetyConfirmed: {
-          answer: "",
-          notes: "",
-        },
       },
 
       assignment: {
@@ -1731,6 +1702,34 @@ export default function FormMeterRemoval() {
       return;
     }
 
+    const noAccessChosen =
+      String(values?.accessData?.access?.hasAccess || "").toLowerCase() ===
+      "no";
+    const meterNo = astDoc?.ast?.astData?.astNo || "";
+    const chosenInstruction = instructionLocked
+      ? officeInstruction
+      : {
+          code: values?.assignment?.instructionSelect?.code,
+          text: selectWithOtherToText(values?.assignment?.instructionSelect),
+        };
+    const replaces =
+      installationFollows || isReplaceMeterInstruction(chosenInstruction);
+
+    // MN-R001 13.1: a confirmation window before sending.
+    const go = await confirmSubmit({
+      title: "Submit this removal?",
+      message: noAccessChosen
+        ? `Meter ${meterNo}\nNo Access: nothing is removed and nothing follows.`
+        : [
+            `Meter ${meterNo}`,
+            `Instruction: ${chosenInstruction?.text || "NAv"}`,
+            replaces
+              ? "Next: Meter Installation opens."
+              : "Nothing opens after this.",
+          ].join("\n"),
+    });
+    if (!go) return;
+
     try {
       setInProgress(true);
 
@@ -1741,8 +1740,8 @@ export default function FormMeterRemoval() {
         setInProgress(false);
 
         Alert.alert(
-          "Offline",
-          "You are offline. Use SAVE to keep this REM execution form locally, then submit when online.",
+          "Offline: nothing was sent",
+          "You are offline. Press SAVE to keep this removal on the phone, then submit it when you are online.",
         );
 
         return;
@@ -1804,8 +1803,8 @@ export default function FormMeterRemoval() {
         if (error?.message === "SUBMISSION_TIMEOUT") {
           await saveDraftToQueue(
             values,
-            "SAVED LOCALLY",
-            "The submission took too long. The REM form was saved locally only and was not confirmed by the backend.",
+            "Saved on this phone, not sent",
+            `The network was too slow, so the removal was NOT sent. It is saved on this phone. Open it from ${SAVED_FORMS_PLACE} and press SUBMIT again. The new meter cannot be installed until the removal has been sent.`,
           );
 
           setInProgress(false);
@@ -1839,7 +1838,61 @@ export default function FormMeterRemoval() {
 
       setInProgress(false);
 
-      navigateAfterRemoval();
+      // MN-R001 section 6.1: the old meter is out, so the new one goes in at
+      // the same premise, linked to this removal. A No Access visit removed
+      // nothing, so nothing follows it.
+      const meterWasRemoved =
+        result?.executionOutcome?.success === true &&
+        String(result?.executionOutcome?.outcome || "").toUpperCase() !==
+          "NO_ACCESS";
+
+      if (
+        (installationFollows ||
+          cleanPayload?.followOn === "METER_INSTALLATION") &&
+        meterWasRemoved
+      ) {
+        const installationPremiseId =
+          astDoc?.accessData?.premise?.id || premiseId || "";
+
+        if (!installationPremiseId || installationPremiseId === "NAv") {
+          Alert.alert(
+            "Meter removed",
+            "Meter removed. The new meter still needs to be installed: open Meter Installation at this premise.",
+            [{ text: "OK", onPress: navigateAfterRemoval }],
+          );
+          return;
+        }
+
+        showResult({
+          title: "Removal sent",
+          message: `Meter ${meterNo} is removed. Meter Installation opens now.`,
+          // One move: replacing this form and then pushing the installation
+          // meant the second navigation could be dropped (it always was from
+          // inside a batch), and the worker was left with a navigation error.
+          onOk: () =>
+            router.replace(
+              buildInstallationRouteParams({
+                premiseId: installationPremiseId,
+                removalTrnId: result?.trnId || cleanPayload?.id,
+                replacedAstId: astDoc?.id || sourceAstId,
+                replacedMeterNo:
+                  astDoc?.ast?.astData?.astNo || action?.meterNo,
+                meterType:
+                  astDoc?.meterType || action?.meterType || "electricity",
+                returnTo: getLifecycleReturnRoute(),
+              }),
+            ),
+        });
+        return;
+      }
+
+      showResult({
+        title: "Removal sent",
+        message: noAccessChosen
+          ? "Saved as No Access. Nothing was removed."
+          : `Meter ${meterNo} is now Removed.`,
+        onOk: navigateAfterRemoval,
+      });
       return;
     } catch (error) {
       console.error("RemovalSubmission Error:", error);
@@ -2004,13 +2057,19 @@ export default function FormMeterRemoval() {
       >
         {({
           values,
-          setFieldValue,
+          setValues,
           handleSubmit,
           resetForm,
           validateForm,
           errors,
           isValid,
         }) => {
+          // One tap, one save, one check (see batchedFormikSave).
+          const setFieldValue = makeBatchedSetFieldValue({
+            values,
+            setValues,
+            pendingRef: pendingFieldChangesRef,
+          });
           const removalErrors = errors?.removal || {};
           const assignmentErrors = errors?.assignment || {};
           const accessErrors = errors?.accessData?.access || {};
@@ -2119,6 +2178,7 @@ export default function FormMeterRemoval() {
                   icon="text-box-remove-outline"
                   color="#ef4444"
                   instruction={officeInstruction}
+                  fromLabel={findingFrom}
                   media={officeInstructionMedia}
                 />
               ) : (
@@ -2169,6 +2229,23 @@ export default function FormMeterRemoval() {
                     numberOfLines={3}
                     style={styles.notesInput}
                   />
+
+                  {/* UI-R003 3.1: the same instruction section as the
+                      disconnection and the reconnection. */}
+                  <View style={styles.questionEvidenceSlot}>
+                    <Text style={styles.questionTitle}>Instruction Photo</Text>
+                    <Text style={styles.questionDescription}>
+                      Optional. Capture the written instruction if available.
+                    </Text>
+                    <IrepsMedia
+                      name="media"
+                      tag="instructionMedia"
+                      agentName={agentName}
+                      agentUid={agentUid}
+                      fallbackGps={fallbackGps}
+                      required={false}
+                    />
+                  </View>
                 </Surface>
               )}
 
@@ -2220,155 +2297,137 @@ export default function FormMeterRemoval() {
                   />
                 ) : (
                   <>
-                    <YesNoQuestion
-                      title="Meter removed"
-                      description="Confirm that the meter was physically removed from the field/site."
-                      value={values?.removal?.meterRemoved?.answer}
-                      notes={values?.removal?.meterRemoved?.notes}
-                      answerPath="removal.meterRemoved.answer"
-                      notesPath="removal.meterRemoved.notes"
-                      setFieldValue={setFieldValue}
-                      errorText={
-                        removalErrors?.meterRemoved?.answer ||
-                        removalErrors?.meterRemoved?.notes
-                      }
-                    >
-                      <IrepsMedia
-                        name="media"
-                        tag="removalEvidence"
-                        agentName={agentName}
-                        agentUid={agentUid}
-                        fallbackGps={fallbackGps}
-                        required={
-                          values?.removal?.meterRemoved?.answer === "yes"
-                        }
-                      />
-                    </YesNoQuestion>
-
+                    {/* MN-R001 6.1 (1.3.2): the removal form is filled in
+                        because the meter came out, so submitting it is the
+                        confirmation. One photo is the proof; there is no No and
+                        no reason box, and a worker who could not remove the
+                        meter records that on the finding instead. */}
                     <Surface style={styles.questionCard} elevation={1}>
                       <View style={styles.questionHeader}>
                         <Text style={styles.questionTitle}>
-                          {isPrepaidReading ? "Token reading" : "Meter reading"}
+                          Confirm meter removed
+                        </Text>
+
+                        <Text style={styles.questionDescription}>
+                          Take the photo that shows the meter is out. Submitting
+                          this form confirms the removal.
+                        </Text>
+                      </View>
+
+                      <View style={styles.questionEvidenceSlot}>
+                        <IrepsMedia
+                          name="media"
+                          tag="removalEvidence"
+                          agentName={agentName}
+                          agentUid={agentUid}
+                          fallbackGps={fallbackGps}
+                          required
+                        />
+                      </View>
+
+                      {!!removalErrors?.meterRemoved?.answer && (
+                        <Text style={styles.errorText}>
+                          {removalErrors.meterRemoved.answer}
+                        </Text>
+                      )}
+                    </Surface>
+
+                    {/* UI-R003 3.1: the reading as on Meter Discovery — type it
+                        and take the photo, or pick why it could not be read. */}
+                    <Surface style={styles.questionCard} elevation={1}>
+                      <View style={styles.questionHeader}>
+                        <Text style={styles.questionTitle}>
+                          {isPrepaidReading ? "Remaining Credit" : "Meter Reading"}
                         </Text>
 
                         <Text style={styles.questionDescription}>
                           {isPrepaidReading
-                            ? "Capture the prepaid token/register reading at removal. If unavailable, provide the reason."
-                            : "Capture the meter reading at removal. If unavailable, provide the reason."}
+                            ? "The credit left on the meter when it was removed. If it cannot be read, pick why."
+                            : "The reading when the meter was removed. If it cannot be read, pick why."}
                         </Text>
                       </View>
 
-                      {isPrepaidReading ? (
-                        <>
-                          <TextInput
-                            mode="outlined"
-                            label="Token Reading"
-                            value={values?.removal?.tokenReading}
-                            onChangeText={(text) =>
-                              setFieldValue(
-                                "removal.tokenReading",
-                                text.replace(/[^\d.]/g, ""),
-                              )
-                            }
-                            keyboardType="numeric"
-                            style={styles.readingInput}
-                          />
+                      <TextInput
+                        mode="outlined"
+                        label={
+                          isPrepaidReading ? "Remaining Credit" : "Meter Reading"
+                        }
+                        placeholder={
+                          isPrepaidReading
+                            ? "Enter remaining credit"
+                            : "Enter meter reading"
+                        }
+                        value={
+                          (isPrepaidReading
+                            ? values?.removal?.tokenReading
+                            : values?.removal?.meterReading) || ""
+                        }
+                        onChangeText={(text) => {
+                          const clean = text.replace(/[^\d.]/g, "");
+                          // A reading and a reason never go together.
+                          if (clean) {
+                            setFieldValue(
+                              "removal.noReadingReason",
+                              makeEmptySelectWithOther(),
+                            );
+                          }
+                          setFieldValue(
+                            isPrepaidReading
+                              ? "removal.tokenReading"
+                              : "removal.meterReading",
+                            clean,
+                          );
+                        }}
+                        keyboardType="numeric"
+                        style={styles.readingInput}
+                      />
 
-                          <View style={styles.questionEvidenceSlot}>
-                            <IrepsMedia
-                              name="media"
-                              tag="tokenReadingPhoto"
-                              agentName={agentName}
-                              agentUid={agentUid}
-                              fallbackGps={fallbackGps}
-                              required={
-                                !!String(
-                                  values?.removal?.tokenReading || "",
-                                ).trim()
-                              }
-                            />
-                          </View>
-                        </>
+                      {String(
+                        (isPrepaidReading
+                          ? values?.removal?.tokenReading
+                          : values?.removal?.meterReading) || "",
+                      ).trim() ? (
+                        <View style={styles.questionEvidenceSlot}>
+                          <IrepsMedia
+                            name="media"
+                            tag={
+                              isPrepaidReading
+                                ? "tokenReadingPhoto"
+                                : "removalMeterReadingEvidence"
+                            }
+                            agentName={agentName}
+                            agentUid={agentUid}
+                            fallbackGps={fallbackGps}
+                            required
+                          />
+                        </View>
                       ) : (
-                        <>
-                          <TextInput
-                            mode="outlined"
-                            label="Meter Reading"
-                            value={values?.removal?.meterReading}
-                            onChangeText={(text) =>
-                              setFieldValue(
-                                "removal.meterReading",
-                                text.replace(/[^\d.]/g, ""),
-                              )
-                            }
-                            keyboardType="numeric"
-                            style={styles.readingInput}
-                          />
-
-                          <View style={styles.questionEvidenceSlot}>
-                            <IrepsMedia
-                              name="media"
-                              tag="removalMeterReadingEvidence"
-                              agentName={agentName}
-                              agentUid={agentUid}
-                              fallbackGps={fallbackGps}
-                              required={
-                                !!String(
-                                  values?.removal?.meterReading || "",
-                                ).trim()
-                              }
-                            />
-                          </View>
-                        </>
+                        <IrepsSelectWithOther
+                          label={
+                            isPrepaidReading
+                              ? "Reason Remaining Credit Could Not Be Captured"
+                              : "No Reading Reason"
+                          }
+                          placeholder="Select reason"
+                          options={
+                            (isPrepaidReading
+                              ? REMAINING_CREDIT_REASON_LOOKUP
+                              : noReadingReasonLookup
+                            ).options
+                          }
+                          includeOther
+                          value={values?.removal?.noReadingReason}
+                          onChange={(nextValue) =>
+                            setFieldValue("removal.noReadingReason", nextValue)
+                          }
+                          errorText={
+                            typeof removalErrors?.noReadingReason === "string"
+                              ? removalErrors.noReadingReason
+                              : ""
+                          }
+                        />
                       )}
-
-                      <IrepsSelectWithOther
-                        label="No Reading Reason"
-                        placeholder="Select reason"
-                        options={noReadingReasonLookup.options}
-                        includeOther={noReadingReasonLookup.allowOther ?? true}
-                        otherCode={noReadingReasonLookup.otherCode || "OTHER"}
-                        otherLabel={noReadingReasonLookup.otherLabel || "Other"}
-                        loading={
-                          noReadingReasonLookup.isLoading ||
-                          noReadingReasonLookup.isFetching
-                        }
-                        value={values?.removal?.noReadingReason}
-                        onChange={(nextValue) =>
-                          setFieldValue("removal.noReadingReason", nextValue)
-                        }
-                        errorText={
-                          typeof removalErrors?.noReadingReason === "string"
-                            ? removalErrors.noReadingReason
-                            : ""
-                        }
-                      />
                     </Surface>
-
-                    <YesNoQuestion
-                      title="Safety confirmed"
-                      description="Confirm that the removal was left safe after the work was done."
-                      value={values?.removal?.safetyConfirmed?.answer}
-                      notes={values?.removal?.safetyConfirmed?.notes}
-                      answerPath="removal.safetyConfirmed.answer"
-                      notesPath="removal.safetyConfirmed.notes"
-                      setFieldValue={setFieldValue}
-                      errorText={
-                        removalErrors?.safetyConfirmed?.answer ||
-                        removalErrors?.safetyConfirmed?.notes
-                      }
-                    >
-                      <IrepsMedia
-                        name="media"
-                        tag="safetyEvidence"
-                        agentName={agentName}
-                        agentUid={agentUid}
-                        fallbackGps={fallbackGps}
-                        required={
-                          values?.removal?.safetyConfirmed?.answer === "yes"
-                        }
-                      />
-                    </YesNoQuestion>
                   </>
                 )}
 

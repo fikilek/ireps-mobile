@@ -19,6 +19,9 @@ import {
   premiseTargetedBatchContext,
 } from "./targetedBatchContextCarry.js";
 
+// A worker never sees an internal code. Everything here is logged with console.log, not console.error:
+// an error log paints a red box across the field worker's screen, and the window beside it has already
+// said the same thing in words they can act on (owner, 2026-09-24: "can you remove the error?").
 // TB-R051: the live row check gives up after 10 seconds.
 const LIVE_BATCH_ROW_TIMEOUT_MS = 10000;
 
@@ -78,7 +81,7 @@ async function readLiveBatchRow(ctx) {
   let salesLoadState = "MISSING";
   if (salesResult.status === "rejected") {
     salesLoadState = "ERROR";
-    console.error("[TARGETED_BATCH_DISCOVER_SALES_CHECK_ERROR]", {
+    console.log("[TARGETED_BATCH_DISCOVER_SALES_CHECK_ERROR]", {
       salesDocId: ctx.salesDocId,
       error: salesResult.reason,
     });
@@ -105,7 +108,7 @@ function setChecking(onCheckingChange, checking) {
   try {
     onCheckingChange(checking);
   } catch (error) {
-    console.error("[TARGETED_BATCH_CHECK_PROGRESS_ERROR]", error);
+    console.log("[TARGETED_BATCH_CHECK_PROGRESS_ERROR]", error);
   }
 }
 
@@ -137,7 +140,7 @@ export function runLiveBatchRowCheck({ ctx, onCheckingChange, onResult }) {
     .then(
       ({ row, batch, team }) => ({ failed: false, row, batch, team }),
       (error) => {
-        console.error("[TARGETED_BATCH_LIVE_ROW_CHECK_ERROR]", {
+        console.log("[TARGETED_BATCH_LIVE_ROW_CHECK_ERROR]", {
           tbId: ctx?.tbId,
           rowId: ctx?.rowId,
           error,
@@ -151,7 +154,7 @@ export function runLiveBatchRowCheck({ ctx, onCheckingChange, onResult }) {
       onResult(result);
     })
     .catch((error) => {
-      console.error("[TARGETED_BATCH_LIVE_ROW_RESULT_ERROR]", error);
+      console.log("[TARGETED_BATCH_LIVE_ROW_RESULT_ERROR]", error);
     });
 
   return true;
@@ -163,8 +166,8 @@ function asSentence(text) {
 }
 
 // TB-R051: Discover on a premise linked to a Sales batch row asks whether the
-// work is the batch meter or other work. Other work drops the batch.
-export function askBatchOrOtherDiscovery({
+// work is done on the Sales Path or the Normal Path. The Normal Path drops the batch.
+export function askDiscoveryPath({
   premise,
   parentErf,
   selectedErfContext,
@@ -209,8 +212,8 @@ export function askBatchOrOtherDiscovery({
     return;
   }
 
-  const otherWorkButton = {
-    text: "Other work (not the batch)",
+  const normalPathButton = {
+    text: "Normal Path",
     onPress: openOtherWork,
   };
   const cancelButton = { text: "Cancel", style: "cancel" };
@@ -223,8 +226,8 @@ export function askBatchOrOtherDiscovery({
       "Batch details incomplete",
       `This premise is linked to a batch, but the batch details are incomplete${
         missingFields.length > 0 ? ` (${missingFields.join(", ")})` : ""
-      }. The batch meter cannot be discovered from here. Do other work that is not for the batch?`,
-      [otherWorkButton, cancelButton],
+      }. This meter cannot be done on the Sales Path. Do it on the Normal Path?`,
+      [normalPathButton, cancelButton],
     );
     return;
   }
@@ -233,18 +236,16 @@ export function askBatchOrOtherDiscovery({
     ctx.targetedMeterNo || "?"
   }).`;
 
-  // TB-R051: the batch option is refused with the reason; only other work or cancel remain.
-  const showRefusal = (reason, { openAst = false, checkFailed = false } = {}) => {
-    const next = checkFailed
-      ? "Try again when connected, or do other work that is not for the batch?"
-      : openAst
-        ? "Do other work that is not for the batch?"
-        : "The batch meter cannot be discovered from here. Do other work that is not for the batch?";
+  // TB-R051: the Sales Path is refused with the reason; only the Normal Path or cancel remain.
+  const showRefusal = (reason, { openAst = false } = {}) => {
+    const next = openAst
+      ? "Do this meter on the Normal Path?"
+      : "This meter cannot be done on the Sales Path. Do it on the Normal Path?";
 
     Alert.alert(
       "Batch meter",
       `${asSentence(reason)}\n\n${batchLine} ${next}`,
-      [otherWorkButton, cancelButton],
+      [normalPathButton, cancelButton],
     );
   };
 
@@ -259,17 +260,26 @@ export function askBatchOrOtherDiscovery({
     return;
   }
 
-  const offerBatchMeter = () => {
+  // A check that could not be made does not shut the Sales Path (owner, 2026-09-24). The phone already
+  // holds the row, the Normal Path leaves the worker typing a number iREPS knows, and the server checks the
+  // batch again on submit - so a row that really has closed is refused there, and nothing is risked here.
+  const offerBatchMeter = ({ checkFailed = false } = {}) => {
+    const opening = checkFailed
+      ? `${BATCH_DISCOVERY_REASONS.CHECK_FAILED}
+
+`
+      : "";
+
     Alert.alert(
       "Batch meter",
-      `This premise belongs to batch ${ctx.tbId} row ${
+      `${opening}This premise belongs to batch ${ctx.tbId} row ${
         ctx.rowNo ?? "?"
       } (meter ${
         ctx.targetedMeterNo || "?"
-      }). Discover the batch meter, or do other work that is not for the batch?`,
+      }). Do this meter on the Sales Path or the Normal Path?`,
       [
         {
-          text: "Discover batch meter",
+          text: "Sales Path",
           onPress: () => {
             updateGeo({
               selectedErf: parentErf
@@ -293,7 +303,7 @@ export function askBatchOrOtherDiscovery({
             });
           },
         },
-        otherWorkButton,
+        normalPathButton,
         cancelButton,
       ],
     );
@@ -307,9 +317,7 @@ export function askBatchOrOtherDiscovery({
     onCheckingChange,
     onResult: ({ failed, row, batch, team }) => {
       if (failed) {
-        showRefusal(BATCH_DISCOVERY_REASONS.CHECK_FAILED, {
-          checkFailed: true,
-        });
+        offerBatchMeter({ checkFailed: true });
         return;
       }
 

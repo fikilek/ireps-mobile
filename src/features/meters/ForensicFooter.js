@@ -9,11 +9,12 @@ import {
   View,
 } from "react-native";
 import { Button } from "react-native-paper";
+import { SubmitBlockers } from "../../../components/forms/SubmitBlockers";
 
 export const ForensicFooter = ({ isTrnLoading }) => {
   // const navigation = useNavigation();
   // const { handleSubmit, isValid, dirty, resetForm } = useFormikContext();
-  const { handleSubmit, isValid, dirty, resetForm, isSubmitting } =
+  const { handleSubmit, isValid, dirty, resetForm, isSubmitting, errors } =
     useFormikContext();
 
   // 🎯 The Magic Combination: Local State || API State
@@ -51,6 +52,9 @@ export const ForensicFooter = ({ isTrnLoading }) => {
   const config = getButtonConfig();
 
   return (
+    <>
+    {/* Why Submit is not ready yet, in plain words, once the worker has started. */}
+    <SubmitBlockers errors={errors} visible={dirty && !isValid} />
     <View style={styles.footerContainer}>
       <Button
         mode="outlined"
@@ -114,6 +118,7 @@ export const ForensicFooter = ({ isTrnLoading }) => {
         {config.text}
       </Button>
     </View>
+    </>
   );
 };
 

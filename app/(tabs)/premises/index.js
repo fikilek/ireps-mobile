@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { FlashList } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ActivityIndicator, Surface } from "react-native-paper";
 
@@ -17,8 +17,8 @@ import { filterPremises } from "../../../src/features/premises/filterPremises";
 import BatchCheckOverlay, {
   BATCH_CHECK_MESSAGES,
 } from "../../../src/features/targetedBatches/BatchCheckOverlay";
-import { askBatchOrOrdinaryPremise } from "../../../src/features/targetedBatches/askBatchOrOrdinaryPremise";
-import { askBatchOrOtherDiscovery } from "../../../src/features/targetedBatches/askBatchOrOtherDiscovery";
+import { askPremisePath } from "../../../src/features/targetedBatches/askPremisePath";
+import { askDiscoveryPath } from "../../../src/features/targetedBatches/askDiscoveryPath";
 import { erfWithCarriedBatchContext } from "../../../src/features/targetedBatches/targetedBatchContextCarry";
 import { useAuth } from "../../../src/hooks/useAuth";
 
@@ -139,7 +139,7 @@ export default function PremisesScreen() {
       const parentErf = erfById[p?.erfId] || null;
 
       // TB-R051: read the batch before the selection changes.
-      askBatchOrOtherDiscovery({
+      askDiscoveryPath({
         premise: p,
         parentErf,
         selectedErfContext: selectedErf?.targetedBatchContext,
@@ -163,7 +163,7 @@ export default function PremisesScreen() {
 
   // TB-R051: a new premise on an ERF selected with a batch is checked live first.
   const handleAddPremise = useCallback(() => {
-    askBatchOrOrdinaryPremise({
+    askPremisePath({
       erf: selectedErf,
       updateGeo,
       actor: batchActor,
@@ -209,6 +209,37 @@ export default function PremisesScreen() {
     },
     [router],
   );
+
+  // A worker who taps Premise on a batch row is sent to this list with that premise selected. On an ERF
+  // with eight premises the selected card can sit below the fold, so the list opens looking as though
+  // nothing is selected (owner, 2026-09-24). It scrolls to the selected card instead.
+  const premiseListRef = useRef(null);
+  const selectedPremiseIndex = useMemo(
+    () =>
+      selectedPremise?.id
+        ? displayPremises.findIndex((premise) => premise?.id === selectedPremise.id)
+        : -1,
+    [displayPremises, selectedPremise?.id],
+  );
+
+  useEffect(() => {
+    if (selectedPremiseIndex < 0) return;
+
+    // After the list has laid itself out, or FlashList has nothing to scroll yet.
+    const timer = setTimeout(() => {
+      try {
+        premiseListRef.current?.scrollToIndex?.({
+          index: selectedPremiseIndex,
+          animated: true,
+          viewPosition: 0.2,
+        });
+      } catch {
+        // A list that cannot scroll there yet simply stays where it is.
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [selectedPremiseIndex]);
 
   const renderPremiseItem = useCallback(
     ({ item }) => {
@@ -364,6 +395,7 @@ export default function PremisesScreen() {
       </View>
 
       <FlashList
+        ref={premiseListRef}
         data={displayPremises}
         keyExtractor={(item) => item?.id}
         estimatedItemSize={180}

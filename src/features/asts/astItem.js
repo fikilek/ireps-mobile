@@ -680,7 +680,11 @@ const AstItem = ({ item }) => {
   );
   const canDisconnect = meterState === "CONNECTED";
   const canReconnect = meterState === "DISCONNECTED";
-  const canRemove = meterState !== "REMOVED";
+  // Only a meter that is still there can be removed. A decommissioned one
+  // used to open the form and then refuse (MN-R001 6.1).
+  const canRemove = ["FIELD", "CONNECTED", "DISCONNECTED"].includes(
+    meterState,
+  );
 
   const actorServiceProviderId =
     profile?.employment?.serviceProvider?.id || null;
@@ -891,12 +895,23 @@ const AstItem = ({ item }) => {
       return;
     }
 
-    if (!canOriginateOfficeLct) {
-      alertNoLifecycleOriginRights();
+    // MN-R001 section 8 (1.1.0): a manager issues an inspection; a field
+    // worker or supervisor inspects on the spot, as field work. This is how a
+    // meter found live again after a disconnection can be disconnected again.
+    if (canOriginateOfficeLct) {
+      launchTrnOrigin("METER_INSPECTION");
       return;
     }
 
-    launchTrnOrigin("METER_INSPECTION");
+    if (canOriginateFieldLct) {
+      launchFieldLifecycle({
+        pathname: "/(tabs)/asts/inspection",
+        trnType: "METER_INSPECTION",
+      });
+      return;
+    }
+
+    alertNoDualOriginLifecycleRights();
   };
 
   const launchDisconnection = () => {

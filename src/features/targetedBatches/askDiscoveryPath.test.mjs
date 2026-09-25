@@ -7,9 +7,9 @@ import * as carry from "./targetedBatchContextCarry.js";
 import { resolveTargetedBatchSalesPoint } from "./targetedBatchMapPoints.js";
 import { readRowLastWorkedMillis } from "./rowLastWorked.js";
 
-// askBatchOrOtherDiscovery imports React Native and Firebase, so it is evaluated
+// askDiscoveryPath imports React Native and Firebase, so it is evaluated
 // from its source text with the pure modules it imports and fakes for the rest.
-const askSource = await readFile(new URL("./askBatchOrOtherDiscovery.js", import.meta.url), "utf8");
+const askSource = await readFile(new URL("./askDiscoveryPath.js", import.meta.url), "utf8");
 const apiSource = await readFile(new URL("../../redux/targetedBatchApi.js", import.meta.url), "utf8");
 
 const IMPORT_PATTERN = /import\s*\{([^}]*)\}\s*from\s*"([^"]+)";/g;
@@ -41,7 +41,7 @@ const api = new Function(
 return { normalizeTargetedBatchRow, enrichTargetedBatchRowFromSales };`,
 )(resolveTargetedBatchSalesPoint, readRowLastWorkedMillis);
 
-test("the harness binds exactly what askBatchOrOtherDiscovery imports", () => {
+test("the harness binds exactly what askDiscoveryPath imports", () => {
   assert.deepEqual(readImports(askSource), {
     "firebase/firestore": ["doc", "getDoc"],
     "react-native": ["Alert", "Platform", "ToastAndroid"],
@@ -117,7 +117,7 @@ const ALL_READS = [...FIRST_READS, "teams/TEAM1"];
 function createHarness({ docs = openDocs(), failures = {}, pending = [], os = "android" } = {}) {
   const calls = { reads: [], toasts: [], alerts: [], geo: [], pushes: [], missions: [], checking: [], events: [] };
   const body = `${askSource.replace(IMPORT_PATTERN, "").replace(/^export (function|const) /gm, "$1 ")}
-return { askBatchOrOtherDiscovery, runLiveBatchRowCheck, STILL_CHECKING_MESSAGE };`;
+return { askDiscoveryPath, runLiveBatchRowCheck, STILL_CHECKING_MESSAGE };`;
   const deps = {
     doc: (_db, collection, id) => ({ path: `${collection}/${id}`, id }),
     getDoc: (ref) => {
@@ -156,7 +156,7 @@ return { askBatchOrOtherDiscovery, runLiveBatchRowCheck, STILL_CHECKING_MESSAGE 
     calls.events.push(`checking:${checking}`);
   };
   const run = (args = {}) =>
-    exported.askBatchOrOtherDiscovery({
+    exported.askDiscoveryPath({
       premise: { id: "P1", erfId: "ERF1" },
       parentErf: { id: "ERF1", erfNo: "485" },
       selectedErfContext: selectedContext(),
@@ -175,14 +175,28 @@ const flush = async () => {
 };
 const buttonTexts = (alert) => alert.buttons.map((button) => button.text);
 const press = (alert, text) => alert.buttons.find((button) => button.text === text).onPress();
-const OTHER_ONLY = ["Other work (not the batch)", "Cancel"];
+const NORMAL_PATH_ONLY = ["Normal Path", "Cancel"];
+
+function assertCheckFailedOffer(calls) {
+  assert.equal(calls.alerts.length, 1);
+  const [alert] = calls.alerts;
+  assert.equal(alert.title, "Batch meter");
+  assert.ok(
+    alert.message.startsWith("Could not check the batch meter. Check your connection."),
+    alert.message,
+  );
+  assert.match(alert.message, /Do this meter on the Sales Path or the Normal Path\?/);
+  assert.deepEqual(buttonTexts(alert), ["Sales Path", ...NORMAL_PATH_ONLY]);
+  assert.equal(calls.pushes.length, 0);
+  return alert;
+}
 
 function assertRefusal(calls, reason) {
   assert.equal(calls.alerts.length, 1);
   const [alert] = calls.alerts;
   assert.equal(alert.title, "Batch meter");
   assert.ok(alert.message.startsWith(reason), alert.message);
-  assert.deepEqual(buttonTexts(alert), OTHER_ONLY);
+  assert.deepEqual(buttonTexts(alert), NORMAL_PATH_ONLY);
   assert.equal(alert.buttons[1].style, "cancel");
   assert.equal(calls.pushes.length, 0);
   assert.equal(calls.geo.length, 0);
@@ -222,9 +236,9 @@ test("an open live row of the worker's batch: progress for the whole check, then
   assert.deepEqual(calls.reads, ALL_READS, "the TEAM of the allocation is read");
   assert.deepEqual(calls.events, ["checking:true", "checking:false", "alert:Batch meter"]);
   const [alert] = calls.alerts;
-  assert.deepEqual(buttonTexts(alert), ["Discover batch meter", ...OTHER_ONLY]);
+  assert.deepEqual(buttonTexts(alert), ["Sales Path", ...NORMAL_PATH_ONLY]);
 
-  press(alert, "Discover batch meter");
+  press(alert, "Sales Path");
   assert.equal(calls.geo.length, 1);
   assert.equal(calls.geo[0].selectedErf.id, "ERF1");
   assert.equal(calls.geo[0].selectedErf.targetedBatchContext.rowId, "ROW1");
@@ -244,14 +258,14 @@ test("an SP batch of the worker's service provider is offered without reading a 
   run();
   await flush();
   assert.deepEqual(calls.reads, FIRST_READS);
-  assert.deepEqual(buttonTexts(calls.alerts[0]), ["Discover batch meter", ...OTHER_ONLY]);
+  assert.deepEqual(buttonTexts(calls.alerts[0]), ["Sales Path", ...NORMAL_PATH_ONLY]);
 });
 
-test("Other work drops the batch from the selection before the ordinary flow", async () => {
+test("the Normal Path drops the batch from the selection before the form opens", async () => {
   const { run, calls } = createHarness();
   run();
   await flush();
-  press(calls.alerts[0], "Other work (not the batch)");
+  press(calls.alerts[0], "Normal Path");
   assert.equal(calls.geo.length, 1);
   assert.deepEqual(calls.geo[0].selectedErf, { id: "ERF1", erfNo: "485" });
   assert.equal(calls.geo[0].selectedPremise.id, "P1");
@@ -272,8 +286,8 @@ test("review scenario: VISIBLE Sales meter whose row is IN_PROGRESS, from the pr
   await flush();
 
   const alert = assertRefusal(calls, "This batch meter is Completed.");
-  assert.match(alert.message, /cannot be discovered from here/);
-  press(alert, "Other work (not the batch)");
+  assert.match(alert.message, /cannot be done on the Sales Path/);
+  press(alert, "Normal Path");
   assert.equal(Object.hasOwn(calls.geo[0].selectedErf, "targetedBatchContext"), false);
   assert.equal(calls.missions.length, 1);
   assert.equal(calls.pushes.length, 0);
@@ -323,9 +337,9 @@ test("review scenario: a batch the worker cannot open in My Work Orders is refus
     run();
     await flush();
     const alert = assertRefusal(calls, REASON);
-    assert.match(alert.message, /cannot be discovered from here/, name);
+    assert.match(alert.message, /cannot be done on the Sales Path/, name);
     assert.deepEqual(calls.reads, reads, name);
-    press(alert, "Other work (not the batch)");
+    press(alert, "Normal Path");
     assert.equal(calls.missions.length, 1, name);
     assert.equal(Object.hasOwn(calls.geo[0].selectedErf, "targetedBatchContext"), false, name);
   }
@@ -344,7 +358,7 @@ test("a row with a linked meter says to open it from My Work Orders", async () =
   run();
   await flush();
   const alert = assertRefusal(calls, "This batch meter already has a meter linked; open it from My Work Orders.");
-  assert.doesNotMatch(alert.message, /cannot be discovered from here/);
+  assert.doesNotMatch(alert.message, /cannot be done on the Sales Path/);
 });
 
 test("a failed Sales read fails closed as not checked", async () => {
@@ -362,11 +376,11 @@ test("a failed row, batch or team read says to check the connection", async () =
     const { run, calls } = createHarness({ failures: { [path]: new Error("unavailable") } });
     run();
     await flush();
-    const alert = assertRefusal(calls, "Could not check the batch meter. Check your connection.");
-    assert.match(alert.message, /Try again when connected/, path);
+    // The Sales Path stays open: the phone holds the row, and the server checks the batch again on submit.
+    const alert = assertCheckFailedOffer(calls);
     assert.deepEqual(calls.checking, [true, false], path);
-    press(alert, "Other work (not the batch)");
-    assert.equal(calls.missions.length, 1, path);
+    press(alert, "Sales Path");
+    assert.equal(calls.pushes.length, 1, path);
   }
   mock.restoreAll();
 });
@@ -385,7 +399,7 @@ test("the check gives up after 10 seconds, with progress shown until then", asyn
       assert.deepEqual(calls.checking, [true], "still checking");
       mock.timers.tick(1);
       await flush();
-      assertRefusal(calls, "Could not check the batch meter. Check your connection.");
+      assertCheckFailedOffer(calls);
       assert.deepEqual(calls.events, ["checking:true", "checking:false", "alert:Batch meter"]);
     }
   } finally {
@@ -422,14 +436,14 @@ test("off Android the second tap is answered with an Alert; the check still runs
   assert.equal(calls.alerts[0].message, "Still checking the previous premise.");
   await flush();
   assert.equal(calls.alerts.length, 2);
-  assert.deepEqual(buttonTexts(calls.alerts[1]), ["Discover batch meter", ...OTHER_ONLY]);
+  assert.deepEqual(buttonTexts(calls.alerts[1]), ["Sales Path", ...NORMAL_PATH_ONLY]);
 });
 
 test("a caller without progress still gets the answer", async () => {
   const { run, calls } = createHarness();
   run({ onCheckingChange: undefined });
   await flush();
-  assert.deepEqual(buttonTexts(calls.alerts[0]), ["Discover batch meter", ...OTHER_ONLY]);
+  assert.deepEqual(buttonTexts(calls.alerts[0]), ["Sales Path", ...NORMAL_PATH_ONLY]);
 
   // A failing progress callback is logged and never blocks the answer or the next check.
   mock.method(console, "error", () => {});
@@ -465,5 +479,5 @@ test("incomplete batch details are refused without reading (unchanged)", async (
   assert.deepEqual(calls.checking, []);
   assert.equal(calls.alerts.length, 1);
   assert.equal(calls.alerts[0].title, "Batch details incomplete");
-  assert.deepEqual(buttonTexts(calls.alerts[0]), OTHER_ONLY);
+  assert.deepEqual(buttonTexts(calls.alerts[0]), NORMAL_PATH_ONLY);
 });

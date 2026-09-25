@@ -55,7 +55,9 @@ import {
   supportsUnitNo,
 } from "./premiseRepeatability";
 import { FORM_TEXT } from "../../theme/formColors";
-
+// TB-R067 (1.3.73): Commercial and Industrial are asked for a business name, not a unit name.
+import { premiseNameLabel } from "../targetedBatches/rowPremiseChoice";
+import { returnAfterLifecycleWork } from "../../utils/lifecycleReturn";
 
 const streetTypeOptions = [
   "Select...",
@@ -345,6 +347,8 @@ export default function FormPremise() {
     duplicateId,
     queueItemId,
     targetedBatchContext: routeTargetedBatchContext,
+    // TB-R067 (1.3.73) 6: the premise this row is being moved off, when a wrong join is being put right.
+    targetedBatchReplacesPremiseId: routeReplacesPremiseId,
   } = params;
 
   const hasDuplicateIntent = hasOwn(params, "duplicateId");
@@ -670,7 +674,7 @@ export default function FormPremise() {
   // checked context and wins over the selected ERF's; without it, the selected ERF's context when the form
   // opened. A later change of the selected ERF neither drops nor swaps it, and an ordinary form ignores a
   // context that appears on the selected ERF after it opened. When the router reuses this open form with
-  // new params (e.g. "Ordinary premise" chosen from the Maps tab), the batch is captured again for them.
+  // new params (e.g. the Normal Path chosen from the Maps tab), the batch is captured again for them.
   const openedRouteKey = JSON.stringify([
     id ?? null,
     premiseId ?? null,
@@ -695,6 +699,19 @@ export default function FormPremise() {
   if (openedTargetedBatch.key !== openedRouteKey) {
     setOpenedTargetedBatch(captureOpenedTargetedBatch());
   }
+
+  // TB-R067 (1.3.73): the form was opened from a batch row, so whatever it does here belongs to that row —
+  // a new premise, a copy of the shop next door, or a premise that was already standing there. Until now a
+  // copy and an edit both dropped the row, which is how ERF 689 ended up with four premises joined to
+  // nothing (owner, 2026-09-24). It is kept apart from targetedBatchContext below, because a copy still
+  // takes its address from the premise it was copied from, never from the Sales row.
+  const rowPremiseJoin = useMemo(
+    () =>
+      routeTargetedBatchContext !== undefined
+        ? parseTargetedBatchContextRouteParam(routeTargetedBatchContext)
+        : null,
+    [routeTargetedBatchContext],
+  );
 
   const queueTargetedBatchContext = isDuplicate
     ? undefined
@@ -811,11 +828,13 @@ export default function FormPremise() {
           .notOneOf(["Select..."], "Please select a property type")
           .required("Required"),
 
-        name: Yup.string().when("type", {
-          is: (val) => requiresPropertyName(val),
-          then: (schema) => schema.trim().required("Unit Name is mandatory"),
-          otherwise: (schema) => schema.optional(),
-        }),
+        // TB-R067 (1.3.73): the message names the field the worker is looking at, so a shop is not told to
+        // fill in a Unit Name that is not on its screen.
+        name: Yup.string().when("type", ([type], schema) =>
+          requiresPropertyName(type)
+            ? schema.trim().required(`${premiseNameLabel(type)} is mandatory`)
+            : schema.optional(),
+        ),
 
         unitNo: Yup.string().when("type", {
           is: (val) => requiresUnitNo(val, unitNoValidationContext),
@@ -1230,8 +1249,10 @@ export default function FormPremise() {
     try {
       const systemFields = buildSystemFields();
       const premiseDocId = systemFields.id;
+      // TB-R067 (1.3.73): a premise opened from a row joins that row, whether it is being made, copied or
+      // picked from the ones already on the ERF.
       const linkedTargetedBatchContext =
-        !isEdit && !isDuplicate ? targetedBatchContext : null;
+        (!isEdit && !isDuplicate ? targetedBatchContext : null) || rowPremiseJoin;
 
       // TB-R051: a batch row selected elsewhere after the form opened never replaces the form's batch.
       const laterSelectedErfContext = normalizeTargetedBatchContext(
@@ -1332,6 +1353,14 @@ export default function FormPremise() {
                 }
               : {}),
 
+            // TB-R067 (1.3.73) 6: travels beside the premise to the server, which moves the row only when
+            // this names the premise the row holds now. It is never written onto a premise.
+            ...(linkedTargetedBatchContext && routeReplacesPremiseId
+              ? {
+                  targetedBatchReplacesPremiseId: String(routeReplacesPremiseId),
+                }
+              : {}),
+
             geometry: {
               centroid: {
                 lat: values?.geometry?.centroid?.lat,
@@ -1374,6 +1403,9 @@ export default function FormPremise() {
             payload: basePayload,
             createdByUid: agentUid,
             createdByUser: agentName,
+            // TB-R067 (1.3.73): picked from a row, so the premise is already in Firestore and only the
+            // callable can join it.
+            joinsExistingPremise: Boolean(isEdit && rowPremiseJoin),
           });
         }
 
@@ -1462,7 +1494,11 @@ export default function FormPremise() {
       try {
         // const firestoreSubmitStartedAtMs = Date.now();
 
-        if (isEdit) {
+        // TB-R067 (1.3.73): a premise picked from a row's list is joined by the server, which only the
+        // create callable reaches - updatePremise writes to Firestore from the phone and would leave the
+        // row joined to nothing. The callable knows the premise already exists: it links it and leaves
+        // everything else alone.
+        if (isEdit && !rowPremiseJoin) {
           result = await withSubmitTimeout(
             updatePremise(finalValues).unwrap(),
             15000,
@@ -1510,6 +1546,7 @@ export default function FormPremise() {
               payload: finalValues,
               createdByUid: agentUid,
               createdByUser: agentName,
+              joinsExistingPremise: Boolean(isEdit && rowPremiseJoin),
             });
           }
 
@@ -1548,9 +1585,11 @@ export default function FormPremise() {
       }
 
       const targetedBatchLink = result?.targetedBatchLink;
+      // TB-R067 (1.3.73): a premise picked or copied from a row is joined just as a new one is, so the
+      // worker goes back to the work order they came from. The proof is the same either way: the server
+      // says linked, for this premise, on this batch and this row.
       const targetedBatchPremiseLinked = Boolean(
-        !isEdit &&
-          linkedTargetedBatchContext &&
+        linkedTargetedBatchContext &&
           targetedBatchLink?.linked === true &&
           String(result?.premiseId || "").trim() === premiseDocId &&
           String(targetedBatchLink?.tbId || "").trim() ===
@@ -1568,8 +1607,9 @@ export default function FormPremise() {
 
       ToastAndroid.show("Premise saved.", ToastAndroid.LONG);
 
-      if (originatedFromTargetedBatch || isQueueEdit) {
-        router.replace(successRoute);
+      if (originatedFromTargetedBatch || isQueueEdit || rowPremiseJoin) {
+        // My Work Orders is in the Admin tab and this form is in Premises, and REPLACE cannot cross tabs.
+        returnAfterLifecycleWork(router, successRoute, "/(tabs)/premises");
       } else {
         router.back();
       }
@@ -1776,9 +1816,11 @@ export default function FormPremise() {
                     {requiresPropertyName(values?.propertyType?.type) && (
                       <>
                         <FormInput
-                          label="Unit Name"
+                          label={premiseNameLabel(values?.propertyType?.type)}
                           name="propertyType.name"
-                          placeholder="Unit Name"
+                          placeholder={premiseNameLabel(
+                            values?.propertyType?.type,
+                          )}
                           keyboardType="default"
                         />
                         <Divider style={styles.divider} />
