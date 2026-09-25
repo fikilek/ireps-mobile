@@ -531,7 +531,7 @@ function ErfLabelMarkerBase({
       zIndex={250}
     >
       {/* The square the map's picture is made from; the number sits in the middle of it. */}
-      <View style={styles.erfLabelPicture} onLayout={onLayout}>
+      <View style={styles.markerPicture} onLayout={onLayout}>
         <View style={[styles.erfLabel, { borderRadius: Math.max(2, fontSize / 2) }]}>
           <Text
             style={[styles.erfLabelText, { fontSize, lineHeight: fontSize * 1.25 }]}
@@ -569,11 +569,10 @@ function PremiseMarkerBase({ premiseId, latitude, longitude, selected, onPress }
       onPress={handlePress}
       zIndex={selected ? 190 : 120}
     >
-      <View
-        style={[styles.premisePin, selected && styles.layerPinSelected]}
-        onLayout={onLayout}
-      >
-        <MaterialCommunityIcons name="home" size={12} color="#ffffff" />
+      <View style={styles.markerPicture} onLayout={onLayout}>
+        <View style={[styles.premisePin, selected && styles.layerPinSelected]}>
+          <MaterialCommunityIcons name="home" size={12} color="#ffffff" />
+        </View>
       </View>
     </Marker>
   );
@@ -611,17 +610,18 @@ function OtherSalesMarkerBase({
       onPress={handlePress}
       zIndex={selected ? 195 : 180}
     >
-      <View
-        style={[
-          styles.otherSalesPin,
-          { borderColor: color },
-          selected && styles.layerPinSelected,
-        ]}
-        onLayout={onLayout}
-      >
-        <Text style={[styles.otherSalesPinText, { color }]}>
-          {icon.symbol}
-        </Text>
+      <View style={styles.markerPicture} onLayout={onLayout}>
+        <View
+          style={[
+            styles.otherSalesPin,
+            { borderColor: color },
+            selected && styles.layerPinSelected,
+          ]}
+        >
+          <Text style={[styles.otherSalesPinText, { color }]}>
+            {icon.symbol}
+          </Text>
+        </View>
       </View>
     </Marker>
   );
@@ -2358,7 +2358,10 @@ const styles = StyleSheet.create({
   },
 
 
-  erfLabelPicture: {
+  // TB-R051 (1.3.83): the square the map's picture is made from, for every marker centred on its own
+  // position. Without it the marker is drawn in the picture's top-left and the anchor, read against the
+  // picture, leaves it up and to the left of where it belongs.
+  markerPicture: {
     width: MARKER_PICTURE_DP,
     height: MARKER_PICTURE_DP,
     alignItems: "center",

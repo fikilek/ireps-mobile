@@ -222,10 +222,10 @@ test("a number is laid in the middle of the picture the map makes of it (1.3.83)
     modalSource.indexOf("function ErfLabelMarkerBase("),
     modalSource.indexOf("const ErfLabelMarker = memo("),
   );
-  assert.match(erfLabel, /styles\.erfLabelPicture/);
+  assert.match(erfLabel, /styles\.markerPicture/);
   assert.match(erfLabel, /anchor=\{CENTRE_ANCHOR\}/);
   // The square is exactly the picture's size, with the number centred in it.
-  const picture = modalSource.slice(modalSource.indexOf("  erfLabelPicture: {"), modalSource.indexOf("  erfLabel: {"));
+  const picture = modalSource.slice(modalSource.indexOf("  markerPicture: {"), modalSource.indexOf("  erfLabel: {"));
   assert.match(picture, /width: MARKER_PICTURE_DP/);
   assert.match(picture, /height: MARKER_PICTURE_DP/);
   assert.match(picture, /alignItems: "center"/);

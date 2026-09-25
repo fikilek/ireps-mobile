@@ -158,5 +158,11 @@ test("TB-R051 1.3.40 on the map: icons centred exactly on their position, ERF nu
   // The number is centred on its own place, in the middle of the picture the map makes of it (1.3.83).
   const erfLabel = modalSource.slice(modalSource.indexOf("function ErfLabelMarkerBase("), modalSource.indexOf("const ErfLabelMarker = memo("));
   assert.match(erfLabel, /anchor=\{CENTRE_ANCHOR\}/);
-  assert.match(erfLabel, /styles\.erfLabelPicture/);
+  assert.match(erfLabel, /styles\.markerPicture/);
+  // (1.3.83) every marker centred on its own position is laid in that same square, or the map's picture
+  // leaves it up and to the left of where it belongs.
+  const premise = modalSource.slice(modalSource.indexOf("function PremiseMarkerBase("), modalSource.indexOf("const PremiseMarker = memo("));
+  const otherSales = modalSource.slice(modalSource.indexOf("function OtherSalesMarkerBase("), modalSource.indexOf("const OtherSalesMarker = memo("));
+  assert.match(premise, /styles\.markerPicture/);
+  assert.match(otherSales, /styles\.markerPicture/);
 });
