@@ -8,10 +8,6 @@ const authenticatedApiLoaders = [
     import("./informalErfsApi").then((module) => module.informalErfsApi),
   () => import("./geoApi").then((module) => module.geoApi),
   () =>
-    import("./irepsSelectLookupsApi").then(
-      (module) => module.irepsSelectLookupsApi,
-    ),
-  () =>
     import("./lifecycleInstructionApi").then(
       (module) => module.lifecycleInstructionApi,
     ),

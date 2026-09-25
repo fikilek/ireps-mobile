@@ -213,6 +213,39 @@ const FORM_OPTIONS = Object.freeze({
     ),
   ]),
 
+  // UI-R003 1.4.0: the office instruction lists. A manager issues these from
+  // trn-origin, which used to fetch them from the server - so a manager with
+  // no network could not issue an instruction at all.
+
+  // Check illegal connection is first: it is the one issued against a
+  // specific finding, and General inspection is the fallback.
+  inspection_instructions: Object.freeze([
+    option("Check illegal connection", "CHECK_ILLEGAL_CONNECTION"),
+    option("General inspection", "GENERAL_INSPECTION"),
+  ]),
+
+  disconnection_instructions: Object.freeze([
+    describedOption(
+      "Credit Control Instruction",
+      "CREDIT_CONTROL_INSTRUCTION",
+      "Disconnection instructed for credit control purposes.",
+    ),
+    describedOption(
+      "Illegal Connection",
+      "ILLEGAL_CONNECTION",
+      "Disconnection instructed due to an illegal connection.",
+    ),
+    describedOption(
+      "Non Payment",
+      "NON_PAYMENT",
+      "Disconnection instructed due to non-payment.",
+    ),
+  ]),
+
+  reconnection_instructions: Object.freeze([
+    option("Reconnect meter", "RECONNECT_METER"),
+  ]),
+
   meter_reading_instructions: Object.freeze([
     option("Monthly Meter Reading", "MONTHLY_METER_READING"),
     option("Routine Meter Reading", "ROUTINE_METER_READING"),

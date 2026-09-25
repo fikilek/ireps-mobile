@@ -27,8 +27,6 @@ import { trnsApi } from "./trnsApi";
 import { usersApi } from "./usersApi";
 
 import { geofenceApi } from "./geofenceApi";
-import { irepsLookupOptionsApi } from "./irepsLookupOptionsApi";
-import { irepsSelectLookupsApi } from "./irepsSelectLookupsApi";
 import { lifecycleInstructionApi } from "./lifecycleInstructionApi";
 import { bgoApi } from "./bgoApi";
 import { targetedBatchApi } from "./targetedBatchApi";
@@ -53,8 +51,6 @@ const rootReducer = combineReducers({
   [salesApi.reducerPath]: salesApi.reducer,
   [geofenceApi.reducerPath]: geofenceApi.reducer,
   [informalErfsApi.reducerPath]: informalErfsApi.reducer,
-  [irepsSelectLookupsApi.reducerPath]: irepsSelectLookupsApi.reducer,
-  [irepsLookupOptionsApi.reducerPath]: irepsLookupOptionsApi.reducer,
   [lifecycleInstructionApi.reducerPath]: lifecycleInstructionApi.reducer,
   [bgoApi.reducerPath]: bgoApi.reducer,
   [targetedBatchApi.reducerPath]: targetedBatchApi.reducer,
@@ -73,8 +69,7 @@ const persistConfig = {
   storage: reduxStorage,
 
   // Keep persisted state small + valuable
-  // Persist lookup options so field forms can complete offline after one online load.
-  whitelist: ["offline", irepsLookupOptionsApi.reducerPath],
+  whitelist: ["offline"],
 
   // Never persist auth + large/sensitive caches
   blacklist: [
@@ -91,7 +86,6 @@ const persistConfig = {
     salesApi.reducerPath,
     geofenceApi.reducerPath,
     informalErfsApi.reducerPath,
-    irepsSelectLookupsApi.reducerPath,
     lifecycleInstructionApi.reducerPath,
     bgoApi.reducerPath,
     targetedBatchApi.reducerPath,
@@ -130,8 +124,6 @@ export const store = configureStore({
       salesApi.middleware,
       geofenceApi.middleware,
       informalErfsApi.middleware,
-      irepsSelectLookupsApi.middleware,
-      irepsLookupOptionsApi.middleware,
       lifecycleInstructionApi.middleware,
       bgoApi.middleware,
       targetedBatchApi.middleware,

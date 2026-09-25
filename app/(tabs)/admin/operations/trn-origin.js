@@ -16,6 +16,8 @@ import {
 import { ActivityIndicator } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { getFormOptions } from "../../../../src/features/meters/formOptions";
+
 import IrepsInstructionMedia from "../../../../components/IrepsInstructionMedia";
 import IrepsSelectWithOther, {
   isSelectWithOtherFilled,
@@ -24,7 +26,6 @@ import IrepsSelectWithOther, {
 } from "../../../../components/IrepsSelectWithOther";
 import { useGeo } from "../../../../src/context/GeoContext";
 import { useAuth } from "../../../../src/hooks/useAuth";
-import { useIrepsLookupOptions } from "../../../../src/hooks/useIrepsLookupOptions";
 import { useCreateLifecycleInstructionMutation } from "../../../../src/redux/lifecycleInstructionApi";
 import { useGetServiceProvidersQuery } from "../../../../src/redux/spApi";
 import { useGetUsersQuery } from "../../../../src/redux/usersApi";
@@ -59,12 +60,17 @@ const LCT_TYPES = {
   },
 };
 
-const INSTRUCTION_LOOKUP_KEYS = {
-  METER_INSPECTION: "METER_INSPECTION_INSTRUCTION",
-  METER_DISCONNECTION: "METER_DISCONNECTION_INSTRUCTION",
-  METER_RECONNECTION: "METER_RECONNECTION_INSTRUCTION",
-  METER_REMOVAL: "METER_REMOVAL_INSTRUCTION",
-  METER_READING: "METER_READING_INSTRUCTION",
+// UI-R003 1.4.0: the instruction lists live in the app, not on the server.
+// A manager with no network could not issue an instruction at all while
+// these were fetched.
+const INSTRUCTION_OTHER_CODE = "OTHER";
+
+const INSTRUCTION_LISTS = {
+  METER_INSPECTION: { list: "inspection_instructions", title: "Inspection Instruction" },
+  METER_DISCONNECTION: { list: "disconnection_instructions", title: "Disconnection Instruction" },
+  METER_RECONNECTION: { list: "reconnection_instructions", title: "Reconnection Instruction" },
+  METER_REMOVAL: { list: "removal_instructions", title: "Removal Instruction" },
+  METER_READING: { list: "meter_reading_instructions", title: "Meter Reading Instruction" },
 };
 
 function normalizeUpper(value) {
@@ -446,10 +452,8 @@ export default function TrnOriginScreen() {
 
   const trnType = normalizeUpper(params?.trnType || "METER_INSPECTION");
   const trnConfig = LCT_TYPES[trnType] || LCT_TYPES.METER_INSPECTION;
-  const instructionLookupKey =
-    INSTRUCTION_LOOKUP_KEYS[trnType] ||
-    INSTRUCTION_LOOKUP_KEYS.METER_INSPECTION;
-  console.log(`TrnOriginScreen --instructionLookupKey`, instructionLookupKey);
+  const instructionList =
+    INSTRUCTION_LISTS[trnType] || INSTRUCTION_LISTS.METER_INSPECTION;
 
   const agentUid = user?.uid || profile?.uid || "SYSTEM";
   const agentName = profile?.profile?.displayName || "SYSTEM";
@@ -466,17 +470,7 @@ export default function TrnOriginScreen() {
   const { data: serviceProviders = [], isLoading: spsLoading } =
     useGetServiceProvidersQuery();
 
-  const {
-    title: instructionLookupTitle,
-    options: instructionOptions,
-    allowOther: instructionAllowsOther,
-    otherCode: instructionOtherCode,
-    otherLabel: instructionOtherLabel,
-    isLoading: instructionLookupLoading,
-    isFetching: instructionLookupFetching,
-    error: instructionLookupError,
-    source: instructionLookupSource,
-  } = useIrepsLookupOptions(instructionLookupKey);
+  const instructionOptions = getFormOptions(instructionList.list);
 
   const [createLifecycleInstruction, { isLoading: creating }] =
     useCreateLifecycleInstructionMutation();
@@ -533,11 +527,11 @@ export default function TrnOriginScreen() {
 
   useEffect(() => {
     setInstructionSelect(makeSelectWithOtherValue());
-  }, [instructionLookupKey]);
+  }, [instructionList.list]);
 
   const instructionText = selectWithOtherToText(
     instructionSelect,
-    instructionOtherCode,
+    INSTRUCTION_OTHER_CODE,
   );
 
   const astId = getAstId(asset, params);
@@ -556,17 +550,13 @@ export default function TrnOriginScreen() {
     trnType &&
     astId !== "NAv" &&
     premiseId !== "NAv" &&
-    isSelectWithOtherFilled(instructionSelect, instructionOtherCode) &&
+    isSelectWithOtherFilled(instructionSelect, INSTRUCTION_OTHER_CODE) &&
     instructionText.trim().length > 0 &&
     selectedTargets.length === 1 &&
     selectedTargets[0]?.type === "USER";
   console.log(`TrnOriginScreen --canSubmit`, canSubmit);
 
-  const isLoading =
-    usersLoading ||
-    spsLoading ||
-    instructionLookupLoading ||
-    instructionLookupFetching;
+  const isLoading = usersLoading || spsLoading;
 
   function addTarget(target) {
     if (target?.type !== "USER" || !target?.id) return;
@@ -844,24 +834,17 @@ export default function TrnOriginScreen() {
 
         <Section title="Instruction" icon="clipboard-edit-outline">
           <IrepsSelectWithOther
-            label={instructionLookupTitle || "Instruction"}
+            label={instructionList.title}
             placeholder="Select instruction"
             required
-            loading={instructionLookupLoading || instructionLookupFetching}
             disabled={busy}
             options={instructionOptions}
             value={instructionSelect}
             onChange={setInstructionSelect}
-            includeOther={instructionAllowsOther}
-            otherCode={instructionOtherCode}
-            otherLabel={instructionOtherLabel}
+            includeOther
+            otherCode={INSTRUCTION_OTHER_CODE}
+            otherLabel="Other"
             otherPlaceholder="Enter instruction"
-            errorText={
-              instructionLookupError
-                ? "Could not load instruction options."
-                : ""
-            }
-            helperText={`Lookup: ${instructionLookupKey} • Source: ${instructionLookupSource}`}
           />
 
           <Text style={styles.label}>Instruction Notes</Text>
