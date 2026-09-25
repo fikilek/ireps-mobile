@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: "700",
   },
-  disabledInput: { opacity: 0.5, backgroundColor: "#e2e8f0" },
+  disabledInput: { backgroundColor: "#e2e8f0" },
 
   // SCANNER STYLES
   scannerModal: { flex: 1, backgroundColor: "black" },

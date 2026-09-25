@@ -29,7 +29,7 @@ export const WaterSections = ({
   isDiscovery = false,
 }) => {
   return (
-    <View style={disabled && { opacity: 0.7 }}>
+    <View>
       <FormSection title="Water Meter Description">
         <FormInputMeterNo
           label="Meter Number"

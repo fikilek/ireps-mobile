@@ -159,7 +159,7 @@ export const ElectricitySections = ({
   };
 
   return (
-    <View style={disabled && { opacity: 0.7 }}>
+    <View>
       {/* ⚡ SECTION 1: CORE METER DATA */}
       <FormSection
         title={`${isInstallation ? "INSTALLATION" : "DISCOVERY"} - Electricity Meter Details`}

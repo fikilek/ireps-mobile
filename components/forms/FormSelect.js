@@ -74,7 +74,7 @@ const FormSelect = ({
         style={[
           styles.selector,
           hasError && styles.selectorError,
-          isDisabled && { opacity: 0.5 },
+          isDisabled && styles.selectorDisabled,
         ]}
         onPress={() => setVisible(true)}
       >
@@ -156,6 +156,7 @@ const styles = StyleSheet.create({
   },
   value: { fontSize: 15, fontWeight: "600", color: FORM_TEXT },
   optionTitle: { color: FORM_TEXT, fontSize: 15, fontWeight: "600" },
+  selectorDisabled: { backgroundColor: "#e2e8f0" },
   modalSurface: {
     borderRadius: 12,
     backgroundColor: "white",
