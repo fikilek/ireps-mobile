@@ -82,6 +82,13 @@ test("m06 is closed: nothing the server refuses is written back as waiting", () 
   }
 });
 
+test("a refused job can still be opened, so Remove is not the only way out", () => {
+  // It stops being sent again; that must not mean the worker can only throw the work away.
+  assert.match(cardSource, /item\?\.status === "CONFLICT";/);
+  const canEdit = cardSource.slice(cardSource.indexOf("const canEdit ="), cardSource.indexOf("const premiseAddress"));
+  assert.match(canEdit, /"CONFLICT"/);
+});
+
 test("a refused card is red and says Refused, and the worker is never told it is saved", () => {
   assert.match(cardSource, /item\?\.status === "CONFLICT"\s*\?\s*"Refused"/);
   assert.match(cardSource, /if \(status === "CONFLICT"\) return "#dc2626";/);

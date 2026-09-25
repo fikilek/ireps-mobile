@@ -42,7 +42,12 @@ export default function QueueItemCard({
   const statusColor = getStatusColor(item?.status);
 
   const premiseId = item?.context?.premiseId || "NAv";
-  const canEdit = item?.status === "PENDING" || item?.status === "FAILED";
+  // m06: a refused job stops being SENT again, but the worker must still be able to open it. Leaving
+  // only Remove would make throwing the work away the only way out of a refusal.
+  const canEdit =
+    item?.status === "PENDING" ||
+    item?.status === "FAILED" ||
+    item?.status === "CONFLICT";
 
   const premiseAddress =
     item?.payload?.accessData?.premise?.address ||
