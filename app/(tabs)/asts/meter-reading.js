@@ -40,7 +40,10 @@ import { ScreenLock } from "../../../components/SceenLock";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
 import { functions } from "../../../src/firebase";
 import { useAuth } from "../../../src/hooks/useAuth";
-import { getLocalSelectLookup } from "../../../src/features/meters/formOptions";
+import {
+  getFormOptions,
+  getLocalSelectLookup,
+} from "../../../src/features/meters/formOptions";
 import { useGetServiceProvidersQuery } from "../../../src/redux/spApi";
 import {
   addSubmissionQueueItem,
@@ -70,25 +73,6 @@ const METER_READING_INSTRUCTION_LOOKUP = getLocalSelectLookup(
   "meter_reading_instructions",
 );
 const NO_READING_REASON_LOOKUP = getLocalSelectLookup("no_reading_reasons");
-
-const LOWER_READING_REASON_OPTIONS = [
-  {
-    code: "PREVIOUS_READING_INCORRECT",
-    label: "Previous reading incorrect",
-  },
-  {
-    code: "WRONG_METER_READ_PREVIOUSLY",
-    label: "Wrong meter read previously",
-  },
-  {
-    code: "DISPLAY_FAULTY",
-    label: "Display faulty",
-  },
-  {
-    code: "POSSIBLE_TAMPER_REVERSE_RUN",
-    label: "Possible tamper/reverse run",
-  },
-];
 
 function makeEmptySelectWithOther() {
   return { ...EMPTY_SELECT_WITH_OTHER };
@@ -418,16 +402,16 @@ function normalizeReadingVarianceReasonValue(value) {
   const clean = String(value || "").trim();
   if (!clean || clean === "NAv") return makeEmptySelectWithOther();
 
-  const matchedOption = LOWER_READING_REASON_OPTIONS.find((option) => {
+  const matchedOption = getFormOptions("lower_reading_reasons").find((option) => {
     return (
-      option.code.toLowerCase() === clean.toLowerCase() ||
+      option.value.toLowerCase() === clean.toLowerCase() ||
       option.label.toLowerCase() === clean.toLowerCase()
     );
   });
 
   if (matchedOption) {
     return {
-      code: matchedOption.code,
+      code: matchedOption.value,
       label: matchedOption.label,
       otherText: "",
     };
@@ -2766,7 +2750,7 @@ export default function FormMeterReading() {
                               <IrepsSelectWithOther
                                 label="Reason for lower reading"
                                 placeholder="Select reason"
-                                options={LOWER_READING_REASON_OPTIONS}
+                                options={getFormOptions("lower_reading_reasons")}
                                 includeOther={true}
                                 otherCode="OTHER"
                                 otherLabel="Other"

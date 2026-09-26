@@ -78,21 +78,6 @@ const EXECUTION_MEDIA_TAGS = [
   "fieldCommentVideo",
 ];
 
-const FIELD_DISCONNECTION_LEVEL_OPTIONS = [
-  {
-    code: "LEVEL_1_CB_ONLY",
-    label: "Level 1 - Flip circuit breaker only",
-  },
-  {
-    code: "LEVEL_2_CB_WIRE_REMOVED",
-    label: "Level 2 - Remove wire on circuit breaker",
-  },
-  {
-    code: "LEVEL_3_SUPPLY_CABLE_REMOVED",
-    label: "Level 3 - Remove whole supply cable",
-  },
-];
-
 function makeEmptySelectWithOther() {
   return { ...EMPTY_SELECT_WITH_OTHER };
 }
@@ -2226,7 +2211,7 @@ export default function FormMeterDisconnection() {
                       <IrepsSelectWithOther
                         label="Level"
                         placeholder="Select disconnection level"
-                        options={FIELD_DISCONNECTION_LEVEL_OPTIONS}
+                        options={getFormOptions("disconnection_levels")}
                         includeOther={false}
                         value={values?.disconnection?.level}
                         onChange={(nextValue) =>

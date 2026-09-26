@@ -246,6 +246,22 @@ const FORM_OPTIONS = Object.freeze({
     option("Reconnect meter", "RECONNECT_METER"),
   ]),
 
+  // UI-R003 1.7.0: these two lived in their own screen. They were never
+  // duplicated, so they could not drift - but a form's list belongs in the
+  // well whether or not anyone has copied it yet.
+  disconnection_levels: Object.freeze([
+    option("Level 1 - Flip circuit breaker only", "LEVEL_1_CB_ONLY"),
+    option("Level 2 - Remove wire on circuit breaker", "LEVEL_2_CB_WIRE_REMOVED"),
+    option("Level 3 - Remove whole supply cable", "LEVEL_3_SUPPLY_CABLE_REMOVED"),
+  ]),
+
+  lower_reading_reasons: Object.freeze([
+    option("Previous reading incorrect", "PREVIOUS_READING_INCORRECT"),
+    option("Wrong meter read previously", "WRONG_METER_READ_PREVIOUSLY"),
+    option("Display faulty", "DISPLAY_FAULTY"),
+    option("Possible tamper/reverse run", "POSSIBLE_TAMPER_REVERSE_RUN"),
+  ]),
+
   meter_reading_instructions: Object.freeze([
     option("Monthly Meter Reading", "MONTHLY_METER_READING"),
     option("Routine Meter Reading", "ROUTINE_METER_READING"),

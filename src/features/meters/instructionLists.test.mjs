@@ -92,3 +92,47 @@ for (const [form, listName] of FORMS_AND_THEIR_LISTS) {
     );
   });
 }
+
+// UI-R003 1.7.0: two lists that used to live inside their own screen. They
+// were never duplicated, so nothing had drifted - but the codes still land on
+// records, so moving them had to change nothing at all.
+const MOVED_INTO_THE_WELL = {
+  disconnection_levels: [
+    ["Level 1 - Flip circuit breaker only", "LEVEL_1_CB_ONLY"],
+    ["Level 2 - Remove wire on circuit breaker", "LEVEL_2_CB_WIRE_REMOVED"],
+    ["Level 3 - Remove whole supply cable", "LEVEL_3_SUPPLY_CABLE_REMOVED"],
+  ],
+  lower_reading_reasons: [
+    ["Previous reading incorrect", "PREVIOUS_READING_INCORRECT"],
+    ["Wrong meter read previously", "WRONG_METER_READ_PREVIOUSLY"],
+    ["Display faulty", "DISPLAY_FAULTY"],
+    ["Possible tamper/reverse run", "POSSIBLE_TAMPER_REVERSE_RUN"],
+  ],
+};
+
+for (const [listName, expected] of Object.entries(MOVED_INTO_THE_WELL)) {
+  test(`${listName} kept every code and word when it moved`, () => {
+    assert.deepEqual(
+      getFormOptions(listName).map((option) => [option.label, option.value]),
+      expected,
+    );
+  });
+}
+
+test("no form keeps its own list of options", async () => {
+  const { readFile } = await import("node:fs/promises");
+  for (const form of ["disconnection.jsx", "reconnection.jsx", "meter-reading.js"]) {
+    const source = await readFile(
+      new URL(`../../../app/(tabs)/asts/${form}`, import.meta.url),
+      "utf8",
+    );
+    const ownList = source.match(
+      /const [A-Z][A-Z0-9_]*(?:OPTIONS|REASONS)\s*=\s*\[[\s\S]{0,80}?(?:code|value|label):/,
+    );
+    assert.equal(
+      ownList,
+      null,
+      `${form} keeps its own list: ${ownList?.[0]?.split("\n")[0]}`,
+    );
+  }
+});
