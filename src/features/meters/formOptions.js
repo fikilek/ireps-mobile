@@ -152,17 +152,11 @@ const FORM_OPTIONS = Object.freeze({
     "Keypad Faulty",
   ]),
 
-  // MN-R001: one list for Meter Discovery and Meter Inspection. What is offered
-  // depends on the anomaly — see getNormalisationOptions below.
-  norm_actions: Object.freeze([
-    option("None", "none"),
-    option("Disconnect meter"),
-    option("Replace meter"),
-    option("Tamper removed"),
-    option("Keypad normalised"),
-    option("Service point completed"),
-    option("Meter registered"),
-  ]),
+  // MN-R001: the normalisation list a worker actually sees is built by
+  // getNormalisationOptions below, from NORMALISATION_JOB_ACTIONS and
+  // NORMALISATION_ON_SITE_FIXES, because what is offered depends on the finding. There used
+  // to be a second copy of it here called norm_actions that nothing read - a trap for
+  // anyone sent to this file by the rules, and a place for the two to drift apart. Removed.
 
   no_action_reasons: Object.freeze([
     "Threatened or chased away",
@@ -358,7 +352,11 @@ export function anomalyPhotoRequired(anomaly, anomalyDetail) {
 // validation.js and functions/meterLifecycle/helpers.js. The three must agree, or
 // a capture that passes on the phone is refused on arrival.
 
-export const NORMALISATION_NONE = "none";
+// MN-R001 1.9.0 (owner, 25 September 2026): the word itself is the value, like every
+// other action on this list. 1.8.0 kept a lower-case code behind the label "None" and
+// said it would never be migrated; that is reversed. The stored data was converted in
+// the same window, and a build still sending the old word is refused, not accommodated.
+export const NORMALISATION_NONE = "None";
 
 // Fixes done on the spot. Offered whatever the finding, including Meter Ok.
 export const NORMALISATION_ON_SITE_FIXES = Object.freeze([

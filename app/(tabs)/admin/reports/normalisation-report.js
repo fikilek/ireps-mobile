@@ -91,8 +91,8 @@ export default function NormalisationReport() {
         const text = String(action || "").trim();
         if (!text) return "NAv";
 
-        if (text.toLowerCase() === "none") return "None";
-
+        // MN-R001 1.9.0: no reader capitalises anything on the way out. The stored
+        // word is None, so this shows what the record actually holds.
         return text;
       })
       .join(" + ");

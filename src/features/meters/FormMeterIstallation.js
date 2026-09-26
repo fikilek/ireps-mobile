@@ -374,6 +374,9 @@ export default function FormMeterInstallation() {
     `${premise?.propertyType?.type || ""} ${premise?.propertyType?.name || ""} ${premise?.propertyType?.unitNo || ""}`.trim();
 
   const [showSuccess, setShowSuccess] = useState(false);
+  // Null means the office has it; an object means it is sitting on this phone, and carries
+  // the words for why. The same green MISSION SUCCESS panel used to be shown either way.
+  const [queuedNotice, setQueuedNotice] = useState(null);
   // console.log(`FormMeterInstallation ----showSuccess`, showSuccess);
 
   const finalErfNo = premise?.erfNo || "NAv";
@@ -1304,7 +1307,8 @@ export default function FormMeterInstallation() {
           return false;
         }
 
-        Alert.alert(messageTitle, messageBody);
+        // One result window, and it tells the truth: saved here, not sent.
+        setQueuedNotice({ title: messageTitle, body: messageBody });
 
         setShowSuccess(true);
 
@@ -1464,6 +1468,8 @@ export default function FormMeterInstallation() {
         await removeSubmissionQueueItem(queueItemId);
       }
 
+      // Accepted by the server, so this is the real thing.
+      setQueuedNotice(null);
       setShowSuccess(true);
 
       setTimeout(() => {
@@ -1853,16 +1859,37 @@ export default function FormMeterInstallation() {
                   contentContainerStyle={styles.successModal}
                 >
                   <View style={styles.successContent}>
-                    <View style={styles.successIconCircle}>
-                      <Feather name="check" size={50} color="#fff" />
+                    <View
+                      style={[
+                        styles.successIconCircle,
+                        queuedNotice && styles.savedIconCircle,
+                      ]}
+                    >
+                      <Feather
+                        name={queuedNotice ? "smartphone" : "check"}
+                        size={50}
+                        color="#fff"
+                      />
                     </View>
-                    <Text style={styles.successTitle}>MISSION SUCCESS</Text>
-                    <Text style={styles.successSub}>
-                      {values?.accessData?.access?.hasAccess === "no"
-                        ? "NA Access "
-                        : ""}
-                      Trn saved successfully
+                    <Text style={styles.successTitle}>
+                      {queuedNotice ? "SAVED ON THIS PHONE" : "MISSION SUCCESS"}
                     </Text>
+
+                    {queuedNotice ? (
+                      <>
+                        <Text style={styles.savedWarning}>
+                          NOT SENT TO THE OFFICE YET
+                        </Text>
+                        <Text style={styles.savedSub}>{queuedNotice.body}</Text>
+                      </>
+                    ) : (
+                      <Text style={styles.successSub}>
+                        {values?.accessData?.access?.hasAccess === "no"
+                          ? "NA Access "
+                          : ""}
+                        Trn saved successfully
+                      </Text>
+                    )}
 
                     <TouchableOpacity
                       style={styles.continueBtn}
@@ -2101,6 +2128,24 @@ const styles = StyleSheet.create({
     color: "#64748B",
     textAlign: "center",
     marginTop: 8,
+    marginBottom: 24,
+  },
+  // Saved on the phone only. Amber, not green, and never the tick.
+  savedIconCircle: { backgroundColor: "#F59E0B" },
+  savedWarning: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#B45309",
+    textAlign: "center",
+    marginTop: 10,
+    letterSpacing: 0.5,
+  },
+  // Black, not grey: this is the sentence that matters and it is read outdoors.
+  savedSub: {
+    fontSize: 14,
+    color: "#000000",
+    textAlign: "center",
+    marginTop: 10,
     marginBottom: 24,
   },
   continueBtn: {
