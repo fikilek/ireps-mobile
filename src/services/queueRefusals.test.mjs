@@ -126,6 +126,16 @@ test("a refused job can still be opened, so Remove is not the only way out", () 
   assert.match(canEdit, /"CONFLICT"/);
 });
 
+test("the worker reads one word for a refusal, on the badge and the button", () => {
+  // The badge used to show the stored status, CONFLICT — a coder's word, and a second word for the state
+  // the button already called Refused (owner, 26 Sep).
+  assert.match(cardSource, /const getStatusWord = \(status\) =>\s*\(status === "CONFLICT" \? "Refused" : status \|\| "NAv"\);/);
+  assert.match(cardSource, /<Text style=\{styles\.statusText\}>\{getStatusWord\(item\?\.status\)\}<\/Text>/);
+  assert.doesNotMatch(cardSource, /\{item\?\.status \|\| "NAv"\}/, "the raw status is not shown");
+  // The stored value is untouched: the code still keys on CONFLICT.
+  assert.match(cardSource, /item\?\.status === "CONFLICT"/);
+});
+
 test("a refused card is red and says Refused, and the worker is never told it is saved", () => {
   assert.match(cardSource, /item\?\.status === "CONFLICT"\s*\?\s*"Refused"/);
   assert.match(cardSource, /if \(status === "CONFLICT"\) return "#dc2626";/);
