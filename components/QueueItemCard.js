@@ -7,6 +7,11 @@ import {
 } from "react-native";
 import { Surface, Text } from "react-native-paper";
 
+// The badge is what a worker reads. CONFLICT is a coder's word for "the server said no", and the button
+// under it already reads Refused — two words for one state (owner, 26 Sep). The stored status stays
+// CONFLICT, because that is what the code keys on; only the word on the badge changes.
+const getStatusWord = (status) => (status === "CONFLICT" ? "Refused" : status || "NAv");
+
 const getStatusColor = (status) => {
   if (status === "PENDING") return "#f59e0b";
   if (status === "SYNCING") return "#2563eb";
@@ -146,7 +151,7 @@ export default function QueueItemCard({
         </View>
 
         <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
-          <Text style={styles.statusText}>{item?.status || "NAv"}</Text>
+          <Text style={styles.statusText}>{getStatusWord(item?.status)}</Text>
         </View>
       </View>
 
