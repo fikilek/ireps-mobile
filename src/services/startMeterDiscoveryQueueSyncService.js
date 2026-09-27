@@ -33,6 +33,13 @@ const runQueueSync = async () => {
     includeSyncing: true,
   });
 
+  console.log("[SAVED WORK SYNC] run finished", {
+    success: result?.success === true,
+    code: result?.code || "NAv",
+    message: result?.message || "NAv",
+    failedRunCount,
+  });
+
   if (result?.code === "QUEUE_BUSY") {
     scheduleMeterDiscoveryQueueSyncRetry();
   } else if (result?.success) {
