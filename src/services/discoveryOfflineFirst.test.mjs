@@ -131,6 +131,29 @@ test("sent pictures are swept up, for the whole form", () => {
   );
 });
 
+test("a capture sent in the background is cleared off the phone too", () => {
+  // The form clears its own when the answer arrives inside its 15 seconds. A capture that went
+  // out later, in the background, was left reading SUCCESS in Saved Work for ever - one per
+  // meter the worker finished. Found by the owner on his phone, 27 September.
+  assert.match(
+    serviceSource,
+    /await clearSentMeterDiscoveries\(\);/,
+    "nothing clears a capture the background sender delivered",
+  );
+  assert.match(
+    serviceSource,
+    /item\?\.status !== "SUCCESS"/,
+    "the sweep no longer checks that the office really accepted it",
+  );
+  // It must not run inside processSubmissionQueue: a form waiting there reads the item back to
+  // see how it went, and would find nothing.
+  assert.equal(
+    queueSource.includes("clearSentMeterDiscoveries"),
+    false,
+    "the sweep has moved into the queue, where it deletes items forms are still reading",
+  );
+});
+
 test("the sender covers the whole form, not only No Access", () => {
   // The service in app/_layout.js is the only one that actually runs, and it used to ask for
   // no-access captures alone. A found meter saved on the phone would have sat there for ever.
