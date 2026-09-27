@@ -19,7 +19,11 @@ const runQueueSync = async () => {
     ...activeActor,
     // OF-R001: the whole form now, not only No Access. A meter that was found is saved
     // on the phone the same way, so it needs the same service to send it.
-    filterMode: "METER_DISCOVERY",
+    //
+    // 27 September: Targeted Batch No Access too. Its dialog promised the capture would sync by
+    // itself, and no service ever looked at it. A form is added to AUTO_SEND only when its submit
+    // path has been proved offline first (processSubmissionQueue).
+    filterMode: "AUTO_SEND",
     includeSyncing: true,
   });
 

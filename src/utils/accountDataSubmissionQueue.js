@@ -413,3 +413,39 @@ export const clearAccountDataSubmissionQueue = async () => {
 };
 
 export const ACCOUNT_DATA_QUEUE_FORM_TYPE = QUEUE_FORM_TYPE;
+
+// OF-R002 (1.0.0) section 7: Clear may remove only what the office has confirmed. Drafts and
+// queued work that has not been sent stay where they are.
+export const clearConfirmedAccountDataQueueItems = async () => {
+  try {
+    const queue = safeArray(readJson(ACCOUNT_DATA_QUEUE_KEY, []));
+
+    const remaining = queue.filter(
+      (item) => !(item?.status === "SUCCESS" && item?.result?.success === true),
+    );
+
+    const cleared = queue.length - remaining.length;
+
+    if (!cleared) return { success: true, cleared: 0 };
+
+    const saveResult = writeJson(ACCOUNT_DATA_QUEUE_KEY, remaining);
+
+    if (!saveResult?.success) {
+      return {
+        success: false,
+        cleared: 0,
+        message: "Failed to clear sent account data.",
+      };
+    }
+
+    return { success: true, cleared };
+  } catch (error) {
+    console.log("clearConfirmedAccountDataQueueItems error:", error);
+
+    return {
+      success: false,
+      cleared: 0,
+      message: error?.message || "Failed to clear sent account data.",
+    };
+  }
+};

@@ -1,7 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Stack, useFocusEffect } from "expo-router";
 import {
-  Alert,
   Image,
   Modal,
   RefreshControl,
@@ -15,10 +14,12 @@ import { Surface, Text } from "react-native-paper";
 import { useCallback, useMemo, useState } from "react";
 
 import { INFORMAL_ERF_SITE_PHOTO_TAG } from "../../../../src/features/erfs/informalErfConstants";
+import RemoveSavedWorkDialog from "../../../../components/RemoveSavedWorkDialog";
 import { useAuth } from "../../../../src/hooks/useAuth";
+import { recordWorkRemoval } from "../../../../src/storage/workRemovalLog";
 import { processInformalErfSubmissionQueue } from "../../../../src/services/startInformalErfQueueSyncService";
 import {
-  clearInformalErfSubmissionQueue,
+  clearConfirmedInformalErfQueueItems,
   getInformalErfSubmissionQueue,
   removeInformalErfQueueItem,
 } from "../../../../src/utils/informalErfSubmissionQueue";
@@ -322,10 +323,11 @@ function InformalErfQueueCard({ item, busy, onRemove }) {
 }
 
 export default function InformalErfSubmissionQueueScreen() {
-  const { user, profile } = useAuth();
+  const { user, profile, role } = useAuth();
   const [queueItems, setQueueItems] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [itemToRemove, setItemToRemove] = useState(null);
 
   const agentUid = user?.uid || "";
   const agentName =
@@ -434,72 +436,63 @@ export default function InformalErfSubmissionQueueScreen() {
     }
   }, [agentName, agentUid, loadQueue]);
 
-  const handleRemove = useCallback(
-    (item) => {
+  // OF-R002 section 7: an Informal ERF request the office has not confirmed is a worker's capture.
+  // Only a supervisor removes it, with a reason, and the removal is recorded.
+  const handleRemove = useCallback((item) => {
+    if (!item?.id) return;
+
+    setItemToRemove(item);
+  }, []);
+
+  const handleConfirmRemoval = useCallback(
+    async ({ reason }) => {
+      const item = itemToRemove;
+
       if (!item?.id) return;
 
-      Alert.alert(
-        "Remove Informal ERF",
-        "Remove this locally saved Informal ERF request?",
-        [
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
-          {
-            text: "Remove",
-            style: "destructive",
-            onPress: async () => {
-              setBusy(true);
+      setBusy(true);
 
-              const result = await removeInformalErfQueueItem(item.id);
+      recordWorkRemoval({
+        item,
+        store: "informal-erf",
+        reason,
+        removedByUid: agentUid,
+        removedByUser: agentName,
+        removedByRole: role,
+      });
 
-              await loadQueue();
-              setBusy(false);
+      const result = await removeInformalErfQueueItem(item.id);
 
-              ToastAndroid.show(
-                result?.message || "Informal ERF item removed.",
-                result?.success ? ToastAndroid.SHORT : ToastAndroid.LONG,
-              );
-            },
-          },
-        ],
+      setItemToRemove(null);
+      await loadQueue();
+      setBusy(false);
+
+      ToastAndroid.show(
+        result?.message || "Informal ERF request removed.",
+        result?.success ? ToastAndroid.SHORT : ToastAndroid.LONG,
       );
     },
-    [loadQueue],
+    [agentName, agentUid, itemToRemove, loadQueue, role],
   );
 
-  const handleClear = useCallback(() => {
-    if (queueItems.length === 0) return;
+  // OF-R002 section 7: Clear takes away only what the office has confirmed.
+  const handleClearSentWork = useCallback(async () => {
+    setBusy(true);
 
-    Alert.alert(
-      "Clear Informal ERF Queue",
-      "Remove every Informal ERF request stored on this device?",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Clear Queue",
-          style: "destructive",
-          onPress: async () => {
-            setBusy(true);
+    const result = await clearConfirmedInformalErfQueueItems();
 
-            const result = await clearInformalErfSubmissionQueue();
+    await loadQueue();
+    setBusy(false);
 
-            await loadQueue();
-            setBusy(false);
+    const cleared = result?.cleared || 0;
 
-            ToastAndroid.show(
-              result?.message || "Informal ERF queue cleared.",
-              result?.success ? ToastAndroid.SHORT : ToastAndroid.LONG,
-            );
-          },
-        },
-      ],
+    ToastAndroid.show(
+      cleared
+        ? `${cleared} sent ${cleared === 1 ? "request" : "requests"} cleared.`
+        : "Nothing to clear. Work still to go stays on this phone.",
+      ToastAndroid.SHORT,
     );
-  }, [loadQueue, queueItems.length]);
+  }, [loadQueue]);
 
   return (
     <>
@@ -569,11 +562,11 @@ export default function InformalErfSubmissionQueueScreen() {
             />
 
             <ActionButton
-              icon="delete-sweep-outline"
-              label="Clear"
-              color="#DC2626"
+              icon="broom"
+              label="Clear sent"
+              color="#475569"
               disabled={busy || queueItems.length === 0}
-              onPress={handleClear}
+              onPress={handleClearSentWork}
             />
           </View>
 
@@ -614,6 +607,16 @@ export default function InformalErfSubmissionQueueScreen() {
           ))
         )}
       </ScrollView>
+
+      <RemoveSavedWorkDialog
+        visible={!!itemToRemove}
+        item={itemToRemove}
+        role={role}
+        busy={busy}
+        whatIsIt="this Informal ERF request"
+        onCancel={() => setItemToRemove(null)}
+        onConfirm={handleConfirmRemoval}
+      />
     </>
   );
 }

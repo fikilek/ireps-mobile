@@ -16,9 +16,11 @@ import {
 import { Text } from "react-native-paper";
 
 import { functions } from "../../../../src/firebase";
+import RemoveSavedWorkDialog from "../../../../components/RemoveSavedWorkDialog";
 import { useAuth } from "../../../../src/hooks/useAuth";
+import { recordWorkRemoval } from "../../../../src/storage/workRemovalLog";
 import {
-  clearAccountDataSubmissionQueue,
+  clearConfirmedAccountDataQueueItems,
   getAccountDataDrafts,
   getAccountDataSubmissionQueue,
   markAccountDataQueueItemFailed,
@@ -305,12 +307,13 @@ function AccountDataDraftCard({ draft, busy, onOpen, onRemove }) {
 
 export default function AccountDataSubmissionQueueScreen() {
   const router = useRouter();
-  const { user, profile } = useAuth();
+  const { user, profile, role } = useAuth();
 
   const [queueItems, setQueueItems] = useState([]);
   const [draftItems, setDraftItems] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [itemToRemove, setItemToRemove] = useState(null);
 
   const agentUid = user?.uid || "SYSTEM";
   const agentName = profile?.profile?.displayName || "SYSTEM";
@@ -376,25 +379,38 @@ export default function AccountDataSubmissionQueueScreen() {
     [router],
   );
 
-  const handleRemoveQueueItem = useCallback(
-    (item) => {
+  // OF-R002 section 7: queued account data has been submitted by a worker. It is removed only by a
+  // supervisor, with a reason, and the removal is recorded.
+  const handleRemoveQueueItem = useCallback((item) => {
+    if (!item?.id) return;
+
+    setItemToRemove(item);
+  }, []);
+
+  const handleConfirmRemoval = useCallback(
+    async ({ reason }) => {
+      const item = itemToRemove;
+
       if (!item?.id) return;
 
-      Alert.alert("Remove Queue Item", "Remove this account data queue item?", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            setBusy(true);
-            await removeAccountDataQueueItem(item.id);
-            await loadStorage();
-            setBusy(false);
-          },
-        },
-      ]);
+      setBusy(true);
+
+      recordWorkRemoval({
+        item,
+        store: "account-data",
+        reason,
+        removedByUid: agentUid,
+        removedByUser: agentName,
+        removedByRole: role,
+      });
+
+      await removeAccountDataQueueItem(item.id);
+
+      setItemToRemove(null);
+      await loadStorage();
+      setBusy(false);
     },
-    [loadStorage],
+    [agentName, agentUid, itemToRemove, loadStorage, role],
   );
 
   const handleRemoveDraft = useCallback(
@@ -419,23 +435,23 @@ export default function AccountDataSubmissionQueueScreen() {
     [loadStorage],
   );
 
-  const handleClearQueue = useCallback(() => {
-    Alert.alert(
-      "Clear Account Data Queue",
-      "This removes all submitted account data queue items from this device. Drafts are not removed.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear Queue",
-          style: "destructive",
-          onPress: async () => {
-            setBusy(true);
-            await clearAccountDataSubmissionQueue();
-            await loadStorage();
-            setBusy(false);
-          },
-        },
-      ],
+  // OF-R002 section 7: Clear takes away only what the office has confirmed. Drafts and work still
+  // to go stay where they are.
+  const handleClearSentWork = useCallback(async () => {
+    setBusy(true);
+
+    const result = await clearConfirmedAccountDataQueueItems();
+
+    await loadStorage();
+    setBusy(false);
+
+    const cleared = result?.cleared || 0;
+
+    ToastAndroid.show(
+      cleared
+        ? `${cleared} sent ${cleared === 1 ? "form" : "forms"} cleared.`
+        : "Nothing to clear. Work still to go stays on this phone.",
+      ToastAndroid.SHORT,
     );
   }, [loadStorage]);
 
@@ -677,11 +693,11 @@ export default function AccountDataSubmissionQueueScreen() {
               onPress={handleSyncQueue}
             />
             <SmallActionButton
-              icon="delete-sweep-outline"
-              label="Clear Queue"
-              color="#dc2626"
+              icon="broom"
+              label="Clear sent"
+              color="#475569"
               disabled={busy || queueItems.length === 0}
-              onPress={handleClearQueue}
+              onPress={handleClearSentWork}
             />
           </View>
         </View>
@@ -731,6 +747,16 @@ export default function AccountDataSubmissionQueueScreen() {
           ))
         )}
       </ScrollView>
+
+      <RemoveSavedWorkDialog
+        visible={!!itemToRemove}
+        item={itemToRemove}
+        role={role}
+        busy={busy}
+        whatIsIt="this account data"
+        onCancel={() => setItemToRemove(null)}
+        onConfirm={handleConfirmRemoval}
+      />
     </>
   );
 }

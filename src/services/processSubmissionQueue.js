@@ -51,6 +51,19 @@ function isStandardMeterDiscoveryQueueItem(item = {}) {
 const KEEP_WAITING_CODES = ["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND"];
 
 
+const AUTO_SEND_FORM_TYPES = ["METER_DISCOVERY", "SALES_TARGETED_BATCH_NO_ACCESS"];
+
+function isAutoSendQueueItem(item = {}) {
+  const formType = String(item?.formType || "")
+    .trim()
+    .toUpperCase();
+
+  if (AUTO_SEND_FORM_TYPES.includes(formType)) return true;
+
+  // Older captures were saved before formType was always written.
+  return isStandardMeterDiscoveryQueueItem(item);
+}
+
 export const processSubmissionQueue = async ({
   agentUid = "SYSTEM",
   agentName = "SYSTEM",
@@ -101,6 +114,16 @@ export const processSubmissionQueue = async ({
       // no-access mode below is kept for the service that only ever wanted those.
       if (filterMode === "METER_DISCOVERY") {
         return isStandardMeterDiscoveryQueueItem(item);
+      }
+
+      // OF-R001/OF-R002: the forms whose whole submit path has been proved offline first, and may
+      // therefore be sent by the background sender without a worker watching. A form joins this
+      // list only once it saves before it sends and its callable accepts a repeat safely.
+      //
+      // Targeted Batch No Access joined on 27 September: its dialog had promised since the start
+      // that the capture "will sync automatically", and nothing ever sent it.
+      if (filterMode === "AUTO_SEND") {
+        return isAutoSendQueueItem(item);
       }
 
       if (filterMode === "METER_DISCOVERY_NO_ACCESS") {

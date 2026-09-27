@@ -20,9 +20,10 @@ import { functions } from "../../../../src/firebase";
 import { getMediaExtension } from "../../../../src/utils/getMediaExtension";
 import { useAuth } from "../../../../src/hooks/useAuth";
 import { processSubmissionQueue } from "../../../../src/services/processSubmissionQueue";
+import RemoveSavedWorkDialog from "../../../../components/RemoveSavedWorkDialog";
+import { recordWorkRemoval } from "../../../../src/storage/workRemovalLog";
 import {
   clearConfirmedSubmissions,
-  clearSubmissionQueue,
   getCallableNameForSubmissionQueueItem,
   getSubmissionQueue,
   getSubmissionQueueItemById,
@@ -417,7 +418,7 @@ const processSingleSubmissionQueueItem = async (
 };
 
 export default function SubmissionQueueScreen() {
-  const { user, profile } = useAuth();
+  const { user, profile, role } = useAuth();
   const router = useRouter();
   const { updateGeo } = useGeo();
 
@@ -425,6 +426,7 @@ export default function SubmissionQueueScreen() {
   const [queueItems, setQueueItems] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [itemToRemove, setItemToRemove] = useState(null);
 
   const agentUid = user?.uid || "SYSTEM";
   const agentName = profile?.profile?.displayName || "SYSTEM";
@@ -464,40 +466,56 @@ export default function SubmissionQueueScreen() {
     setRefreshing(false);
   }, [loadQueue]);
 
-  const handleClearQueue = async () => {
-    Alert.alert(
-      "Clear Queue",
-      "Are you sure you want to remove all queue items?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear",
-          style: "destructive",
-          onPress: async () => {
-            setBusy(true);
-            await clearSubmissionQueue();
-            await loadQueue();
-            setBusy(false);
-          },
-        },
-      ],
+  // OF-R002 section 7: Clear takes away what the office already has, and nothing else. It used to
+  // empty the whole queue after one tap, unsent captures included (the owner lost two queued
+  // disconnections to it, 27 September).
+  const handleClearSentWork = async () => {
+    setBusy(true);
+
+    const result = await clearConfirmedSubmissions();
+
+    await loadQueue();
+    setBusy(false);
+
+    const cleared = result?.cleared || 0;
+
+    ToastAndroid.show(
+      cleared
+        ? `${cleared} sent ${cleared === 1 ? "form" : "forms"} cleared.`
+        : "Nothing to clear. Work still to go stays on this phone.",
+      ToastAndroid.SHORT,
     );
   };
 
-  const handleRemoveItem = async (queueItemId) => {
-    Alert.alert("Remove Item", "Remove this queue item?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: async () => {
-          setBusy(true);
-          await removeSubmissionQueueItem(queueItemId);
-          await loadQueue();
-          setBusy(false);
-        },
-      },
-    ]);
+  const handleRemoveItem = (queueItemId) => {
+    const item = queueItems.find((queueItem) => queueItem?.id === queueItemId);
+
+    if (!item) return;
+
+    setItemToRemove(item);
+  };
+
+  const handleConfirmRemoval = async ({ reason }) => {
+    const item = itemToRemove;
+
+    if (!item) return;
+
+    setBusy(true);
+
+    recordWorkRemoval({
+      item,
+      store: "forms",
+      reason,
+      removedByUid: agentUid,
+      removedByUser: agentName,
+      removedByRole: role,
+    });
+
+    await removeSubmissionQueueItem(item.id);
+
+    setItemToRemove(null);
+    await loadQueue();
+    setBusy(false);
   };
 
   const handleProcessQueue = async () => {
@@ -783,12 +801,16 @@ export default function SubmissionQueueScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: "#dc2626" }]}
-              onPress={handleClearQueue}
+              style={[styles.actionBtn, { backgroundColor: "#475569" }]}
+              onPress={handleClearSentWork}
               disabled={busy}
             >
-              <MaterialCommunityIcons name="delete" size={18} color="#fff" />
-              <Text style={styles.actionBtnText}>Clear</Text>
+              <MaterialCommunityIcons
+                name="broom"
+                size={18}
+                color="#fff"
+              />
+              <Text style={styles.actionBtnText}>Clear sent</Text>
             </TouchableOpacity>
           </View>
         </Surface>
@@ -812,6 +834,16 @@ export default function SubmissionQueueScreen() {
           ))
         )}
       </ScrollView>
+
+      <RemoveSavedWorkDialog
+        visible={!!itemToRemove}
+        item={itemToRemove}
+        role={role}
+        busy={busy}
+        whatIsIt="this form"
+        onCancel={() => setItemToRemove(null)}
+        onConfirm={handleConfirmRemoval}
+      />
     </>
   );
 }

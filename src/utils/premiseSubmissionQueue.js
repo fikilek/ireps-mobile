@@ -316,3 +316,39 @@ export const getPremiseQueueItemByPremiseId = async (premiseId) => {
     return null;
   }
 };
+
+// OF-R002 (1.0.0) section 7: Clear may remove only what the office has confirmed. Unsent work is
+// never thrown away by a button that sits next to Sync.
+export const clearConfirmedPremiseQueueItems = async () => {
+  try {
+    const queue = readQueue();
+
+    const remaining = queue.filter(
+      (item) => !(item?.status === "SUCCESS" && item?.result?.success === true),
+    );
+
+    const cleared = queue.length - remaining.length;
+
+    if (!cleared) return { success: true, cleared: 0 };
+
+    const saveResult = writeQueue(remaining);
+
+    if (!saveResult?.success) {
+      return {
+        success: false,
+        cleared: 0,
+        message: "Failed to clear sent premises.",
+      };
+    }
+
+    return { success: true, cleared };
+  } catch (error) {
+    console.log("clearConfirmedPremiseQueueItems error:", error);
+
+    return {
+      success: false,
+      cleared: 0,
+      message: error?.message || "Failed to clear sent premises.",
+    };
+  }
+};

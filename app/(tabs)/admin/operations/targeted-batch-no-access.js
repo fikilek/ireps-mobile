@@ -13,6 +13,7 @@ import { IrepsNoAccessSection } from "../../../../components/forms/IrepsNoAccess
 import { functions } from "../../../../src/firebase";
 import { useAuth } from "../../../../src/hooks/useAuth";
 import { addSubmissionQueueItem } from "../../../../src/utils/submissionQueue";
+import { scheduleMeterDiscoveryQueueSyncRetry } from "../../../../src/services/startMeterDiscoveryQueueSyncService";
 import { ForensicFooter } from "../../../../src/features/meters/ForensicFooter";
 import {
   SALES_TB_NA_FORM_TYPE,
@@ -75,6 +76,11 @@ export default function TargetedBatchNoAccessScreen() {
       createdByUid: agentUid, createdByUser: agentName,
     });
     if (!result.success) throw new Error(result.message);
+
+    // OF-R002 section 5: a saved capture books its own next try. The background sender only wakes
+    // when the signal changes, so a phone that is already offline would otherwise wait for a
+    // change that may not come until the worker is somewhere else entirely.
+    scheduleMeterDiscoveryQueueSyncRetry({ agentUid, agentName, delayMs: 20000 });
   }
 
   async function submit(values, helpers) {
@@ -91,7 +97,7 @@ export default function TargetedBatchNoAccessScreen() {
       const validation = validateTargetedBatchNoAccessPayload(payload);
       if (!validation.valid) { helpers.setErrors(validation.errors); throw new Error("Complete all required No Access evidence."); }
       const net = await NetInfo.fetch();
-      if (!(net.isConnected && net.isInternetReachable)) { await queue(payload); finish("Saved offline. This attempt will sync automatically using the same TRN ID."); return; }
+      if (!(net.isConnected && net.isInternetReachable)) { await queue(payload); finish("Saved on this phone. It will be sent by itself as soon as there is signal, and sending it again will not create a second record."); return; }
       let uploadedPayload = payload;
       try {
         const storage = getStorage();
@@ -114,7 +120,7 @@ export default function TargetedBatchNoAccessScreen() {
       } catch (error) {
         if (error?.permanent) throw error;
         await queue(uploadedPayload);
-        finish("The connection was interrupted. This attempt was queued safely for retry.");
+        finish("Saved on this phone. The line dropped before the office confirmed it, so it will be sent again by itself.");
       }
     } catch (error) {
       Alert.alert("Unable to submit", error?.message || "No Access could not be submitted.");

@@ -162,9 +162,10 @@ test("a capture the office has confirmed is cleared off the phone, whoever sent 
     serviceSource.includes("await clearConfirmedSubmissions();"),
     "the background sender does not clear what it has just delivered",
   );
-  assert.equal(
-    savedWork.split("await clearConfirmedSubmissions();").length - 1,
-    2,
+  // Both Sync buttons, and from 27 September the Clear button too: Clear now takes away what the
+  // office has confirmed and nothing else (OF-R002 section 7).
+  assert.ok(
+    savedWork.split("await clearConfirmedSubmissions();").length - 1 >= 2,
     "both Sync buttons must clear what they have just sent",
   );
 
@@ -175,9 +176,18 @@ test("a capture the office has confirmed is cleared off the phone, whoever sent 
 test("the sender covers the whole form, not only No Access", () => {
   // The service in app/_layout.js is the only one that actually runs, and it used to ask for
   // no-access captures alone. A found meter saved on the phone would have sat there for ever.
+  //
+  // 27 September: it now asks for AUTO_SEND, the list of forms whose submit path has been proved
+  // offline first. Meter Discovery is on that list, so this still holds; Targeted Batch No Access
+  // joined it (savedWorkGuards.test.mjs).
   assert.match(
     serviceSource,
-    /filterMode: "METER_DISCOVERY",/,
+    /filterMode: "AUTO_SEND",/,
+    "the running sender no longer asks for the proved forms",
+  );
+  assert.match(
+    queueSource,
+    /const AUTO_SEND_FORM_TYPES = \[[^\]]*"METER_DISCOVERY"/,
     "the running sender is back to No Access only",
   );
   assert.match(

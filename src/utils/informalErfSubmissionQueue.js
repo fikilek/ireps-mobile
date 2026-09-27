@@ -558,3 +558,38 @@ export const clearInformalErfSubmissionQueue = async () => {
 };
 
 export const INFORMAL_ERF_QUEUE_FORM_TYPE = QUEUE_FORM_TYPE;
+
+// OF-R002 (1.0.0) section 7: Clear may remove only what the office has confirmed.
+export const clearConfirmedInformalErfQueueItems = async () => {
+  try {
+    const queue = readQueue();
+
+    const remaining = queue.filter(
+      (item) => !(item?.status === "SUCCESS" && item?.result?.success === true),
+    );
+
+    const cleared = queue.length - remaining.length;
+
+    if (!cleared) return { success: true, cleared: 0 };
+
+    const saveResult = writeQueue(remaining);
+
+    if (!saveResult?.success) {
+      return {
+        success: false,
+        cleared: 0,
+        message: "Failed to clear sent Informal ERF requests.",
+      };
+    }
+
+    return { success: true, cleared };
+  } catch (error) {
+    console.log("clearConfirmedInformalErfQueueItems error:", error);
+
+    return {
+      success: false,
+      cleared: 0,
+      message: error?.message || "Failed to clear sent Informal ERF requests.",
+    };
+  }
+};

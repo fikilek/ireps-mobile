@@ -3,7 +3,6 @@ import NetInfo from "@react-native-community/netinfo";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -16,10 +15,12 @@ import { ActivityIndicator, Surface, Text } from "react-native-paper";
 import { doc, onSnapshot } from "firebase/firestore";
 import { useDiscovery } from "../../../../src/context/DiscoveryContext";
 import { db } from "../../../../src/firebase";
+import RemoveSavedWorkDialog from "../../../../components/RemoveSavedWorkDialog";
 import { useAuth } from "../../../../src/hooks/useAuth";
+import { recordWorkRemoval } from "../../../../src/storage/workRemovalLog";
 import { processPremiseSubmissionQueue } from "../../../../src/services/processPremiseSubmissionQueue";
 import {
-  clearPremiseQueue,
+  clearConfirmedPremiseQueueItems,
   getPremiseQueue,
   markPremiseQueueItemSuccess,
   markPremiseQueueItemSyncing,
@@ -208,13 +209,14 @@ function PremiseQueueItemCard({
 
 export default function PremiseOfflineStorageScreen() {
   const router = useRouter();
-  const { user, profile } = useAuth();
+  const { user, profile, role } = useAuth();
 
   const [isOnline, setIsOnline] = useState(true);
 
   const [queueItems, setQueueItems] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [itemToRemove, setItemToRemove] = useState(null);
 
   const agentUid = user?.uid || "SYSTEM";
   const agentName = profile?.profile?.displayName || "SYSTEM";
@@ -372,40 +374,54 @@ export default function PremiseOfflineStorageScreen() {
     setRefreshing(false);
   }, [loadQueue]);
 
-  const handleClearQueue = async () => {
-    Alert.alert(
-      "Clear Offline Premises",
-      "Are you sure you want to remove all offline premise items?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear",
-          style: "destructive",
-          onPress: async () => {
-            setBusy(true);
-            await clearPremiseQueue();
-            await loadQueue();
-            setBusy(false);
-          },
-        },
-      ],
+  // OF-R002 section 7: Clear takes away only premises the office has confirmed.
+  const handleClearSentWork = async () => {
+    setBusy(true);
+
+    const result = await clearConfirmedPremiseQueueItems();
+
+    await loadQueue();
+    setBusy(false);
+
+    const cleared = result?.cleared || 0;
+
+    ToastAndroid.show(
+      cleared
+        ? `${cleared} sent ${cleared === 1 ? "premise" : "premises"} cleared.`
+        : "Nothing to clear. Work still to go stays on this phone.",
+      ToastAndroid.SHORT,
     );
   };
 
-  const handleRemoveItem = async (queueItemId) => {
-    Alert.alert("Remove Item", "Remove this offline premise item?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: async () => {
-          setBusy(true);
-          await removePremiseQueueItem(queueItemId);
-          await loadQueue();
-          setBusy(false);
-        },
-      },
-    ]);
+  const handleRemoveItem = (queueItemId) => {
+    const item = queueItems.find((queueItem) => queueItem?.id === queueItemId);
+
+    if (!item) return;
+
+    setItemToRemove(item);
+  };
+
+  const handleConfirmRemoval = async ({ reason }) => {
+    const item = itemToRemove;
+
+    if (!item) return;
+
+    setBusy(true);
+
+    recordWorkRemoval({
+      item,
+      store: "premises",
+      reason,
+      removedByUid: agentUid,
+      removedByUser: agentName,
+      removedByRole: role,
+    });
+
+    await removePremiseQueueItem(item.id);
+
+    setItemToRemove(null);
+    await loadQueue();
+    setBusy(false);
   };
 
   const handleProcessQueue = async () => {
@@ -580,12 +596,12 @@ export default function PremiseOfflineStorageScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: "#dc2626" }]}
-              onPress={handleClearQueue}
+              style={[styles.actionBtn, { backgroundColor: "#475569" }]}
+              onPress={handleClearSentWork}
               disabled={busy}
             >
-              <MaterialCommunityIcons name="delete" size={18} color="#fff" />
-              <Text style={styles.actionBtnText}>Clear</Text>
+              <MaterialCommunityIcons name="broom" size={18} color="#fff" />
+              <Text style={styles.actionBtnText}>Clear sent</Text>
             </TouchableOpacity>
           </View>
         </Surface>
@@ -611,6 +627,16 @@ export default function PremiseOfflineStorageScreen() {
           ))
         )}
       </ScrollView>
+
+      <RemoveSavedWorkDialog
+        visible={!!itemToRemove}
+        item={itemToRemove}
+        role={role}
+        busy={busy}
+        whatIsIt="this premise"
+        onCancel={() => setItemToRemove(null)}
+        onConfirm={handleConfirmRemoval}
+      />
     </>
   );
 }
