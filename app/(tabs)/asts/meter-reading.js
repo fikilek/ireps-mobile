@@ -3,7 +3,7 @@ import NetInfo from "@react-native-community/netinfo";
 import * as Location from "expo-location";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
@@ -52,6 +52,7 @@ import {
   updateSubmissionQueueItem,
 } from "../../../src/utils/submissionQueue";
 import { FORM_TEXT } from "../../../src/theme/formColors";
+import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
 
 const EMPTY_SELECT_WITH_OTHER = {
   code: "",
@@ -1126,6 +1127,7 @@ export default function FormMeterReading() {
   const { data: allServiceProviders = [] } = useGetServiceProvidersQuery();
 
   const [editQueueItem, setEditQueueItem] = useState(undefined);
+  const pendingFieldChangesRef = useRef(null);
   const [inProgress, setInProgress] = useState(false);
   const [saveInProgress, setSaveInProgress] = useState(false);
   const [initialEligible, setInitialEligible] = useState(null);
@@ -2151,13 +2153,24 @@ export default function FormMeterReading() {
       >
         {({
           values,
-          setFieldValue,
+          setValues,
           handleSubmit,
           resetForm,
           validateForm,
           errors,
           isValid,
         }) => {
+          // One tap here saves several fields at once - Access saves the answer,
+          // the reason and the reason text together, and a reading saves its value
+          // beside the fields it clears. Formik checked the form after each save
+          // using the values from before the tap, so the last check never saw the
+          // first change and the field stayed red until it was chosen a second
+          // time. Gathered into one save, checked once.
+          const setFieldValue = makeBatchedSetFieldValue({
+            values,
+            setValues,
+            pendingRef: pendingFieldChangesRef,
+          });
           const meterReadingErrors = errors?.meterReading || {};
           const assignmentErrors = errors?.assignment || {};
           const accessErrors = errors?.accessData?.access || {};

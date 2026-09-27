@@ -2,7 +2,7 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
@@ -50,6 +50,7 @@ import {
 } from "../../../src/utils/submissionQueue";
 import { FORM_TEXT } from "../../../src/theme/formColors";
 import { getFormOptions } from "../../../src/features/meters/formOptions";
+import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
 
 const EMPTY_SELECT_WITH_OTHER = {
   code: "",
@@ -812,6 +813,7 @@ export default function FormMeterReconnection() {
   const { data: allServiceProviders = [] } = useGetServiceProvidersQuery();
 
   const [editQueueItem, setEditQueueItem] = useState(undefined);
+  const pendingFieldChangesRef = useRef(null);
 
   const actionOriginChannel = String(action?.origin?.channel || "")
     .trim()
@@ -1834,13 +1836,23 @@ export default function FormMeterReconnection() {
       >
         {({
           values,
-          setFieldValue,
+          setValues,
           handleSubmit,
           resetForm,
           validateForm,
           errors,
           isValid,
         }) => {
+          // One tap here saves several fields at once - Access saves the answer,
+          // the reason and the reason text together. Formik checked the form after
+          // each save using the values from before the tap, so the last check never
+          // saw the first change and the field stayed red until it was chosen a
+          // second time. Gathered into one save, checked once.
+          const setFieldValue = makeBatchedSetFieldValue({
+            values,
+            setValues,
+            pendingRef: pendingFieldChangesRef,
+          });
           const reconnectionErrors = errors?.reconnection || {};
           const assignmentErrors = errors?.assignment || {};
           const accessErrors = errors?.accessData?.access || {};
