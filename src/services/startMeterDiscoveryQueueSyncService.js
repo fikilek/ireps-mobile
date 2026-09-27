@@ -1,8 +1,11 @@
 import NetInfo from "@react-native-community/netinfo";
+import { AppState } from "react-native";
 import { processSubmissionQueue } from "./processSubmissionQueue";
 import { clearConfirmedSubmissions } from "../utils/submissionQueue";
 
 let unsubscribeNetInfo = null;
+let appStateSubscription = null;
+let lastRunAt = 0;
 let initialRunTimer = null;
 let deferredRetryTimer = null;
 let serviceActive = false;
@@ -20,7 +23,11 @@ const RETRY_LADDER_MS = [60000, 300000, 900000, 3600000];
 let failedRunCount = 0;
 
 
+const MIN_GAP_BETWEEN_RUNS_MS = 4000;
+
 const runQueueSync = async () => {
+  lastRunAt = Date.now();
+
   const result = await processSubmissionQueue({
     ...activeActor,
     // OF-R001: the whole form now, not only No Access. A meter that was found is saved
@@ -112,6 +119,20 @@ export const startMeterDiscoveryQueueSyncService = ({
     void runQueueSync();
   }, 750);
 
+  // Android pauses the app's JavaScript while it is in the background, so the signal coming back
+  // is often never heard: a worker turns airplane mode off from the notification shade, with the
+  // app behind it, and the NetInfo event is lost. Coming back to the app is the moment we know
+  // for certain that JavaScript is running again (the owner's phone, 28 September: it only ever
+  // sent on a reload).
+  if (!appStateSubscription) {
+    appStateSubscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active") return;
+      if (Date.now() - lastRunAt < MIN_GAP_BETWEEN_RUNS_MS) return;
+
+      void runQueueSync();
+    });
+  }
+
   return () => {
     serviceActive = false;
 
@@ -128,6 +149,11 @@ export const startMeterDiscoveryQueueSyncService = ({
     if (unsubscribeNetInfo) {
       unsubscribeNetInfo();
       unsubscribeNetInfo = null;
+    }
+
+    if (appStateSubscription) {
+      appStateSubscription.remove();
+      appStateSubscription = null;
     }
   };
 };
