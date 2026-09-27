@@ -21,6 +21,7 @@ import { getMediaExtension } from "../../../../src/utils/getMediaExtension";
 import { useAuth } from "../../../../src/hooks/useAuth";
 import { processSubmissionQueue } from "../../../../src/services/processSubmissionQueue";
 import {
+  clearConfirmedSubmissions,
   clearSubmissionQueue,
   getCallableNameForSubmissionQueueItem,
   getSubmissionQueue,
@@ -516,6 +517,9 @@ export default function SubmissionQueueScreen() {
         agentName,
       });
 
+      // OF-R001: what the office now has is not work still to go.
+      await clearConfirmedSubmissions();
+
       await loadQueue();
 
       if (result?.success) {
@@ -565,6 +569,9 @@ export default function SubmissionQueueScreen() {
         agentUid,
         agentName,
       });
+
+      // OF-R001: what the office now has is not work still to go.
+      await clearConfirmedSubmissions();
 
       await loadQueue();
 

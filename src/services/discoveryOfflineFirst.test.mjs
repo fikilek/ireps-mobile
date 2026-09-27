@@ -9,6 +9,7 @@
 // the found-meter path to the same shape.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const formSource = await readFile(
@@ -131,27 +132,44 @@ test("sent pictures are swept up, for the whole form", () => {
   );
 });
 
-test("a capture sent in the background is cleared off the phone too", () => {
-  // The form clears its own when the answer arrives inside its 15 seconds. A capture that went
-  // out later, in the background, was left reading SUCCESS in Saved Work for ever - one per
-  // meter the worker finished. Found by the owner on his phone, 27 September.
-  assert.match(
-    serviceSource,
-    /await clearSentMeterDiscoveries\(\);/,
-    "nothing clears a capture the background sender delivered",
+test("a capture the office has confirmed is cleared off the phone, whoever sent it", () => {
+  // Found twice by the owner on 27 September: once after the background sender delivered a
+  // capture, and once after he pressed Sync himself. Saved Work is work still to go, so an item
+  // the office already has does not belong in it - one entry per job ever finished.
+  const queueUtil = readFileSync(new URL("../utils/submissionQueue.js", import.meta.url), "utf8");
+  const savedWork = readFileSync(
+    new URL("../../app/(tabs)/admin/storage/forms-submission-queue.js", import.meta.url),
+    "utf8",
   );
-  assert.match(
-    serviceSource,
-    /item\?\.status !== "SUCCESS"/,
-    "the sweep no longer checks that the office really accepted it",
+
+  // One sweep, and it is not Meter Discovery only: the pile-up does not care which form made it.
+  assert.ok(
+    queueUtil.includes("export const clearConfirmedSubmissions = async () => {"),
+    "the shared sweep is gone",
   );
-  // It must not run inside processSubmissionQueue: a form waiting there reads the item back to
-  // see how it went, and would find nothing.
+  assert.ok(
+    queueUtil.includes('item?.status === "SUCCESS" && item?.result?.success === true'),
+    "the sweep no longer requires the office to have confirmed it, so it could drop unsent work",
+  );
   assert.equal(
-    queueSource.includes("clearSentMeterDiscoveries"),
+    queueUtil.includes('formType !== "METER_DISCOVERY"'),
     false,
-    "the sweep has moved into the queue, where it deletes items forms are still reading",
+    "the sweep is narrowed to one form again",
   );
+
+  // Both ways a capture can go out.
+  assert.ok(
+    serviceSource.includes("await clearConfirmedSubmissions();"),
+    "the background sender does not clear what it has just delivered",
+  );
+  assert.equal(
+    savedWork.split("await clearConfirmedSubmissions();").length - 1,
+    2,
+    "both Sync buttons must clear what they have just sent",
+  );
+
+  // It must never run where a form is waiting to read its own item back.
+  assert.equal(queueSource.includes("clearConfirmedSubmissions"), false);
 });
 
 test("the sender covers the whole form, not only No Access", () => {

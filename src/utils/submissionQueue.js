@@ -421,6 +421,43 @@ export const markSubmissionQueueItemFailed = async (
   );
 };
 
+// OF-R001: a capture the server has confirmed is cleared off the phone.
+//
+// Saved Work is a list of work still to go. An item the office already has is not work to do, and
+// leaving it there gives the worker one entry per job they ever finished - the owner found them
+// piling up twice on 27 September, once from the background sender and once after pressing Sync.
+//
+// Every form, not only Meter Discovery: the pile-up does not care which form made it. Only
+// server-confirmed items go, so this can never drop work that has not been sent.
+//
+// Never call this from processSubmissionQueue. A form waiting there reads its own item back to
+// see how it went, and would find nothing.
+export const clearConfirmedSubmissions = async () => {
+  try {
+    const queue = readQueueFromStorage();
+
+    const remaining = queue.filter(
+      (item) => !(item?.status === "SUCCESS" && item?.result?.success === true),
+    );
+
+    const cleared = queue.length - remaining.length;
+
+    if (!cleared) return { success: true, cleared: 0 };
+
+    const saveResult = writeQueueToStorage(remaining);
+
+    if (!saveResult?.success) {
+      return { success: false, cleared: 0, message: "Failed to clear sent captures" };
+    }
+
+    return { success: true, cleared };
+  } catch (error) {
+    console.log("clearConfirmedSubmissions error:", error);
+
+    return { success: false, cleared: 0, message: error?.message || "Failed to clear" };
+  }
+};
+
 export const removeSubmissionQueueItem = async (queueItemId) => {
   try {
     const queue = readQueueFromStorage();
