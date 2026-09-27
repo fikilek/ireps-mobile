@@ -1,6 +1,7 @@
 import { combineReducers, configureStore } from "@reduxjs/toolkit";
 import { setupListeners } from "@reduxjs/toolkit/query";
 import {
+  createMigrate,
   FLUSH,
   PAUSE,
   PERSIST,
@@ -63,13 +64,31 @@ const rootReducer = combineReducers({
 /* =====================================================
    REDUX PERSIST CONFIG
 ===================================================== */
+// Only these parts are ever saved on the phone.
+const PERSISTED_KEYS = ["offline"];
+
+// Saved data from older builds can hold parts that no longer exist
+// (e.g. irepsLookupOptionsApi, removed by UI-R003 1.4.0). Drop everything
+// except the parts we still save, keeping the offline queue untouched.
+const migrations = {
+  3: (state) => {
+    if (!state) return state;
+    const kept = { _persist: state._persist };
+    for (const key of PERSISTED_KEYS) {
+      if (key in state) kept[key] = state[key];
+    }
+    return kept;
+  },
+};
+
 const persistConfig = {
   key: "root",
-  version: 2,
+  version: 3,
   storage: reduxStorage,
+  migrate: createMigrate(migrations, { debug: false }),
 
   // Keep persisted state small + valuable
-  whitelist: ["offline"],
+  whitelist: PERSISTED_KEYS,
 
   // Never persist auth + large/sensitive caches
   blacklist: [
