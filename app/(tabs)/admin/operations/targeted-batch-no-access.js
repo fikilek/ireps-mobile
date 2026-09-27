@@ -46,6 +46,9 @@ const parseContext = (raw) => {
   try { return JSON.parse(String(raw || "{}")); } catch { return {}; }
 };
 
+const GPS_FIX_DEADLINE_MS = 20000;
+const RECENT_FIX_MAX_AGE_MS = 120000;
+
 export default function TargetedBatchNoAccessScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -81,12 +84,40 @@ export default function TargetedBatchNoAccessScreen() {
   };
   const finish = (message) => Alert.alert("No Access", message, [{ text: "OK", onPress: returnToWorkorders }]);
 
+  const toLocation = (position) => ({
+    gps: { lat: position.coords.latitude, lng: position.coords.longitude },
+    accuracyM: position.coords.accuracy ?? null,
+    capturedAt: new Date(position.timestamp || Date.now()).toISOString(),
+  });
+
+  // A No Access claim is worth nothing without a position, so the fix cannot be skipped - but it
+  // cannot be allowed to hang either. With no signal there is no assisted positioning, so indoors
+  // the phone can sit on this call for ever, and nothing the worker did has been saved yet (the
+  // owner's phone, 27 September: "the gps picker was stuck").
+  //
+  // So: ask for a fresh fix under a deadline, then fall back to a position the phone took in the
+  // last two minutes, which is still where the worker is standing. Failing both, say so plainly.
   async function captureLocation() {
     let permission = await Location.getForegroundPermissionsAsync();
     if (permission.status !== Location.PermissionStatus.GRANTED) permission = await Location.requestForegroundPermissionsAsync();
     if (permission.status !== Location.PermissionStatus.GRANTED) throw new Error("Location permission was not granted.");
-    const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-    return { gps: { lat: position.coords.latitude, lng: position.coords.longitude }, accuracyM: position.coords.accuracy ?? null, capturedAt: new Date(position.timestamp || Date.now()).toISOString() };
+
+    const fresh = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }).catch(() => null),
+      new Promise((resolve) => setTimeout(() => resolve(null), GPS_FIX_DEADLINE_MS)),
+    ]);
+
+    if (fresh?.coords) return toLocation(fresh);
+
+    const lastKnown = await Location.getLastKnownPositionAsync({
+      maxAge: RECENT_FIX_MAX_AGE_MS,
+    }).catch(() => null);
+
+    if (lastKnown?.coords) return toLocation(lastKnown);
+
+    throw new Error(
+      "The phone cannot find where you are. Stand where you can see the sky, wait a moment, and submit again. Nothing you have entered is lost.",
+    );
   }
 
   async function queue(payload) {

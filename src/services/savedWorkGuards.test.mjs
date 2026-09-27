@@ -134,3 +134,24 @@ test("a submitted No Access form always lets the worker out", () => {
     "there is no way back when the stack is empty",
   );
 });
+
+test("the GPS fix has a deadline, so a No Access capture is never held hostage to it", () => {
+  // With no signal there is no assisted positioning: indoors the phone can sit on a high-accuracy
+  // fix for ever, and at that point nothing the worker did has been saved (the owner's phone,
+  // 27 September). A No Access claim still needs a position, so the fix falls back to one the
+  // phone took in the last two minutes rather than being skipped.
+  assert.match(
+    noAccessSource,
+    /const GPS_FIX_DEADLINE_MS = \d+/,
+    "the fresh fix can run for ever again",
+  );
+  assert.match(
+    noAccessSource,
+    /Location\.getLastKnownPositionAsync\(\{\s*maxAge: RECENT_FIX_MAX_AGE_MS,?\s*\}\)/,
+    "there is no fallback when the fresh fix does not arrive",
+  );
+  assert.ok(
+    noAccessSource.includes("The phone cannot find where you are"),
+    "a worker who cannot be located is not told what to do about it",
+  );
+});
