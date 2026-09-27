@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  REMOVAL_REASONS,
   assessRemoval,
   buildRemovalRecord,
   canRemoveUnsentWork,
@@ -54,12 +55,19 @@ test("a field worker cannot remove work that has not reached the office", () => 
   }
 });
 
-test("a reason that explains nothing is refused", () => {
+test("a reason is required, but it is a tap and not an essay", () => {
+  // The owner, 27 September: "why do we need such a long sentence". A supervisor picks from a
+  // short list; what matters is that a reason was chosen and is kept with their name.
   assert.equal(validateRemovalReason("").valid, false);
   assert.equal(validateRemovalReason("   ").valid, false);
-  assert.equal(validateRemovalReason("ok").valid, false);
-  assert.equal(validateRemovalReason("test").valid, false);
+  assert.equal(validateRemovalReason("ok").valid, true);
   assert.equal(validateRemovalReason("Captured twice by mistake").valid, true);
+
+  assert.ok(REMOVAL_REASONS.length >= 3, "there is no list to pick from");
+  assert.ok(
+    REMOVAL_REASONS.every((reason) => validateRemovalReason(reason).valid),
+    "a reason from the list is not accepted",
+  );
 });
 
 test("sent work is removed with a plain confirmation, by anyone", () => {

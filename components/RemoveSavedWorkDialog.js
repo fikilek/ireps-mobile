@@ -10,14 +10,13 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { Text } from "react-native-paper";
 
 import {
-  REASON_MIN_LENGTH,
+  REMOVAL_REASONS,
   canRemoveUnsentWork,
   isSentToOffice,
   validateRemovalReason,
@@ -102,32 +101,43 @@ export default function RemoveSavedWorkDialog({
                     This work has never reached the office
                   </Text>
                   <Text style={styles.body}>
-                    Removing {whatIsIt} throws away work a field worker captured.
-                    It cannot be got back. Say why, in words the worker would
-                    understand.
+                    Removing {whatIsIt} throws away what a worker captured. Pick
+                    the reason.
                   </Text>
 
-                  <TextInput
-                    style={styles.input}
-                    value={reason}
-                    onChangeText={(text) => {
-                      setReason(text);
-                      if (error) setError("");
-                    }}
-                    placeholder="Why is this being removed?"
-                    placeholderTextColor="#94a3b8"
-                    multiline
-                    numberOfLines={3}
-                    editable={!busy}
-                    textAlignVertical="top"
-                  />
+                  {REMOVAL_REASONS.map((option) => {
+                    const picked = reason === option;
+
+                    return (
+                      <TouchableOpacity
+                        key={option}
+                        style={[styles.reason, picked && styles.reasonPicked]}
+                        onPress={() => {
+                          setReason(picked ? "" : option);
+                          if (error) setError("");
+                        }}
+                        disabled={busy}
+                      >
+                        <View
+                          style={[styles.tick, picked && styles.tickPicked]}
+                        />
+                        <Text
+                          style={[
+                            styles.reasonText,
+                            picked && styles.reasonTextPicked,
+                          ]}
+                        >
+                          {option}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
 
                   {error ? (
                     <Text style={styles.error}>{error}</Text>
                   ) : (
                     <Text style={styles.hint}>
-                      At least {REASON_MIN_LENGTH} characters. The reason is kept
-                      on this phone with your name.
+                      Kept on this phone with your name.
                     </Text>
                   )}
                 </>
@@ -154,9 +164,7 @@ export default function RemoveSavedWorkDialog({
                     onPress={handleConfirm}
                     disabled={busy}
                   >
-                    <Text style={styles.removeText}>
-                      {alreadySent ? "Remove" : "Remove this work"}
-                    </Text>
+                    <Text style={styles.removeText}>Remove</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -196,15 +204,40 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 10,
   },
-  input: {
+  reason: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
     borderWidth: 1,
     borderColor: "#cbd5e1",
     borderRadius: 10,
-    padding: 12,
-    minHeight: 84,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    backgroundColor: "#f8fafc",
+  },
+  reasonPicked: {
+    borderColor: "#b91c1c",
+    backgroundColor: "#fef2f2",
+  },
+  tick: {
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: "#94a3b8",
+  },
+  tickPicked: {
+    borderColor: "#b91c1c",
+    backgroundColor: "#b91c1c",
+  },
+  reasonText: {
+    flex: 1,
     fontSize: 14,
     color: "#0f172a",
-    backgroundColor: "#f8fafc",
+  },
+  reasonTextPicked: {
+    fontWeight: "700",
   },
   hint: {
     fontSize: 12,

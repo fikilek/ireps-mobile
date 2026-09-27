@@ -25,24 +25,26 @@ export function canRemoveUnsentWork(role) {
   return SUPERVISOR_ROLES.includes(clean(role).toUpperCase());
 }
 
-export const REASON_MIN_LENGTH = 10;
+// The owner, 27 September: "why do we need such a long sentence". A supervisor tidying a phone
+// should tap, not type. These are the reasons work is actually removed in the field; any one of
+// them explains the removal on its own.
+export const REMOVAL_REASONS = [
+  "Captured twice by mistake",
+  "Wrong meter or wrong place",
+  "Test capture, not real work",
+  "The office already has this work",
+  "The worker asked for it to be removed",
+];
 
 /**
- * What a supervisor must have given before work that never reached the office is thrown away.
- * A reason of "ok" or "test" explains nothing to the person who captured it.
+ * Any reason at all, picked or typed. What matters is that somebody chose one and it is kept with
+ * their name — not how long it is.
  */
 export function validateRemovalReason(reason) {
   const text = clean(reason);
 
   if (!text) {
-    return { valid: false, message: "Give the reason this work is being removed." };
-  }
-
-  if (text.length < REASON_MIN_LENGTH) {
-    return {
-      valid: false,
-      message: "Say a bit more: this reason is all the worker will see.",
-    };
+    return { valid: false, message: "Pick a reason." };
   }
 
   return { valid: true, reason: text };
