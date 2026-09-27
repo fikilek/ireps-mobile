@@ -19,7 +19,7 @@ import AuthBootstrap from "../src/navigation/AuthBootstrap";
 import { persistor, store } from "../src/redux/store";
 import FwrMonitoringCoordinator from "../src/services/fwr-monitoring/FwrMonitoringCoordinator";
 import { startInformalErfQueueSyncService } from "../src/services/startInformalErfQueueSyncService";
-import { startMeterDiscoveryNoAccessQueueSyncService } from "../src/services/startMeterDiscoveryNoAccessQueueSyncService";
+import { startMeterDiscoveryQueueSyncService } from "../src/services/startMeterDiscoveryQueueSyncService";
 
 // Development client only. React Navigation logs this when a second app root
 // registers deep linking, which happens on a reload in the dev client. The
@@ -188,8 +188,8 @@ const InformalErfQueueSyncCoordinator = memo(
   },
 );
 
-const MeterDiscoveryNoAccessQueueSyncCoordinator = memo(
-  function MeterDiscoveryNoAccessQueueSyncCoordinator() {
+const MeterDiscoveryQueueSyncCoordinator = memo(
+  function MeterDiscoveryQueueSyncCoordinator() {
     const { user, profile, status, logoutInProgress } = useAuth();
 
     const agentUid = user?.uid || null;
@@ -207,7 +207,7 @@ const MeterDiscoveryNoAccessQueueSyncCoordinator = memo(
         return undefined;
       }
 
-      return startMeterDiscoveryNoAccessQueueSyncService({
+      return startMeterDiscoveryQueueSyncService({
         agentUid,
         agentName,
       });
@@ -244,7 +244,7 @@ export default function RootLayout() {
                       <AuthBootstrap />
                       <FwrMonitoringCoordinator />
                       <InformalErfQueueSyncCoordinator />
-                      <MeterDiscoveryNoAccessQueueSyncCoordinator />
+                      <MeterDiscoveryQueueSyncCoordinator />
                       <AuthGate />
                       <SessionSlot />
                     </InstallationProvider>

@@ -1,5 +1,4 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
-import NetInfo from "@react-native-community/netinfo";
 import * as Location from "expo-location"; // Ensure this is imported at the to
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
@@ -25,8 +24,6 @@ import {
 } from "./meterNumberRule";
 
 // Firebase & Redux
-import { httpsCallable } from "firebase/functions";
-import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { ElectricitySections } from "../../../components/forms/ElectricitySections";
 import { IrepsFieldCommentSection } from "../../../components/forms/IrepsFieldCommentSection";
 import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
@@ -35,12 +32,11 @@ import { ScreenLock } from "../../../components/SceenLock";
 import { useGeo } from "../../context/GeoContext";
 import { getSafeCoords } from "../../context/MapContext";
 import { useWarehouse } from "../../context/WarehouseContext";
-import { functions } from "../../firebase";
 import { useAuth } from "../../hooks/useAuth";
 import { useGetServiceProvidersQuery } from "../../redux/spApi";
 import { useAddTrnMutation } from "../../redux/trnsApi";
 import { processSubmissionQueue } from "../../services/processSubmissionQueue";
-import { scheduleMeterDiscoveryNoAccessQueueSyncRetry } from "../../services/startMeterDiscoveryNoAccessQueueSyncService";
+import { scheduleMeterDiscoveryQueueSyncRetry } from "../../services/startMeterDiscoveryQueueSyncService";
 import { getMediaExtension } from "../../utils/getMediaExtension";
 import { persistNoAccessMeterDiscoveryMedia } from "../../utils/persistNoAccessMeterDiscoveryMedia";
 import { getPremiseQueueItemByPremiseId } from "../../utils/premiseSubmissionQueue";
@@ -1521,12 +1517,15 @@ export default function FormMeterDiscovery() {
       const isNoAccessSubmission =
         cleanPayload?.accessData?.access?.hasAccess === "no";
 
-      if (isNoAccessSubmission) {
-        cleanPayload.media = await persistNoAccessMeterDiscoveryMedia({
-          trnId: cleanPayload?.id,
-          media: cleanPayload?.media || [],
-        });
-      }
+      // OF-R001: the pictures are copied out of the camera cache and into the app s own storage
+      // BEFORE the work is saved, whether the meter was there or not. A capture waiting for signal
+      // is only safe if its evidence is still there when the signal comes back, and the phone
+      // empties that cache when it pleases. No Access has always done this; a found meter kept
+      // temporary files, which was survivable only because it never waited for anything.
+      cleanPayload.media = await persistNoAccessMeterDiscoveryMedia({
+        trnId: cleanPayload?.id,
+        media: cleanPayload?.media || [],
+      });
 
       let activeQueueItemId = queueItemId || null;
 
@@ -1671,7 +1670,7 @@ export default function FormMeterDiscovery() {
           );
         } catch (error) {
           if (error?.message === "SUBMISSION_TIMEOUT") {
-            scheduleMeterDiscoveryNoAccessQueueSyncRetry({
+            scheduleMeterDiscoveryQueueSyncRetry({
               agentUid,
               agentName,
               delayMs: 20000,
@@ -1701,7 +1700,7 @@ export default function FormMeterDiscovery() {
         );
 
         if (queueProcessResult?.code === "QUEUE_BUSY") {
-          scheduleMeterDiscoveryNoAccessQueueSyncRetry({
+          scheduleMeterDiscoveryQueueSyncRetry({
             agentUid,
             agentName,
           });
@@ -1753,141 +1752,117 @@ export default function FormMeterDiscovery() {
         return;
       }
 
-      // Accessed Meter Discovery keeps the existing connectivity path.
-      const netState = await NetInfo.fetch();
-      const isOnline = netState.isConnected && netState.isInternetReachable;
+      // OF-R001 (1.0.0): offline first. The work is saved on this phone before anything is
+      // sent, and one 15-second attempt then covers the connectivity check, the photographs
+      // and the form together.
+      //
+      // The old path checked the network once, BEFORE uploading the photographs, and put its
+      // 15-second limit around the form only - which goes AFTER them. A weak signal is exactly
+      // the state that passes that check and then fails the upload, and the capture was lost
+      // with nothing saved. Photographs are the largest thing the phone sends, so the one step
+      // with no protection was also the likeliest to need it.
+      //
+      // This is the shape the No Access path above has always had, and it never lost a capture.
+      const persistResult = await persistMeterDraftToQueue();
 
-      if (!isOnline) {
-        const followOnWork = getFollowOnWork(
-          cleanPayload?.ast?.normalisation?.actionTaken,
-        );
-
-        await saveMeterDraftToQueue(
-          "Saved Offline",
-          followOnWork
-            ? `No internet connection. This meter was saved on the phone and will be sent when you are online. The ${
-                followOnWork === "DISCONNECTION" ? "disconnection" : "removal"
-              } cannot be started until it has been sent.`
-            : "No internet connection. This submission was saved locally and will sync automatically when online.",
+      if (!persistResult?.success || !activeQueueItemId) {
+        Alert.alert(
+          "Draft Save Failed",
+          "Failed to save this meter safely on the device. Nothing has been sent.",
         );
 
         setInProgress(false);
         return;
       }
 
-      // ONLINE PATH
-      const storage = getStorage();
-
-      const syncedMedia = await Promise.all(
-        (cleanPayload?.media || []).map(async (item) => {
-          if (item.uri && !item.url) {
-            const folder =
-              values?.accessData?.access?.hasAccess === "yes"
-                ? `${values?.meterType}_meters`
-                : "no_access";
-
-            const fileName = `${baseSystemFields.erfId}_${item.tag}_${Date.now()}.${getMediaExtension(item)}`;
-            const storageRef = ref(storage, `meters/${folder}/${fileName}`);
-
-            const response = await fetch(item.uri);
-            const blob = await response.blob();
-
-            await uploadBytes(storageRef, blob);
-
-            const downloadUrl = await getDownloadURL(storageRef);
-
-            const { uri, ...cleanItem } = item;
-            return { ...cleanItem, url: downloadUrl };
-          }
-
-          return item;
-        }),
-      );
-
-      cleanPayload.media = syncedMedia;
-
-      const onMeterDiscoveryCallable = httpsCallable(
-        functions,
-        "onMeterDiscoveryCallable",
-      );
-
-      // const test = true;
-      // if (test) {
-      //   return;
-      // }
-      // console.log(`handleSubmitDiscovery --cleanPayload`, cleanPayload);
-
-      /*  
-        START TIMEOUT WINDOW
-
-      1. No network before submit
-        → save locally immediately
-
-      2. Network available, submit starts
-        → wait up to 15 seconds
-
-      3. Backend returns before 15 seconds
-        → respect backend result
-        → success = success
-        → error = show error, do not queue
-
-      4. 30 seconds passes with no response
-        → save locally, regardless of reason
-
-      */
-
-      let result = null;
+      // processSubmissionQueue owns the connectivity check, the evidence upload and the
+      // callable, so all three share this one deadline.
+      let queueProcessResult = null;
 
       try {
-        const callableResult = await withSubmitTimeout(
-          onMeterDiscoveryCallable(cleanPayload),
+        queueProcessResult = await withSubmitTimeout(
+          processSubmissionQueue({
+            agentUid,
+            agentName,
+            queueItemIds: [activeQueueItemId],
+            includeSyncing: true,
+          }),
           15000,
         );
-        result = callableResult?.data || {};
       } catch (error) {
-        if (error?.message === "SUBMISSION_TIMEOUT") {
-          await saveMeterDraftToQueue(
-            "Saved Locally",
-            "The submission is taking too long. Your meter data has been safely saved locally and can be submitted again later.",
-          );
+        // Whatever went wrong, the meter is already on the phone. Ask for another go, because
+        // the sender otherwise waits for the signal to change and a slow line never changes.
+        scheduleMeterDiscoveryQueueSyncRetry({ agentUid, agentName, delayMs: 20000 });
 
-          setInProgress(false);
-          return;
-        }
+        showSavedQueueConfirmation(
+          "Saved Locally",
+          error?.message === "SUBMISSION_TIMEOUT"
+            ? "The submission was not confirmed within 15 seconds. This meter is safely stored on this phone and will be sent automatically."
+            : "The submission did not go through. This meter is safely stored on this phone and will be sent automatically.",
+        );
 
+        setInProgress(false);
+        return;
+      }
+
+      if (queueProcessResult?.code === "DEVICE_OFFLINE") {
+        showSavedQueueConfirmation(
+          "Saved Offline",
+          "No internet connection. This meter is safely stored on this phone and will be sent when you are online.",
+        );
+
+        setInProgress(false);
+        return;
+      }
+
+      if (queueProcessResult?.code === "QUEUE_BUSY") {
+        scheduleMeterDiscoveryQueueSyncRetry({ agentUid, agentName });
+
+        showSavedQueueConfirmation(
+          "Saved Locally",
+          "This meter is safely stored on this phone and will be sent automatically.",
+        );
+
+        setInProgress(false);
+        return;
+      }
+
+      const syncedQueueItem = await getSubmissionQueueItemById(activeQueueItemId);
+
+      // A refusal iREPS decided on stops here and says why. It is never retried, so the worker
+      // is not told it will be sent later.
+      if (syncedQueueItem?.status === "CONFLICT") {
         setInProgress(false);
 
         Alert.alert(
-          "Submission Failed",
-          error?.message || "Meter discovery submission failed.",
+          "Refused",
+          syncedQueueItem?.result?.message ||
+            "The office refused this submission. Open it in Saved Work to correct it.",
         );
 
         return;
       }
 
-      /*  
-        END TIMEOUT WINDOW
-      */
+      if (
+        syncedQueueItem?.status !== "SUCCESS" ||
+        syncedQueueItem?.result?.success !== true
+      ) {
+        scheduleMeterDiscoveryQueueSyncRetry({ agentUid, agentName, delayMs: 20000 });
 
-      // const callableResult = await onMeterDiscoveryCallable(cleanPayload);
-      // const result = callableResult?.data || {};
-
-      if (!result?.success) {
-        setInProgress(false);
-
-        Alert.alert(
-          result?.code === "DUPLICATE_METER"
-            ? "Duplicate Meter"
-            : "Submission Failed",
-          result?.message || "Meter discovery submission failed.",
+        showSavedQueueConfirmation(
+          "Saved Locally",
+          syncedQueueItem?.result?.message ||
+            "The submission did not go through. This meter is safely stored on this phone and will be sent automatically.",
         );
 
+        setInProgress(false);
         return;
       }
 
-      if (queueItemId) {
-        await removeSubmissionQueueItem(queueItemId);
-      }
+      // OF-R001 section 4: the office really has it, so the saved copy is cleared and this is
+      // the real MISSION SUCCESS. Without this every meter a worker finished would be left
+      // sitting in Saved Work for ever.
+      await removeSubmissionQueueItem(activeQueueItemId);
 
       // MN-R001 section 6: the finding calls for a disconnection or a
       // replacement, so the form for that work follows on from here. It is that

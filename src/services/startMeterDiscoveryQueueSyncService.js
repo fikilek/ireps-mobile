@@ -15,18 +15,20 @@ const DEFAULT_DEFERRED_RETRY_MS = 2000;
 const runQueueSync = async () => {
   const result = await processSubmissionQueue({
     ...activeActor,
-    filterMode: "METER_DISCOVERY_NO_ACCESS",
+    // OF-R001: the whole form now, not only No Access. A meter that was found is saved
+    // on the phone the same way, so it needs the same service to send it.
+    filterMode: "METER_DISCOVERY",
     includeSyncing: true,
   });
 
   if (result?.code === "QUEUE_BUSY") {
-    scheduleMeterDiscoveryNoAccessQueueSyncRetry();
+    scheduleMeterDiscoveryQueueSyncRetry();
   }
 
   return result;
 };
 
-export const scheduleMeterDiscoveryNoAccessQueueSyncRetry = ({
+export const scheduleMeterDiscoveryQueueSyncRetry = ({
   agentUid,
   agentName,
   delayMs = DEFAULT_DEFERRED_RETRY_MS,
@@ -48,7 +50,7 @@ export const scheduleMeterDiscoveryNoAccessQueueSyncRetry = ({
   return true;
 };
 
-export const startMeterDiscoveryNoAccessQueueSyncService = ({
+export const startMeterDiscoveryQueueSyncService = ({
   agentUid = "SYSTEM",
   agentName = "SYSTEM",
 } = {}) => {

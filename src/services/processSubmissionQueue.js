@@ -97,6 +97,12 @@ export const processSubmissionQueue = async ({
         return false;
       }
 
+      // OF-R001: the whole of Meter Discovery, whether the meter was there or not. The
+      // no-access mode below is kept for the service that only ever wanted those.
+      if (filterMode === "METER_DISCOVERY") {
+        return isStandardMeterDiscoveryQueueItem(item);
+      }
+
       if (filterMode === "METER_DISCOVERY_NO_ACCESS") {
         const formType = String(item?.formType || "")
           .trim()
@@ -297,12 +303,11 @@ export const processSubmissionQueue = async ({
           successResult?.queueItem?.result?.success === true &&
           String(finalPayload?.accessData?.trnType || "")
             .trim()
-            .toUpperCase() === "METER_DISCOVERY" &&
-          String(finalPayload?.accessData?.access?.hasAccess || "")
-            .trim()
-            .toLowerCase() === "no"
+            .toUpperCase() === "METER_DISCOVERY"
         ) {
           try {
+            // OF-R001: a found meter keeps its pictures in app storage too now, so the sweep
+            // covers the whole form. Without this the phone fills up with sent evidence.
             await cleanupNoAccessMeterDiscoveryMedia({
               trnId: finalPayload?.id,
             });
