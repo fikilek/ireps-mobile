@@ -84,7 +84,14 @@ export const processSubmissionQueue = async ({
   try {
     const netState = await NetInfo.fetch();
 
-    const isOnline = netState.isConnected && netState.isInternetReachable;
+    // Unknown reachability counts as online. Coming out of airplane mode Android says "connected,
+    // reachability unknown" for a few seconds, and demanding a definite yes made the sender answer
+    // device offline and stop - with no second chance, because the signal does not change twice
+    // (the owner's phone, 27 September: online for two minutes, nothing sent, zero attempts).
+    //
+    // Trying and failing costs one request. Refusing to try costs the day's work.
+    const isOnline =
+      Boolean(netState.isConnected) && netState.isInternetReachable !== false;
 
     if (!isOnline) {
       return {

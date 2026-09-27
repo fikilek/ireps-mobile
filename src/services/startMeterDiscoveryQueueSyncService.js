@@ -13,6 +13,12 @@ let activeActor = {
 
 const DEFAULT_DEFERRED_RETRY_MS = 2000;
 
+// OF-R002 section 5: a run that did not get the work out books its own next try. The network
+// listener only fires when the signal CHANGES, so a run that failed just after the signal came
+// back would otherwise wait for a change that never comes.
+const RETRY_LADDER_MS = [60000, 300000, 900000, 3600000];
+let failedRunCount = 0;
+
 
 const runQueueSync = async () => {
   const result = await processSubmissionQueue({
@@ -29,6 +35,14 @@ const runQueueSync = async () => {
 
   if (result?.code === "QUEUE_BUSY") {
     scheduleMeterDiscoveryQueueSyncRetry();
+  } else if (result?.success) {
+    failedRunCount = 0;
+  } else {
+    const step = Math.min(failedRunCount, RETRY_LADDER_MS.length - 1);
+
+    failedRunCount += 1;
+
+    scheduleMeterDiscoveryQueueSyncRetry({ delayMs: RETRY_LADDER_MS[step] });
   }
 
   await clearConfirmedSubmissions();

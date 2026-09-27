@@ -155,3 +155,39 @@ test("the GPS fix has a deadline, so a No Access capture is never held hostage t
     "a worker who cannot be located is not told what to do about it",
   );
 });
+
+test("unknown reachability counts as online", () => {
+  // Coming out of airplane mode Android reports "connected, reachability unknown" for a few
+  // seconds. Demanding a definite yes made the sender answer device offline and stop.
+  assert.match(
+    queueSource,
+    /netState\.isInternetReachable !== false/,
+    "the sender refuses to try when the phone cannot yet say the internet is reachable",
+  );
+});
+
+test("a run that got nothing out books its own next try", () => {
+  // The listener only fires when the signal CHANGES. A run that failed just after the signal came
+  // back would otherwise wait for a change that never comes - the owner watched a capture sit
+  // there for two minutes with zero attempts (27 September).
+  assert.match(
+    senderSource,
+    /const RETRY_LADDER_MS = \[[^\]]+\]/,
+    "there is no retry ladder",
+  );
+  assert.ok(
+    senderSource.includes("const step = Math.min(failedRunCount"),
+    "only a busy queue books another try; every other failure gives up",
+  );
+  assert.ok(
+    senderSource.includes(
+      "scheduleMeterDiscoveryQueueSyncRetry({ delayMs: RETRY_LADDER_MS[step] })",
+    ),
+    "a failed run does not book its next try from the ladder",
+  );
+  assert.match(
+    senderSource,
+    /failedRunCount = 0;/,
+    "the ladder never resets, so one bad day slows the phone for ever",
+  );
+});
