@@ -1837,7 +1837,7 @@ export default function FormMeterDiscovery() {
         Alert.alert(
           "Refused",
           syncedQueueItem?.result?.message ||
-            "The office refused this submission. Open it in Saved Work to correct it.",
+            "iREPS refused this submission. Open it in Saved Work to correct it.",
         );
 
         return;
@@ -2319,7 +2319,7 @@ export default function FormMeterDiscovery() {
                     {queuedNotice ? (
                       <>
                         <Text style={styles.savedWarning}>
-                          NOT SENT TO THE OFFICE YET
+                          NOT SENT YET
                         </Text>
                         <Text style={styles.savedSub}>{queuedNotice.body}</Text>
                       </>

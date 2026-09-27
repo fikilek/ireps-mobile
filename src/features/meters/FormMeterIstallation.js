@@ -1878,7 +1878,7 @@ export default function FormMeterInstallation() {
                     {queuedNotice ? (
                       <>
                         <Text style={styles.savedWarning}>
-                          NOT SENT TO THE OFFICE YET
+                          NOT SENT YET
                         </Text>
                         <Text style={styles.savedSub}>{queuedNotice.body}</Text>
                       </>
