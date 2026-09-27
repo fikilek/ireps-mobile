@@ -727,6 +727,23 @@ export default function FormPremise() {
         : openedTargetedBatch.originated),
   );
 
+  // The way out of this form always goes somewhere definite.
+  //
+  // Every exit used to be a plain back. A batch row pushes this form straight into the Premises
+  // tab, so when the worker had not opened Premises themselves the form was the ONLY screen in
+  // that tab: back left the tab altogether, the form stayed standing in it, and tapping Premises
+  // landed on it again with no way out (owner, 2026-09-27). Naming where to go means there is
+  // always a way out, and returnAfterLifecycleWork clears the form off the tab behind it.
+  const leaveForm = () => {
+    returnAfterLifecycleWork(
+      router,
+      originatedFromTargetedBatch
+        ? "/(tabs)/admin/operations/my-workorders"
+        : "/(tabs)/premises",
+      "/(tabs)/premises",
+    );
+  };
+
   const targetedBatchContext = useMemo(() => {
     if (isDuplicate) return null;
 
@@ -1611,7 +1628,7 @@ export default function FormPremise() {
         // My Work Orders is in the Admin tab and this form is in Premises, and REPLACE cannot cross tabs.
         returnAfterLifecycleWork(router, successRoute, "/(tabs)/premises");
       } else {
-        router.back();
+        leaveForm();
       }
       // logSubmitTime("SUCCESS END");
     } catch (err) {
@@ -1643,7 +1660,7 @@ export default function FormPremise() {
           options={{
             title: "Duplicate Premise",
             headerLeft: () => (
-              <Pressable onPress={() => router.back()} style={styles.backBtn}>
+              <Pressable onPress={() => leaveForm()} style={styles.backBtn}>
                 <Ionicons name="chevron-back" size={28} color="#1e293b" />
               </Pressable>
             ),
@@ -1662,7 +1679,7 @@ export default function FormPremise() {
 
         <View style={styles.resolutionActions}>
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => leaveForm()}
             style={styles.resolutionBackButton}
           >
             <Text style={styles.resolutionBackButtonText}>Back</Text>
@@ -1718,7 +1735,7 @@ export default function FormPremise() {
                   ),
                   headerLeft: () => (
                     <Pressable
-                      onPress={() => router.back()}
+                      onPress={() => leaveForm()}
                       style={styles.backBtn}
                     >
                       <Ionicons name="chevron-back" size={28} color="#1e293b" />

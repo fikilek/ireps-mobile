@@ -245,11 +245,21 @@ test("guards Government card identity against leading separators", () => {
 });
 
 test("preserves successful save navigation regression fix", () => {
-  // A premise that came from a batch goes back to where it came from; anything else goes back one screen.
+  // A premise that came from a batch goes back to where it came from; anything else leaves the form.
   // The return is made with returnAfterLifecycleWork because My Work Orders is in another tab and REPLACE
   // cannot cross tabs (2026-09-24).
   assert.match(
     formSource,
-    /if \(originatedFromTargetedBatch \|\| isQueueEdit \|\| rowPremiseJoin\) \{[\s\S]{0,240}?returnAfterLifecycleWork\(router, successRoute, "\/\(tabs\)\/premises"\);\s*\} else \{\s*router\.back\(\);/,
+    /if \(originatedFromTargetedBatch \|\| isQueueEdit \|\| rowPremiseJoin\) \{[\s\S]{0,240}?returnAfterLifecycleWork\(router, successRoute, "\/\(tabs\)\/premises"\);\s*\} else \{\s*leaveForm\(\);/,
+  );
+
+  // And every way out names where it goes, instead of popping a stack that may hold nothing beneath
+  // it. A batch row pushes this form straight into the Premises tab, where it can be the only
+  // screen: back then left the tab and the form stayed standing in it (owner, 2026-09-27).
+  assert.match(formSource, /const leaveForm = \(\) => \{/);
+  assert.doesNotMatch(
+    formSource,
+    /router\.back\(\)/,
+    "a way out that pops the stack is back, and it can strand the worker in this form",
   );
 });
