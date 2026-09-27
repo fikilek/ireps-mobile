@@ -34,8 +34,8 @@ for (const [name, path] of FORMS) {
     // And the worker is told plainly, not left to infer it from a colour.
     assert.match(
       source,
-      /NOT SENT TO THE OFFICE YET/,
-      "the queued panel must say the office does not have it",
+      /NOT SENT YET/,
+      "the queued panel must say plainly that it has not gone",
     );
   });
 
@@ -74,7 +74,7 @@ test("the two forms word it identically", () => {
   const [discovery, installation] = FORMS.map(([, path]) => read(path));
   for (const phrase of [
     "SAVED ON THIS PHONE",
-    "NOT SENT TO THE OFFICE YET",
+    "NOT SENT YET",
     'name={queuedNotice ? "smartphone" : "check"}',
   ]) {
     assert.ok(discovery.includes(phrase), `Meter Discovery is missing: ${phrase}`);
