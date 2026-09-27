@@ -6,10 +6,14 @@ export const PERSISTED_KEYS = ["offline"];
 // Saved data from older builds can hold parts that no longer exist
 // (e.g. irepsLookupOptionsApi, removed by UI-R003 1.4.0). Drop everything
 // except the parts we still save, keeping the offline queue untouched.
+// The kept list is fixed here on purpose: migration 3 must mean the same thing
+// even if a later version saves more parts.
+const KEPT_AT_VERSION_3 = ["offline"];
+
 export const keepOnlyPersistedKeys = (state) => {
   if (!state) return state;
   const kept = { _persist: state._persist };
-  for (const key of PERSISTED_KEYS) {
+  for (const key of KEPT_AT_VERSION_3) {
     if (key in state) kept[key] = state[key];
   }
   return kept;
