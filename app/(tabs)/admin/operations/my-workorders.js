@@ -89,6 +89,15 @@ import {
 import { removeSubmissionQueueItemsByInstructionTrnId } from "../../../../src/utils/submissionQueue";
 import { FORM_TEXT, FORM_PLACEHOLDER } from "../../../../src/theme/formColors";
 
+// UI-R005: a work bucket is one block a worker can see the edges of. The page
+// behind them is #f8fafc, so a white card on it had no edge in sunlight.
+const BUCKET_FILL = "#eef4ff";
+const BUCKET_EDGE = "#c7d9f5";
+// The squares inside a bucket - the icon, the READY badge, the count - go
+// white so they still read against the bucket's own colour.
+const BUCKET_INNER = "#ffffff";
+const BUCKET_INNER_EDGE = "#dbe6f8";
+
 const WMS_GROUPS = [
   {
     key: "METER_INSPECTION",
@@ -3441,7 +3450,7 @@ export default function WorkorderManagementSystem() {
     <SafeAreaView style={styles.container} edges={["left", "right"]}>
       <Stack.Screen
         options={{
-          title: "Workorder Management System",
+          title: "My Workorders",
           headerTitleStyle: { fontSize: 15, fontWeight: "900" },
         }}
       />
@@ -3649,7 +3658,7 @@ function AccessDeniedWorkorders({ actorRole, onBack }) {
     <SafeAreaView style={styles.container} edges={["left", "right"]}>
       <Stack.Screen
         options={{
-          title: "Workorder Management System",
+          title: "My Workorders",
           headerTitleStyle: { fontSize: 15, fontWeight: "900" },
         }}
       />
@@ -3695,7 +3704,7 @@ function BucketTypeLanding({
       contentContainerStyle={styles.scrollContent}
     >
       <Text style={styles.sectionEyebrow}>Assigned Work Queue</Text>
-      <Text style={styles.sectionTitle}>My Work Buckets</Text>
+      <Text style={styles.sectionTitle}>My Workorders Buckets</Text>
 
       <View style={styles.bucketTypeList}>
         <BucketTypeCard
@@ -5963,10 +5972,10 @@ const styles = StyleSheet.create({
   },
   bucketTypeCard: {
     minHeight: 164,
-    backgroundColor: "#ffffff",
+    backgroundColor: BUCKET_FILL,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#dbeafe",
+    borderColor: BUCKET_EDGE,
     padding: 14,
   },
   bucketTypeCardDisabled: {
@@ -5982,7 +5991,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 17,
-    backgroundColor: "#eff6ff",
+    backgroundColor: BUCKET_INNER,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -5990,7 +5999,7 @@ const styles = StyleSheet.create({
     minHeight: 32,
     borderRadius: 16,
     paddingHorizontal: 10,
-    backgroundColor: "#eff6ff",
+    backgroundColor: BUCKET_INNER,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -6042,8 +6051,8 @@ const styles = StyleSheet.create({
     minHeight: 46,
     borderRadius: 13,
     borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#f8fafc",
+    borderColor: BUCKET_INNER_EDGE,
+    backgroundColor: BUCKET_INNER,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
