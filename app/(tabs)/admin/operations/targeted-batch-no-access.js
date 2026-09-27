@@ -58,7 +58,27 @@ export default function TargetedBatchNoAccessScreen() {
   const agentUid = user?.uid || profile?.id || "SYSTEM";
   const agentName = profile?.personal?.displayName || profile?.displayName || user?.displayName || "Fieldworker";
 
-  const returnToWorkorders = () => router.dismissTo({ pathname: context.returnTo || SALES_TB_RETURN_ROUTE, params: { targetedBatchRefresh: String(Date.now()) } });
+  // A worker is never left standing on a form they have already submitted. dismissTo only works
+  // while the screen they came from is still behind them in the stack; after a reload, or when the
+  // form was opened from somewhere else, it is not, and the app answered POP_TO_TOP was not
+  // handled by any navigator and stayed where it was (owner's phone, 27 September).
+  const returnToWorkorders = () => {
+    const target = {
+      pathname: context.returnTo || SALES_TB_RETURN_ROUTE,
+      params: { targetedBatchRefresh: String(Date.now()) },
+    };
+
+    try {
+      if (router.canDismiss?.()) {
+        router.dismissTo(target);
+        return;
+      }
+    } catch (error) {
+      console.log("No Access -- dismissTo failed, replacing instead", error?.message);
+    }
+
+    router.replace(target);
+  };
   const finish = (message) => Alert.alert("No Access", message, [{ text: "OK", onPress: returnToWorkorders }]);
 
   async function captureLocation() {

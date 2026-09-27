@@ -118,3 +118,19 @@ test("the worker is not told about TRN IDs or offline queues", () => {
     "the worker is no longer told plainly where the work is",
   );
 });
+
+test("a submitted No Access form always lets the worker out", () => {
+  // POP_TO_TOP was not handled by any navigator: dismissTo needs the screen the worker came from
+  // to still be behind them. After a reload it is not, and they were left on a form they had
+  // already submitted - where the only obvious move is to submit it again.
+  assert.match(
+    noAccessSource,
+    /router\.canDismiss\?\.\(\)/,
+    "the form assumes there is always a screen behind it",
+  );
+  assert.match(
+    noAccessSource,
+    /router\.replace\(target\)/,
+    "there is no way back when the stack is empty",
+  );
+});
