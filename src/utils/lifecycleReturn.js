@@ -25,6 +25,19 @@ export function returnAfterLifecycleWork(router, href, tab = LIFECYCLE_TAB) {
   if (!pathOf(href)) return null;
 
   const move = isSameTabRoute(href, tab) ? "replace" : "navigate";
+
+  // Crossing tabs, navigate is the only move that works - but unlike replace it leaves the
+  // finished form standing in the tab being left. The worker came back to Premises later and
+  // found New Premise still open, could not get out of it, and cleared it only to meet it
+  // again (owner, 2026-09-27). So the tab being left is emptied first.
+  if (move === "navigate") {
+    try {
+      router?.dismissAll?.();
+    } catch {
+      // Already at the root of this tab: nothing to leave behind.
+    }
+  }
+
   router?.[move]?.(href);
   return move;
 }
