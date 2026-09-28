@@ -643,8 +643,12 @@ export default function FormMeterDiscovery() {
 
       premise: {
         id: resolvedPremiseId || premise?.id || "NAv",
-        address: premiseAddress || "N/Av",
-        propertyType: propType || "N/Av",
+        // RG-R001 1.1.0 section 2: there can be no premise without an address (owner, 28 Sep), so
+        // nothing is invented here. The old slashed placeholder slipped past the server's own check
+        // and read like data. A premise that has no address is a fault in the premise: the meter is
+        // refused and the office fixes the premise.
+        address: premiseAddress || "",
+        propertyType: propType || "",
       },
     };
   }
@@ -1366,7 +1370,13 @@ export default function FormMeterDiscovery() {
 
     const timestamp = new Date().toISOString();
 
+    // RG-R001 1.1.0 section 2: the phone says when the work was done, the server says when it
+    // arrived, and neither is guessed from the other. Work can sit on a phone for days with no
+    // signal, and until this it was dated the day it reached the office - so every report that
+    // counts field work by date was counting arrival dates.
     const trnMetadata = {
+      createdOnDevice: timestamp,
+      updatedOnDevice: timestamp,
       createdAt: timestamp,
       createdByUid: agentUid || "unknown_uid",
       createdByUser: agentName || "Field Agent",
@@ -2250,7 +2260,7 @@ export default function FormMeterDiscovery() {
                           fontWeight: "900",
                         }}
                       >
-                        {premise?.erfNo || "N/Av"}
+                        {premise?.erfNo || "NAv"}
                       </Text>
                     </View>
                   ),

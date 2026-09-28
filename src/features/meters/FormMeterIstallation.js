@@ -468,8 +468,11 @@ export default function FormMeterInstallation() {
 
       premise: {
         id: resolvedPremiseId || premise?.id || "NAv",
-        address: premiseAddress || "N/Av",
-        propertyType: propType || "N/Av",
+        // RG-R001 1.1.0 section 2: there can be no premise without an address, so nothing is
+        // invented here. The same placeholder was in Meter Discovery and slipped past the server's
+        // own check. A premise with no address is a fault in the premise, not something to paper over.
+        address: premiseAddress || "",
+        propertyType: propType || "",
       },
     };
   }
@@ -1106,7 +1109,10 @@ export default function FormMeterInstallation() {
 
     const timestamp = new Date().toISOString();
 
+    // RG-R001 1.1.0 section 2: when the work was done, and when it arrived. Both, always.
     const trnMetadata = {
+      createdOnDevice: timestamp,
+      updatedOnDevice: timestamp,
       createdAt: timestamp,
       createdByUid: agentUid || "unknown_uid",
       createdByUser: agentName || "Field Agent",
@@ -1773,7 +1779,7 @@ export default function FormMeterInstallation() {
                           fontWeight: "900",
                         }}
                       >
-                        {premise?.erfNo || "N/Av"}
+                        {premise?.erfNo || "NAv"}
                       </Text>
                     </View>
                   ),

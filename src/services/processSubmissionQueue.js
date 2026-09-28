@@ -1,6 +1,12 @@
 import NetInfo from "@react-native-community/netinfo";
 import { httpsCallable } from "firebase/functions";
-import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
+import {
+  deleteObject,
+  getDownloadURL,
+  getStorage,
+  ref,
+  uploadBytes,
+} from "firebase/storage";
 import { functions } from "../firebase";
 import { getMediaExtension } from "../utils/getMediaExtension";
 import { cleanupNoAccessMeterDiscoveryMedia } from "../utils/persistNoAccessMeterDiscoveryMedia";
@@ -49,6 +55,33 @@ function isStandardMeterDiscoveryQueueItem(item = {}) {
 // locally" — so every code anybody added later fell into the same trap, silently. Now the trap cannot
 // be re-made: an unknown refusal stops, like every other refusal.
 const KEEP_WAITING_CODES = ["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND"];
+
+/**
+ * RG-R001 section 10: a refused submission takes its photographs with it.
+ *
+ * The evidence has to be uploaded before the server can decide, because the server refuses work whose
+ * photographs are missing. When the work is then refused, nothing was saved and those files point at
+ * a meter that does not exist. This is the one place in the app that uploads them, so it is the place
+ * that clears them. It never throws: a file left behind must not turn a refusal into a crash - the
+ * nightly sweep takes whatever this could not.
+ */
+async function deleteUploadedEvidence({ uploadedStoragePaths = [], trnId }) {
+  if (!uploadedStoragePaths.length) return;
+
+  const storage = getStorage();
+
+  for (const path of uploadedStoragePaths) {
+    try {
+      await deleteObject(ref(storage, path));
+    } catch (error) {
+      console.warn("processSubmissionQueue -- refused evidence left behind", {
+        trnId: trnId || "NAv",
+        path,
+        message: error?.message || String(error),
+      });
+    }
+  }
+}
 
 
 const AUTO_SEND_FORM_TYPES = ["METER_DISCOVERY", "SALES_TARGETED_BATCH_NO_ACCESS"];
@@ -170,6 +203,10 @@ export const processSubmissionQueue = async ({
     const storage = getStorage();
 
     for (const item of retryableItems) {
+      // RG-R001 section 10: what this attempt put into storage, so a refusal can take it away again.
+      // It lives out here because the refusal can be thrown as well as answered.
+      const uploadedStoragePaths = [];
+
       try {
         const syncingResult = await markSubmissionQueueItemSyncing(
           item.id,
@@ -203,12 +240,14 @@ export const processSubmissionQueue = async ({
                 : "jpg";
               const fileName = `${stableId}_${mediaItem?.tag}.${extension}`;
 
-              const storageRef = ref(storage, `meters/${folder}/${fileName}`);
+              const storagePath = `meters/${folder}/${fileName}`;
+              const storageRef = ref(storage, storagePath);
 
               const response = await fetch(mediaItem.uri);
               const blob = await response.blob();
 
               await uploadBytes(storageRef, blob);
+              uploadedStoragePaths.push(storagePath);
 
               const downloadUrl = await getDownloadURL(storageRef);
 
@@ -301,12 +340,22 @@ export const processSubmissionQueue = async ({
             continue;
           }
 
-          // The server answered and refused: it stops here, in the server's own words.
+          // RG-R001 section 10: nothing was saved, so the photographs this attempt put up are
+          // orphans. They go with the refusal.
+          await deleteUploadedEvidence({
+            uploadedStoragePaths,
+            trnId: finalPayload?.id,
+          });
+
+          // The server answered and refused: it stops here. RG-R001 section 4 - the worker reads the
+          // plain sentence, and the server's own wording is kept beside it for the office.
           await markSubmissionQueueItemRefused(
             item.id,
             {
               code,
-              message: result?.message || "Submission requires review.",
+              message:
+                result?.plain || result?.message || "Submission requires review.",
+              detail: result?.message || "NAv",
               trnId: result?.trnId || finalPayload?.trnId || "NAv",
             },
             agentUid,
@@ -383,6 +432,12 @@ export const processSubmissionQueue = async ({
 
         // The server threw because it refused. It stops here, in the server's own words.
         if (isThrownRefusal(code)) {
+          // RG-R001 section 10: nothing was saved, so this attempt's photographs go too.
+          await deleteUploadedEvidence({
+            uploadedStoragePaths,
+            trnId: item?.payload?.id,
+          });
+
           await markSubmissionQueueItemRefused(
             item.id,
             {

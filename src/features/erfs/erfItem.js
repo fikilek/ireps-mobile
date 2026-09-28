@@ -41,7 +41,7 @@ export const ErfItem = React.memo(
               <Text style={styles.wardTag}>{wardNo}</Text>
             </View>
 
-            <Text style={styles.idText}>{item.id || "N/Av"}</Text>
+            <Text style={styles.idText}>{item.id || "NAv"}</Text>
 
             <View style={styles.timeRow}>
               <MaterialCommunityIcons
