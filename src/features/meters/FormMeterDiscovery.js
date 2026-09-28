@@ -64,6 +64,11 @@ import {
   waitForMeterRecord,
 } from "./normalisationHandover";
 import {
+  METER_CONFIRM_WAIT_MS,
+  captureFailureMessage,
+  readCaptureFailure,
+} from "./captureOutcome";
+import {
   canonicalizeRemainingCredit,
   getRemainingCreditValidationError,
   hydrateRemainingCreditMeter,
@@ -1864,6 +1869,41 @@ export default function FormMeterDiscovery() {
       // sitting in Saved Work for ever.
       await removeSubmissionQueueItem(activeQueueItemId);
 
+      // f01: the server taking the capture is not the same as the meter existing. The meter, the
+      // meter master, the link to the premise, the Sales record and the batch row are all made
+      // afterwards by a step behind the server, and when that step failed it said nothing at all.
+      // The worker walked away believing the meter was done, so it went out to somebody again -
+      // and the numbers stopped balancing, because a transaction with no asset behind it is counted
+      // by everything that reads transactions and by nothing that reads meters.
+      //
+      // So the phone waits for the meter itself. It costs a second or two when all is well, because
+      // the wait ends the moment the meter appears, and it costs the full wait only when something
+      // is wrong - which is exactly when the worker needs to be told.
+      const meterRecord = await waitForMeterRecord({
+        astId: cleanPayload.id,
+        timeoutMs: METER_CONFIRM_WAIT_MS,
+      });
+
+      if (!meterRecord) {
+        setInProgress(false);
+
+        const { title, body } = captureFailureMessage(
+          await readCaptureFailure(cleanPayload.id),
+        );
+
+        Alert.alert(title, body, [
+          {
+            text: "OK",
+            onPress: () => {
+              updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
+              router.replace(targetedBatchReturnTo);
+            },
+          },
+        ]);
+
+        return;
+      }
+
       // MN-R001 section 6: the finding calls for a disconnection or a
       // replacement, so the form for that work follows on from here. It is that
       // form that is the record, not the word on this one.
@@ -1894,7 +1934,8 @@ export default function FormMeterDiscovery() {
       if (followOnWork) {
         setPreparingFollowOn(followOnWork);
 
-        const astDoc = await waitForMeterRecord({ astId: cleanPayload.id });
+        // Already waited for above, so the worker is not held twice.
+        const astDoc = meterRecord;
 
         setPreparingFollowOn("");
         updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
