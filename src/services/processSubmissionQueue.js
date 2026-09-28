@@ -56,6 +56,13 @@ function isStandardMeterDiscoveryQueueItem(item = {}) {
 // be re-made: an unknown refusal stops, like every other refusal.
 const KEEP_WAITING_CODES = ["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND"];
 
+// A refusal that means "a transaction for this work already exists". Its photographs belong to that
+// transaction, so they are never deleted — the office repairs the work from them (RG-R001 section 8).
+const REFUSALS_WITH_A_SURVIVING_TRANSACTION = [
+  "REGISTRATION_INCOMPLETE",
+  "TRN_ALREADY_EXISTS",
+];
+
 /**
  * RG-R001 section 10: a refused submission takes its photographs with it.
  *
@@ -64,9 +71,26 @@ const KEEP_WAITING_CODES = ["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND"];
  * a meter that does not exist. This is the one place in the app that uploads them, so it is the place
  * that clears them. It never throws: a file left behind must not turn a refusal into a crash - the
  * nightly sweep takes whatever this could not.
+ *
+ * Two things it will not do. It runs only AFTER the refusal is recorded, so a failure to record cannot
+ * leave a retryable item pointing at deleted files. And it leaves the evidence alone when a
+ * transaction for this work survives: the path is the same for every attempt on one meter, so deleting
+ * here would strip the evidence off the very record the office is about to repair.
  */
-async function deleteUploadedEvidence({ uploadedStoragePaths = [], trnId }) {
+async function deleteUploadedEvidence({
+  uploadedStoragePaths = [],
+  trnId,
+  code = "",
+}) {
   if (!uploadedStoragePaths.length) return;
+
+  if (REFUSALS_WITH_A_SURVIVING_TRANSACTION.includes(String(code).toUpperCase())) {
+    console.log(
+      "processSubmissionQueue -- evidence kept: a transaction for this work exists",
+      { trnId: trnId || "NAv", code },
+    );
+    return;
+  }
 
   const storage = getStorage();
 
@@ -293,6 +317,14 @@ export const processSubmissionQueue = async ({
             agentName,
           );
 
+          // RG-R001 section 10: this refusal takes its photographs with it too, in the same order as
+          // the others — recorded first, then cleared.
+          await deleteUploadedEvidence({
+            uploadedStoragePaths,
+            trnId: finalPayload?.id,
+            code: "UNKNOWN_QUEUE_FORM_TYPE",
+          });
+
           continue;
         }
 
@@ -340,13 +372,6 @@ export const processSubmissionQueue = async ({
             continue;
           }
 
-          // RG-R001 section 10: nothing was saved, so the photographs this attempt put up are
-          // orphans. They go with the refusal.
-          await deleteUploadedEvidence({
-            uploadedStoragePaths,
-            trnId: finalPayload?.id,
-          });
-
           // The server answered and refused: it stops here. RG-R001 section 4 - the worker reads the
           // plain sentence, and the server's own wording is kept beside it for the office.
           await markSubmissionQueueItemRefused(
@@ -361,6 +386,16 @@ export const processSubmissionQueue = async ({
             agentUid,
             agentName,
           );
+
+          // RG-R001 section 10: nothing was saved, so this attempt's photographs are orphans and go
+          // with the refusal. AFTER the refusal is recorded, never before: if recording fails the item
+          // becomes retryable again, and a retry sends addresses of files that no longer exist
+          // (independent review, 2026-09-28).
+          await deleteUploadedEvidence({
+            uploadedStoragePaths,
+            trnId: finalPayload?.id,
+            code,
+          });
 
           continue;
         }
@@ -432,12 +467,6 @@ export const processSubmissionQueue = async ({
 
         // The server threw because it refused. It stops here, in the server's own words.
         if (isThrownRefusal(code)) {
-          // RG-R001 section 10: nothing was saved, so this attempt's photographs go too.
-          await deleteUploadedEvidence({
-            uploadedStoragePaths,
-            trnId: item?.payload?.id,
-          });
-
           await markSubmissionQueueItemRefused(
             item.id,
             {
@@ -448,6 +477,13 @@ export const processSubmissionQueue = async ({
             agentUid,
             agentName,
           );
+
+          // RG-R001 section 10, after the refusal is recorded — see the answered path above.
+          await deleteUploadedEvidence({
+            uploadedStoragePaths,
+            trnId: item?.payload?.id,
+            code,
+          });
 
           continue;
         }

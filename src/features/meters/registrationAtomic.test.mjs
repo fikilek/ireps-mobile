@@ -95,18 +95,33 @@ test("the sender keeps a list of what it put into storage", () => {
   );
 });
 
-test("an answered refusal deletes the evidence before it records the refusal", () => {
+test("an answered refusal records the refusal first, then clears the evidence", () => {
   const at = queueSource.indexOf("if (!result?.success) {");
   assert.ok(at > 0, "the answered-refusal path has moved");
 
-  const block = queueSource.slice(at, at + 1600);
+  const block = queueSource.slice(at, at + 1800);
   const deleteAt = block.indexOf("deleteUploadedEvidence({");
   const refuseAt = block.indexOf("markSubmissionQueueItemRefused(");
 
   assert.ok(deleteAt > -1, "a refused submission leaves its photographs behind");
   assert.ok(
-    deleteAt < refuseAt,
-    "the evidence is cleared after the refusal is recorded, so a failure there keeps the orphans",
+    refuseAt < deleteAt,
+    "the evidence is cleared before the refusal is recorded, so a failure recording it leaves a retryable item pointing at files that are gone",
+  );
+});
+
+test("evidence is kept when a transaction for the work survives", () => {
+  assert.match(
+    queueSource,
+    /REFUSALS_WITH_A_SURVIVING_TRANSACTION = \[\s*"REGISTRATION_INCOMPLETE"/,
+    "a refusal that means the work already reached iREPS would strip the evidence the office repairs from",
+  );
+
+  const at = queueSource.indexOf("async function deleteUploadedEvidence(");
+  assert.match(
+    queueSource.slice(at, at + 900),
+    /REFUSALS_WITH_A_SURVIVING_TRANSACTION\.includes/,
+    "the sweep does not check whether a transaction survives",
   );
 });
 
