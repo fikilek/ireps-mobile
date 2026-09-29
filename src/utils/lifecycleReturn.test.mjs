@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isSameTabRoute, returnAfterLifecycleWork } from "./lifecycleReturn.js";
+import { dismissFormStack, isSameTabRoute, returnAfterLifecycleWork } from "./lifecycleReturn.js";
 
 const fakeRouter = () => {
   const moves = [];
@@ -79,4 +79,39 @@ test("a router too old to empty a tab still moves the worker", () => {
     returnAfterLifecycleWork(router, "/(tabs)/admin/operations/my-workorders", "/(tabs)/premises"),
     "navigate",
   );
+});
+
+// The owner's phone, 29 September: a red box across the screen after a submit that worked - "The action
+// 'POP_TO_TOP' was not handled by any navigator". dismissAll with nothing behind it makes React Navigation
+// log an error, and a try/catch does not stop it, because nothing is thrown. So we ask first.
+test("a stack with nothing behind it is not dismissed, so no red box", () => {
+  const moves = [];
+  const router = {
+    canDismiss: () => false,
+    dismissAll: () => moves.push(["dismissAll"]),
+    replace: (href) => moves.push(["replace", href]),
+    navigate: (href) => moves.push(["navigate", href]),
+  };
+
+  assert.equal(dismissFormStack(router), false);
+  assert.deepEqual(moves, [], "it asked, was told no, and left the navigator alone");
+});
+
+test("a stack with something behind it is emptied", () => {
+  const moves = [];
+  const router = {
+    canDismiss: () => true,
+    dismissAll: () => moves.push(["dismissAll"]),
+  };
+
+  assert.equal(dismissFormStack(router), true);
+  assert.deepEqual(moves, [["dismissAll"]]);
+});
+
+test("a router that cannot answer still gets emptied, as it always was", () => {
+  const moves = [];
+  const router = { dismissAll: () => moves.push(["dismissAll"]) };
+
+  assert.equal(dismissFormStack(router), true);
+  assert.deepEqual(moves, [["dismissAll"]], "a form left open behind the worker is worse than a warning");
 });

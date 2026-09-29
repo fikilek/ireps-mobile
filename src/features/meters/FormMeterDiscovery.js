@@ -40,6 +40,7 @@ import { scheduleMeterDiscoveryQueueSyncRetry } from "../../services/startMeterD
 import { getMediaExtension } from "../../utils/getMediaExtension";
 import { persistNoAccessMeterDiscoveryMedia } from "../../utils/persistNoAccessMeterDiscoveryMedia";
 import { getPremiseQueueItemByPremiseId } from "../../utils/premiseSubmissionQueue";
+import { dismissFormStack } from "../../utils/lifecycleReturn";
 import {
   addSubmissionQueueItem,
   getSubmissionQueue,
@@ -2302,7 +2303,9 @@ export default function FormMeterDiscovery() {
                     <TouchableOpacity
                       // onPress={() => router.back()}
                       onPress={() => {
-                        router.dismissAll();
+                        // Ask before emptying the stack: dismissAll with nothing behind it paints
+                        // "POP_TO_TOP was not handled" in red across the worker's screen.
+                        dismissFormStack(router);
                         router.replace(targetedBatchReturnTo);
                       }}
                       style={{ marginLeft: 10, padding: 5 }}

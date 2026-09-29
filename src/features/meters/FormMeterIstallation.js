@@ -39,6 +39,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { useGetServiceProvidersQuery } from "../../redux/spApi";
 import { useAddTrnMutation } from "../../redux/trnsApi";
 import { getPremiseQueueItemByPremiseId } from "../../utils/premiseSubmissionQueue";
+import { dismissFormStack } from "../../utils/lifecycleReturn";
 import {
   addSubmissionQueueItem,
   getSubmissionQueueItemById,
@@ -1757,7 +1758,9 @@ export default function FormMeterInstallation() {
                     <TouchableOpacity
                       // onPress={() => router.back()}
                       onPress={() => {
-                        router.dismissAll();
+                        // Ask before emptying the stack: dismissAll with nothing behind it paints
+                        // "POP_TO_TOP was not handled" in red across the worker's screen.
+                        dismissFormStack(router);
                         router.replace("/(tabs)/premises");
                       }}
                       style={{ marginLeft: 10, padding: 5 }}
