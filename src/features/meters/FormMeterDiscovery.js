@@ -42,6 +42,7 @@ import { persistNoAccessMeterDiscoveryMedia } from "../../utils/persistNoAccessM
 import { getPremiseQueueItemByPremiseId } from "../../utils/premiseSubmissionQueue";
 import {
   addSubmissionQueueItem,
+  getSubmissionQueue,
   getSubmissionQueueItemById,
   removeSubmissionQueueItem,
   updateSubmissionQueueItem,
@@ -1552,8 +1553,18 @@ export default function FormMeterDiscovery() {
       // times on 29 September, and the server was never asked once. In the field that is worse than a
       // wasted test — a worker refused about one meter would go on being refused about it after correcting
       // the number, with no way out but to leave the form and start again, which nobody would guess.
-      if (activeQueueItemId) {
-        const refusedBefore = await getSubmissionQueueItemById(activeQueueItemId);
+      // The queue finds an existing attempt by its TRN ID, not by the queue item's own id (see
+      // addSubmissionQueueItem), and hands it back untouched — refused and all. So this looks for it the
+      // same way, or the check never fires on a fresh form, where there is no queue item id yet.
+      {
+        const queueNow = await getSubmissionQueue();
+        const sameTrn = String(cleanPayload?.id || "").trim();
+        const refusedBefore = sameTrn
+          ? queueNow.find(
+              (item) =>
+                String(item?.payload?.trnId || item?.payload?.id || "").trim() === sameTrn,
+            )
+          : null;
 
         if (refusedBefore?.status === "CONFLICT") {
           const freshTrnId = buildMeterDiscoveryTrnId({
