@@ -2285,15 +2285,9 @@ export default function FormMeterDiscovery() {
           //   `handleSubmitDiscovery --values?.ast?.normalisation?.actionTaken`,
           //   values?.ast?.normalisation?.actionTaken,
           // );
-          // console.log(
-          //   `FormMeterDiscovery --values`,
-          //   JSON.stringify(values, null, 2),
-          // );
-
-          // console.log(`FormMeterDiscovery --values`, values);
-          // console.log(` `);
-          // console.log(`handleSubmitDiscovery --errors`, errors);
-          console.log(`errors`, JSON.stringify(errors, null, 2));
+          // The whole validation state used to be logged here on every render, which buried everything
+          // else in the console - including the [MD SUBMIT] lines that found the refusal replay on
+          // 29 September. Submit already tells the worker what is missing, in the field itself.
 
           return (
             <ScrollView
