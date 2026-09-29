@@ -173,3 +173,57 @@ test("a premise that is not ready yet still waits instead of being refused", () 
     /const KEEP_WAITING_CODES = \["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND"\]/,
   );
 });
+
+// ---------------------------------------------------------------------------
+// A Submit after a refusal is a NEW attempt
+//
+// The owner, 29 September, testing the batch refusals: he changed the anomaly four times on one form and
+// the server was never asked once. A capture iREPS refused is finished — nothing was saved — but the form
+// kept the refused queue item, the sender skips refused items by design, and the form then showed the
+// stored refusal again. In the field a worker refused about one meter would go on being refused about it
+// after correcting the number, with no way out but to leave the form and start again.
+// ---------------------------------------------------------------------------
+
+test("a refused capture is not submitted again under its own id", () => {
+  const at = discoverySource.indexOf("let activeQueueItemId = queueItemId || null;");
+  assert.ok(at > 0, "the submit path has moved");
+
+  const block = discoverySource.slice(at, at + 3000);
+  assert.match(
+    block,
+    /refusedBefore\?\.status === "CONFLICT"/,
+    "the form does not notice that this capture was already refused",
+  );
+  assert.match(
+    block,
+    /cleanPayload\.id = freshTrnId/,
+    "the new attempt reuses the refused capture's id, so the server answers about the old one",
+  );
+  assert.match(
+    block,
+    /activeQueueItemId = null/,
+    "the new attempt reuses the refused queue item, which the sender skips",
+  );
+});
+
+test("the new attempt uploads its own photographs, and keeps any it cannot", () => {
+  const at = discoverySource.indexOf("let activeQueueItemId = queueItemId || null;");
+  const block = discoverySource.slice(at, at + 3000);
+
+  assert.match(
+    block,
+    /item\?\.uri \? \{ \.\.\.item, url: null \} : item/,
+    "a refused attempt's files were deleted with it, so anything still on the phone must go up again",
+  );
+});
+
+test("a capture that was not refused keeps its id, as the rule requires", () => {
+  const at = discoverySource.indexOf("let activeQueueItemId = queueItemId || null;");
+  const block = discoverySource.slice(at, at + 3000);
+
+  // The reset sits behind the refusal test, so a timeout or an offline save still asks again with the
+  // same TRN ID - RG-R001 section 5, one capture one id.
+  const refusalAt = block.indexOf('refusedBefore?.status === "CONFLICT"');
+  const resetAt = block.indexOf("cleanPayload.id = freshTrnId");
+  assert.ok(refusalAt > -1 && resetAt > refusalAt, "the id is replaced outside the refusal case");
+});

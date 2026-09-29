@@ -1544,6 +1544,41 @@ export default function FormMeterDiscovery() {
 
       let activeQueueItemId = queueItemId || null;
 
+      // RG-R001 section 5: one capture keeps one TRN ID, so a phone asking again after a lost answer is
+      // never a second record. A capture iREPS REFUSED is a different matter — nothing was saved, and the
+      // next Submit is a NEW attempt that deserves a real answer.
+      //
+      // Without this the form replayed the stored refusal for ever: the owner changed the anomaly four
+      // times on 29 September, and the server was never asked once. In the field that is worse than a
+      // wasted test — a worker refused about one meter would go on being refused about it after correcting
+      // the number, with no way out but to leave the form and start again, which nobody would guess.
+      if (activeQueueItemId) {
+        const refusedBefore = await getSubmissionQueueItemById(activeQueueItemId);
+
+        if (refusedBefore?.status === "CONFLICT") {
+          const freshTrnId = buildMeterDiscoveryTrnId({
+            wardPcode,
+            erfNo: premise?.erfNo,
+            meterType: currentMissionType,
+          });
+
+          console.log("[MD SUBMIT] the last attempt was refused, starting a new one", {
+            refusedTrnId: cleanPayload?.id,
+            refusedQueueItemId: activeQueueItemId,
+            newTrnId: freshTrnId,
+          });
+
+          cleanPayload.id = freshTrnId;
+          // The refused attempt's photographs were deleted with it (RG-R001 section 10) and its files were
+          // named after its own TRN ID, so anything still on the phone is uploaded again under the new one.
+          // A picture with no local file left keeps the address it has rather than losing its evidence.
+          cleanPayload.media = (cleanPayload.media || []).map((item) =>
+            item?.uri ? { ...item, url: null } : item,
+          );
+          activeQueueItemId = null;
+        }
+      }
+
       const persistMeterDraftToQueue = async () => {
         const nextContext = {
           meterNo: values?.ast?.astData?.astNo || "NAv",
@@ -1780,6 +1815,21 @@ export default function FormMeterDiscovery() {
       // This is the shape the No Access path above has always had, and it never lost a capture.
       const persistResult = await persistMeterDraftToQueue();
 
+      // Debug aid, asked for on 29 September while testing the batch refusals: the phone kept showing a
+      // refusal the server had never been asked for, because a queue item already marked Refused is never
+      // sent again. These three lines say what is actually being sent, and what came back.
+      console.log("[MD SUBMIT] sending", {
+        trnId: cleanPayload?.id,
+        queueItemId: activeQueueItemId,
+        queueItemStatus: persistResult?.queueItem?.status,
+        meterNo: cleanPayload?.ast?.astData?.astNo,
+        anomaly: cleanPayload?.ast?.anomalies?.anomaly,
+        anomalyDetail: cleanPayload?.ast?.anomalies?.anomalyDetail,
+        normalisation: cleanPayload?.ast?.normalisation?.actionTaken,
+        premiseId: cleanPayload?.accessData?.premise?.id,
+        erfNo: cleanPayload?.accessData?.erfNo,
+      });
+
       if (!persistResult?.success || !activeQueueItemId) {
         Alert.alert(
           "Draft Save Failed",
@@ -1843,6 +1893,15 @@ export default function FormMeterDiscovery() {
       }
 
       const syncedQueueItem = await getSubmissionQueueItemById(activeQueueItemId);
+
+      console.log("[MD SUBMIT] answer", {
+        trnId: cleanPayload?.id,
+        queueItemId: activeQueueItemId,
+        status: syncedQueueItem?.status,
+        code: syncedQueueItem?.result?.code,
+        message: syncedQueueItem?.result?.message,
+        sentAt: syncedQueueItem?.result?.at || syncedQueueItem?.updatedAt,
+      });
 
       // A refusal iREPS decided on stops here and says why. It is never retried, so the worker
       // is not told it will be sent later.
