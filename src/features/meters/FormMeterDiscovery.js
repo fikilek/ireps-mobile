@@ -27,6 +27,7 @@ import {
 import { ElectricitySections } from "../../../components/forms/ElectricitySections";
 import { IrepsFieldCommentSection } from "../../../components/forms/IrepsFieldCommentSection";
 import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
+import { buildMeterDiscoveryTrnId } from "./meterDiscoveryTrnId";
 import { WaterSections } from "../../../components/forms/WaterSections";
 import { ScreenLock } from "../../../components/SceenLock";
 import { useGeo } from "../../context/GeoContext";
@@ -86,23 +87,6 @@ import {
   isFormOptionPhotoRequired,
   normalisationPhotoRequired,
 } from "./formOptions";
-
-function buildMeterDiscoveryTrnId({ wardPcode, erfNo, meterType }) {
-  const ts = Date.now();
-
-  const safeWardPcode = String(wardPcode || "NAv")
-    .replace(/[^A-Za-z0-9]/g, "")
-    .slice(0, 12);
-
-  const safeErfNo = String(erfNo || "NAv")
-    .replace(/[^A-Za-z0-9]/g, "")
-    .slice(0, 12);
-
-  const typeCode =
-    meterType === "water" ? "WTR" : meterType === "electricity" ? "ELC" : "NA";
-
-  return `TRN_MDIS_${ts}_${typeCode}_${safeWardPcode}_${safeErfNo}`;
-}
 
 function toLatLng(value) {
   if (!value) return null;

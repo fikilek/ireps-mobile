@@ -49,7 +49,6 @@ import {
   TARGETED_BATCH_INTENTS,
 } from "../../../../src/features/targetedBatches/targetedBatchActions";
 import { BATCH_DISCOVERY_REASONS } from "../../../../src/features/targetedBatches/targetedBatchContextCarry";
-import { buildTargetedBatchNoAccessContext } from "../../../../src/features/targetedBatches/targetedBatchNoAccess";
 import {
   filterTargetedBatchRowsByStatus,
   nextTargetedBatchStatusFilter,
@@ -1789,15 +1788,27 @@ export default function WorkorderManagementSystem() {
         } else if (
           pending.intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS
         ) {
+          // NA-R003: a no access from a batch row is the same no access as anywhere else,
+          // on the same screen. No premise is required to get here - a worker sent to an ERF
+          // may not have made the premise yet, and could not get in to make it.
+          const naBatch = buildTargetedBatchContextFromRow({
+            bucket: selectedBucket,
+            row: currentRow,
+          });
+
           navigationTarget = {
-            pathname: "/(tabs)/admin/operations/targeted-batch-no-access",
+            pathname: "/(tabs)/admin/operations/no-access",
             params: {
-              context: JSON.stringify(
-                buildTargetedBatchNoAccessContext({
-                  bucket: selectedBucket,
-                  row: currentRow,
-                }),
-              ),
+              context: JSON.stringify({
+                erfId: naBatch?.erfId || "",
+                erfNo: naBatch?.erfNo || "",
+                premiseId: naBatch?.premiseId || null,
+                wardPcode: currentRow?.scope?.wardPcode || "",
+                meterNo: naBatch?.targetedMeterNo || "",
+                tbId: naBatch?.tbId || "",
+                targetedBatchContext: naBatch || null,
+                returnTo: "/(tabs)/admin/operations/my-workorders",
+              }),
             },
           };
         } else if (pending.intent === TARGETED_BATCH_INTENTS.OPEN_AST) {

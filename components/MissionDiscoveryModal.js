@@ -5,7 +5,10 @@ import { StyleSheet, View } from "react-native";
 import { Button, Modal, Portal, Surface, Text } from "react-native-paper";
 import { useDiscovery } from "../src/context/DiscoveryContext";
 import { useGeo } from "../src/context/GeoContext";
-import { serializeTargetedBatchContext } from "../src/features/premises/targetedBatchPremiseContext";
+import {
+  normalizeTargetedBatchContext,
+  serializeTargetedBatchContext,
+} from "../src/features/premises/targetedBatchPremiseContext";
 
 export default function MissionDiscoveryModal() {
   const router = useRouter();
@@ -20,29 +23,38 @@ export default function MissionDiscoveryModal() {
      Handlers (AUTO ACTION)
   ----------------------------- */
 
+  // No Access rules NA-R003 (1.2.0): ONE No Access button, ONE destination, and it is NOT a
+  // transaction form.
+  //
+  // This used to fork - work carried from a batch row went to a separate No Access screen,
+  // work that was not went into the Meter Discovery form in no-access mode. The worker tapped
+  // the same button and could not tell which they had been given, and the two were written by
+  // different code holding different standards.
+  //
+  // A worker who has no access never opens a transaction form. There is nothing in it for
+  // them: the form exists to record a meter, and there is no meter.
   const goNoAccess = () => {
     closeMissionDiscovery();
 
-    if (targetedBatchContext) {
-      router.push({
-        pathname: "/(tabs)/admin/operations/targeted-batch-no-access",
-        params: {
-          context: targetedBatchContext,
-        },
-      });
-      return;
-    }
-
-    updateGeo({
-      selectedPremise: mission?.premise || null,
-      lastSelectionType: "PREMISE",
-    });
+    const batch = normalizeTargetedBatchContext(mission?.targetedBatchContext);
+    const premise = mission?.premise || null;
 
     router.push({
-      pathname: "/(tabs)/premises/form",
+      pathname: "/(tabs)/admin/operations/no-access",
       params: {
-        premiseId,
-        action: JSON.stringify({ access: "no", meterType: "" }),
+        context: JSON.stringify({
+          // NA-R043: the ERF is what the worker could not reach. It comes from the premise when
+          // there is one and from the batch row when there is not - the row always has one.
+          erfId: premise?.erfId || batch?.erfId || "",
+          erfNo: premise?.erfNo || batch?.erfNo || "",
+          // NA-R084.1: carried only if it exists now. Never looked up, never filled in later.
+          premiseId: premiseId || batch?.premiseId || null,
+          wardPcode: premise?.parents?.wardPcode || "",
+          meterNo: batch?.targetedMeterNo || "",
+          tbId: batch?.tbId || "",
+          targetedBatchContext: batch || null,
+          returnTo: batch?.returnTo || "/(tabs)/premises",
+        }),
       },
     });
   };
