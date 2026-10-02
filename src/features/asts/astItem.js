@@ -16,6 +16,12 @@ import { useGeo } from "../../context/GeoContext";
 import { useWarehouse } from "../../context/WarehouseContext";
 import { useAuth } from "../../hooks/useAuth";
 import { useGetServiceProvidersQuery } from "../../redux/spApi";
+import {
+  ACCESS_GATE,
+  NO_ACCESS_ROUTE,
+  assetCanRecordNoAccess,
+  buildAssetNoAccessContext,
+} from "../meters/accessGate";
 
 const getMeterStatusConfig = (state = "") => {
   const s = String(state || "UNKNOWN").toUpperCase();
@@ -777,7 +783,43 @@ const AstItem = ({ item }) => {
     });
   };
 
+  // No Access rules NA-R003 (1.3.0): THE GATE. Every one of the five transactions a meter can
+  // carry - inspection, disconnection, reconnection, reading, removal - is opened through
+  // here, so the access question is asked once, in one place, for all five.
+  //
+  // A worker who did not reach the meter never opens the transaction form. The form exists to
+  // record work on a meter, and there is no meter to work on.
   const launchFieldLifecycle = ({ pathname, trnType }) => {
+    Alert.alert(ACCESS_GATE.title, ACCESS_GATE.message, [
+      {
+        text: ACCESS_GATE.no,
+        style: "destructive",
+        onPress: () => {
+          if (!assetCanRecordNoAccess(item)) {
+            // NA-R044: a no access is to a premise. A meter cannot exist without one, so this
+            // is a fault in the meter record rather than something the worker can fix.
+            Alert.alert(
+              "This meter has no premise",
+              "A No Access says which premise you could not get into, and this meter has none linked. Report it to the office.",
+            );
+            return;
+          }
+
+          router.push({
+            pathname: NO_ACCESS_ROUTE,
+            params: {
+              context: JSON.stringify(
+                buildAssetNoAccessContext(item, { returnTo: "/(tabs)/asts" }),
+              ),
+            },
+          });
+        },
+      },
+      { text: ACCESS_GATE.yes, onPress: () => openLifecycleForm({ pathname, trnType }) },
+    ]);
+  };
+
+  const openLifecycleForm = ({ pathname, trnType }) => {
     router.push({
       pathname,
       params: {
