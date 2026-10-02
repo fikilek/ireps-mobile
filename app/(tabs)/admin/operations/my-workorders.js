@@ -1804,6 +1804,7 @@ export default function WorkorderManagementSystem() {
                 erfId: naBatch?.erfId || "",
                 erfNo: naBatch?.erfNo || "",
                 premiseId: naBatch?.premiseId || null,
+                premiseAddress: rowAddressLine(currentRow) || "",
                 wardPcode: currentRow?.scope?.wardPcode || "",
                 meterNo: naBatch?.targetedMeterNo || "",
                 tbId: naBatch?.tbId || "",

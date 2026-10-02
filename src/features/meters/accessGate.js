@@ -35,6 +35,8 @@ export function buildAssetNoAccessContext(asset = {}, { returnTo, trnType } = {}
     erfId: accessData?.erfId || "",
     erfNo: accessData?.erfNo || "NAv",
     premiseId: accessData?.premise?.id || null,
+    premiseAddress: accessData?.premise?.address || "",
+    premisePropertyType: accessData?.premise?.propertyType || "",
     wardPcode: accessData?.parents?.wardPcode || "",
     meterNo: asset?.ast?.astData?.astNo || asset?.astNo || "",
     astId: asset?.id || "",

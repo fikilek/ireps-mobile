@@ -50,6 +50,8 @@ export default function MissionDiscoveryModal() {
           erfNo: premise?.erfNo || batch?.erfNo || "",
           // NA-R084.1: carried only if it exists now. Never looked up, never filled in later.
           premiseId: premiseId || batch?.premiseId || null,
+          premiseAddress: premise?.address || "",
+          premisePropertyType: premise?.propertyType || "",
           wardPcode: premise?.parents?.wardPcode || "",
           meterNo: batch?.targetedMeterNo || "",
           tbId: batch?.tbId || "",

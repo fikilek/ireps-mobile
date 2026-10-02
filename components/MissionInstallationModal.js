@@ -32,6 +32,8 @@ export default function MissionInstallationModal() {
           trnType: "METER_INSTALLATION",
           // NA-R044: a no access is to a premise. The gate is opened from one, so it is here.
           premiseId: premiseId || null,
+          premiseAddress: premise?.address || "",
+          premisePropertyType: premise?.propertyType || "",
           erfId: premise?.erfId || "",
           erfNo: premise?.erfNo || "NAv",
           wardPcode: premise?.parents?.wardPcode || "",

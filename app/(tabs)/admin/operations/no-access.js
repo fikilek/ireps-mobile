@@ -152,7 +152,16 @@ export default function NoAccessScreen() {
         trnType,
         erfId: context.erfId,
         erfNo: context.erfNo || "NAv",
-        premise: context.premiseId ? { id: context.premiseId } : null,
+        // Every transaction writes premise as { id, address, propertyType }. A no access
+        // writes the same, so a worker reading their queue sees WHERE the work was, and so a
+        // no access record does not read differently from every other record.
+        premise: context.premiseId
+          ? {
+              id: context.premiseId,
+              address: context.premiseAddress || "NAv",
+              propertyType: context.premisePropertyType || "NAv",
+            }
+          : null,
         access: {
           hasAccess: "no",
           reasonCode: value.reasonCode,
