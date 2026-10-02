@@ -29,7 +29,6 @@ function isStandardMeterDiscoveryQueueItem(item = {}) {
     .trim()
     .toUpperCase();
 
-  if (formType === "SALES_TARGETED_BATCH_NO_ACCESS") return false;
   if (formType === "METER_DISCOVERY") return true;
   if (formType) return false;
 
@@ -108,7 +107,8 @@ async function deleteUploadedEvidence({
 }
 
 
-const AUTO_SEND_FORM_TYPES = ["METER_DISCOVERY", "SALES_TARGETED_BATCH_NO_ACCESS"];
+// A no access is a METER_DISCOVERY now (NA-R003), so it auto-sends with the rest.
+const AUTO_SEND_FORM_TYPES = ["METER_DISCOVERY"];
 
 function isAutoSendQueueItem(item = {}) {
   const formType = String(item?.formType || "")

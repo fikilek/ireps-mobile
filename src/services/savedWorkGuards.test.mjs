@@ -90,11 +90,13 @@ test("the background sender is told which forms are proved, not left to guess", 
   const list = queueSource.match(/const AUTO_SEND_FORM_TYPES = \[([^\]]+)\]/);
 
   assert.ok(list, "there is no list of forms proved safe to send in the background");
-  assert.match(list[1], /"METER_DISCOVERY"/, "Meter Discovery is no longer sent in the background");
+  // A no access IS a Meter Discovery now (NA-R003), and travels under that form type, so this
+  // one entry carries both promises: a saved discovery and a saved no access each tell the
+  // worker they will send by themselves, and the background sender has to be allowed to.
   assert.match(
     list[1],
-    /"SALES_TARGETED_BATCH_NO_ACCESS"/,
-    "Targeted Batch No Access still promises to send by itself without anything sending it",
+    /"METER_DISCOVERY"/,
+    "a saved Meter Discovery or No Access promises to send by itself with nothing sending it",
   );
 });
 

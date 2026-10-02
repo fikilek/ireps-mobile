@@ -851,10 +851,6 @@ export function getCallableNameForSubmissionQueueItem(queueItem = {}) {
     .trim()
     .toUpperCase();
 
-  if (formType === "SALES_TARGETED_BATCH_NO_ACCESS") {
-    return "recordTargetedBatchNoAccessCallable";
-  }
-
   if (formType === "METER_INSTALLATION" || trnType === "METER_INSTALLATION") {
     return "onMeterInstallationCallable";
   }

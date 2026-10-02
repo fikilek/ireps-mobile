@@ -81,7 +81,6 @@ const isStandardMeterDiscoveryQueueItem = (item = {}) => {
     .trim()
     .toUpperCase();
 
-  if (formType === "SALES_TARGETED_BATCH_NO_ACCESS") return false;
   if (formType === "METER_DISCOVERY") return true;
   if (formType) return false;
 
