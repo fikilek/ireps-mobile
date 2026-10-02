@@ -554,12 +554,7 @@ export default function FormMeterDiscovery() {
   const [preparingFollowOn, setPreparingFollowOn] = useState("");
   // console.log(`FormMeterDiscovery ----showSuccess`, showSuccess);
 
-  // No Access rules NA-R043 (1.2.0): the ERF comes from the premise when there is one, and
-  // from the batch row when there is not. A worker sent by a batch is sent TO AN ERF, and the
-  // row has always known which - the form simply never asked it. Without this, work on a row
-  // whose premise does not exist yet had no ERF to show or to send, which is the whole reason
-  // a separate No Access screen existed.
-  const finalErfNo = premise?.erfNo || targetedBatchContext?.erfNo || "NAv";
+  const finalErfNo = premise?.erfNo || "NAv";
   // console.log(`FormMeterDiscovery ----finalErfNo`, finalErfNo);
 
   const accessInitValues = {
@@ -636,10 +631,8 @@ export default function FormMeterDiscovery() {
     const timestamp = new Date().toISOString();
 
     return {
-      // NA-R043: the ERF id is required on every no access. The premise has it once there is
-      // one; before that the batch row does, and it always does.
-      erfId: premise?.erfId || targetedBatchContext?.erfId || "",
-      erfNo: premise?.erfNo || targetedBatchContext?.erfNo || "",
+      erfId: premise?.erfId || "",
+      erfNo: premise?.erfNo || "",
       trnType: "METER_DISCOVERY",
 
       parents: {
