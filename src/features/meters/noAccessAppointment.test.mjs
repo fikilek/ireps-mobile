@@ -164,3 +164,23 @@ test("an unknown worker reads NAv, never blank", () => {
   assert.equal(appointment.madeByUid, "NAv");
   assert.equal(appointment.madeByUser, "NAv");
 });
+
+/* ------------------------------------------------------------------ *
+ * NA-R003 — the transaction id carries the type the worker was doing
+ * ------------------------------------------------------------------ */
+
+test("every transaction type builds its own id, and a no access says so", async () => {
+  const { buildNoAccessTrnId, TRN_PREFIX_BY_TYPE } = await import("./meterDiscoveryTrnId.js");
+
+  for (const [trnType, prefix] of Object.entries(TRN_PREFIX_BY_TYPE)) {
+    const id = buildNoAccessTrnId({ trnType, wardPcode: "KZN241W6", erfNo: "5214" });
+    assert.ok(id.startsWith(`${prefix}_`), `${trnType} must carry ${prefix}`);
+    assert.match(id, /_NA_/, "the id says it was a no access");
+    assert.ok(id.endsWith("_KZN241W6_5214"), "the id can be placed from the id alone");
+  }
+});
+
+test("a transaction type nobody declared is refused rather than guessed", async () => {
+  const { buildNoAccessTrnId } = await import("./meterDiscoveryTrnId.js");
+  assert.throws(() => buildNoAccessTrnId({ trnType: "METER_VENDING" }));
+});

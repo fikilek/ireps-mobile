@@ -59,3 +59,9 @@ test("the context never invents an ERF number - it reads NAv", () => {
   );
   assert.equal(context.erfNo, "NAv");
 });
+
+// NA-R003 (1.3.0): a no access is a transaction OF THE TYPE the worker was sent to do.
+test("a no access on a disconnection is a disconnection, not a discovery", () => {
+  const context = buildAssetNoAccessContext(asset(), { trnType: "METER_DISCONNECTION" });
+  assert.equal(context.trnType, "METER_DISCONNECTION");
+});

@@ -26,10 +26,12 @@ export const NO_ACCESS_ROUTE = "/(tabs)/admin/operations/no-access";
  * never has to invent one, and if it is ever missing the server refuses rather than recording
  * something nobody can act on.
  */
-export function buildAssetNoAccessContext(asset = {}, { returnTo } = {}) {
+export function buildAssetNoAccessContext(asset = {}, { returnTo, trnType } = {}) {
   const accessData = asset?.accessData || {};
 
   return {
+    // NA-R003: a no access on a disconnection is a disconnection that could not be done.
+    trnType: trnType || "METER_DISCOVERY",
     erfId: accessData?.erfId || "",
     erfNo: accessData?.erfNo || "NAv",
     premiseId: accessData?.premise?.id || null,

@@ -21,7 +21,7 @@ import { Surface, Text } from "react-native-paper";
 
 import { IrepsNoAccessForm } from "../../../../components/forms/IrepsNoAccessForm";
 import { ForensicFooter } from "../../../../src/features/meters/ForensicFooter";
-import { buildMeterDiscoveryTrnId } from "../../../../src/features/meters/meterDiscoveryTrnId";
+import { buildNoAccessTrnId } from "../../../../src/features/meters/meterDiscoveryTrnId";
 import { isCompleteNoAccess } from "../../../../src/features/meters/noAccessReasons";
 import {
   NO_ACCESS_PROGRESS,
@@ -70,12 +70,13 @@ export default function NoAccessScreen() {
 
   // The id carries the ward and the ERF number and can never be rewritten, so it is built from
   // what the work arrived with - not from anything this screen decides.
+  // NA-R003: a no access is a transaction OF THE TYPE the worker was sent to do. A no access
+  // on a disconnection is a disconnection that could not be done, not a discovery, and it
+  // carries that type's own id prefix like every other transaction of that type.
+  const trnType = String(context.trnType || "METER_DISCOVERY").toUpperCase();
+
   const trnId = useRef(
-    buildMeterDiscoveryTrnId({
-      wardPcode: context.wardPcode,
-      erfNo: context.erfNo,
-      meterType: "NA",
-    }),
+    buildNoAccessTrnId({ trnType, wardPcode: context.wardPcode, erfNo: context.erfNo }),
   ).current;
 
   const capturedAt = useRef(new Date().toISOString()).current;
@@ -145,7 +146,7 @@ export default function NoAccessScreen() {
       location,
       capturedAt,
       accessData: {
-        trnType: "METER_DISCOVERY",
+        trnType,
         erfId: context.erfId,
         erfNo: context.erfNo || "NAv",
         premise: context.premiseId ? { id: context.premiseId } : null,
@@ -199,10 +200,10 @@ export default function NoAccessScreen() {
 
       // OF-R001: it is on the phone before any network work is attempted.
       const queued = await addSubmissionQueueItem({
-        formType: "METER_DISCOVERY",
+        formType: trnType,
         payload,
         context: {
-          trnType: "METER_DISCOVERY",
+          trnType,
           trnId,
           erfId: context.erfId,
           erfNo: context.erfNo || "NAv",

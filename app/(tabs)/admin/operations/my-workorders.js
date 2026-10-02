@@ -1800,6 +1800,7 @@ export default function WorkorderManagementSystem() {
             pathname: "/(tabs)/admin/operations/no-access",
             params: {
               context: JSON.stringify({
+                trnType: "METER_DISCOVERY",
                 erfId: naBatch?.erfId || "",
                 erfNo: naBatch?.erfNo || "",
                 premiseId: naBatch?.premiseId || null,

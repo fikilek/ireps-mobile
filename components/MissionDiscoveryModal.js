@@ -43,6 +43,7 @@ export default function MissionDiscoveryModal() {
       pathname: "/(tabs)/admin/operations/no-access",
       params: {
         context: JSON.stringify({
+          trnType: "METER_DISCOVERY",
           // NA-R043: the ERF is what the worker could not reach. It comes from the premise when
           // there is one and from the batch row when there is not - the row always has one.
           erfId: premise?.erfId || batch?.erfId || "",

@@ -809,7 +809,7 @@ const AstItem = ({ item }) => {
             pathname: NO_ACCESS_ROUTE,
             params: {
               context: JSON.stringify(
-                buildAssetNoAccessContext(item, { returnTo: "/(tabs)/asts" }),
+                buildAssetNoAccessContext(item, { returnTo: "/(tabs)/asts", trnType }),
               ),
             },
           });

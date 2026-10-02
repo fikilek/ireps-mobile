@@ -17,19 +17,26 @@ export default function MissionInstallationModal() {
      Handlers (AUTO ACTION)
   ----------------------------- */
 
+  // No Access rules NA-R003 (1.3.0): a worker who has no access never opens a transaction
+  // form. The Installation form no longer contains a no access, so this goes to the one No
+  // Access screen, exactly as Meter Discovery's gate does.
   const goNoAccess = () => {
     closeMissionInstallation();
 
-    updateGeo({
-      selectedPremise: mission?.premise || null,
-      lastSelectionType: "PREMISE",
-    });
+    const premise = mission?.premise || null;
 
     router.push({
-      pathname: "/(tabs)/premises/form-meter-installation",
+      pathname: "/(tabs)/admin/operations/no-access",
       params: {
-        premiseId,
-        action: JSON.stringify({ access: "no", meterType: "" }),
+        context: JSON.stringify({
+          trnType: "METER_INSTALLATION",
+          // NA-R044: a no access is to a premise. The gate is opened from one, so it is here.
+          premiseId: premiseId || null,
+          erfId: premise?.erfId || "",
+          erfNo: premise?.erfNo || "NAv",
+          wardPcode: premise?.parents?.wardPcode || "",
+          returnTo: "/(tabs)/premises",
+        }),
       },
     });
   };
