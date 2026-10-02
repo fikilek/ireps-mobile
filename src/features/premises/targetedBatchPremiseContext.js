@@ -42,6 +42,10 @@ export function normalizeTargetedBatchContext(value) {
     rowNo: Number.isInteger(rowNo) && rowNo > 0 ? rowNo : null,
     salesDocId: cleanText(value?.salesDocId),
     erfId: cleanText(value?.erfId),
+    // No Access rules NA-R043: the batch row knows its ERF number and the record should carry
+    // it. The Discovery form took the number from the premise, so work with no premise yet
+    // had no number to show or send.
+    erfNo: cleanText(value?.erfNo),
     premiseId: cleanText(value?.premiseId),
     targetedMeterNo: firstText(value?.targetedMeterNo, value?.meterNo),
     meterNo: firstText(value?.targetedMeterNo, value?.meterNo),
@@ -77,6 +81,7 @@ export function buildTargetedBatchContextFromRow({ row = {}, bucket = {} }) {
     rowNo: row?.rowNo ?? raw?.rowNo,
     salesDocId: firstText(row?.salesDocId, raw?.salesAllMeterId),
     erfId: firstText(row?.erfId, raw?.refs?.erfId),
+    erfNo: firstText(row?.erfNo, raw?.erfNo, raw?.location?.erfNo),
     premiseId: firstText(row?.refs?.premiseId, raw?.refs?.premiseId),
     targetedMeterNo: firstText(
       row?.meterNo,
