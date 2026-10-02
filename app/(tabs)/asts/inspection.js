@@ -34,6 +34,7 @@ import {
   confirmSubmit,
   showResult,
 } from "../../../src/utils/submitWindows";
+import { IrepsAccessOutcomeCard } from "../../../components/forms/IrepsAccessOutcomeCard";
 import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import IrepsSelectWithOther, {
   isSelectWithOtherFilled,
@@ -1756,60 +1757,6 @@ const InspectionSchema = object()
     },
   );
 
-function AccessOutcomeCard({ value, setFieldValue }) {
-  const hasAccess = String(value || "yes").toLowerCase();
-
-  return (
-    <Surface style={styles.card} elevation={1}>
-      <View style={styles.sectionHeader}>
-        <MaterialCommunityIcons name="gate" size={18} color="#2563eb" />
-        <Text style={styles.sectionTitle}>Access Outcome</Text>
-      </View>
-
-      <View style={styles.choiceRow}>
-        {[
-          { value: "yes", label: "ACCESS YES", icon: "check-circle-outline" },
-          { value: "no", label: "NO ACCESS", icon: "close-circle-outline" },
-        ].map((option) => {
-          const active = hasAccess === option.value;
-
-          return (
-            <TouchableOpacity
-              key={option.value}
-              style={[styles.choiceButton, active && styles.choiceButtonActive]}
-              activeOpacity={0.8}
-              onPress={() => {
-                setFieldValue("accessData.access.hasAccess", option.value);
-
-                if (option.value === "yes") {
-                  setFieldValue("accessData.access.reason", "NAv");
-                  setFieldValue(
-                    "accessData.access.reasonSelect",
-                    makeEmptySelectWithOther(),
-                  );
-                }
-              }}
-            >
-              <MaterialCommunityIcons
-                name={option.icon}
-                size={17}
-                color={active ? "#ffffff" : "#2563eb"}
-              />
-              <Text
-                style={[
-                  styles.choiceButtonText,
-                  active && styles.choiceButtonTextActive,
-                ]}
-              >
-                {option.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </Surface>
-  );
-}
 
 function OfficeInstructionSection({
   title = "Inspection Instruction",
@@ -3877,7 +3824,8 @@ export default function InspectionScreen() {
                 </Surface>
               )}
 
-              <AccessOutcomeCard
+              <IrepsAccessOutcomeCard
+                continueLabel="the inspection"
                 value={values?.accessData?.access?.hasAccess || "yes"}
                 setFieldValue={setFieldValue}
               />

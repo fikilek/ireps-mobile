@@ -30,6 +30,7 @@ import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { returnAfterLifecycleWork } from "../../../src/utils/lifecycleReturn";
 import { IrepsFieldCommentSection } from "../../../components/forms/IrepsFieldCommentSection";
 import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
+import { IrepsAccessOutcomeCard } from "../../../components/forms/IrepsAccessOutcomeCard";
 import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import IrepsSelectWithOther, {
   isSelectWithOtherFilled,
@@ -460,79 +461,6 @@ const ReconnectionSchema = object()
   });
 
 
-const AccessOutcomeCard = ({ value, setFieldValue }) => {
-  return (
-    <Surface style={styles.card} elevation={1}>
-      <View style={styles.sectionHeader}>
-        <MaterialCommunityIcons name="gate-alert" size={18} color="#DC2626" />
-        <Text style={styles.sectionTitle}>Site Access Outcome</Text>
-      </View>
-
-      <Text style={styles.accessHelpText}>
-        Select YES if the meter or supply point was accessed. Select NO ACCESS
-        if the executor could not safely reach the meter or supply point.
-      </Text>
-
-      <RadioButton.Group
-        value={value}
-        onValueChange={(nextValue) => {
-          setFieldValue("accessData.access.hasAccess", nextValue);
-
-          if (nextValue === "yes") {
-            setFieldValue("accessData.access.reason", "NAv");
-            setFieldValue(
-              "accessData.access.reasonSelect",
-              makeEmptySelectWithOther(),
-            );
-          }
-        }}
-      >
-        <View style={styles.accessChoiceRow}>
-          <TouchableOpacity
-            style={[
-              styles.accessChoice,
-              value === "yes" && styles.accessChoiceYes,
-            ]}
-            onPress={() => {
-              setFieldValue("accessData.access.hasAccess", "yes");
-              setFieldValue("accessData.access.reason", "NAv");
-              setFieldValue(
-                "accessData.access.reasonSelect",
-                makeEmptySelectWithOther(),
-              );
-            }}
-            activeOpacity={0.85}
-          >
-            <RadioButton value="yes" />
-            <View style={styles.accessChoiceTextWrap}>
-              <Text style={styles.accessChoiceTitle}>ACCESS YES</Text>
-              <Text style={styles.accessChoiceSub}>
-                Continue with RCN checks
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.accessChoice,
-              value === "no" && styles.accessChoiceNo,
-            ]}
-            onPress={() => setFieldValue("accessData.access.hasAccess", "no")}
-            activeOpacity={0.85}
-          >
-            <RadioButton value="no" />
-            <View style={styles.accessChoiceTextWrap}>
-              <Text style={styles.accessChoiceTitle}>NO ACCESS</Text>
-              <Text style={styles.accessChoiceSub}>
-                Complete as unsuccessful
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-      </RadioButton.Group>
-    </Surface>
-  );
-};
 
 const OfficeInstructionSection = ({
   title,
@@ -2027,7 +1955,8 @@ export default function FormMeterReconnection() {
                 </Surface>
               )}
 
-              <AccessOutcomeCard
+              <IrepsAccessOutcomeCard
+                continueLabel="RCN checks"
                 value={values?.accessData?.access?.hasAccess || "yes"}
                 setFieldValue={setFieldValue}
               />

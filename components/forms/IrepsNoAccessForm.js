@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: { fontSize: 14, fontWeight: "bold", color: "#dc2626" },
-  optional: { fontSize: 11, fontWeight: "700", color: "#475569", marginLeft: "auto" },
+  optional: { fontSize: 11, fontWeight: "700", color: FORM_TEXT, marginLeft: "auto" },
 
   selector: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
 
   weekdayCell: {
     flex: 1, textAlign: "center", fontSize: 12, fontWeight: "800",
-    color: "#64748b", paddingVertical: 6,
+    color: FORM_TEXT, paddingVertical: 6,
   },
 
   // A field worker taps this with a thumb, often in sunlight.
