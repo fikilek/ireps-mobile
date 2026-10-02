@@ -30,8 +30,6 @@ import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { returnAfterLifecycleWork } from "../../../src/utils/lifecycleReturn";
 import { IrepsFieldCommentSection } from "../../../components/forms/IrepsFieldCommentSection";
 import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
-import { IrepsAccessOutcomeCard } from "../../../components/forms/IrepsAccessOutcomeCard";
-import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import IrepsSelectWithOther, {
   isSelectWithOtherFilled,
   normalizeSelectWithOtherValue,
@@ -1955,11 +1953,7 @@ export default function FormMeterReconnection() {
                 </Surface>
               )}
 
-              <IrepsAccessOutcomeCard
-                continueLabel="RCN checks"
-                value={values?.accessData?.access?.hasAccess || "yes"}
-                setFieldValue={setFieldValue}
-              />
+
 
               <Surface style={styles.card} elevation={1}>
                 <View style={styles.sectionHeader}>
@@ -1973,39 +1967,7 @@ export default function FormMeterReconnection() {
                   </Text>
                 </View>
 
-                {noAccess ? (
-                  <IrepsNoAccessSection
-                    visible={true}
-                    value={values?.accessData?.access?.reasonSelect}
-                    onChange={(nextValue) => {
-                      setFieldValue(
-                        "accessData.access.reasonSelect",
-                        nextValue,
-                      );
-                      setFieldValue(
-                        "accessData.access.reason",
-                        selectWithOtherToText(nextValue),
-                      );
-                    }}
-                    mediaName="media"
-                    mediaTag="noAccessPhoto"
-                    agentName={agentName}
-                    agentUid={agentUid}
-                    fallbackGps={fallbackGps}
-                    reasonErrorText={
-                      typeof accessErrors?.reasonSelect === "string"
-                        ? accessErrors.reasonSelect
-                        : ""
-                    }
-                    mediaErrorText={
-                      typeof errors?.media === "string" &&
-                      errors.media.toLowerCase().includes("access")
-                        ? errors.media
-                        : ""
-                    }
-                  />
-                ) : (
-                  <>
+                <>
                     {/* The reconnection form is filled in because the supply
                         is back on, so submitting it is the confirmation. One
                         photo is the proof — the same as the removal
@@ -2041,7 +2003,6 @@ export default function FormMeterReconnection() {
                     </Surface>
 
                   </>
-                )}
 
                 {typeof errors?.media === "string" && (
                   <Text style={styles.errorText}>{errors.media}</Text>

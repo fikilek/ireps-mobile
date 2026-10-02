@@ -28,7 +28,6 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { ElectricitySections } from "../../../components/forms/ElectricitySections";
-import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import { WaterSections } from "../../../components/forms/WaterSections";
 import { ScreenLock } from "../../../components/SceenLock";
 import { useGeo } from "../../context/GeoContext";
@@ -1790,8 +1789,7 @@ export default function FormMeterInstallation() {
               />
 
               {/* ACCESS TOGGLE */}
-              {values?.accessData?.access?.hasAccess === "yes" ? (
-                // ACCESS SECTION
+              // ACCESS SECTION
                 <View>
                   {values?.meterType === "electricity" ? (
                     <ElectricitySections
@@ -1835,25 +1833,6 @@ export default function FormMeterInstallation() {
                     </Surface>
                   )}
                 </View>
-              ) : (
-                // NO ACCESS SECTION
-                <IrepsNoAccessSection
-                  visible={values?.accessData?.access?.hasAccess === "no"}
-                  value={values?.accessData?.access?.reason}
-                  onChange={(nextReason) =>
-                    setFieldValue("accessData.access.reason", nextReason)
-                  }
-                  mediaName="media"
-                  mediaTag="noAccessPhoto"
-                  agentName={agentName}
-                  agentUid={agentUid}
-                  fallbackGps={landingPoint}
-                  reasonErrorText={errors?.accessData?.access?.reason || ""}
-                  mediaErrorText={
-                    typeof errors?.media === "string" ? errors.media : ""
-                  }
-                />
-              )}
 
               {/* RESET / SUBMIT BTNS */}
               <ForensicFooter

@@ -26,7 +26,6 @@ import {
 // Firebase & Redux
 import { ElectricitySections } from "../../../components/forms/ElectricitySections";
 import { IrepsFieldCommentSection } from "../../../components/forms/IrepsFieldCommentSection";
-import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import { buildMeterDiscoveryTrnId } from "./meterDiscoveryTrnId";
 import { WaterSections } from "../../../components/forms/WaterSections";
 import { ScreenLock } from "../../../components/SceenLock";
@@ -2319,8 +2318,7 @@ export default function FormMeterDiscovery() {
               />
 
               {/* ACCESS TOGGLE */}
-              {values?.accessData?.access?.hasAccess === "yes" ? (
-                // ACCESS SECTION
+              // ACCESS SECTION
                 <View>
                   {values?.meterType === "electricity" ? (
                     <ElectricitySections
@@ -2360,25 +2358,6 @@ export default function FormMeterDiscovery() {
                     />
                   )}
                 </View>
-              ) : (
-                // NO ACCESS SECTION
-                <IrepsNoAccessSection
-                  visible={values?.accessData?.access?.hasAccess === "no"}
-                  value={values?.accessData?.access?.reason}
-                  onChange={(nextReason) =>
-                    setFieldValue("accessData.access.reason", nextReason)
-                  }
-                  mediaName="media"
-                  mediaTag="noAccessPhoto"
-                  agentName={agentName}
-                  agentUid={agentUid}
-                  fallbackGps={landingPoint}
-                  reasonErrorText={errors?.accessData?.access?.reason || ""}
-                  mediaErrorText={
-                    typeof errors?.media === "string" ? errors.media : ""
-                  }
-                />
-              )}
 
               <IrepsFieldCommentSection
                 commentName="fieldComment.text"

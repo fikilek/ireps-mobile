@@ -22,7 +22,11 @@ const screens = {
 
 const queueSource = await read("./processSubmissionQueue.js");
 const senderSource = await read("./startMeterDiscoveryQueueSyncService.js");
-const noAccessSource = await read("../../app/(tabs)/admin/operations/targeted-batch-no-access.js");
+// The No Access screen is now one screen for every transaction (NA-R003), and its words live
+// beside it, so the guard reads both as one source.
+const noAccessSource =
+  (await read("../../app/(tabs)/admin/operations/no-access.js")) +
+  (await read("../features/meters/noAccessSubmitMessages.js"));
 
 test("no screen can empty a queue of work that has not been sent", () => {
   const destructive = [
@@ -94,7 +98,7 @@ test("the background sender is told which forms are proved, not left to guess", 
   );
 });
 
-test("a Targeted Batch No Access capture books its own next try", () => {
+test("a No Access capture books its own next try", () => {
   // The listener only fires when the signal CHANGES. A phone that was already offline when the
   // worker saved would otherwise never be woken.
   assert.match(

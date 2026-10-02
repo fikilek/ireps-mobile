@@ -40,8 +40,6 @@ import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
 import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
-import { IrepsAccessOutcomeCard } from "../../../components/forms/IrepsAccessOutcomeCard";
-import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import IrepsSelectWithOther, {
   isSelectWithOtherFilled,
   normalizeSelectWithOtherValue,
@@ -2178,11 +2176,7 @@ export default function FormMeterRemoval() {
                 </Surface>
               )}
 
-              <IrepsAccessOutcomeCard
-                continueLabel="REM checks"
-                value={values?.accessData?.access?.hasAccess || "yes"}
-                setFieldValue={setFieldValue}
-              />
+
 
               <Surface style={styles.card} elevation={1}>
                 <View style={styles.sectionHeader}>
@@ -2194,39 +2188,7 @@ export default function FormMeterRemoval() {
                   <Text style={styles.sectionTitle}>Removal Execution</Text>
                 </View>
 
-                {noAccess ? (
-                  <IrepsNoAccessSection
-                    visible={true}
-                    value={values?.accessData?.access?.reasonSelect}
-                    onChange={(nextValue) => {
-                      setFieldValue(
-                        "accessData.access.reasonSelect",
-                        nextValue,
-                      );
-                      setFieldValue(
-                        "accessData.access.reason",
-                        selectWithOtherToText(nextValue),
-                      );
-                    }}
-                    mediaName="media"
-                    mediaTag="noAccessPhoto"
-                    agentName={agentName}
-                    agentUid={agentUid}
-                    fallbackGps={fallbackGps}
-                    reasonErrorText={
-                      typeof accessErrors?.reasonSelect === "string"
-                        ? accessErrors.reasonSelect
-                        : ""
-                    }
-                    mediaErrorText={
-                      typeof errors?.media === "string" &&
-                      errors.media.toLowerCase().includes("access")
-                        ? errors.media
-                        : ""
-                    }
-                  />
-                ) : (
-                  <>
+                <>
                     {/* MN-R001 6.1 (1.3.2): the removal form is filled in
                         because the meter came out, so submitting it is the
                         confirmation. One photo is the proof; there is no No and
@@ -2359,7 +2321,6 @@ export default function FormMeterRemoval() {
                       )}
                     </Surface>
                   </>
-                )}
 
                 {typeof errors?.media === "string" && (
                   <Text style={styles.errorText}>{errors.media}</Text>

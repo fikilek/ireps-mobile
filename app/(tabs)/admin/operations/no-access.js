@@ -31,6 +31,21 @@ import {
 import { useAuth } from "../../../../src/hooks/useAuth";
 import { addSubmissionQueueItem } from "../../../../src/utils/submissionQueue";
 import { processSubmissionQueue } from "../../../../src/services/processSubmissionQueue";
+import { scheduleMeterDiscoveryQueueSyncRetry } from "../../../../src/services/startMeterDiscoveryQueueSyncService";
+
+// With no signal there is no assisted positioning: indoors the phone can sit on a high-accuracy
+// fix for ever, and at that point nothing the worker has entered is saved yet (the owner's own
+// phone, 27 September: "the gps picker was stuck"). A no access still needs a position, so a
+// fresh fix runs under a deadline and then falls back to one the phone took in the last two
+// minutes - still where the worker is standing.
+const GPS_FIX_DEADLINE_MS = 20000;
+const RECENT_FIX_MAX_AGE_MS = 120000;
+
+const toLocation = (position) => ({
+  gps: { lat: position.coords.latitude, lng: position.coords.longitude },
+  accuracyM: position.coords.accuracy ?? null,
+  capturedAt: new Date(position.timestamp || Date.now()).toISOString(),
+});
 
 const parseContext = (raw) => {
   try {
@@ -65,11 +80,26 @@ export default function NoAccessScreen() {
 
   const capturedAt = useRef(new Date().toISOString()).current;
 
-  const goBack = () =>
-    router.dismissTo({
+  // A submitted form always lets the worker out. dismissTo needs the screen they came from to
+  // still be behind them; after a reload it is not, and they were left stranded on a form they
+  // had already submitted - where the only obvious move is to submit it again.
+  const goBack = () => {
+    const target = {
       pathname: context.returnTo || "/(tabs)/admin/operations/my-workorders",
       params: { targetedBatchRefresh: String(Date.now()) },
-    });
+    };
+
+    try {
+      if (router.canDismiss?.()) {
+        router.dismissTo(target);
+        return;
+      }
+    } catch (error) {
+      console.log("No Access -- dismissTo failed, replacing instead", error?.message);
+    }
+
+    router.replace(target);
+  };
 
   async function readPosition() {
     let permission = await Location.getForegroundPermissionsAsync();
@@ -81,14 +111,26 @@ export default function NoAccessScreen() {
         code: "LOCATION_INVALID",
       });
     }
-    const position = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.High,
-    });
-    return {
-      gps: { lat: position.coords.latitude, lng: position.coords.longitude },
-      accuracyM: position.coords.accuracy ?? null,
-      capturedAt: new Date(position.timestamp || Date.now()).toISOString(),
-    };
+
+    const fresh = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }).catch(() => null),
+      new Promise((resolve) => setTimeout(() => resolve(null), GPS_FIX_DEADLINE_MS)),
+    ]);
+
+    if (fresh?.coords) return toLocation(fresh);
+
+    const lastKnown = await Location.getLastKnownPositionAsync({
+      maxAge: RECENT_FIX_MAX_AGE_MS,
+    }).catch(() => null);
+
+    if (lastKnown?.coords) return toLocation(lastKnown);
+
+    throw Object.assign(
+      new Error(
+        "The phone cannot find where you are. Stand where you can see the sky, wait a moment, and submit again. Nothing you have entered is lost.",
+      ),
+      { code: "LOCATION_INVALID" },
+    );
   }
 
   // NA-R030: the record. The municipality and the ward are NOT built here - the server reads
@@ -187,6 +229,11 @@ export default function NoAccessScreen() {
         filterMode: "METER_DISCOVERY_NO_ACCESS",
         includeSyncing: true,
       });
+
+      // The signal listener only fires when connectivity CHANGES. A phone that was already
+      // offline when the worker saved would otherwise never be woken, and the work would sit
+      // there. So a saved capture books its own next try.
+      scheduleMeterDiscoveryQueueSyncRetry({ agentUid, agentName, delayMs: 20000 });
 
       const refusal = processed?.refusals?.[0] || processed?.refused?.[0] || null;
       const result = noAccessResult(

@@ -40,8 +40,6 @@ import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
 import { IrepsFieldCommentSection } from "../../../components/forms/IrepsFieldCommentSection";
 import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
-import { IrepsAccessOutcomeCard } from "../../../components/forms/IrepsAccessOutcomeCard";
-import { IrepsNoAccessSection } from "../../../components/forms/IrepsNoAccessSection";
 import IrepsSelectWithOther, {
   isSelectWithOtherFilled,
   normalizeSelectWithOtherValue,
@@ -2075,11 +2073,7 @@ export default function FormMeterDisconnection() {
                 </Surface>
               )}
 
-              <IrepsAccessOutcomeCard
-                continueLabel="DCN checks"
-                value={values?.accessData?.access?.hasAccess || "yes"}
-                setFieldValue={setFieldValue}
-              />
+
 
               <Surface style={styles.card} elevation={1}>
                 <View style={styles.sectionHeader}>
@@ -2093,39 +2087,7 @@ export default function FormMeterDisconnection() {
                   </Text>
                 </View>
 
-                {noAccess ? (
-                  <IrepsNoAccessSection
-                    visible={true}
-                    value={values?.accessData?.access?.reasonSelect}
-                    onChange={(nextValue) => {
-                      setFieldValue(
-                        "accessData.access.reasonSelect",
-                        nextValue,
-                      );
-                      setFieldValue(
-                        "accessData.access.reason",
-                        selectWithOtherToText(nextValue),
-                      );
-                    }}
-                    mediaName="media"
-                    mediaTag="noAccessPhoto"
-                    agentName={agentName}
-                    agentUid={agentUid}
-                    fallbackGps={fallbackGps}
-                    reasonErrorText={
-                      typeof accessErrors?.reasonSelect === "string"
-                        ? accessErrors.reasonSelect
-                        : ""
-                    }
-                    mediaErrorText={
-                      typeof errors?.media === "string" &&
-                      errors.media.toLowerCase().includes("access")
-                        ? errors.media
-                        : ""
-                    }
-                  />
-                ) : (
-                  <>
+                <>
                     <Surface style={styles.questionCard} elevation={1}>
                       <View style={styles.questionHeader}>
                         <Text style={styles.questionTitle}>
@@ -2174,7 +2136,6 @@ export default function FormMeterDisconnection() {
 
 
                   </>
-                )}
 
                 {typeof errors?.media === "string" && (
                   <Text style={styles.errorText}>{errors.media}</Text>

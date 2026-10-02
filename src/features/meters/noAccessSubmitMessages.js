@@ -62,8 +62,8 @@ export const NO_ACCESS_RESULTS = Object.freeze([
   },
   {
     code: "OK_QUEUED",
-    title: "Saved on the phone",
-    body: "There is no signal. The visit is saved and will send on its own when signal returns. The appointment keeps the time you set.",
+    title: "Saved on this phone",
+    body: "Saved on this phone. It will be sent by itself as soon as there is signal, and sending it again will not create a second record. The appointment keeps the time you set.",
   },
   {
     code: "NO_ACCESS_REASON_REQUIRED",
