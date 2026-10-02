@@ -4,14 +4,19 @@ import { appendUniqueTargetedBatchRows, blockedTargetedBatchReason, getTargetedB
 
 const row = (refs = {}, count = 0, fieldWorkMeterId = null) => ({ id: "ROW1", salesDocId: "SALE1", allocationStatus: "ALLOCATED", executionStatus: "NOT_STARTED", refs: { erfId: "ERF1", ...refs }, erfNo: "1138", noAccessCount: count, fieldWorkMeterId });
 
-test("State A exposes row values, answers the Meter tap with the premise first, and enables pre-premise NA", () => {
+// NA-R044 (1.3.0) REPLACED the pre-premise No Access this test used to assert. A no access is
+// to a premise: an ERF can hold many premises, so one recorded against an ERF alone names
+// nothing anyone can act on. Both buttons now answer the tap with the premise first.
+test("State A exposes row values, and answers both the Meter and NA taps with the premise first", () => {
   const state = getTargetedBatchRowActionState(row());
   assert.equal(state.premise.value, 0); assert.equal(state.ast.value, 0);
-  // TB-R051 (1.3.68): no button is dead. Meter Discovery still needs the premise; the button says so.
+  // TB-R051 (1.3.68): no button is dead. The button says what to do instead.
   assert.equal(state.ast.disabled, false); assert.equal(state.ast.helperText, "PREMISE REQUIRED");
   assert.equal(state.ast.blocked.title, "Premise first");
   assert.match(state.ast.blocked.message, /premise/i);
-  assert.equal(state.noAccess.value, 0); assert.equal(state.noAccess.disabled, false);
+  assert.equal(state.noAccess.value, 0);
+  assert.equal(state.noAccess.helperText, "PREMISE REQUIRED");
+  assert.equal(state.noAccess.blocked.title, "Premise first");
 });
 
 test("TB-R051 1.3.68 a button a worker can use carries no reason to refuse it", () => {
@@ -67,14 +72,16 @@ test("State D reports invalid row linkage without changing the NA rule", () => {
 });
 
 test("NA is disabled only when Sales fieldWork meterId has a value", () => {
+  // The row carries a premise here, because NA-R044 makes that the other condition and this
+  // test is about the meter, not the premise.
   for (const fieldWorkMeterId of [null, undefined, "", "   "]) {
-    const state = getTargetedBatchRowActionState(row({}, 3, fieldWorkMeterId));
+    const state = getTargetedBatchRowActionState(row({ premiseId: "PRM1" }, 3, fieldWorkMeterId));
     assert.equal(state.noAccess.value, 3);
     assert.equal(state.noAccess.disabled, false);
     assert.equal(state.noAccess.helperText, null);
   }
 
-  const linked = getTargetedBatchRowActionState(row({}, 3, "AST_001"));
+  const linked = getTargetedBatchRowActionState(row({ premiseId: "PRM1" }, 3, "AST_001"));
   assert.equal(linked.noAccess.value, 3);
   assert.equal(linked.noAccess.disabled, true);
   assert.equal(linked.noAccess.helperText, "DISCOVERY COMPLETE");
@@ -169,4 +176,32 @@ test("TB-R051 open meters keep the existing button rules and are not locked", ()
   }
   // Only the display status locks; a raw executionStatus alone does not (the row API derives displayStatus).
   assert.equal(getTargetedBatchRowActionState({ ...row(), executionStatus: "COMPLETED" }).completed, false);
+});
+
+// No Access rules NA-R044 / NA-R044.3 (1.3.0): a no access is to a PREMISE, so My Work Orders
+// does not offer the button until the row has one. An ERF can hold many premises, so a no
+// access against an ERF alone names nothing anyone can act on.
+test("NA-R044.3: a row with no premise does not offer No Access", () => {
+  const state = getTargetedBatchRowActionState({
+    refs: { erfId: "ERF_1", premiseId: null },
+  });
+
+  assert.equal(state.noAccess.helperText, "PREMISE REQUIRED");
+  assert.ok(state.noAccess.blocked, "it must say what to do, not sit there dead");
+  assert.match(state.noAccess.blocked.message, /premise/i);
+});
+
+test("NA-R044.3: a row with a premise offers No Access", () => {
+  const state = getTargetedBatchRowActionState({
+    refs: { erfId: "ERF_1", premiseId: "PRM_1" },
+  });
+
+  assert.equal(state.noAccess.blocked, null);
+  assert.equal(state.noAccess.disabled, false);
+});
+
+test("NA-R044.3: the ERF button stays available either way", () => {
+  const without = getTargetedBatchRowActionState({ refs: { erfId: "ERF_1", premiseId: null } });
+  assert.equal(without.erf.disabled, false);
+  assert.equal(without.erf.blocked, null);
 });

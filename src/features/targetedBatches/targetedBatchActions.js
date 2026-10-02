@@ -103,8 +103,27 @@ export function getTargetedBatchRowActionState(row = {}) {
     },
     noAccess: {
       value: safeNoAccessCount,
-      helperText: fieldWorkMeterId ? "DISCOVERY COMPLETE" : null,
+      // No Access rules NA-R044 / NA-R044.3 (1.3.0): a no access is to a PREMISE, so the
+      // button is not offered until the row has one.
+      //
+      // An ERF can hold many premises - thirteen shops at one address is a real case - so a
+      // no access recorded against an ERF alone names nothing anyone can act on. The worker
+      // is told what to do rather than being handed a button whose submission the server
+      // would refuse.
+      helperText: fieldWorkMeterId
+        ? "DISCOVERY COMPLETE"
+        : !premiseId
+          ? "PREMISE REQUIRED"
+          : null,
       disabled: Boolean(fieldWorkMeterId),
+      blocked:
+        !fieldWorkMeterId && !premiseId
+          ? {
+              title: "Premise first",
+              message:
+                "A No Access says which premise you could not get into. Tap PREMISE, record it, then come back.",
+            }
+          : null,
       intent: TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS,
     },
     erf: {
