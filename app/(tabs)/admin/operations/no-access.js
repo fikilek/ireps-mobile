@@ -29,7 +29,10 @@ import {
   noAccessResult,
 } from "../../../../src/features/meters/noAccessSubmitMessages";
 import { useAuth } from "../../../../src/hooks/useAuth";
-import { addSubmissionQueueItem } from "../../../../src/utils/submissionQueue";
+import {
+  addSubmissionQueueItem,
+  getSubmissionQueueItemById,
+} from "../../../../src/utils/submissionQueue";
 import { processSubmissionQueue } from "../../../../src/services/processSubmissionQueue";
 import { scheduleMeterDiscoveryQueueSyncRetry } from "../../../../src/services/startMeterDiscoveryQueueSyncService";
 
@@ -154,6 +157,14 @@ export default function NoAccessScreen() {
           hasAccess: "no",
           reasonCode: value.reasonCode,
           reasonOther: value.reasonOther,
+          // NA-R031.2: access.reason carries the display words, and every reader prints them.
+          // The server settles the shape again on arrival, but it also VALIDATES before it
+          // normalises - so a payload with no reason here is refused before the door is
+          // reached.
+          reason:
+            String(value.reasonCode).toUpperCase() === "OTHER"
+              ? String(value.reasonOther || "").trim()
+              : String(value.reasonCode || "").trim(),
           appointment: value.appointment,
         },
       },
@@ -236,10 +247,22 @@ export default function NoAccessScreen() {
       // there. So a saved capture books its own next try.
       scheduleMeterDiscoveryQueueSyncRetry({ agentUid, agentName, delayMs: 20000 });
 
-      const refusal = processed?.refusals?.[0] || processed?.refused?.[0] || null;
-      const result = noAccessResult(
-        refusal?.code || (processed?.sent?.length ? "OK" : "OK_QUEUED"),
-      );
+      // processSubmissionQueue returns only { success, message } about the RUN, not about this
+      // item. Reading it as though it reported the item is how a REFUSAL was shown to the
+      // worker as "saved, it will send by itself" - the office had rejected the work and the
+      // worker was told it was safe. The queue item itself is the only honest answer.
+      const saved = await getSubmissionQueueItemById(queued?.queueItem?.id);
+
+      const result =
+        saved?.status === "SUCCESS" && saved?.result?.success === true
+          ? noAccessResult("OK")
+          : saved?.status === "REFUSED"
+            ? noAccessResult(saved?.result?.code || saved?.refusal?.code || "UNKNOWN")
+            : noAccessResult("OK_QUEUED");
+
+      // The work is off the form and on the phone, so the form is cleared: a filled-in form
+      // left on screen after a save invites the worker to submit it a second time.
+      helpers.resetForm();
 
       Alert.alert(result.title, result.body, [{ text: "OK", onPress: goBack }]);
     } catch (error) {

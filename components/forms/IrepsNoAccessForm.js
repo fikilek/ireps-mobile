@@ -16,9 +16,10 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { Divider, Modal, Portal, RadioButton, Surface, TextInput } from "react-native-paper";
+import { Divider, Modal, Portal, Surface, TextInput } from "react-native-paper";
 
 import { NO_ACCESS_REASONS } from "../../src/features/meters/noAccessReasons";
+import FormSelect from "./FormSelect";
 import {
   WEEKDAY_INITIALS,
   buildAppointment,
@@ -51,7 +52,6 @@ export function IrepsNoAccessForm({
   mediaErrorText = "",
   appointmentErrorText = "",
 }) {
-  const [reasonOpen, setReasonOpen] = useState(false);
   const [dayOpen, setDayOpen] = useState(false);
   const [timeOpen, setTimeOpen] = useState(false);
   const [month, setMonth] = useState(() => todayInSast());
@@ -63,14 +63,6 @@ export function IrepsNoAccessForm({
   const isOther = reasonCode.toUpperCase() === OTHER;
 
   const update = (patch) => onChange?.({ ...value, ...patch });
-
-  function pickReason(nextCode) {
-    update({
-      reasonCode: nextCode,
-      reasonOther: nextCode === OTHER ? reasonOther : "",
-    });
-    setReasonOpen(false);
-  }
 
   function openCalendar() {
     setMonth(appointment ? readAppointmentParts(appointment.at) : todayInSast());
@@ -97,24 +89,13 @@ export function IrepsNoAccessForm({
 
   return (
     <>
-      <Surface style={styles.card}>
-        <Surface style={styles.naCard} elevation={2}>
-          {/* 1. NA Reason */}
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="alert-circle" size={18} color="#dc2626" />
-            <Text style={styles.sectionTitle}>NA Reason</Text>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.selector, Boolean(reasonErrorText) && styles.selectorError]}
-            onPress={() => setReasonOpen(true)}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.selectorValue}>
-              {isOther ? "Other" : reasonCode || "Select reason ..."}
-            </Text>
-            <MaterialCommunityIcons name="chevron-down" size={22} color="#dc2626" />
-          </TouchableOpacity>
+      {/* One card, one border. There used to be a white card wrapped around a second card,
+          so the inputs sat inside two borders for no reason. */}
+      <Surface style={styles.card} elevation={1}>
+          {/* 1. NA Reason — the standard iREPS dropdown (UI: label on top, "Select ...", then
+              the chosen value). The same FormSelect every other form uses, so a worker meets
+              one kind of dropdown everywhere and a change to it reaches all of them. */}
+          <FormSelect label="NA REASON" name="reasonCode" options={NO_ACCESS_REASONS} />
 
           {!!reasonErrorText && <Text style={styles.errorText}>{reasonErrorText}</Text>}
 
@@ -179,23 +160,7 @@ export function IrepsNoAccessForm({
           )}
 
           {!!appointmentErrorText && <Text style={styles.errorText}>{appointmentErrorText}</Text>}
-        </Surface>
       </Surface>
-
-      {/* The reason list — NA-R004, read from the one file, never a copy in a screen. */}
-      <Portal>
-        <Modal visible={reasonOpen} onDismiss={() => setReasonOpen(false)} contentContainerStyle={styles.modal}>
-          <RadioButton.Group onValueChange={pickReason} value={reasonCode}>
-            {NO_ACCESS_REASONS.map((reason) => (
-              <RadioButton.Item
-                key={reason}
-                label={reason}
-                value={reason === "Other" ? OTHER : reason}
-              />
-            ))}
-          </RadioButton.Group>
-        </Modal>
-      </Portal>
 
       {/* The calendar */}
       <Portal>
@@ -231,14 +196,33 @@ export function IrepsNoAccessForm({
                 // it and be refused afterwards (NA-R023).
                 const pickable = isDayPickable({ year: month.year, month: month.month, day });
 
+                // Today is marked, because a grid of identical squares gives a worker nothing
+                // to place "tomorrow" or "next Tuesday" against.
+                const today = todayInSast();
+                const isToday =
+                  day === today.day &&
+                  month.month === today.month &&
+                  month.year === today.year;
+
                 return (
                   <TouchableOpacity
                     key={dayIndex}
-                    style={[styles.dayCell, pickable ? styles.dayPickable : styles.dayPast]}
+                    style={[
+                      styles.dayCell,
+                      pickable ? styles.dayPickable : styles.dayPast,
+                      isToday && styles.dayToday,
+                    ]}
                     disabled={!pickable}
                     onPress={() => pickDay(day)}
                   >
-                    <Text style={pickable ? styles.dayText : styles.dayTextPast}>{day}</Text>
+                    <Text
+                      style={[
+                        pickable ? styles.dayText : styles.dayTextPast,
+                        isToday && styles.dayTodayText,
+                      ]}
+                    >
+                      {day}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -331,6 +315,9 @@ const styles = StyleSheet.create({
   // A field worker taps this with a thumb, often in sunlight.
   dayCell: { flex: 1, aspectRatio: 1, alignItems: "center", justifyContent: "center", margin: 2, borderRadius: 8 },
   dayPickable: { backgroundColor: "#f1f5f9" },
+  // Today: ringed in the appointment colour, so the worker can count forward from it.
+  dayToday: { borderWidth: 2, borderColor: "#0f766e", backgroundColor: "#ffffff" },
+  dayTodayText: { color: "#0f766e", fontWeight: "800" },
   dayPast: { backgroundColor: "transparent" },
   dayText: { fontSize: 16, fontWeight: "700", color: FORM_TEXT },
   dayTextPast: { fontSize: 16, color: "#cbd5e1" },
