@@ -46,7 +46,9 @@ export default function RemoveSavedWorkDialog({
   const alreadySent = isSentToOffice(item || {});
   const refused = isRefusedByOffice(item || {});
   const maySupervise = canRemoveUnsentWork(role);
-  const blocked = !alreadySent && !refused && !maySupervise;
+  // The gate is gone (owner, 3 Oct 2026): nothing is blocked. The wording still tells the
+  // worker what they are about to lose, which is the part that was ever worth having.
+  const blocked = false;
 
   // The reason recorded when the rules ask for none.
   const removalReasonFor = (code) =>

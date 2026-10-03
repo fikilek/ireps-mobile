@@ -72,39 +72,33 @@ export function validateRemovalReason(reason) {
  * `sent` work needs a plain confirmation; unsent work needs a supervisor and a reason.
  */
 export function assessRemoval({ item = {}, role, reason } = {}) {
-  if (isSentToOffice(item)) {
-    return { allowed: true, needsReason: false, code: "ALREADY_SENT" };
-  }
+  // THE GATE IS GONE (owner, 3 Oct 2026): a user may remove anything from their own phone.
+  //
+  // What it used to do: only a supervisor could remove work that had not reached the office,
+  // and they had to give a reason. It was written after work was lost, and the thinking was
+  // sound - a capture on a phone is a visit somebody made, and deleting it deletes the visit.
+  //
+  // What it cost in practice: a worker could not clear their own queue, was told refused work
+  // would "go by itself as soon as there is signal" when it never would, and tapped a Remove
+  // button that did nothing. The owner removed it deliberately, knowing the above.
+  //
+  // What is KEPT: every removal is still recorded - what it was, who removed it and when
+  // (buildRemovalRecord). Accountability is not a gate, and it costs the worker nothing.
+  const sent = isSentToOffice(item);
+  const refused = isRefusedByOffice(item);
 
-  // Refused work will never send, so there is nothing to protect and no reason to demand.
-  // The dialog said so and this did not, which left the worker looking at "Remove" and
-  // nothing happening when they pressed it (owner's phone, 3 Oct 2026).
-  if (isRefusedByOffice(item)) {
-    return { allowed: true, needsReason: false, code: "REFUSED_BY_OFFICE" };
-  }
-
-  if (!canRemoveUnsentWork(role)) {
-    return {
-      allowed: false,
-      needsReason: true,
-      code: "NOT_A_SUPERVISOR",
-      message:
-        "This work has not reached the office yet. Only a supervisor can remove it.",
-    };
-  }
-
-  const check = validateRemovalReason(reason);
-
-  if (!check.valid) {
-    return {
-      allowed: false,
-      needsReason: true,
-      code: "REASON_REQUIRED",
-      message: check.message,
-    };
-  }
-
-  return { allowed: true, needsReason: true, code: "SUPERVISOR_REMOVAL", reason: check.reason };
+  return {
+    allowed: true,
+    needsReason: false,
+    code: sent ? "ALREADY_SENT" : refused ? "REFUSED_BY_OFFICE" : "REMOVED_BY_USER",
+    reason:
+      clean(reason) ||
+      (sent
+        ? "Already with the office"
+        : refused
+          ? "Refused by the office"
+          : "Removed from this phone"),
+  };
 }
 
 /** What is kept about a removal, so work never disappears without a trace. */

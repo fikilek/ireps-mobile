@@ -49,7 +49,16 @@ test("only a server-confirmed send counts as work the office has", () => {
   assert.equal(isSentToOffice({ status: "SUCCESS", result: { success: false } }), false);
 });
 
-test("a field worker cannot remove work that has not reached the office", () => {
+test("THE GATE IS GONE: a field worker may remove anything from their own phone", () => {
+  // Owner, 3 Oct 2026, knowing what it was for. It stopped a worker clearing their own queue,
+  // and every removal is still RECORDED - what it was, who removed it, when - which is the
+  // part that was worth keeping. canRemoveUnsentWork is left as it was; nothing asks it.
+  for (const item of [{ status: "PENDING" }, { status: "REFUSED" }, { status: "SYNCING" }]) {
+    const verdict = assessRemoval({ item, role: "FWR" });
+    assert.equal(verdict.allowed, true, `${item.status} must be removable`);
+    assert.equal(verdict.needsReason, false);
+  }
+
   assert.equal(canRemoveUnsentWork("FWR"), false);
   assert.equal(canRemoveUnsentWork("GST"), false);
   assert.equal(canRemoveUnsentWork(""), false);
@@ -83,18 +92,16 @@ test("sent work is removed with a plain confirmation, by anyone", () => {
   assert.equal(verdict.code, "ALREADY_SENT");
 });
 
-test("unsent work needs a supervisor AND a reason", () => {
-  const asWorker = assessRemoval({ item: waiting, role: "FWR", reason: "Captured twice by mistake" });
-  assert.equal(asWorker.allowed, false);
-  assert.equal(asWorker.code, "NOT_A_SUPERVISOR");
+test("the gate is gone: unsent work needs neither a supervisor nor a reason", () => {
+  // It used to need both. Replaced 3 Oct 2026 at the owner's instruction - see the gate note
+  // in assessRemoval for what it protected and what it cost.
+  const asWorker = assessRemoval({ item: waiting, role: "FWR" });
+  assert.equal(asWorker.allowed, true);
+  assert.equal(asWorker.needsReason, false);
 
-  const noReason = assessRemoval({ item: waiting, role: "SPV" });
-  assert.equal(noReason.allowed, false);
-  assert.equal(noReason.code, "REASON_REQUIRED");
-
-  const done = assessRemoval({ item: waiting, role: "SPV", reason: "Captured twice by mistake" });
-  assert.equal(done.allowed, true);
-  assert.equal(done.reason, "Captured twice by mistake");
+  // A reason given is still kept on the record, it is simply no longer demanded.
+  const withReason = assessRemoval({ item: waiting, role: "SPV", reason: "Captured twice by mistake" });
+  assert.equal(withReason.reason, "Captured twice by mistake");
 });
 
 test("a refused capture can be removed by the worker who is holding it", () => {
@@ -169,10 +176,11 @@ test("the decision agrees with what the dialog says: refused work removes with n
   assert.equal(decision.code, "REFUSED_BY_OFFICE");
 });
 
-test("pending work still refuses a field worker, with a reason demanded", () => {
-  const decision = assessRemoval({ item: { status: "PENDING" }, role: "FWR" });
-  assert.equal(decision.allowed, false);
-  assert.equal(decision.code, "NOT_A_SUPERVISOR");
+test("a removal with no reason given still records why it was allowed", () => {
+  const verdict = assessRemoval({ item: { status: "PENDING" }, role: "FWR" });
+  assert.equal(verdict.allowed, true);
+  assert.equal(verdict.code, "REMOVED_BY_USER");
+  assert.equal(verdict.reason, "Removed from this phone");
 });
 
 test("a removal the dialog offers with no reason box is allowed with no reason", () => {
