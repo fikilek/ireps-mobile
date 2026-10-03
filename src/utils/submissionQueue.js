@@ -70,10 +70,55 @@ export const addSubmissionQueueItem = async ({
     const queue = readQueueFromStorage();
     const stableTrnId = String(payload?.trnId || payload?.id || "").trim();
     const existingAttempt = stableTrnId
-      ? queue.find((item) => String(item?.payload?.trnId || item?.payload?.id || "").trim() === stableTrnId)
+      ? queue.find(
+          (item) =>
+            String(item?.payload?.trnId || item?.payload?.id || "").trim() ===
+            stableTrnId,
+        )
       : null;
     if (existingAttempt) {
-      return { success: true, message: "Queue item already saved locally", queueItem: existingAttempt, alreadyQueued: true };
+      // This guard is for ONE capture reaching here twice - a double tap, or a retry of work
+      // that has not been sent. It returns the item already queued instead of making a second.
+      //
+      // It must NEVER swallow a SECOND CAPTURE. Found by the owner, 3 October: he recorded two
+      // No Access visits at ERF 5213 and the server logs show only one request ever arrived.
+      // The No Access screen built its trnId once per screen, so the second capture carried
+      // the first one's id; this guard matched it, threw the payload away, and handed back the
+      // first item - whose status was SUCCESS. The screen read that back and told him the
+      // second visit was recorded. A visit somebody made was destroyed and reported as saved.
+      //
+      // So: an item the office has ALREADY ACCEPTED is finished. Anything arriving under its
+      // id afterwards is not a retry of it - there is nothing left to retry - and saying
+      // "saved" would be a lie. It is refused, loudly, where a worker and a log can both see
+      // it, rather than discarded quietly.
+      const alreadySent =
+        existingAttempt?.status === "SUCCESS" &&
+        existingAttempt?.result?.success === true;
+
+      if (alreadySent) {
+        console.log(
+          "addSubmissionQueueItem REFUSED -- a second capture carried a sent trnId",
+          {
+            trnId: stableTrnId,
+            existingQueueItemId: existingAttempt?.id,
+          },
+        );
+
+        return {
+          success: false,
+          code: "QUEUE_TRN_ID_ALREADY_SENT",
+          message:
+            "This work could not be saved: it carries the id of work the office already has. Nothing has been lost - capture it again.",
+          queueItem: null,
+        };
+      }
+
+      return {
+        success: true,
+        message: "Queue item already saved locally",
+        queueItem: existingAttempt,
+        alreadyQueued: true,
+      };
     }
     const timestamp = nowIso();
 
@@ -311,7 +356,10 @@ export const THROWN_REFUSALS = new Set([
 // The Firebase client reports these as "functions/permission-denied".
 export function isThrownRefusal(code) {
   return THROWN_REFUSALS.has(
-    String(code || "").trim().toLowerCase().replace(/^functions\//, ""),
+    String(code || "")
+      .trim()
+      .toLowerCase()
+      .replace(/^functions\//, ""),
   );
 }
 
@@ -447,14 +495,22 @@ export const clearConfirmedSubmissions = async () => {
     const saveResult = writeQueueToStorage(remaining);
 
     if (!saveResult?.success) {
-      return { success: false, cleared: 0, message: "Failed to clear sent captures" };
+      return {
+        success: false,
+        cleared: 0,
+        message: "Failed to clear sent captures",
+      };
     }
 
     return { success: true, cleared };
   } catch (error) {
     console.log("clearConfirmedSubmissions error:", error);
 
-    return { success: false, cleared: 0, message: error?.message || "Failed to clear" };
+    return {
+      success: false,
+      cleared: 0,
+      message: error?.message || "Failed to clear",
+    };
   }
 };
 
@@ -774,8 +830,7 @@ export const reconcileSubmissionQueueWithServerTrns = async ({
         result: {
           success: true,
           code: "SERVER_CONFIRMED",
-          message:
-            "Server confirmed this queued TRN was saved successfully.",
+          message: "Server confirmed this queued TRN was saved successfully.",
           trnId: readServerTrnId(serverTrn),
         },
         sync: {

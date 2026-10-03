@@ -86,15 +86,28 @@ export default function NoAccessScreen() {
   // carries that type's own id prefix like every other transaction of that type.
   const trnType = String(context.trnType || "METER_DISCOVERY").toUpperCase();
 
-  const trnId = useRef(
+  // ONE ID PER CAPTURE, built when the worker submits - NOT once per screen.
+  //
+  // Found by the owner, 3 October: he recorded two No Access visits at ERF 5213 and only one
+  // reached the office. The server logs show only ONE request ever arrived; the other capture
+  // was destroyed on the phone, and he was shown "No Access recorded" for it.
+  //
+  // How. The id was built with useRef, so it was fixed for as long as the screen stayed
+  // mounted. addSubmissionQueueItem refuses a payload whose trnId is already in the queue and
+  // returns the OLD item with { success: true } - a guard meant for a double tap on one
+  // capture. A successful item is never removed from the queue, so the SECOND capture matched
+  // the first, was thrown away, and the screen read the first item's SUCCESS back and reported
+  // it as the second one's.
+  //
+  // A capture is a visit somebody made. It gets its own id, so two can never collide, and the
+  // queue's guard goes back to meaning what it was written to mean: the same capture sent
+  // twice.
+  const buildTrnId = () =>
     buildNoAccessTrnId({
       trnType,
       wardPcode: context.wardPcode,
       erfNo: context.erfNo,
-    }),
-  ).current;
-
-  const capturedAt = useRef(new Date().toISOString()).current;
+    });
 
   // A submitted form ALWAYS leaves the screen. The owner, 3 October: "after the NA form is
   // submitted the form does not clear, it remains on the screen - after the 'NA recorded'
@@ -129,7 +142,7 @@ export default function NoAccessScreen() {
   // NA-R030: the record. The municipality and the ward are NOT built here - the server reads
   // them from the ERF, which is the authority for where a property is, so the two screens that
   // open this one cannot assemble them two different ways.
-  function buildPayload({ value, media }) {
+  function buildPayload({ trnId, capturedAt, value, media }) {
     return {
       id: trnId,
       meterType: "NA",
@@ -219,7 +232,12 @@ export default function NoAccessScreen() {
 
     try {
       setBusy(NO_ACCESS_PROGRESS.queueing);
-      const payload = buildPayload({ value, media });
+
+      // Both belong to THIS capture, not to the screen.
+      const trnId = buildTrnId();
+      const capturedAt = new Date().toISOString();
+
+      const payload = buildPayload({ trnId, capturedAt, value, media });
 
       // OF-R001: it is on the phone before any network work is attempted.
       const queued = await addSubmissionQueueItem({
@@ -239,11 +257,13 @@ export default function NoAccessScreen() {
       });
 
       if (!queued?.success) {
+        // The queue's own words where it has them: it knows WHY, and "could not be saved" on
+        // its own leaves a worker with nothing to do about it.
         throw Object.assign(
-          new Error("The No Access could not be saved on the phone."),
-          {
-            code: "UNKNOWN",
-          },
+          new Error(
+            queued?.message || "The No Access could not be saved on the phone.",
+          ),
+          { code: queued?.code || "UNKNOWN" },
         );
       }
 

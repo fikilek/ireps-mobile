@@ -257,3 +257,54 @@ test("a run that got nothing out books its own next try", () => {
     "the ladder never resets, so one bad day slows the phone for ever",
   );
 });
+
+// ---------------------------------------------------------------------------
+// One id per capture, and a queue that cannot swallow one.
+//
+// The owner, 3 October: two No Access visits recorded at ERF 5213, one in the office. The
+// server logs show only ONE request ever arrived - the other capture was destroyed on the
+// phone and he was shown "No Access recorded" for it.
+// ---------------------------------------------------------------------------
+
+test("the No Access id belongs to the capture, not to the screen", () => {
+  // It was useRef(buildNoAccessTrnId(...)), so it was fixed for as long as the screen stayed
+  // mounted and two captures carried the same id.
+  assert.equal(
+    /useRef\(\s*buildNoAccessTrnId/.test(noAccessCode),
+    false,
+    "the id is fixed per screen again, so two captures can carry the same one",
+  );
+
+  assert.match(
+    noAccessCode,
+    /const trnId = buildTrnId\(\)/,
+    "the id is no longer built for each submission",
+  );
+
+  // capturedAt belongs to the capture for the same reason: it is when THAT visit was written
+  // down, not when the screen happened to open.
+  assert.equal(
+    /useRef\(new Date\(\)\.toISOString\(\)\)/.test(noAccessCode),
+    false,
+    "capturedAt is fixed per screen again",
+  );
+});
+
+test("the queue refuses a second capture rather than swallowing it", async () => {
+  const queueSource = await read("../utils/submissionQueue.js");
+
+  assert.match(
+    queueSource,
+    /QUEUE_TRN_ID_ALREADY_SENT/,
+    "a payload arriving under an id the office already has is silently discarded again",
+  );
+
+  // The short-circuit that returns the existing item must stay behind the sent check, so a
+  // genuine retry of UNSENT work still works and only finished work refuses.
+  const sentCheck = queueSource.indexOf("alreadySent");
+  const shortCircuit = queueSource.indexOf("Queue item already saved locally");
+  assert.ok(
+    sentCheck > -1 && sentCheck < shortCircuit,
+    "the sent check no longer runs before the short-circuit, so a finished item can be reported as a fresh save",
+  );
+});
