@@ -27,6 +27,7 @@ import { Surface, Text } from "react-native-paper";
 import { IrepsNoAccessForm } from "../../../../components/forms/IrepsNoAccessForm";
 import { ForensicFooter } from "../../../../src/features/meters/ForensicFooter";
 import { buildNoAccessTrnId } from "../../../../src/features/meters/meterDiscoveryTrnId";
+import { isRefusedByOffice } from "../../../../src/features/savedWork/savedWorkRemovalRules";
 import { isCompleteNoAccess } from "../../../../src/features/meters/noAccessReasons";
 import {
   NO_ACCESS_PROGRESS,
@@ -292,10 +293,23 @@ export default function NoAccessScreen() {
       // worker was told it was safe. The queue item itself is the only honest answer.
       const saved = await getSubmissionQueueItemById(queued?.queueItem?.id);
 
+      // isRefusedByOffice, NOT a string compare. The queue marks a refusal "CONFLICT" and has
+      // never written "REFUSED" - so this branch tested for a status that does not exist, and
+      // every real refusal fell through to "Saved on this phone. It will be sent by itself as
+      // soon as there is signal."
+      //
+      // Found by the owner, 3 October, on ERF 5212: the server refused the work twice under
+      // TB-R062 - the ERF belongs to another team's batch - and the phone told him both times
+      // that it was safe and would send itself. It never would. He went looking for a fault
+      // in the capture when the office had answered him and the phone had not passed it on.
+      //
+      // One well: savedWorkRemovalRules already knows what a refusal is (REFUSED, FAILED or
+      // CONFLICT), and the Submission Queue screen reads it from there. Two places deciding
+      // the same thing is how they came to disagree.
       const result =
         saved?.status === "SUCCESS" && saved?.result?.success === true
           ? noAccessResult("OK")
-          : saved?.status === "REFUSED"
+          : isRefusedByOffice(saved)
             ? noAccessResult(
                 saved?.result?.code || saved?.refusal?.code || "UNKNOWN",
               )

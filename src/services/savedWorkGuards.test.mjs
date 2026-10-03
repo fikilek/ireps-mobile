@@ -308,3 +308,47 @@ test("the queue refuses a second capture rather than swallowing it", async () =>
     "the sent check no longer runs before the short-circuit, so a finished item can be reported as a fresh save",
   );
 });
+
+// ---------------------------------------------------------------------------
+// A refusal is never shown as "saved on this phone".
+//
+// The owner, 3 October, on ERF 5212: the server refused the work twice under TB-R062 - the
+// ERF belongs to another team's batch - and the phone told him both times that it was saved
+// and would send itself as soon as there was signal. It never would. He went looking for a
+// fault in the capture when the office had already answered him.
+//
+// The screen tested `saved?.status === "REFUSED"`. The queue has never written that status:
+// it writes CONFLICT. So the branch could not fire and every refusal fell through to the
+// queued message.
+// ---------------------------------------------------------------------------
+
+test("the No Access screen asks what a refusal is, it does not guess the word", async () => {
+  assert.equal(
+    /status === "REFUSED"/.test(noAccessCode),
+    false,
+    'the screen is comparing against "REFUSED" again, which the queue never writes - so a refusal is shown as saved',
+  );
+
+  assert.match(
+    noAccessCode,
+    /isRefusedByOffice\(saved\)/,
+    "the screen is not using the shared test for a refusal",
+  );
+
+  // And the shared test must still know the status the queue actually writes.
+  const rulesSource = await read(
+    "../features/savedWork/savedWorkRemovalRules.js",
+  );
+  assert.match(
+    rulesSource,
+    /CONFLICT/,
+    "isRefusedByOffice no longer recognises CONFLICT, which is the status a refusal gets",
+  );
+
+  const queueSource = await read("../utils/submissionQueue.js");
+  assert.match(
+    queueSource,
+    /status: "CONFLICT"/,
+    "the queue marks a refusal with a different status now; every reader of it must be checked",
+  );
+});
