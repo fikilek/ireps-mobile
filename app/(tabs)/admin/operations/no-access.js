@@ -129,13 +129,13 @@ export default function NoAccessScreen() {
   const goBack = () => {
     const target = {
       pathname: context.returnTo || "/(tabs)/admin/operations/my-workorders",
-      // backToBuckets puts My Work Orders back at the bucket list rather than inside the rows
-      // of the batch just worked (owner, 3 Oct 2026). The timestamp makes each return a new
-      // value, so the screen reacts every time and not only the first.
-      params: {
-        targetedBatchRefresh: String(Date.now()),
-        backToBuckets: String(Date.now()),
-      },
+      // STAY IN THE ROWS (owner, 3 Oct 2026: "a closed NA form must remain in my-workorder
+      // rows and not go up to my-workorder buckets").
+      //
+      // This sent backToBuckets for part of one afternoon, on an earlier instruction. A worker
+      // with seventeen rows in a batch does the next one in the same batch, so being put back
+      // at the bucket list made them navigate in again after every visit.
+      params: { targetedBatchRefresh: String(Date.now()) },
     };
 
     try {
