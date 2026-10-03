@@ -15,9 +15,15 @@ const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 const screens = {
   forms: await read("../../app/(tabs)/admin/storage/forms-submission-queue.js"),
-  premises: await read("../../app/(tabs)/admin/storage/premise-offline-storage.js"),
-  accountData: await read("../../app/(tabs)/admin/storage/account-data-submission-queue.js"),
-  informalErf: await read("../../app/(tabs)/admin/storage/informal-erf-submission-queue.js"),
+  premises: await read(
+    "../../app/(tabs)/admin/storage/premise-offline-storage.js",
+  ),
+  accountData: await read(
+    "../../app/(tabs)/admin/storage/account-data-submission-queue.js",
+  ),
+  informalErf: await read(
+    "../../app/(tabs)/admin/storage/informal-erf-submission-queue.js",
+  ),
 };
 
 const queueSource = await read("./processSubmissionQueue.js");
@@ -27,6 +33,23 @@ const senderSource = await read("./startMeterDiscoveryQueueSyncService.js");
 const noAccessSource =
   (await read("../../app/(tabs)/admin/operations/no-access.js")) +
   (await read("../features/meters/noAccessSubmitMessages.js"));
+
+// The same source with the prose taken out. A guard that forbids a call must read CODE: three
+// times today a comment EXPLAINING why something was removed tripped the guard that forbade
+// it - and worse, such a guard is silenced by deleting the comment rather than by fixing the
+// code.
+const noAccessCode = noAccessSource
+  .split(/\r?\n/)
+  .filter((line) => {
+    const trimmed = line.trim();
+    return (
+      trimmed &&
+      !trimmed.startsWith("//") &&
+      !trimmed.startsWith("*") &&
+      !trimmed.startsWith("/*")
+    );
+  })
+  .join("\n");
 
 test("no screen can empty a queue of work that has not been sent", () => {
   const destructive = [
@@ -89,7 +112,10 @@ test("the background sender is told which forms are proved, not left to guess", 
 
   const list = queueSource.match(/const AUTO_SEND_FORM_TYPES = \[([^\]]+)\]/);
 
-  assert.ok(list, "there is no list of forms proved safe to send in the background");
+  assert.ok(
+    list,
+    "there is no list of forms proved safe to send in the background",
+  );
   // A no access IS a Meter Discovery now (NA-R003), and travels under that form type, so this
   // one entry carries both promises: a saved discovery and a saved no access each tell the
   // worker they will send by themselves, and the background sender has to be allowed to.
@@ -127,19 +153,31 @@ test("the worker is not told about TRN IDs or offline queues", () => {
   );
 });
 
-test("a submitted No Access form always lets the worker out", () => {
-  // POP_TO_TOP was not handled by any navigator: dismissTo needs the screen the worker came from
-  // to still be behind them. After a reload it is not, and they were left on a form they had
-  // already submitted - where the only obvious move is to submit it again.
-  assert.match(
-    noAccessSource,
-    /router\.canDismiss\?\.\(\)/,
-    "the form assumes there is always a screen behind it",
+test("a submitted No Access form always leaves the screen", () => {
+  // The owner, 3 October: "after the NA form is submitted the form does not clear, it remains
+  // on the screen."
+  //
+  // It used to try router.dismissTo and RETURN. dismissTo only works when the screen it names
+  // is still behind this one; where it is not it does nothing at all - no error, no navigation
+  // - and the early return meant the replace below was never reached. The worker tapped OK on
+  // "No Access recorded" and stayed on the form they had just sent.
+  assert.equal(
+    noAccessCode.includes("dismissTo"),
+    false,
+    "the form can silently stay on screen again: dismissTo does nothing when its target is not in the stack",
   );
+
   assert.match(
     noAccessSource,
     /router\.replace\(target\)/,
-    "there is no way back when the stack is empty",
+    "nothing takes the worker off a form they have already sent",
+  );
+
+  // The alert's OK is what leaves. A result window with nothing behind it is a dead end.
+  assert.match(
+    noAccessSource,
+    /onPress: goBack/,
+    "the result window no longer takes the worker anywhere",
   );
 });
 

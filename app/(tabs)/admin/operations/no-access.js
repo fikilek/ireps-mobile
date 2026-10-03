@@ -96,9 +96,18 @@ export default function NoAccessScreen() {
 
   const capturedAt = useRef(new Date().toISOString()).current;
 
-  // A submitted form always lets the worker out. dismissTo needs the screen they came from to
-  // still be behind them; after a reload it is not, and they were left stranded on a form they
-  // had already submitted - where the only obvious move is to submit it again.
+  // A submitted form ALWAYS leaves the screen. The owner, 3 October: "after the NA form is
+  // submitted the form does not clear, it remains on the screen - after the 'NA recorded'
+  // alert the form must be removed from screen."
+  //
+  // It used to try router.dismissTo first and RETURN. dismissTo only works when the screen
+  // named is still behind this one in the stack; where it is not it does nothing at all - no
+  // error, no navigation - and the early return meant the replace below was never reached. So
+  // the worker tapped OK on "No Access recorded" and stayed on the form they had just sent,
+  // where the only obvious move is to send it again.
+  //
+  // router.replace cannot silently do nothing: this screen is replaced by the target. That is
+  // what "removed from screen" has to mean - not an attempt that may or may not happen.
   const goBack = () => {
     const target = {
       pathname: context.returnTo || "/(tabs)/admin/operations/my-workorders",
@@ -106,18 +115,15 @@ export default function NoAccessScreen() {
     };
 
     try {
-      if (router.canDismiss?.()) {
-        router.dismissTo(target);
-        return;
-      }
+      router.replace(target);
     } catch (error) {
+      // Even a bad returnTo must not strand a worker on a sent form.
       console.log(
-        "No Access -- dismissTo failed, replacing instead",
+        "No Access -- replace failed, going to My Work Orders",
         error?.message,
       );
+      router.replace("/(tabs)/admin/operations/my-workorders");
     }
-
-    router.replace(target);
   };
 
   // NA-R030: the record. The municipality and the ward are NOT built here - the server reads
