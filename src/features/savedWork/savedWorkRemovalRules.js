@@ -16,9 +16,26 @@ export function isSentToOffice(item = {}) {
   return item?.status === "SUCCESS" && item?.result?.success === true;
 }
 
-/** Work still to go: nothing here may be deleted except by a supervisor, with a reason. */
+/**
+ * Work the office has REFUSED. It has reached the office and been rejected, so it is finished:
+ * it will never send, however long it is left, and nothing is lost by removing it.
+ *
+ * Owner, 3 Oct 2026. The dialog used to tell a worker "Leave it here. It goes by itself as
+ * soon as there is signal" over a refused record - which is untrue, and left the worker
+ * holding a dead entry they were not allowed to delete.
+ */
+export function isRefusedByOffice(item = {}) {
+  const status = clean(item?.status).toUpperCase();
+  return status === "REFUSED" || status === "FAILED" || status === "CONFLICT";
+}
+
+/**
+ * Work still to go: nothing here may be deleted except by a supervisor, with a reason.
+ *
+ * This is work that CAN still reach the office. Refused work cannot, so it is not this.
+ */
 export function isUnsentWork(item = {}) {
-  return !isSentToOffice(item);
+  return !isSentToOffice(item) && !isRefusedByOffice(item);
 }
 
 export function canRemoveUnsentWork(role) {

@@ -8,6 +8,7 @@ import {
   assessRemoval,
   buildRemovalRecord,
   canRemoveUnsentWork,
+  isRefusedByOffice,
   isSentToOffice,
   isUnsentWork,
   validateRemovalReason,
@@ -37,8 +38,12 @@ const refused = {
 test("only a server-confirmed send counts as work the office has", () => {
   assert.equal(isSentToOffice(sent), true);
   assert.equal(isSentToOffice(waiting), false);
-  assert.equal(isSentToOffice(refused), false);
-  assert.equal(isUnsentWork(refused), true);
+  assert.equal(isSentToOffice(refused), false, "the office does not HAVE refused work");
+
+  // Owner, 3 Oct 2026: refused work is NOT "work still to go". It reached the office and was
+  // rejected, so it will never send however long it is left, and the worker was being told to
+  // leave it there for a signal that would change nothing.
+  assert.equal(isUnsentWork(refused), false);
 
   // A SUCCESS the server never confirmed is not sent work.
   assert.equal(isSentToOffice({ status: "SUCCESS", result: { success: false } }), false);
@@ -130,4 +135,16 @@ test("a record never carries empty holes", () => {
     if (key === "wasSent" || key === "removedAt") continue;
     assert.equal(value, "NAv", `${key} should be NAv when it is not known`);
   }
+});
+
+test("refused work can be removed by anyone, because it will never send", () => {
+  assert.equal(isRefusedByOffice({ status: "REFUSED" }), true);
+  assert.equal(isRefusedByOffice({ status: "FAILED" }), true);
+  assert.equal(isRefusedByOffice({ status: "CONFLICT" }), true);
+});
+
+test("work that can still reach the office is still protected", () => {
+  assert.equal(isRefusedByOffice(waiting), false);
+  assert.equal(isUnsentWork(waiting), true, "a field worker still cannot delete pending work");
+  assert.equal(canRemoveUnsentWork("FWR"), false);
 });

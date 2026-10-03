@@ -18,6 +18,7 @@ import { Text } from "react-native-paper";
 import {
   REMOVAL_REASONS,
   canRemoveUnsentWork,
+  isRefusedByOffice,
   isSentToOffice,
   validateRemovalReason,
 } from "../src/features/savedWork/savedWorkRemovalRules";
@@ -42,8 +43,9 @@ export default function RemoveSavedWorkDialog({
   }, [visible, item?.id]);
 
   const alreadySent = isSentToOffice(item || {});
+  const refused = isRefusedByOffice(item || {});
   const maySupervise = canRemoveUnsentWork(role);
-  const blocked = !alreadySent && !maySupervise;
+  const blocked = !alreadySent && !refused && !maySupervise;
 
   const handleConfirm = () => {
     if (alreadySent) {
@@ -75,7 +77,15 @@ export default function RemoveSavedWorkDialog({
         >
           <View style={styles.card}>
             <ScrollView keyboardShouldPersistTaps="handled">
-              {alreadySent ? (
+              {refused ? (
+                <>
+                  <Text style={styles.title}>Remove this refused form?</Text>
+                  <Text style={styles.body}>
+                    The office refused {whatIsIt}, so it will never send however
+                    long it is left. Removing it loses nothing.
+                  </Text>
+                </>
+              ) : alreadySent ? (
                 <>
                   <Text style={styles.title}>Remove this from the list?</Text>
                   <Text style={styles.body}>
