@@ -6,6 +6,7 @@ import {
   View,
 } from "react-native";
 import { Surface, Text } from "react-native-paper";
+import { formatStreetAddress } from "../src/features/premises/streetAddress";
 
 // The badge is what a worker reads. CONFLICT is a coder's word for "the server said no", and the button
 // under it already reads Refused — two words for one state (owner, 26 Sep). The stored status stays
@@ -34,6 +35,15 @@ const formatDateTime = (value) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
+
+/** Words for anything a record might hold in an address field, including the raw object. */
+function addressWords(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "object") return formatStreetAddress(value);
+  return String(value);
+}
+
 export default function QueueItemCard({
   item,
   busy = false,
@@ -54,10 +64,15 @@ export default function QueueItemCard({
     item?.status === "FAILED" ||
     item?.status === "CONFLICT";
 
+  // A queue card must never be able to crash this screen. A premise address is a STRING on a
+  // well-formed record, but a malformed item can carry the structured object a premise holds
+  // ({ strNo, strName, strType, suburbName }) - and rendering that into <Text> killed the whole
+  // Submission Queue, so the worker could not even delete the item that broke it (owner's
+  // phone, 3 Oct 2026). Anything that is not already words is turned into words here.
   const premiseAddress =
-    item?.payload?.accessData?.premise?.address ||
-    item?.payload?.accessData?.premise?.premiseAddress ||
-    item?.payload?.accessData?.premise?.location?.address ||
+    addressWords(item?.payload?.accessData?.premise?.address) ||
+    addressWords(item?.payload?.accessData?.premise?.premiseAddress) ||
+    addressWords(item?.payload?.accessData?.premise?.location?.address) ||
     "NAv";
 
   const premisePropertyLine = [
