@@ -16,9 +16,11 @@ import { formatAppointment } from "./noAccessAppointment.js";
  */
 export function noAccessConfirmation(value = {}) {
   const lines = [
-    `Reason: ${String(value?.reasonCode || "").toUpperCase() === "OTHER"
-      ? String(value?.reasonOther || "").trim()
-      : String(value?.reasonCode || "").trim()}`,
+    `Reason: ${
+      String(value?.reasonCode || "").toUpperCase() === "OTHER"
+        ? String(value?.reasonOther || "").trim()
+        : String(value?.reasonCode || "").trim()
+    }`,
   ];
 
   lines.push(
@@ -109,6 +111,28 @@ export const NO_ACCESS_RESULTS = Object.freeze([
     code: "TARGETED_BATCH_NOT_ASSIGNED_TO_ACTOR",
     title: "Not your batch",
     body: "This meter belongs to another team's batch. Call the office before working it.",
+  },
+  // The three the batch guard actually sends (batch-work-guard.js). Found missing by the owner
+  // on ERF 5212, 3 October: the server refused his No Access twice with
+  // METER_IN_ANOTHER_TEAMS_BATCH and there was no entry for it, so the worker would have been
+  // shown "Something went wrong" for a refusal the office had explained perfectly.
+  //
+  // TARGETED_BATCH_NOT_ASSIGNED_TO_ACTOR above is a DIFFERENT code from a different check.
+  // Having one of the pair and not the other is exactly how this was missed.
+  {
+    code: "METER_IN_ANOTHER_TEAMS_BATCH",
+    title: "Not your batch",
+    body: "This ERF is in another team's batch, so only that team can work it. Nothing is wrong with what you captured. Call the office if you believe it should be yours.",
+  },
+  {
+    code: "METER_IN_AN_UNALLOCATED_BATCH",
+    title: "Not given out yet",
+    body: "This ERF is in a batch that has not been given to a team yet, so nobody can work it. Call the office.",
+  },
+  {
+    code: "BATCH_CHECK_UNAVAILABLE",
+    title: "Could not check the batch",
+    body: "The office could not check whose batch this ERF is in, so the visit was not recorded. Try again in a moment, and call the office if it keeps happening.",
   },
   {
     code: "UNAUTHENTICATED",
