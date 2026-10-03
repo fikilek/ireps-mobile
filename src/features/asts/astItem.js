@@ -16,6 +16,7 @@ import { useGeo } from "../../context/GeoContext";
 import { useWarehouse } from "../../context/WarehouseContext";
 import { useAuth } from "../../hooks/useAuth";
 import { useGetServiceProvidersQuery } from "../../redux/spApi";
+import { updatedAtLabel } from "../../utils/updatedAtLabel";
 import {
   BATCH_WORK_BLOCKED,
   BATCH_WORK_BLOCKED_FOOTER,
@@ -94,31 +95,6 @@ const getMeterKindConfig = (kind = "") => {
     bg: "#F8FAFC",
     border: "#E2E8F0",
   };
-};
-
-const formatAstUpdatedAt = (value) => {
-  if (!value) return "NAv";
-
-  let dateValue = null;
-
-  if (typeof value?.toDate === "function") {
-    dateValue = value.toDate();
-  } else if (value?.seconds) {
-    dateValue = new Date(value.seconds * 1000);
-  } else if (value?.__time__) {
-    dateValue = new Date(value.__time__);
-  } else {
-    dateValue = new Date(value);
-  }
-
-  if (Number.isNaN(dateValue?.getTime?.())) return "NAv";
-
-  return dateValue.toLocaleString(undefined, {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 };
 
 const parseReadingNumber = (value) => {
@@ -677,7 +653,7 @@ const AstItem = ({ item }) => {
     .toLowerCase();
 
   const meterKindConfig = getMeterKindConfig(meterKind);
-  const updatedAtLabel = formatAstUpdatedAt(item?.metadata?.updatedAt);
+  const updatedAtText = updatedAtLabel(item?.metadata?.updatedAt);
 
   const isValidCommissionMeterType = ["electricity", "water"].includes(
     meterType,
@@ -1478,7 +1454,7 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
           color="#94A3B8"
         />
         <Text style={styles.cardUpdatedFooterText} numberOfLines={1}>
-          Updated {updatedAtLabel}
+          Updated {updatedAtText}
         </Text>
       </View>
 

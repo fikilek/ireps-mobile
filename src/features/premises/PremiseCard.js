@@ -12,6 +12,7 @@ import {
 import { useGeo } from "../../context/GeoContext";
 import { useWarehouse } from "../../context/WarehouseContext";
 import { erfWithCarriedBatchContext } from "../targetedBatches/targetedBatchContextCarry";
+import { updatedAtLabel } from "../../utils/updatedAtLabel";
 import {
   formatRepeatablePremiseIdentity,
   getDuplicateConfirmationMessage,
@@ -663,6 +664,21 @@ const PremiseCard = memo(
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* The owner, 3 Oct 2026: "I want this (updatedAt) in the premise card." The same
+            footer the meter card carries, from the same formatter - not a second copy of it.
+            It bleeds past the card's padding so it sits flush on the bottom edge, as it does
+            on the meter card. */}
+        <View style={styles.cardUpdatedFooter}>
+          <MaterialCommunityIcons
+            name="clock-edit-outline"
+            size={10}
+            color="#94A3B8"
+          />
+          <Text style={styles.cardUpdatedFooterText} numberOfLines={1}>
+            Updated {updatedAtLabel(item?.metadata?.updatedAt)}
+          </Text>
+        </View>
       </TouchableOpacity>
     );
   },
@@ -764,6 +780,32 @@ const styles = StyleSheet.create({
   // to proportions that had nothing to do with their contents - which is what squashed the
   // chips and forced the text down to 7px to fit.
   statsRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  // Flush on the bottom edge of the card: the negative margins undo the card's own padding so
+  // the strip reaches the corners, and the radii match the card's.
+  cardUpdatedFooter: {
+    minHeight: 22,
+    marginTop: 12,
+    marginHorizontal: -16,
+    marginBottom: -16,
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 4,
+  },
+
+  cardUpdatedFooterText: {
+    fontSize: 8,
+    fontWeight: "800",
+    color: "#94A3B8",
+  },
+
   // A chip with no meter behind it is not a button. It keeps its place so the strip does not
   // move about between premises, and says so by being flat.
   statItemEmpty: { opacity: 0.55 },
