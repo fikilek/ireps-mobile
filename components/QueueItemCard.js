@@ -37,6 +37,23 @@ const formatDateTime = (value) => {
 
 
 /** Words for anything a record might hold in an address field, including the raw object. */
+/**
+ * What the worker actually did, in their words.
+ *
+ * A no access IS a Meter Discovery (or an inspection, a reading, a removal...) - there is no
+ * separate No Access transaction type. So the form type alone reads METER_DISCOVERY on a card
+ * for a visit where no meter was reached, and the worker has to decode it from a TYPE: NA
+ * further down. The card says both.
+ */
+function queueItemHeadline(item = {}) {
+  const formType = String(item?.formType || "NAv");
+  const noAccess =
+    String(item?.payload?.accessData?.access?.hasAccess || "").toLowerCase() === "no" ||
+    String(item?.payload?.meterType || "").toUpperCase() === "NA";
+
+  return noAccess ? `${formType} · NO ACCESS` : formType;
+}
+
 function addressWords(value) {
   if (!value) return "";
   if (typeof value === "string") return value.trim();
@@ -154,7 +171,7 @@ export default function QueueItemCard({
       {/* TOP ROW */}
       <View style={styles.topRow}>
         <View style={styles.leftBlock}>
-          <Text style={styles.title}>{item?.formType || "NAv"}</Text>
+          <Text style={styles.title}>{queueItemHeadline(item)}</Text>
 
           <Text style={styles.queueId} numberOfLines={1}>
             {item?.id || "NAv"}
