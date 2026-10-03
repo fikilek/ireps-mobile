@@ -161,9 +161,7 @@ const PremiseCard = memo(
     onNaPress,
     onAccountPress,
   }) => {
-    const isRepeatable = isRepeatablePropertyType(
-      item?.propertyType?.type,
-    );
+    const isRepeatable = isRepeatablePropertyType(item?.propertyType?.type);
     const erfId = item?.erfId; // 🎯 The link to the sovereign
 
     const { updateGeo, geoState } = useGeo(); // 🛰️ THE COMMANDER
@@ -313,6 +311,29 @@ const PremiseCard = memo(
           <MaterialCommunityIcons name={status.icon} size={12} color="white" />
           <Text style={styles.statusText}>{status.label}</Text>
         </View>
+
+        {/* 🚫 NO ACCESS — top left, mirroring the status ribbon on the right.
+            The owner, 3 October: "the NA is supposed to show but it's hidden by the Discover
+            button. Can we move it and place it at the top left."
+            It used to sit at the end of the stats row, where the Discover button simply
+            covered it - so a premise a worker could not get into looked like any other, which
+            is the one thing this badge exists to prevent. The card already keeps a clear band
+            across the top for the status ribbon, so there is room here that nothing competes
+            for. */}
+        {noAccessTrnIds > 0 && (
+          <TouchableOpacity
+            style={styles.naRibbon}
+            onPress={() => onNaPress?.(item)}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons
+              name="shield-alert-outline"
+              size={12}
+              color="#EA580C"
+            />
+            <Text style={styles.naRibbonText}>{`${noAccessTrnIds} NA`}</Text>
+          </TouchableOpacity>
+        )}
 
         <View style={styles.cardHeader}>
           {/* A tap on this GIANT icon selects erf and presmise and navigates to erfs */}
@@ -572,10 +593,7 @@ const PremiseCard = memo(
             </View>
 
             <TouchableOpacity
-              style={[
-                styles.statItem,
-                styles.accountStatItem,
-              ]}
+              style={[styles.statItem, styles.accountStatItem]}
               onPress={() => onAccountPress?.(item)}
               activeOpacity={0.85}
             >
@@ -599,20 +617,6 @@ const PremiseCard = memo(
                 </Text>
               </View>
             </TouchableOpacity>
-
-            {noAccessTrnIds > 0 && (
-              <TouchableOpacity
-                style={styles.compactNaBadge}
-                onPress={() => onNaPress?.(item)}
-              >
-                <MaterialCommunityIcons
-                  name="shield-alert-outline"
-                  size={14}
-                  color="#EA580C"
-                />
-                <Text style={styles.noAccessTrnIdsText}>{noAccessTrnIds}</Text>
-              </TouchableOpacity>
-            )}
           </View>
 
           <View style={styles.actionsRow}>
@@ -743,18 +747,25 @@ const styles = StyleSheet.create({
   //   gap: 2,
   // },
   // statCount: { fontSize: 12, fontWeight: "800", color: "#1E293B" },
-  compactNaBadge: {
+  // Mirrors statusRibbon: same band across the top of the card, same zIndex, opposite corner.
+  naRibbon: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    backgroundColor: "#FFEDD5",
+    borderBottomRightRadius: 12,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderLeftWidth: 0,
+    borderColor: "#FED7AA",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFEDD5",
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#FED7AA",
-    gap: 2,
+    gap: 4,
+    zIndex: 10,
   },
-  noAccessTrnIdsText: { fontSize: 12, fontWeight: "900", color: "#EA580C" },
+  naRibbonText: { fontSize: 11, fontWeight: "900", color: "#EA580C" },
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
