@@ -462,3 +462,20 @@ test("a recorded No Access does not jump to the bucket list", () => {
     "the form is sending the worker up to the buckets again instead of back where they were",
   );
 });
+
+test("NA-R006: back only inside this tab, otherwise navigate across", async () => {
+  // The No Access screen lives in the ADMIN tab. The premise card lives in PREMISES, the meter
+  // list in ASTS. router.back() pops within the ADMIN stack, so using it for every entry point
+  // sent a Normal Path visit to My Work Orders - the last Admin screen - instead of back to the
+  // premise it came from.
+  assert.match(
+    noAccessCode,
+    /const sameStack =/,
+    "back is used for every entry point again, so a premise-card visit lands in My Work Orders",
+  );
+  assert.match(
+    noAccessCode,
+    /if \(sameStack\)/,
+    "canGoBack is no longer guarded by the stack check",
+  );
+});

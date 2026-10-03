@@ -26,6 +26,7 @@ import { Surface, Text } from "react-native-paper";
 
 import { IrepsNoAccessForm } from "../../../../components/forms/IrepsNoAccessForm";
 import { ForensicFooter } from "../../../../src/features/meters/ForensicFooter";
+import { NO_ACCESS_ROUTE } from "../../../../src/features/meters/accessGate";
 import { buildNoAccessTrnId } from "../../../../src/features/meters/meterDiscoveryTrnId";
 import { isRefusedByOffice } from "../../../../src/features/savedWork/savedWorkRemovalRules";
 import { isCompleteNoAccess } from "../../../../src/features/meters/noAccessReasons";
@@ -165,16 +166,34 @@ export default function NoAccessScreen() {
     // canGoBack is asked first because after an app reload there may be nothing underneath.
     // replace is then the fallback, which strands nobody - unlike dismissTo this morning,
     // which silently did nothing and left the worker on a form they had already sent.
-    try {
-      if (router.canGoBack?.()) {
-        router.back();
-        return;
+    // BACK only when the screen we want is in THIS stack; otherwise navigate to it.
+    //
+    // The owner, 3 Oct 2026: "so now all no accesses end up in my work orders, even those you
+    // create from the normal path - is that how it should be?" No, and here is why it did.
+    //
+    // This screen lives in the ADMIN tab (app/(tabs)/admin/operations/no-access.js). The
+    // premise card lives in the PREMISES tab. Opening No Access from a premise card crosses
+    // tabs, so router.back() pops within the ADMIN stack and lands on whatever Admin screen was
+    // underneath - My Work Orders. Right for a batch row, wrong for every other entry point.
+    //
+    // Same tab: go back, and the screen keeps its state - My Work Orders keeps the open bucket
+    // and its rows, which is the whole point. Different tab: replace, because there is nothing
+    // of ours underneath to go back to.
+    const tabOf = (path) => String(path || "").split("/")[1] || "";
+    const sameStack = tabOf(target.pathname) === tabOf(NO_ACCESS_ROUTE);
+
+    if (sameStack) {
+      try {
+        if (router.canGoBack?.()) {
+          router.back();
+          return;
+        }
+      } catch (error) {
+        console.log(
+          "No Access -- back failed, replacing instead",
+          error?.message,
+        );
       }
-    } catch (error) {
-      console.log(
-        "No Access -- back failed, replacing instead",
-        error?.message,
-      );
     }
 
     try {
