@@ -16,7 +16,6 @@ import {
 import { Text } from "react-native-paper";
 
 import {
-  REMOVAL_REASONS,
   assessRemoval,
   canRemoveUnsentWork,
   isRefusedByOffice,
@@ -33,12 +32,10 @@ export default function RemoveSavedWorkDialog({
   onCancel,
   onConfirm,
 }) {
-  const [reason, setReason] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (visible) {
-      setReason("");
       setError("");
     }
   }, [visible, item?.id]);
@@ -59,7 +56,7 @@ export default function RemoveSavedWorkDialog({
   // demanding a removal reason the dialog never asks for on a refused form. Both times the
   // worker tapped Remove and nothing happened at all (owner's phone, 3 Oct 2026).
   const handleConfirm = () => {
-    const verdict = assessRemoval({ item: item || {}, role, reason });
+    const verdict = assessRemoval({ item: item || {}, role });
 
     if (!verdict.allowed) {
       setError(verdict.message || "This cannot be removed.");
@@ -83,108 +80,14 @@ export default function RemoveSavedWorkDialog({
         >
           <View style={styles.card}>
             <ScrollView keyboardShouldPersistTaps="handled">
-              {refused ? (
-                <>
-                  <Text style={styles.title}>Remove this refused form?</Text>
-                  <Text style={styles.body}>
-                    The office refused {whatIsIt}, so it will never send however
-                    long it is left. If the problem can be fixed, use EDIT instead
-                    - removing it loses the visit, the photograph and the position.
-                  </Text>
-                </>
-              ) : alreadySent ? (
-                <>
-                  <Text style={styles.title}>Remove this from the list?</Text>
-                  <Text style={styles.body}>
-                    The office already has {whatIsIt}. Removing it here only tidies
-                    this phone; nothing is lost.
-                  </Text>
-                </>
-              ) : blocked ? (
-                <>
-                  <Text style={styles.title}>This work is still to go</Text>
-                  <Text style={styles.body}>
-                    {whatIsIt.charAt(0).toUpperCase() + whatIsIt.slice(1)} has not
-                    reached the office yet. Only a supervisor can remove it, and
-                    they must give a reason.
-                  </Text>
-                  <Text style={styles.body}>
-                    Leave it here. It goes by itself as soon as there is signal.
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.title}>
-                    This work has never reached the office
-                  </Text>
-                  <Text style={styles.body}>
-                    Removing {whatIsIt} throws away what a worker captured. Pick
-                    the reason.
-                  </Text>
-
-                  {REMOVAL_REASONS.map((option) => {
-                    const picked = reason === option;
-
-                    return (
-                      <TouchableOpacity
-                        key={option}
-                        style={[styles.reason, picked && styles.reasonPicked]}
-                        onPress={() => {
-                          setReason(picked ? "" : option);
-                          if (error) setError("");
-                        }}
-                        disabled={busy}
-                      >
-                        <View
-                          style={[styles.tick, picked && styles.tickPicked]}
-                        />
-                        <Text
-                          style={[
-                            styles.reasonText,
-                            picked && styles.reasonTextPicked,
-                          ]}
-                        >
-                          {option}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-
-                  {error ? (
-                    <Text style={styles.error}>{error}</Text>
-                  ) : (
-                    <Text style={styles.hint}>
-                      Kept on this phone with your name.
-                    </Text>
-                  )}
-                </>
-              )}
-
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={[styles.btn, styles.cancelBtn]}
-                  onPress={onCancel}
-                  disabled={busy}
-                >
-                  <Text style={styles.cancelText}>
-                    {blocked ? "Leave it here" : "Cancel"}
-                  </Text>
-                </TouchableOpacity>
-
-                {!blocked && (
-                  <TouchableOpacity
-                    style={[
-                      styles.btn,
-                      styles.removeBtn,
-                      { opacity: busy ? 0.6 : 1 },
-                    ]}
-                    onPress={handleConfirm}
-                    disabled={busy}
-                  >
-                    <Text style={styles.removeText}>Remove</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+              {/* One confirmation, nothing else. The worker is removing something from their
+                  own phone and does not need the reasoning explained back to them. */}
+              <Text style={styles.title}>Remove this item?</Text>
+              <Text style={styles.body}>
+                {alreadySent
+                  ? "The office already has it. Nothing is lost."
+                  : "It has not been sent to the office, so it will be lost."}
+              </Text>
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
