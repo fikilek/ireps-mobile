@@ -254,52 +254,122 @@ test("an unknown worker reads NAv, never blank", () => {
  * NA-R003 — the transaction id carries the type the worker was doing
  * ------------------------------------------------------------------ */
 
-// NA-R005 (1.10.0), agreed by the owner 3 October 2026:
-//   TRN_NA_{work}_{timestamp}_{meterType}_{wardPcode}_{erfNo}
+// NA-R005 (1.11.0), settled by the owner 3 October 2026:
+//   TRN_{work}_{timestamp}_{meterCat}_{wardPcode}_{erfNo}_NA
 //
-// Before this rule the id was a Meter Discovery id with NA in the meter-type slot - a
+// Before this rule the id was a Meter Discovery id with NA in the METER-TYPE slot - a
 // convention in use since 2 May 2026 that nobody had written down, and that the format
 // reference contradicts, declaring only ELC and WTR there.
-test("NA-R005: the id says it is a no access, and says what the work was", async () => {
+test("NA-R005: the work is named first, and _NA says it failed", async () => {
   const { buildNoAccessTrnId, TRN_PREFIX_BY_TYPE } =
     await import("./meterDiscoveryTrnId.js");
 
   for (const [trnType, prefix] of Object.entries(TRN_PREFIX_BY_TYPE)) {
-    const work = prefix.replace(/^TRN_/, "");
     const id = buildNoAccessTrnId({
       trnType,
-      wardPcode: "KZN241W6",
-      erfNo: "5214",
+      meterType: "electricity",
+      wardPcode: "ZA5241006",
+      erfNo: "1695",
     });
 
-    assert.ok(id.startsWith("TRN_NA_"), "a no access must say so at a glance");
     assert.ok(
-      id.startsWith(`TRN_NA_${work}_`),
-      `${trnType} must keep its work code ${work}: a no access on a disconnection IS a disconnection that could not be done (NA-R003)`,
+      id.startsWith(`${prefix}`),
+      `${trnType} must keep its own prefix: a no access on a disconnection IS a disconnection that could not be done (NA-R003)`,
     );
+    assert.ok(id.endsWith("_NA"), "a no access must say so, at the end");
     assert.ok(
-      id.endsWith("_KZN241W6_5214"),
-      "the id can be placed from the id alone",
+      id.endsWith("_ELC_ZA5241006_1695_NA"),
+      "the ward and the ERF must both be there - ERF numbers repeat between wards",
     );
   }
 });
 
-test("NA-R005: the meter type is ELC, WTR, or NA where none was reached", async () => {
+test("NA-R005: the meter category is ELC, WTR, or NAv where none was reached", async () => {
   const { buildNoAccessTrnId } = await import("./meterDiscoveryTrnId.js");
 
+  const at = new Date("2026-10-03T10:45:22.663Z");
   const of = (meterType) =>
     buildNoAccessTrnId({
       trnType: "METER_DISCOVERY",
       meterType,
       wardPcode: "ZA5241006",
       erfNo: "1695",
+      at,
     });
 
-  assert.match(of("electricity"), /^TRN_NA_MDIS_\d+_ELC_ZA5241006_1695$/);
-  assert.match(of("water"), /^TRN_NA_MDIS_\d+_WTR_ZA5241006_1695$/);
-  // A first-visit Discovery never reached a meter, so there is no type to name.
-  assert.match(of(""), /^TRN_NA_MDIS_\d+_NA_ZA5241006_1695$/);
-  assert.match(of(undefined), /^TRN_NA_MDIS_\d+_NA_ZA5241006_1695$/);
+  assert.match(
+    of("electricity"),
+    /^TRN_MDIS_261003_124522663_[A-Z2-9]{3}_ELC_ZA5241006_1695_NA$/,
+  );
+  assert.match(
+    of("water"),
+    /^TRN_MDIS_261003_124522663_[A-Z2-9]{3}_WTR_ZA5241006_1695_NA$/,
+  );
+  // A first-visit Discovery never reached a meter, so there is no category to name. NAv, not
+  // NA: NA is the suffix that says the visit failed, and one word may not mean two things.
+  assert.match(of(""), /_NAv_ZA5241006_1695_NA$/);
+  assert.match(of(undefined), /_NAv_ZA5241006_1695_NA$/);
+});
+
+test("NA-R005: the time is SAST and readable, not an epoch number", async () => {
+  const { buildNoAccessTrnId, sastStamp } =
+    await import("./meterDiscoveryTrnId.js");
+
+  // 10:45:22.663 UTC is 12:45:22.663 on a phone in South Africa. The id says what the worker
+  // saw: 1791024322663 was a date too, but only a machine could read it.
+  assert.equal(
+    sastStamp(new Date("2026-10-03T10:45:22.663Z")),
+    "261003_124522663",
+  );
+  // Across midnight UTC the SAST date is the NEXT day, and the id must say so.
+  assert.equal(
+    sastStamp(new Date("2026-10-03T22:30:00.000Z")),
+    "261004_003000000",
+  );
+  // And a single-digit month, day, hour and minute all keep their leading zero.
+  assert.equal(
+    sastStamp(new Date("2026-01-05T04:03:02.001Z")),
+    "260105_060302001",
+  );
+
+  const id = buildNoAccessTrnId({
+    trnType: "METER_DISCOVERY",
+    meterType: "electricity",
+    wardPcode: "ZA5241006",
+    erfNo: "1695",
+    at: new Date("2026-10-03T10:45:22.663Z"),
+  });
+  assert.ok(
+    id.includes("_261003_124522663_"),
+    "the id does not carry the readable SAST moment",
+  );
+});
+
+test("NA-R005: two captures in the same millisecond cannot share an id", async () => {
+  const { buildNoAccessTrnId, idTail } =
+    await import("./meterDiscoveryTrnId.js");
+
+  // A repeated id is how one visit silently overwrote another on 3 October. Milliseconds close
+  // it for one phone; the tail closes it for two phones in the same millisecond.
+  const at = new Date("2026-10-03T10:45:22.663Z");
+  const make = () =>
+    buildNoAccessTrnId({
+      trnType: "METER_DISCOVERY",
+      wardPcode: "W",
+      erfNo: "1",
+      at,
+    });
+
+  const ids = new Set(Array.from({ length: 200 }, make));
+  assert.ok(
+    ids.size > 150,
+    "the tail is not varying, so two phones in one millisecond collide",
+  );
+
+  // No I, O, 0 or 1: an id is read aloud and copied by hand.
+  for (let i = 0; i < 200; i += 1) {
+    assert.match(idTail(), /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{3}$/);
+  }
 });
 
 test("a transaction type nobody declared is refused rather than guessed", async () => {
