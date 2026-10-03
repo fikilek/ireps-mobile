@@ -200,6 +200,39 @@ export default function PremisesScreen() {
     [router],
   );
 
+  // The owner, 3 Oct: "i want these to be btns, a click must route to AstsScreen and select
+  // the meter/ast."
+  //
+  // A service entry on a premise is { trnId, status, updatedAt } - the trnId IS the asts
+  // document id, and selectFilteredMeters matches selectedMeter on ast.astData.astId or id.
+  //
+  // One meter of that kind: select it, and the worker lands on exactly that meter. Several:
+  // select the premise instead and let them pick, because guessing which of three a worker
+  // meant is worse than showing them the three. The chip is disabled on none, so there is no
+  // third case to handle here.
+  const handleMeterPress = useCallback(
+    (premise, serviceKey) => {
+      const meters = Array.isArray(premise?.services?.[serviceKey])
+        ? premise.services[serviceKey]
+        : [];
+
+      const onlyMeterId = meters.length === 1 ? meters[0]?.trnId || null : null;
+
+      // The ERF goes with it. Every other selection site in the app sets all three together,
+      // and without it a selectedErf left over from a different ERF stays behind the premise -
+      // which the meter list happens to ignore, but the ERF and map screens do not.
+      updateGeo({
+        selectedErf: erfById[premise?.erfId] || null,
+        selectedPremise: premise,
+        selectedMeter: onlyMeterId ? { id: onlyMeterId } : null,
+        lastSelectionType: onlyMeterId ? "METER" : "PREMISE",
+      });
+
+      router.push("/(tabs)/asts");
+    },
+    [erfById, router, updateGeo],
+  );
+
   const handleAccountPress = useCallback(
     (p) => {
       router.push({
@@ -217,7 +250,9 @@ export default function PremisesScreen() {
   const selectedPremiseIndex = useMemo(
     () =>
       selectedPremise?.id
-        ? displayPremises.findIndex((premise) => premise?.id === selectedPremise.id)
+        ? displayPremises.findIndex(
+            (premise) => premise?.id === selectedPremise.id,
+          )
         : -1,
     [displayPremises, selectedPremise?.id],
   );
@@ -265,6 +300,7 @@ export default function PremisesScreen() {
             onNaPress={handleNaPress}
             onDuplicate={handleDuplicate}
             onAccountPress={handleAccountPress}
+            onMeterPress={handleMeterPress}
           />
         </View>
       );

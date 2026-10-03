@@ -160,6 +160,7 @@ const PremiseCard = memo(
     onDuplicate,
     onNaPress,
     onAccountPress,
+    onMeterPress,
   }) => {
     const isRepeatable = isRepeatablePropertyType(item?.propertyType?.type);
     const erfId = item?.erfId; // 🎯 The link to the sovereign
@@ -518,14 +519,22 @@ const PremiseCard = memo(
         {/* 🏛️ THE COMMAND STRIP */}
         <View style={styles.commandStrip}>
           <View style={styles.statsRow}>
-            <View
+            {/* The owner, 3 Oct: these are buttons - a tap goes to the meters and selects the
+                meter. Disabled on a count of 0: there is nothing to go to, and the chip is
+                already grey and reads NO METER, so a tap that opened an empty list would be
+                telling the worker something the chip has already told them. */}
+            <TouchableOpacity
               style={[
                 styles.statItem,
                 {
                   backgroundColor: electricityStatusIndicator.bg,
                   borderColor: electricityStatusIndicator.border,
                 },
+                electricityStatusIndicator.count === 0 && styles.statItemEmpty,
               ]}
+              disabled={electricityStatusIndicator.count === 0}
+              onPress={() => onMeterPress?.(item, "electricityMeters")}
+              activeOpacity={0.85}
             >
               <View style={styles.statTopRow}>
                 <MaterialCommunityIcons
@@ -553,16 +562,20 @@ const PremiseCard = memo(
                   ELEC
                 </Text>
               </View>
-            </View>
+            </TouchableOpacity>
 
-            <View
+            <TouchableOpacity
               style={[
                 styles.statItem,
                 {
                   backgroundColor: waterStatusIndicator.bg,
                   borderColor: waterStatusIndicator.border,
                 },
+                waterStatusIndicator.count === 0 && styles.statItemEmpty,
               ]}
+              disabled={waterStatusIndicator.count === 0}
+              onPress={() => onMeterPress?.(item, "waterMeters")}
+              activeOpacity={0.85}
             >
               <View style={styles.statTopRow}>
                 <MaterialCommunityIcons
@@ -590,7 +603,7 @@ const PremiseCard = memo(
                   WTR
                 </Text>
               </View>
-            </View>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.statItem, styles.accountStatItem]}
@@ -751,6 +764,10 @@ const styles = StyleSheet.create({
   // to proportions that had nothing to do with their contents - which is what squashed the
   // chips and forced the text down to 7px to fit.
   statsRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  // A chip with no meter behind it is not a button. It keeps its place so the strip does not
+  // move about between premises, and says so by being flat.
+  statItemEmpty: { opacity: 0.55 },
+
   // Mirrors statusRibbon: same band across the top of the card, same zIndex, opposite corner.
   naRibbon: {
     position: "absolute",
