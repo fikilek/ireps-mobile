@@ -82,7 +82,8 @@ export default function RemoveSavedWorkDialog({
                   <Text style={styles.title}>Remove this refused form?</Text>
                   <Text style={styles.body}>
                     The office refused {whatIsIt}, so it will never send however
-                    long it is left. Removing it loses nothing.
+                    long it is left. If the problem can be fixed, use EDIT instead
+                    - removing it loses the visit, the photograph and the position.
                   </Text>
                 </>
               ) : alreadySent ? (

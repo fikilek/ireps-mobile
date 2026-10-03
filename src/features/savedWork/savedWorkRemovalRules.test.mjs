@@ -97,12 +97,23 @@ test("unsent work needs a supervisor AND a reason", () => {
   assert.equal(done.reason, "Captured twice by mistake");
 });
 
-test("a refused capture is still unsent work, not spare rubbish", () => {
-  // m06: a refusal stops the retry, it does not make the capture disposable.
+test("a refused capture can be removed by the worker who is holding it", () => {
+  // CHANGED 3 Oct 2026 at the owner's instruction, and the old rule is worth knowing.
+  //
+  // It read: "a refused capture is still unsent work, not spare rubbish - m06: a refusal stops
+  // the retry, it does not make the capture disposable." That is a fair point: the capture is
+  // still the worker's visit, their photograph and their position, and the card offers EDIT so
+  // a refusal can be corrected and sent again.
+  //
+  // What it cost: the worker was shown "Leave it here. It goes by itself as soon as there is
+  // signal" over a record that never would, and could not clear it.
+  //
+  // If this is reversed, reverse assessRemoval and isUnsentWork with it, or the dialog will
+  // offer a Remove button that does nothing - which is exactly what the owner hit.
   const verdict = assessRemoval({ item: refused, role: "FWR", reason: "Office said no" });
 
-  assert.equal(verdict.allowed, false);
-  assert.equal(verdict.code, "NOT_A_SUPERVISOR");
+  assert.equal(verdict.allowed, true);
+  assert.equal(verdict.code, "REFUSED_BY_OFFICE");
 });
 
 test("the record keeps who captured the work, not only who removed it", () => {
@@ -147,4 +158,19 @@ test("work that can still reach the office is still protected", () => {
   assert.equal(isRefusedByOffice(waiting), false);
   assert.equal(isUnsentWork(waiting), true, "a field worker still cannot delete pending work");
   assert.equal(canRemoveUnsentWork("FWR"), false);
+});
+
+test("the decision agrees with what the dialog says: refused work removes with no reason", () => {
+  // The dialog showing "Remove" while the decision refused it is how the owner got a button
+  // that did nothing. These two must never disagree again.
+  const decision = assessRemoval({ item: { status: "REFUSED" }, role: "FWR" });
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.needsReason, false);
+  assert.equal(decision.code, "REFUSED_BY_OFFICE");
+});
+
+test("pending work still refuses a field worker, with a reason demanded", () => {
+  const decision = assessRemoval({ item: { status: "PENDING" }, role: "FWR" });
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.code, "NOT_A_SUPERVISOR");
 });

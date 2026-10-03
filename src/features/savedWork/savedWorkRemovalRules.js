@@ -76,6 +76,13 @@ export function assessRemoval({ item = {}, role, reason } = {}) {
     return { allowed: true, needsReason: false, code: "ALREADY_SENT" };
   }
 
+  // Refused work will never send, so there is nothing to protect and no reason to demand.
+  // The dialog said so and this did not, which left the worker looking at "Remove" and
+  // nothing happening when they pressed it (owner's phone, 3 Oct 2026).
+  if (isRefusedByOffice(item)) {
+    return { allowed: true, needsReason: false, code: "REFUSED_BY_OFFICE" };
+  }
+
   if (!canRemoveUnsentWork(role)) {
     return {
       allowed: false,
