@@ -174,3 +174,14 @@ test("pending work still refuses a field worker, with a reason demanded", () => 
   assert.equal(decision.allowed, false);
   assert.equal(decision.code, "NOT_A_SUPERVISOR");
 });
+
+test("a removal the dialog offers with no reason box is allowed with no reason", () => {
+  // The dialog shows a reason box only where the rules demand one. Twice it offered Remove
+  // while assessRemoval refused — once on the rule, once because a reason was demanded that
+  // the dialog never asked for — and both times the button did nothing at all.
+  for (const item of [{ status: "REFUSED" }, { status: "SUCCESS", result: { success: true } }]) {
+    const verdict = assessRemoval({ item, role: "FWR", reason: "" });
+    assert.equal(verdict.allowed, true, `${item.status} must remove without a reason`);
+    assert.equal(verdict.needsReason, false);
+  }
+});

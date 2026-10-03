@@ -17,6 +17,7 @@ import { Text } from "react-native-paper";
 
 import {
   REMOVAL_REASONS,
+  assessRemoval,
   canRemoveUnsentWork,
   isRefusedByOffice,
   isSentToOffice,
@@ -47,20 +48,23 @@ export default function RemoveSavedWorkDialog({
   const maySupervise = canRemoveUnsentWork(role);
   const blocked = !alreadySent && !refused && !maySupervise;
 
+  // The reason recorded when the rules ask for none.
+  const removalReasonFor = (code) =>
+    code === "ALREADY_SENT" ? "Already with the office" : "Refused by the office";
+
+  // ONE decision, asked once. This used to work the rules out again for itself, and twice
+  // disagreed with assessRemoval - first offering a Remove button the rules refused, then
+  // demanding a removal reason the dialog never asks for on a refused form. Both times the
+  // worker tapped Remove and nothing happened at all (owner's phone, 3 Oct 2026).
   const handleConfirm = () => {
-    if (alreadySent) {
-      onConfirm?.({ reason: "Already with the office" });
+    const verdict = assessRemoval({ item: item || {}, role, reason });
+
+    if (!verdict.allowed) {
+      setError(verdict.message || "This cannot be removed.");
       return;
     }
 
-    const check = validateRemovalReason(reason);
-
-    if (!check.valid) {
-      setError(check.message);
-      return;
-    }
-
-    onConfirm?.({ reason: check.reason });
+    onConfirm?.({ reason: verdict.reason || removalReasonFor(verdict.code) });
   };
 
   return (
