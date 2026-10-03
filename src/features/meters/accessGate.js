@@ -9,6 +9,22 @@
 // and Meter Installation already had a gate of their own (water, electricity, no access);
 // this is the two-answer version for work issued against a meter that already exists.
 
+import { formatStreetAddress } from "../premises/streetAddress.js";
+
+// NA-R030: the record stores the address and the property type as WORDS, not as the objects a
+// premise holds them in. A premise address is { strNo, strName, strType, suburbName } and a
+// property type is { type, name, unitNo }; handing either to a screen crashes it with
+// "Objects are not valid as a React child". formatStreetAddress is the app's own formatter,
+// so the words read the same here as everywhere else.
+export function premiseAddressWords(premise = {}) {
+  return formatStreetAddress(premise?.address || {}) || "";
+}
+
+export function premisePropertyTypeWords(premise = {}) {
+  const t = premise?.propertyType || {};
+  return [t?.type, t?.name, t?.unitNo].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ");
+}
+
 export const ACCESS_GATE = Object.freeze({
   title: "Did you reach the meter?",
   // NA-R001 section 1: the test is the hand, not the eye. A meter seen through a gate or
@@ -35,8 +51,8 @@ export function buildAssetNoAccessContext(asset = {}, { returnTo, trnType } = {}
     erfId: accessData?.erfId || "",
     erfNo: accessData?.erfNo || "NAv",
     premiseId: accessData?.premise?.id || null,
-    premiseAddress: accessData?.premise?.address || "",
-    premisePropertyType: accessData?.premise?.propertyType || "",
+    premiseAddress: premiseAddressWords(accessData?.premise),
+    premisePropertyType: premisePropertyTypeWords(accessData?.premise),
     wardPcode: accessData?.parents?.wardPcode || "",
     meterNo: asset?.ast?.astData?.astNo || asset?.astNo || "",
     astId: asset?.id || "",

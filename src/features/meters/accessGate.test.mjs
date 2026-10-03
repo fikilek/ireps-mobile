@@ -65,3 +65,34 @@ test("a no access on a disconnection is a disconnection, not a discovery", () =>
   const context = buildAssetNoAccessContext(asset(), { trnType: "METER_DISCONNECTION" });
   assert.equal(context.trnType, "METER_DISCONNECTION");
 });
+
+// A premise address is an object { strNo, strName, strType, suburbName } and a property type
+// is { type, name, unitNo }. Putting either on the record unformatted crashed the queue screen
+// with "Objects are not valid as a React child" — found on the owner's phone, 3 Oct 2026.
+test("the record stores the address as words, never as the object", () => {
+  const context = buildAssetNoAccessContext(
+    asset({
+      accessData: {
+        erfId: "ERF_1",
+        premise: {
+          id: "PRM_1",
+          address: { strNo: "26", strName: "Old Acre", strType: "Street", suburbName: "Sibongile" },
+          propertyType: { type: "Shop", name: "Spaza", unitNo: "3" },
+        },
+      },
+    }),
+  );
+
+  assert.equal(typeof context.premiseAddress, "string");
+  assert.equal(typeof context.premisePropertyType, "string");
+  assert.equal(context.premiseAddress, "26 Old Acre Street");
+  assert.equal(context.premisePropertyType, "Shop Spaza 3");
+});
+
+test("a premise with no address yet gives empty words, not an object and not a crash", () => {
+  const context = buildAssetNoAccessContext(
+    asset({ accessData: { erfId: "ERF_1", premise: { id: "PRM_1" } } }),
+  );
+  assert.equal(context.premiseAddress, "");
+  assert.equal(context.premisePropertyType, "");
+});

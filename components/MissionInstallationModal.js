@@ -3,6 +3,10 @@
 import { useRouter } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { Button, Modal, Portal, Surface, Text } from "react-native-paper";
+import {
+  premiseAddressWords,
+  premisePropertyTypeWords,
+} from "../src/features/meters/accessGate";
 import { useGeo } from "../src/context/GeoContext";
 import { useInstallation } from "../src/context/InstallationContext";
 
@@ -32,8 +36,8 @@ export default function MissionInstallationModal() {
           trnType: "METER_INSTALLATION",
           // NA-R044: a no access is to a premise. The gate is opened from one, so it is here.
           premiseId: premiseId || null,
-          premiseAddress: premise?.address || "",
-          premisePropertyType: premise?.propertyType || "",
+          premiseAddress: premiseAddressWords(premise),
+          premisePropertyType: premisePropertyTypeWords(premise),
           erfId: premise?.erfId || "",
           erfNo: premise?.erfNo || "NAv",
           wardPcode: premise?.parents?.wardPcode || "",

@@ -4,6 +4,10 @@ import { useRouter } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { Button, Modal, Portal, Surface, Text } from "react-native-paper";
 import { useDiscovery } from "../src/context/DiscoveryContext";
+import {
+  premiseAddressWords,
+  premisePropertyTypeWords,
+} from "../src/features/meters/accessGate";
 import { useGeo } from "../src/context/GeoContext";
 import {
   normalizeTargetedBatchContext,
@@ -50,8 +54,8 @@ export default function MissionDiscoveryModal() {
           erfNo: premise?.erfNo || batch?.erfNo || "",
           // NA-R084.1: carried only if it exists now. Never looked up, never filled in later.
           premiseId: premiseId || batch?.premiseId || null,
-          premiseAddress: premise?.address || "",
-          premisePropertyType: premise?.propertyType || "",
+          premiseAddress: premiseAddressWords(premise),
+          premisePropertyType: premisePropertyTypeWords(premise),
           wardPcode: premise?.parents?.wardPcode || "",
           meterNo: batch?.targetedMeterNo || "",
           tbId: batch?.tbId || "",
