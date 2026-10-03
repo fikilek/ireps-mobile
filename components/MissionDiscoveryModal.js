@@ -56,7 +56,10 @@ export default function MissionDiscoveryModal() {
           premiseId: premiseId || batch?.premiseId || null,
           premiseAddress: premiseAddressWords(premise),
           premisePropertyType: premisePropertyTypeWords(premise),
+          // The premise already knows where it is. The server still confirms it from the
+          // ERF, but the record is never left with nothing because one of them was absent.
           wardPcode: premise?.parents?.wardPcode || "",
+          lmPcode: premise?.parents?.lmPcode || "",
           meterNo: batch?.targetedMeterNo || "",
           tbId: batch?.tbId || "",
           targetedBatchContext: batch || null,

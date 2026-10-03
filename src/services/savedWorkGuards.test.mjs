@@ -105,7 +105,9 @@ test("a No Access capture books its own next try", () => {
   // worker saved would otherwise never be woken.
   assert.match(
     noAccessSource,
-    /scheduleMeterDiscoveryQueueSyncRetry\(\{ agentUid, agentName, delayMs: 20000 \}\)/,
+    // Written so the formatter cannot break the guard: what matters is that the call is made
+    // with a delay, not how many lines Prettier puts it on.
+    /scheduleMeterDiscoveryQueueSyncRetry\(\{\s*agentUid,\s*agentName,\s*delayMs: 20000,?\s*\}\)/,
     "a saved No Access capture waits for a signal change that may never come",
   );
 });
@@ -141,24 +143,44 @@ test("a submitted No Access form always lets the worker out", () => {
   );
 });
 
-test("the GPS fix has a deadline, so a No Access capture is never held hostage to it", () => {
-  // With no signal there is no assisted positioning: indoors the phone can sit on a high-accuracy
-  // fix for ever, and at that point nothing the worker did has been saved (the owner's phone,
-  // 27 September). A No Access claim still needs a position, so the fix falls back to one the
-  // phone took in the last two minutes rather than being skipped.
+test("the No Access screen takes no position from the phone at all", () => {
+  // THIS REPLACES the GPS deadline guard. That guard existed because the screen held the
+  // submit for up to twenty seconds chasing a fix, and indoors behind a wall - exactly where a
+  // no access is filled in - it could sit there for ever with nothing yet saved (the owner's
+  // own phone, 27 September: "the gps picker was stuck").
+  //
+  // TR-R003 (0.6.0) removed the cause rather than capping it. The owner, 3 October: "the AST
+  // location GPS must always be the asset location. The fallback is the premise location."
+  // A worker who could not touch the meter is standing at a gate, not at the meter, so their
+  // fix was never the asset's position however long the phone took to get it. The server reads
+  // the asset and the premise instead, so the worker waits for nothing.
+  for (const gone of [
+    "expo-location",
+    "readPosition",
+    "GPS_FIX_DEADLINE_MS",
+    "getCurrentPositionAsync",
+    "getLastKnownPositionAsync",
+  ]) {
+    assert.equal(
+      noAccessSource.includes(gone),
+      false,
+      `the screen is reading a position again ("${gone}"), which puts the wait back and lets a worker's own fix pass for the meter's`,
+    );
+  }
+
+  // It sends the meter id instead, which is all the server needs to ask whether this no access
+  // HAS a meter - a Reading does, a first-visit Discovery does not.
   assert.match(
     noAccessSource,
-    /const GPS_FIX_DEADLINE_MS = \d+/,
-    "the fresh fix can run for ever again",
+    /astId: context\.astId \|\| null/,
+    "the server cannot tell whether there is an asset to take a position from",
   );
-  assert.match(
-    noAccessSource,
-    /Location\.getLastKnownPositionAsync\(\{\s*maxAge: RECENT_FIX_MAX_AGE_MS,?\s*\}\)/,
-    "there is no fallback when the fresh fix does not arrive",
-  );
-  assert.ok(
-    noAccessSource.includes("The phone cannot find where you are"),
-    "a worker who cannot be located is not told what to do about it",
+
+  // The retired home. Every record that ever used it was a no access written by this screen.
+  assert.equal(
+    /^\s*location,\s*$/m.test(noAccessSource),
+    false,
+    "the screen is writing root location again, which is the second home TR-R003 removed",
   );
 });
 
