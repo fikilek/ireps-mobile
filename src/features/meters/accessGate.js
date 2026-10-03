@@ -22,7 +22,10 @@ export function premiseAddressWords(premise = {}) {
 
 export function premisePropertyTypeWords(premise = {}) {
   const t = premise?.propertyType || {};
-  return [t?.type, t?.name, t?.unitNo].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ");
+  return [t?.type, t?.name, t?.unitNo]
+    .map((v) => String(v ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
 }
 
 export const ACCESS_GATE = Object.freeze({
@@ -42,7 +45,10 @@ export const NO_ACCESS_ROUTE = "/(tabs)/admin/operations/no-access";
  * never has to invent one, and if it is ever missing the server refuses rather than recording
  * something nobody can act on.
  */
-export function buildAssetNoAccessContext(asset = {}, { returnTo, trnType } = {}) {
+export function buildAssetNoAccessContext(
+  asset = {},
+  { returnTo, trnType } = {},
+) {
   const accessData = asset?.accessData || {};
 
   return {
@@ -56,6 +62,9 @@ export function buildAssetNoAccessContext(asset = {}, { returnTo, trnType } = {}
     wardPcode: accessData?.parents?.wardPcode || "",
     lmPcode: accessData?.parents?.lmPcode || "",
     meterNo: asset?.ast?.astData?.astNo || asset?.astNo || "",
+    // NA-R005: the id carries the meter type. Work issued against a meter knows it; a
+    // first-visit Discovery does not, and the id then reads NA.
+    meterType: asset?.meterType || "",
     astId: asset?.id || "",
     returnTo: returnTo || "/(tabs)/asts",
   };

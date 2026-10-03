@@ -22,15 +22,43 @@ export const TRN_PREFIX_BY_TYPE = Object.freeze({
   METER_READING: "TRN_MREAD",
 });
 
-/** The id for a no access on any transaction type, built the way that type builds its own. */
-export function buildNoAccessTrnId({ trnType, wardPcode, erfNo }) {
+/**
+ * NA-R005 (1.10.0) — the No Access transaction id. Agreed by the owner, 3 October 2026.
+ *
+ *   TRN_NA_{work}_{timestamp}_{meterType}_{wardPcode}_{erfNo}
+ *   TRN_NA_MDIS_1791024322663_ELC_ZA5241006_1695
+ *   TRN_NA_MDIS_1791024322663_NA_ZA5241006_1695     first visit, no meter reached
+ *   TRN_NA_MDCN_1791024322663_ELC_ZA5241006_1695    a disconnection that could not be done
+ *
+ * Until this rule existed the id was a Meter Discovery id with `NA` in the meter-type slot -
+ * a convention in use since 2 May 2026 that nobody had written down, and that the format
+ * reference contradicts: it declares only ELC and WTR there. The owner: "who did you agree
+ * with on this NA trn ID?" Nobody had.
+ *
+ * `TRN_NA_` says what it is at a glance. The WORK is kept after it because NA-R003 says a no
+ * access on a disconnection IS a disconnection that could not be done - without it every no
+ * access would look the same. And the meter type is `NA` where no meter was reached, which is
+ * most first-visit Discoveries.
+ */
+export function buildNoAccessTrnId({ trnType, meterType, wardPcode, erfNo }) {
   const prefix = TRN_PREFIX_BY_TYPE[String(trnType || "").toUpperCase()];
   if (!prefix) throw new Error(`No transaction prefix for ${trnType}`);
 
-  const safeWardPcode = String(wardPcode || "NAv").replace(/[^A-Za-z0-9]/g, "").slice(0, 12);
-  const safeErfNo = String(erfNo || "NAv").replace(/[^A-Za-z0-9]/g, "").slice(0, 12);
+  // TRN_MDIS -> MDIS. One table, so a work code can never drift from its prefix.
+  const work = prefix.replace(/^TRN_/, "");
 
-  return `${prefix}_${Date.now()}_NA_${safeWardPcode}_${safeErfNo}`;
+  const type = String(meterType || "").toLowerCase();
+  const typeCode =
+    type === "water" ? "WTR" : type === "electricity" ? "ELC" : "NA";
+
+  const safeWardPcode = String(wardPcode || "NAv")
+    .replace(/[^A-Za-z0-9]/g, "")
+    .slice(0, 12);
+  const safeErfNo = String(erfNo || "NAv")
+    .replace(/[^A-Za-z0-9]/g, "")
+    .slice(0, 12);
+
+  return `TRN_NA_${work}_${Date.now()}_${typeCode}_${safeWardPcode}_${safeErfNo}`;
 }
 
 export function buildMeterDiscoveryTrnId({ wardPcode, erfNo, meterType }) {

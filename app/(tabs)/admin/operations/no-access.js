@@ -107,6 +107,9 @@ export default function NoAccessScreen() {
   const buildTrnId = () =>
     buildNoAccessTrnId({
       trnType,
+      // NA-R005: ELC, WTR, or NA where no meter was reached - which is every first-visit
+      // Discovery, because the worker never got to one.
+      meterType: context.meterType,
       wardPcode: context.wardPcode,
       erfNo: context.erfNo,
     });
@@ -155,7 +158,16 @@ export default function NoAccessScreen() {
       // were all written by this screen.
       astId: context.astId || null,
       media,
-      capturedAt,
+      // TR-R002: the device time goes in METADATA, where the rule puts it - not at the root.
+      //
+      // The owner, 3 October, reading his own record: "capturedAt - in the rules, do we have
+      // this in the root?" We do not. And it was not a harmless extra: this screen sent the
+      // real capture time at the root as `capturedAt` and sent NO metadata at all, so the
+      // server found no device time and filled createdOnDevice with its own clock. On his 5185
+      // record capturedAt was 10:33:25 - the true moment - while createdOnDevice read 10:33:31,
+      // the server's. The one true fact sat in the undeclared field and the declared field
+      // held a substitute.
+      metadata: { createdOnDevice: capturedAt, updatedOnDevice: capturedAt },
       accessData: {
         trnType,
         // GMR-R027 indexes the monthly report on parents.lmPcode, and the TRN Registry is

@@ -22,29 +22,64 @@ import {
 
 test("NA-R024: two in the afternoon in South Africa is noon UTC", () => {
   assert.equal(
-    buildAppointmentInstant({ year: 2026, month: 10, day: 8, hour: 14, minute: 0 }),
+    buildAppointmentInstant({
+      year: 2026,
+      month: 10,
+      day: 8,
+      hour: 14,
+      minute: 0,
+    }),
     "2026-10-08T12:00:00.000Z",
   );
 });
 
 test("NA-R024: an early appointment crosses back into the previous day in UTC", () => {
   assert.equal(
-    buildAppointmentInstant({ year: 2026, month: 10, day: 8, hour: 1, minute: 30 }),
+    buildAppointmentInstant({
+      year: 2026,
+      month: 10,
+      day: 8,
+      hour: 1,
+      minute: 30,
+    }),
     "2026-10-07T23:30:00.000Z",
   );
 });
 
 test("NA-R024: the stored instant reads back as the time the worker picked", () => {
-  const at = buildAppointmentInstant({ year: 2026, month: 12, day: 31, hour: 23, minute: 45 });
+  const at = buildAppointmentInstant({
+    year: 2026,
+    month: 12,
+    day: 31,
+    hour: 23,
+    minute: 45,
+  });
   assert.deepEqual(readAppointmentParts(at), {
-    year: 2026, month: 12, day: 31, hour: 23, minute: 45, weekday: 4,
+    year: 2026,
+    month: 12,
+    day: 31,
+    hour: 23,
+    minute: 45,
+    weekday: 4,
   });
 });
 
 test("NA-R024: the offset is applied explicitly, so a handset set to another country is unaffected", () => {
   // Built from parts, not from the device clock: the same parts always give the same instant.
-  const first = buildAppointmentInstant({ year: 2026, month: 7, day: 1, hour: 9, minute: 0 });
-  const second = buildAppointmentInstant({ year: 2026, month: 7, day: 1, hour: 9, minute: 0 });
+  const first = buildAppointmentInstant({
+    year: 2026,
+    month: 7,
+    day: 1,
+    hour: 9,
+    minute: 0,
+  });
+  const second = buildAppointmentInstant({
+    year: 2026,
+    month: 7,
+    day: 1,
+    hour: 9,
+    minute: 0,
+  });
   assert.equal(first, second);
   assert.equal(first, "2026-07-01T07:00:00.000Z");
 });
@@ -54,12 +89,24 @@ test("NA-R024: the offset is applied explicitly, so a handset set to another cou
  * ------------------------------------------------------------------ */
 
 test("NA-R022: an appointment reads as one plain line", () => {
-  const at = buildAppointmentInstant({ year: 2026, month: 10, day: 8, hour: 14, minute: 0 });
+  const at = buildAppointmentInstant({
+    year: 2026,
+    month: 10,
+    day: 8,
+    hour: 14,
+    minute: 0,
+  });
   assert.equal(formatAppointment(at), "Thursday 8 October 2026, 14:00");
 });
 
 test("NA-R022: a time before ten keeps its leading zero", () => {
-  const at = buildAppointmentInstant({ year: 2026, month: 10, day: 2, hour: 9, minute: 5 });
+  const at = buildAppointmentInstant({
+    year: 2026,
+    month: 10,
+    day: 2,
+    hour: 9,
+    minute: 5,
+  });
   assert.equal(formatAppointment(at), "Friday 2 October 2026, 09:05");
 });
 
@@ -99,7 +146,11 @@ test("the calendar is Monday first and every row has seven cells", () => {
 
 test("the calendar knows how long each month is, February included", () => {
   assert.equal(monthGrid(2026, 2).flat().filter(Boolean).length, 28);
-  assert.equal(monthGrid(2028, 2).flat().filter(Boolean).length, 29, "2028 is a leap year");
+  assert.equal(
+    monthGrid(2028, 2).flat().filter(Boolean).length,
+    29,
+    "2028 is a leap year",
+  );
   assert.equal(monthGrid(2026, 10).flat().filter(Boolean).length, 31);
 });
 
@@ -124,14 +175,23 @@ test("today is pickable, yesterday is not", () => {
 
 test("a later month is pickable, an earlier one is not", () => {
   const today = todayInSast(NOW);
-  assert.equal(isDayPickable({ year: today.year, month: today.month + 1, day: 1 }, NOW), true);
-  assert.equal(isDayPickable({ year: today.year - 1, month: 12, day: 31 }, NOW), false);
+  assert.equal(
+    isDayPickable({ year: today.year, month: today.month + 1, day: 1 }, NOW),
+    true,
+  );
+  assert.equal(
+    isDayPickable({ year: today.year - 1, month: 12, day: 31 }, NOW),
+    false,
+  );
 });
 
 test("the day before the appointment can still be reached across a year boundary", () => {
   const newYear = Date.parse("2027-01-01T06:00:00.000Z");
   assert.equal(isDayPickable({ year: 2027, month: 1, day: 1 }, newYear), true);
-  assert.equal(isDayPickable({ year: 2026, month: 12, day: 31 }, newYear), false);
+  assert.equal(
+    isDayPickable({ year: 2026, month: 12, day: 31 }, newYear),
+    false,
+  );
 });
 
 /* ------------------------------------------------------------------ *
@@ -151,16 +211,41 @@ test("the clock offers quarter hours through the whole day", () => {
  * ------------------------------------------------------------------ */
 
 test("NA-R030: the appointment records who agreed it and when", () => {
-  const at = buildAppointmentInstant({ year: 2026, month: 10, day: 8, hour: 14, minute: 0 });
+  const at = buildAppointmentInstant({
+    year: 2026,
+    month: 10,
+    day: 8,
+    hour: 14,
+    minute: 0,
+  });
   assert.deepEqual(
-    buildAppointment({ at, actor: { uid: "UID_1", name: "Siya Siya" }, now: "2026-10-02T06:00:00.000Z" }),
-    { at, madeAt: "2026-10-02T06:00:00.000Z", madeByUid: "UID_1", madeByUser: "Siya Siya" },
+    buildAppointment({
+      at,
+      actor: { uid: "UID_1", name: "Siya Siya" },
+      now: "2026-10-02T06:00:00.000Z",
+    }),
+    {
+      at,
+      madeAt: "2026-10-02T06:00:00.000Z",
+      madeByUid: "UID_1",
+      madeByUser: "Siya Siya",
+    },
   );
 });
 
 test("an unknown worker reads NAv, never blank", () => {
-  const at = buildAppointmentInstant({ year: 2026, month: 10, day: 8, hour: 14, minute: 0 });
-  const appointment = buildAppointment({ at, actor: {}, now: "2026-10-02T06:00:00.000Z" });
+  const at = buildAppointmentInstant({
+    year: 2026,
+    month: 10,
+    day: 8,
+    hour: 14,
+    minute: 0,
+  });
+  const appointment = buildAppointment({
+    at,
+    actor: {},
+    now: "2026-10-02T06:00:00.000Z",
+  });
   assert.equal(appointment.madeByUid, "NAv");
   assert.equal(appointment.madeByUser, "NAv");
 });
@@ -169,15 +254,52 @@ test("an unknown worker reads NAv, never blank", () => {
  * NA-R003 — the transaction id carries the type the worker was doing
  * ------------------------------------------------------------------ */
 
-test("every transaction type builds its own id, and a no access says so", async () => {
-  const { buildNoAccessTrnId, TRN_PREFIX_BY_TYPE } = await import("./meterDiscoveryTrnId.js");
+// NA-R005 (1.10.0), agreed by the owner 3 October 2026:
+//   TRN_NA_{work}_{timestamp}_{meterType}_{wardPcode}_{erfNo}
+//
+// Before this rule the id was a Meter Discovery id with NA in the meter-type slot - a
+// convention in use since 2 May 2026 that nobody had written down, and that the format
+// reference contradicts, declaring only ELC and WTR there.
+test("NA-R005: the id says it is a no access, and says what the work was", async () => {
+  const { buildNoAccessTrnId, TRN_PREFIX_BY_TYPE } =
+    await import("./meterDiscoveryTrnId.js");
 
   for (const [trnType, prefix] of Object.entries(TRN_PREFIX_BY_TYPE)) {
-    const id = buildNoAccessTrnId({ trnType, wardPcode: "KZN241W6", erfNo: "5214" });
-    assert.ok(id.startsWith(`${prefix}_`), `${trnType} must carry ${prefix}`);
-    assert.match(id, /_NA_/, "the id says it was a no access");
-    assert.ok(id.endsWith("_KZN241W6_5214"), "the id can be placed from the id alone");
+    const work = prefix.replace(/^TRN_/, "");
+    const id = buildNoAccessTrnId({
+      trnType,
+      wardPcode: "KZN241W6",
+      erfNo: "5214",
+    });
+
+    assert.ok(id.startsWith("TRN_NA_"), "a no access must say so at a glance");
+    assert.ok(
+      id.startsWith(`TRN_NA_${work}_`),
+      `${trnType} must keep its work code ${work}: a no access on a disconnection IS a disconnection that could not be done (NA-R003)`,
+    );
+    assert.ok(
+      id.endsWith("_KZN241W6_5214"),
+      "the id can be placed from the id alone",
+    );
   }
+});
+
+test("NA-R005: the meter type is ELC, WTR, or NA where none was reached", async () => {
+  const { buildNoAccessTrnId } = await import("./meterDiscoveryTrnId.js");
+
+  const of = (meterType) =>
+    buildNoAccessTrnId({
+      trnType: "METER_DISCOVERY",
+      meterType,
+      wardPcode: "ZA5241006",
+      erfNo: "1695",
+    });
+
+  assert.match(of("electricity"), /^TRN_NA_MDIS_\d+_ELC_ZA5241006_1695$/);
+  assert.match(of("water"), /^TRN_NA_MDIS_\d+_WTR_ZA5241006_1695$/);
+  // A first-visit Discovery never reached a meter, so there is no type to name.
+  assert.match(of(""), /^TRN_NA_MDIS_\d+_NA_ZA5241006_1695$/);
+  assert.match(of(undefined), /^TRN_NA_MDIS_\d+_NA_ZA5241006_1695$/);
 });
 
 test("a transaction type nobody declared is refused rather than guessed", async () => {
