@@ -88,6 +88,26 @@ export default function RemoveSavedWorkDialog({
                   ? "The office already has it. Nothing is lost."
                   : "It has not been sent to the office, so it will be lost."}
               </Text>
+
+              {/* Cancel and Remove. Nothing is ever blocked now, so both are always here -
+                  a confirmation a worker cannot get out of is worse than no confirmation. */}
+              <View style={styles.actions}>
+                <TouchableOpacity
+                  style={[styles.btn, styles.cancelBtn]}
+                  onPress={onCancel}
+                  disabled={busy}
+                >
+                  <Text style={styles.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.btn, styles.removeBtn, { opacity: busy ? 0.6 : 1 }]}
+                  onPress={handleConfirm}
+                  disabled={busy}
+                >
+                  <Text style={styles.removeText}>OK</Text>
+                </TouchableOpacity>
+              </View>
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
