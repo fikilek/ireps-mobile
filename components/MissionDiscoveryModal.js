@@ -1,9 +1,15 @@
 // src/components/modals/MissionDiscoveryModal.js
 
 import { useRouter } from "expo-router";
-import { StyleSheet, View } from "react-native";
+import { Alert, StyleSheet, View } from "react-native";
 import { Button, Modal, Portal, Surface, Text } from "react-native-paper";
 import { useDiscovery } from "../src/context/DiscoveryContext";
+import {
+  BATCH_WORK_BLOCKED,
+  BATCH_WORK_BLOCKED_FOOTER,
+  BATCH_WORK_BLOCKED_TITLE,
+  checkBatchWorkBeforeForm,
+} from "../src/features/meters/batchWorkGate";
 import {
   premiseAddressWords,
   premisePropertyTypeWords,
@@ -20,8 +26,12 @@ export default function MissionDiscoveryModal() {
   const { isVisible, mission, closeMissionDiscovery } = useDiscovery();
 
   const premiseId = mission?.premiseId || mission?.premise?.id;
-  const targetedBatchContext = serializeTargetedBatchContext(mission?.targetedBatchContext);
-  const targetedBatchParams = targetedBatchContext ? { targetedBatchContext } : {};
+  const targetedBatchContext = serializeTargetedBatchContext(
+    mission?.targetedBatchContext,
+  );
+  const targetedBatchParams = targetedBatchContext
+    ? { targetedBatchContext }
+    : {};
 
   /* ----------------------------
      Handlers (AUTO ACTION)
@@ -37,6 +47,36 @@ export default function MissionDiscoveryModal() {
   //
   // A worker who has no access never opens a transaction form. There is nothing in it for
   // them: the form exists to record a meter, and there is no meter.
+  // TB-R059/TB-R062 (1.3.91) - THE FRONT GATE. The owner, 3 October: "the field worker should
+  // never be allowed to even open the form if the work is not theirs." He proved the cost on
+  // ERF 5212: reason, photograph, appointment - twice - and only learned at submit that the
+  // ERF was another team's.
+  //
+  // EVERY way out of this modal goes through here, so a route added later cannot quietly miss
+  // it. UNCHECKED opens the form: the submit path asks the server again, and that answer is
+  // the binding one.
+  const withFrontGate = async (open) => {
+    const gate = await checkBatchWorkBeforeForm({
+      erfId:
+        mission?.premise?.erfId || mission?.targetedBatchContext?.erfId || "",
+      premiseId: premiseId || "",
+    });
+
+    if (gate.state === BATCH_WORK_BLOCKED) {
+      // The server's own sentence, word for word - it names the batch, the geofence, the team
+      // and the date. The phone adds only what the worker should do next.
+      Alert.alert(
+        BATCH_WORK_BLOCKED_TITLE,
+        `${gate.message}
+
+${BATCH_WORK_BLOCKED_FOOTER}`,
+      );
+      return;
+    }
+
+    open();
+  };
+
   const goNoAccess = () => {
     closeMissionDiscovery();
 
@@ -128,7 +168,7 @@ export default function MissionDiscoveryModal() {
           <View style={styles.toggleRow}>
             <Button
               mode="contained"
-              onPress={goWater}
+              onPress={() => withFrontGate(goWater)}
               style={{ flex: 1, marginRight: 6 }}
             >
               WATER
@@ -136,7 +176,7 @@ export default function MissionDiscoveryModal() {
 
             <Button
               mode="contained"
-              onPress={goElectricity}
+              onPress={() => withFrontGate(goElectricity)}
               style={{ flex: 1 }}
             >
               ELEC
@@ -147,7 +187,11 @@ export default function MissionDiscoveryModal() {
         {/* ---------- NO ACCESS ---------- */}
 
         <Surface style={styles.modalCard} elevation={1}>
-          <Button mode="contained" buttonColor="#B22222" onPress={goNoAccess}>
+          <Button
+            mode="contained"
+            buttonColor="#B22222"
+            onPress={() => withFrontGate(goNoAccess)}
+          >
             NO ACCESS (NA)
           </Button>
         </Surface>

@@ -352,3 +352,53 @@ test("the No Access screen asks what a refusal is, it does not guess the word", 
     "the queue marks a refusal with a different status now; every reader of it must be checked",
   );
 });
+
+// ---------------------------------------------------------------------------
+// TB-R059 / TB-R062 (1.3.91) — THE FRONT GATE.
+//
+// The owner, 3 October: "the field worker that is doing the work should never be allowed to
+// even open the form if the work is not theirs… the user must not waste his or her time
+// submitting work that's going to be refused."
+//
+// He proved the cost on ERF 5212: reason, photograph, appointment — twice — and only at submit
+// did anyone tell him the ERF belonged to Simo Team.
+// ---------------------------------------------------------------------------
+
+test("every way into a transaction form passes the front gate", async () => {
+  const entries = [
+    ["../features/asts/astItem.js", "the five lifecycle forms"],
+    ["../../components/MissionDiscoveryModal.js", "Meter Discovery"],
+    ["../../components/MissionInstallationModal.js", "Meter Installation"],
+  ];
+
+  for (const [file, what] of entries) {
+    const source = await read(file);
+    assert.match(
+      source,
+      /checkBatchWorkBeforeForm\(/,
+      `${what} opens a form without asking whose batch the ERF is in`,
+    );
+    assert.match(
+      source,
+      /BATCH_WORK_BLOCKED/,
+      `${what} does not stop the worker when the answer is no`,
+    );
+  }
+});
+
+test("the front gate shows the server's own sentence, and never writes its own", async () => {
+  const gate = await read("../features/meters/batchWorkGate.js");
+
+  // The server knows the batch, the geofence, the team and the date. A sentence composed on
+  // the phone would drift from the one the submit path shows for the same refusal.
+  assert.match(gate, /result\?\.message/, "the gate is not reading the server's message");
+
+  // It must never throw: a front gate that can crash a screen stops work the worker IS
+  // entitled to do, which is the opposite of its job.
+  assert.match(gate, /catch \(error\)/, "the gate can throw, so it can block legitimate work");
+  assert.match(
+    gate,
+    /BATCH_WORK_UNCHECKED/,
+    "there is no 'could not ask' answer, so a worker with no signal is treated as refused",
+  );
+});

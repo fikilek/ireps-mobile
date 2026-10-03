@@ -17,6 +17,12 @@ import { useWarehouse } from "../../context/WarehouseContext";
 import { useAuth } from "../../hooks/useAuth";
 import { useGetServiceProvidersQuery } from "../../redux/spApi";
 import {
+  BATCH_WORK_BLOCKED,
+  BATCH_WORK_BLOCKED_FOOTER,
+  BATCH_WORK_BLOCKED_TITLE,
+  checkBatchWorkBeforeForm,
+} from "../meters/batchWorkGate";
+import {
   ACCESS_GATE,
   NO_ACCESS_ROUTE,
   assetCanRecordNoAccess,
@@ -587,8 +593,7 @@ const AstItem = ({ item }) => {
   const anomaly = item.ast?.anomalies?.anomaly || "Meter Ok";
   // A Meter Ok with a bridge or bypass suspicion reads amber, not green.
   const anomalyState = anomalyTone(anomaly, item.ast?.anomalies?.anomalyDetail);
-  const anomalyIcon =
-    anomalyState === "ok" ? "check-circle" : "alert-circle";
+  const anomalyIcon = anomalyState === "ok" ? "check-circle" : "alert-circle";
   const anomalyColor =
     anomalyState === "ok"
       ? "#10B981"
@@ -688,9 +693,7 @@ const AstItem = ({ item }) => {
   const canReconnect = meterState === "DISCONNECTED";
   // Only a meter that is still there can be removed. A decommissioned one
   // used to open the form and then refuse (MN-R001 6.1).
-  const canRemove = ["FIELD", "CONNECTED", "DISCONNECTED"].includes(
-    meterState,
-  );
+  const canRemove = ["FIELD", "CONNECTED", "DISCONNECTED"].includes(meterState);
 
   const actorServiceProviderId =
     profile?.employment?.serviceProvider?.id || null;
@@ -789,7 +792,33 @@ const AstItem = ({ item }) => {
   //
   // A worker who did not reach the meter never opens the transaction form. The form exists to
   // record work on a meter, and there is no meter to work on.
-  const launchFieldLifecycle = ({ pathname, trnType }) => {
+  //
+  // TB-R059/TB-R062 (1.3.91) - THE FRONT GATE comes FIRST, before the access question.
+  //
+  // The owner, 3 October: "the field worker should never be allowed to even open the form if
+  // the work is not theirs." He proved the cost on ERF 5212 - reason, photograph, appointment,
+  // twice - and only learned at submit that the ERF was Simo Team's.
+  //
+  // Asking BEFORE the access question matters. "Did you reach the meter?" is a question about
+  // work the worker is about to do; asking it on an ERF that is not theirs has already wasted
+  // their attention and invites them to start.
+  const launchFieldLifecycle = async ({ pathname, trnType }) => {
+    const erfId = item?.accessData?.erfId || "";
+    const premiseId = item?.accessData?.premise?.id || "";
+    const gate = await checkBatchWorkBeforeForm({ erfId, premiseId });
+
+    if (gate.state === BATCH_WORK_BLOCKED) {
+      // The server's own sentence, word for word: it names the batch, the geofence, the team
+      // and the date. The phone adds only what the worker should do next.
+      Alert.alert(
+        BATCH_WORK_BLOCKED_TITLE,
+        `${gate.message}
+
+${BATCH_WORK_BLOCKED_FOOTER}`,
+      );
+      return;
+    }
+
     Alert.alert(ACCESS_GATE.title, ACCESS_GATE.message, [
       {
         text: ACCESS_GATE.no,
@@ -809,13 +838,19 @@ const AstItem = ({ item }) => {
             pathname: NO_ACCESS_ROUTE,
             params: {
               context: JSON.stringify(
-                buildAssetNoAccessContext(item, { returnTo: "/(tabs)/asts", trnType }),
+                buildAssetNoAccessContext(item, {
+                  returnTo: "/(tabs)/asts",
+                  trnType,
+                }),
               ),
             },
           });
         },
       },
-      { text: ACCESS_GATE.yes, onPress: () => openLifecycleForm({ pathname, trnType }) },
+      {
+        text: ACCESS_GATE.yes,
+        onPress: () => openLifecycleForm({ pathname, trnType }),
+      },
     ]);
   };
 
@@ -1355,10 +1390,7 @@ const AstItem = ({ item }) => {
                 color={anomalyColor}
               />
               <Text
-                style={[
-                  styles.statusLabel,
-                  { color: anomalyColor },
-                ]}
+                style={[styles.statusLabel, { color: anomalyColor }]}
                 numberOfLines={1}
               >
                 {anomaly}

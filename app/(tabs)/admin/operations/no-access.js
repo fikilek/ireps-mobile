@@ -32,6 +32,7 @@ import { isCompleteNoAccess } from "../../../../src/features/meters/noAccessReas
 import {
   NO_ACCESS_PROGRESS,
   noAccessConfirmation,
+  noAccessQueuedResult,
   noAccessResult,
 } from "../../../../src/features/meters/noAccessSubmitMessages";
 import { useAuth } from "../../../../src/hooks/useAuth";
@@ -313,7 +314,10 @@ export default function NoAccessScreen() {
             ? noAccessResult(
                 saved?.result?.code || saved?.refusal?.code || "UNKNOWN",
               )
-            : noAccessResult("OK_QUEUED");
+            : // Still waiting. WHY it is waiting decides the words: a worker in a dead spot
+              // is told to carry on, a worker who has been signed out is told to sign in.
+              // "It will send when there is signal" is a lie to the second one.
+              noAccessQueuedResult(saved?.result?.code);
 
       // The work is off the form and on the phone, so the form is cleared: a filled-in form
       // left on screen after a save invites the worker to submit it a second time.
