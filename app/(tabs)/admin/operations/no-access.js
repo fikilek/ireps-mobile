@@ -149,6 +149,34 @@ export default function NoAccessScreen() {
       params: { targetedBatchRefresh: String(Date.now()) },
     };
 
+    // BACK, NOT REPLACE (owner, 3 Oct 2026: "it still comes back here", and "it pushes them
+    // three layers up and then they must still dig down again").
+    //
+    // my-workorders.js holds the open bucket in component state:
+    //     const [selectedBucket, setSelectedBucket] = useState(null);
+    // and null means "show the bucket list". router.replace UNMOUNTS that screen and mounts a
+    // new one, so selectedBucket starts at null again and the worker is back at the list -
+    // every visit, with seventeen rows in the batch.
+    //
+    // Going back pops this screen off and uncovers the one underneath, still holding its
+    // state: the same bucket, the same rows, the same filter. That is what NA-R006 means by
+    // "where it came from" - the screen they left, not just the route.
+    //
+    // canGoBack is asked first because after an app reload there may be nothing underneath.
+    // replace is then the fallback, which strands nobody - unlike dismissTo this morning,
+    // which silently did nothing and left the worker on a form they had already sent.
+    try {
+      if (router.canGoBack?.()) {
+        router.back();
+        return;
+      }
+    } catch (error) {
+      console.log(
+        "No Access -- back failed, replacing instead",
+        error?.message,
+      );
+    }
+
     try {
       router.replace(target);
     } catch (error) {

@@ -173,6 +173,19 @@ test("a submitted No Access form always leaves the screen", () => {
     "nothing takes the worker off a form they have already sent",
   );
 
+  // NA-R006: BACK first, so the screen underneath is the one the worker left - the same
+  // bucket, the same rows. replace() builds a new screen that has forgotten all of it.
+  assert.match(
+    noAccessCode,
+    /router\.canGoBack\?\.\(\)/,
+    "the form replaces the screen instead of going back, so My Work Orders forgets its bucket",
+  );
+  assert.match(
+    noAccessCode,
+    /router\.back\(\)/,
+    "nothing pops this screen off the stack",
+  );
+
   // The alert's OK is what leaves. A result window with nothing behind it is a dead end.
   assert.match(
     noAccessSource,
