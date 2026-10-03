@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNetInfo } from "@react-native-community/netinfo";
-import { Stack, useFocusEffect, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
 import { FlashList } from "@shopify/flash-list";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -974,6 +974,18 @@ export default function WorkorderManagementSystem() {
   const [selectedBucket, setSelectedBucket] = useState(null);
   const [selectedBucketCategory, setSelectedBucketCategory] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState(null);
+
+  // The owner, 3 October 2026: "a successful NA in my-workorders routes to my-workorder
+  // buckets instead of my-workorder rows."
+  //
+  // The bucket a worker opened is held in state here, so returning from a form landed them
+  // back inside the rows of the batch they had just finished with. After a visit is recorded
+  // the next work may be in another bucket, so they are put back at the buckets to choose.
+  //
+  // The screen read no route params at all until now, so the `targetedBatchRefresh` the No
+  // Access screen has been sending it was going nowhere.
+  const routeParams = useLocalSearchParams();
+  const returnToBucketsSignal = String(routeParams?.backToBuckets || "");
   const [stateFilter, setStateFilter] = useState("ALL");
   const [rejectItem, setRejectItem] = useState(null);
   const [preparingBgoDetail, setPreparingBgoDetail] = useState(false);
@@ -2511,6 +2523,15 @@ export default function WorkorderManagementSystem() {
     setSelectedGroup(null);
     setStateFilter("ALL");
   }
+
+  // It calls backToBuckets() rather than repeating what it does: that function also clears the
+  // opening state, the pending action and the filter, and a copy here would have cleared three
+  // of the six and looked right.
+  useEffect(() => {
+    if (!returnToBucketsSignal) return;
+    backToBuckets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnToBucketsSignal]);
 
   function backToBuckets() {
     setPreparingBgoDetail(false);

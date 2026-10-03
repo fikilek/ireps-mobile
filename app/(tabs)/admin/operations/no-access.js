@@ -129,7 +129,13 @@ export default function NoAccessScreen() {
   const goBack = () => {
     const target = {
       pathname: context.returnTo || "/(tabs)/admin/operations/my-workorders",
-      params: { targetedBatchRefresh: String(Date.now()) },
+      // backToBuckets puts My Work Orders back at the bucket list rather than inside the rows
+      // of the batch just worked (owner, 3 Oct 2026). The timestamp makes each return a new
+      // value, so the screen reacts every time and not only the first.
+      params: {
+        targetedBatchRefresh: String(Date.now()),
+        backToBuckets: String(Date.now()),
+      },
     };
 
     try {
