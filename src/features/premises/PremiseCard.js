@@ -659,6 +659,10 @@ PremiseCard.displayName = "PremiseCard";
 
 export default PremiseCard;
 
+// One height for everything on the command strip - the three chips and the two buttons - so
+// they sit on a single line instead of three different ones.
+const STRIP_HEIGHT = 40;
+
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#FFF",
@@ -730,23 +734,23 @@ const styles = StyleSheet.create({
   commandStrip: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    // NO justifyContent (owner, 3 Oct: "i think its justify space between"). It was
+    // space-between while the two halves ALSO carried flex 0.52 and flex 0.48, so the strip
+    // and its children were both deciding the layout and neither won: the chips were squashed
+    // and their labels shrunk to 7px to fit what was left.
+    //
+    // One decider now. The chips take the room they need, the buttons take the rest and sit
+    // against the right-hand edge, which is what space-between was there to do.
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: "#F1F5F9",
   },
-  statsRow: { flexDirection: "row", alignItems: "center", gap: 6, flex: 0.52 },
-  // statItem: {
-  //   flexDirection: "row",
-  //   alignItems: "center",
-  //   backgroundColor: "#F8FAFC",
-  //   paddingHorizontal: 6,
-  //   paddingVertical: 4,
-  //   borderRadius: 6,
-  //   gap: 2,
-  // },
-  // statCount: { fontSize: 12, fontWeight: "800", color: "#1E293B" },
+  // The chips take the room they need and the buttons take the rest. It used to be flex 0.52
+  // against flex 0.48 under a parent already using space-between, so the two halves were fixed
+  // to proportions that had nothing to do with their contents - which is what squashed the
+  // chips and forced the text down to 7px to fit.
+  statsRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   // Mirrors statusRibbon: same band across the top of the card, same zIndex, opposite corner.
   naRibbon: {
     position: "absolute",
@@ -770,16 +774,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    flex: 0.48,
+    flex: 1,
     justifyContent: "flex-end",
+    marginLeft: 8,
   },
   compactBtn: {
     flexDirection: "row",
-    height: 36,
+    height: STRIP_HEIGHT,
     paddingHorizontal: 10,
     borderRadius: 8,
     alignItems: "center",
+    justifyContent: "center",
     gap: 4,
+    flexShrink: 1,
   },
   btnDiscover: {
     backgroundColor: "#F1F5F9",
@@ -788,7 +795,7 @@ const styles = StyleSheet.create({
   },
   btnInstall: { backgroundColor: "#007AFF" },
   compactBtnText: { fontSize: 12, fontWeight: "800", color: "#1E293B" },
-  compactBtnSubText: { fontSize: 8, fontWeight: "400", color: "#1E293B" },
+  compactBtnSubText: { fontSize: 9, fontWeight: "400", color: "#475569" },
 
   geoRow: {
     flexDirection: "row",
@@ -884,10 +891,13 @@ const styles = StyleSheet.create({
   statItem: {
     alignItems: "center",
     justifyContent: "center",
-    minWidth: 44,
+    // The same height as the buttons beside them, so the whole strip sits on one line. The
+    // chips had no height at all and were sized by their two rows of text, which is why they
+    // stood taller than the buttons and nothing lined up.
+    height: STRIP_HEIGHT,
+    minWidth: 46,
     backgroundColor: "#F8FAFC",
     paddingHorizontal: 6,
-    paddingVertical: 4,
     borderRadius: 7,
     borderWidth: 1,
   },
@@ -909,7 +919,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 2,
-    marginTop: 2,
+    marginTop: 1,
   },
 
   statCount: {
@@ -919,7 +929,8 @@ const styles = StyleSheet.create({
   },
 
   statStatusText: {
-    fontSize: 7,
+    // 7px. A label nobody can read is not a label - it is noise taking up room.
+    fontSize: 9,
     fontWeight: "900",
     letterSpacing: 0.2,
   },
