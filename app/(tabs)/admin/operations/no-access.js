@@ -127,6 +127,17 @@ export default function NoAccessScreen() {
   // router.replace cannot silently do nothing: this screen is replaced by the target. That is
   // what "removed from screen" has to mean - not an attempt that may or may not happen.
   const goBack = () => {
+    // NA-R006 (1.13.0): back where it came from. This screen serves seven transaction types
+    // and four entry points, so it cannot know where the worker was unless the screen that
+    // opened it said. Every one of them sets returnTo.
+    //
+    // A screen that does not say is a fault in THAT screen. The worker is still landed
+    // somewhere rather than stranded on a form they have already sent, and it is logged so the
+    // missing one is found instead of being absorbed.
+    if (!context.returnTo) {
+      console.log("No Access -- NA-R006: opened with no returnTo", { trnType });
+    }
+
     const target = {
       pathname: context.returnTo || "/(tabs)/admin/operations/my-workorders",
       // STAY IN THE ROWS (owner, 3 Oct 2026: "a closed NA form must remain in my-workorder

@@ -391,14 +391,61 @@ test("the front gate shows the server's own sentence, and never writes its own",
 
   // The server knows the batch, the geofence, the team and the date. A sentence composed on
   // the phone would drift from the one the submit path shows for the same refusal.
-  assert.match(gate, /result\?\.message/, "the gate is not reading the server's message");
+  assert.match(
+    gate,
+    /result\?\.message/,
+    "the gate is not reading the server's message",
+  );
 
   // It must never throw: a front gate that can crash a screen stops work the worker IS
   // entitled to do, which is the opposite of its job.
-  assert.match(gate, /catch \(error\)/, "the gate can throw, so it can block legitimate work");
+  assert.match(
+    gate,
+    /catch \(error\)/,
+    "the gate can throw, so it can block legitimate work",
+  );
   assert.match(
     gate,
     /BATCH_WORK_UNCHECKED/,
     "there is no 'could not ask' answer, so a worker with no signal is treated as refused",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// NA-R006 — a No Access goes back where it came from.
+//
+// The owner, 3 October 2026: "it must not wander. If it launched from My Work Orders rows it
+// must go back there; if it launched from the premise it must go there."
+//
+// One screen serves seven transaction types and four entry points, so it cannot know where the
+// worker was unless the screen that opened it says. This fails when a new entry point forgets.
+// ---------------------------------------------------------------------------
+
+test("every screen that opens No Access says where to come back to", async () => {
+  const entries = [
+    ["../../app/(tabs)/admin/operations/my-workorders.js", "My Work Orders"],
+    ["../features/asts/astItem.js", "the five lifecycle forms"],
+    ["../../components/MissionDiscoveryModal.js", "Meter Discovery"],
+    ["../../components/MissionInstallationModal.js", "Meter Installation"],
+  ];
+
+  for (const [file, what] of entries) {
+    const source = await read(file);
+
+    assert.match(
+      source,
+      /returnTo:/,
+      `${what} opens the No Access form without saying where the worker was, so it cannot go back`,
+    );
+  }
+});
+
+test("a recorded No Access does not jump to the bucket list", () => {
+  // It did, for part of one afternoon. A worker with seventeen rows in a batch does the next
+  // one in the same batch, so it made them navigate in again after every visit.
+  assert.equal(
+    noAccessCode.includes("backToBuckets"),
+    false,
+    "the form is sending the worker up to the buckets again instead of back where they were",
   );
 });
