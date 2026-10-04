@@ -37,6 +37,47 @@ export function noAccessConfirmation(value = {}) {
   };
 }
 
+/**
+ * NA-R006 — LEAVING THE FORM WITHOUT SENDING IT.
+ *
+ * The owner, 4 October 2026: "if someone gets into this form and then decides, no, actually,
+ * that's not what I want to do, then you're stuck." The arrow is the way out. But by then the
+ * worker may have taken the photograph and chosen the reason, and a photograph of a locked
+ * gate cannot be taken again from the next street - so the form says what is about to be lost
+ * and asks once.
+ *
+ * Nothing is kept back. The capture never entered the phone's queue (OF-R001), so there is no
+ * half-saved record anywhere and nothing to come back to later.
+ */
+export function noAccessDiscard(value = {}) {
+  const reason =
+    String(value?.reasonCode || "").toUpperCase() === "OTHER"
+      ? String(value?.reasonOther || "").trim()
+      : String(value?.reasonCode || "").trim();
+
+  const photographs = Array.isArray(value?.media) ? value.media.length : 0;
+
+  const captured = [];
+  if (reason) captured.push(`Reason: ${reason}`);
+  if (photographs) captured.push(`Photographs: ${photographs}`);
+  if (value?.appointment?.at) {
+    captured.push(`Appointment: ${formatAppointment(value.appointment.at)}`);
+  }
+
+  return {
+    title: "Leave without sending?",
+    body: captured.length
+      ? `This No Access has not been sent and is not saved anywhere.\n\nYou will lose:\n${captured.join(
+          "\n",
+        )}`
+      : "This No Access has not been sent and is not saved anywhere.",
+    confirm: "DISCARD",
+    cancel: "KEEP FILLING IN",
+    // Nothing captured yet: there is nothing to lose, so the worker is not stopped at all.
+    needed: captured.length > 0,
+  };
+}
+
 /** NA-R062 — what the worker sees while it is going. Never silence. */
 export const NO_ACCESS_PROGRESS = Object.freeze({
   uploading: "Sending the photograph ...",

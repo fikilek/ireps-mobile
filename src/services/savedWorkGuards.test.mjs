@@ -167,19 +167,15 @@ test("a submitted No Access form always leaves the screen", () => {
     "the form can silently stay on screen again: dismissTo does nothing when its target is not in the stack",
   );
 
+  // Either a pop (where the stack allows it) or a replace. One of the two always runs.
   assert.match(
-    noAccessSource,
-    /router\.replace\(target\)/,
+    noAccessCode,
+    /router\.replace\(returnTo\)/,
     "nothing takes the worker off a form they have already sent",
   );
 
   // NA-R006: BACK first, so the screen underneath is the one the worker left - the same
   // bucket, the same rows. replace() builds a new screen that has forgotten all of it.
-  assert.match(
-    noAccessCode,
-    /router\.canGoBack\?\.\(\)/,
-    "the form replaces the screen instead of going back, so My Work Orders forgets its bucket",
-  );
   assert.match(
     noAccessCode,
     /router\.back\(\)/,
@@ -192,8 +188,14 @@ test("a submitted No Access form always leaves the screen", () => {
   // It used to be goBack on the alert's OK, so the function finished with the form still on
   // screen waiting for a tap. If that tap did not come the worker was left on a capture they
   // had already sent, where the only obvious move is to send it again.
+  //
+  // Read on the SUBMIT path only. The arrow out of the form does leave on a tap, and must: the
+  // worker is being asked whether to throw away a photograph, so nothing may move until they
+  // answer (NA-R006, the guard below). What is forbidden is leaving a SENT capture to a tap.
   assert.equal(
-    noAccessCode.includes("onPress: goBack"),
+    noAccessCode
+      .slice(noAccessCode.indexOf("async function send("))
+      .includes("onPress: goBack"),
     false,
     "leaving is hidden in a button callback again, so the form stays until somebody taps",
   );
@@ -482,33 +484,89 @@ test("a recorded No Access does not jump to the bucket list", () => {
   );
 });
 
-test("NA-R006: the form always leaves the Admin stack, then crosses tabs if it must", () => {
-  // This screen lives in the ADMIN tab and is opened from PREMISES, ASTS and ADMIN.
+test("NA-R006: the form is popped where it can be, and replaced away where it cannot", () => {
+  // Traced with the owner, 4 Oct 2026. This file lives in app/(tabs)/admin/operations/, so it is
+  // ALWAYS pushed onto the Operations stack in the ADMIN tab, whoever opens it.
   //
-  // router.replace to another tab SWITCHES tab and leaves this screen on the Admin stack - the
-  // owner, 4 Oct: "the form is now sitting on admin stack, it does not close." He found it
-  // still there the next time he opened Admin.
+  //   From My Work Orders: [my-workorders, no-access] - a screen below, so a pop works.
+  //   From a premise card:  [no-access] alone - React Navigation will not pop the last screen,
+  //                         so back() undoes the TAB CHANGE instead and leaves the form there.
   //
-  // router.back() pops it, but only reaches the screen underneath IN ADMIN - so using it for
-  // every caller sent a premise-card visit to My Work Orders.
-  //
-  // Both, in order: pop ALWAYS, then replace only when the caller lives in another tab.
+  // router.canGoBack() cannot tell these apart: it counts the tab change, and reported true
+  // while the pop was impossible. The stack's own index is what answers it.
   assert.match(
     noAccessCode,
-    /let popped = false/,
-    "the pop is conditional again, so a cross-tab caller leaves the form on the Admin stack",
+    /navigation\?\.getState\?\.\(\)/,
+    "the stack state is not read, so canGoBack decides again - and it cannot tell a pop from a tab change",
   );
   assert.match(
     noAccessCode,
-    /if \(sameStack && popped\) return;/,
-    "a same-tab caller will now replace as well as pop, rebuilding the screen it just returned to",
+    /hasScreenBelow/,
+    "nothing checks whether a pop is actually possible on this stack",
   );
 
-  // The pop must not sit inside the sameStack branch - that was the shape that left the form up.
-  assert.equal(
-    /if \(sameStack\) \{\s*try \{/.test(noAccessCode),
-    false,
-    "the pop is back inside the stack check, so it only runs for same-tab callers",
+  // Where it cannot pop: replace the form away so Admin is left on its own menu, then switch
+  // to the worker's tab. dismiss cannot help - the form IS the first screen of that stack.
+  assert.match(
+    noAccessCode,
+    /router\.replace\("\/\(tabs\)\/admin"\)/,
+    "the form is no longer replaced off the Operations stack, so it stays there",
+  );
+  assert.match(
+    noAccessCode,
+    /router\.replace\(returnTo\)/,
+    "the worker is not returned to the tab they came from",
+  );
+});
+
+test("NA-R006: there is a way out of the form, and it asks before it throws work away", () => {
+  // The owner, 4 Oct 2026: "there's no arrow there for me to dismiss this form ... if someone
+  // gets into this form and then decides, no, actually, that's not what I want to do, then
+  // you're stuck."
+  //
+  // A navigator draws a back arrow only when another screen sits below it on the SAME stack,
+  // and opened from a premise card this form is alone on the Operations stack - the same fact
+  // that stopped the pop above. So the arrow is drawn by hand, exactly as the Operations menu
+  // already has to (TB-R051).
+  assert.match(
+    noAccessCode,
+    /headerLeft:/,
+    "the form draws no arrow of its own, so a worker who opens it by mistake is stuck on it",
+  );
+
+  // It leaves through the discard check, never straight through goBack: a photograph of a
+  // locked gate cannot be taken again from the next street, and nothing is in the queue yet.
+  assert.match(
+    noAccessCode,
+    /onPress=\{leaveForm\}/,
+    "the arrow leaves without asking, so captured work goes with no warning",
+  );
+  assert.match(
+    noAccessCode,
+    /noAccessDiscard\(/,
+    "the words are written in the screen again instead of coming from the one well",
+  );
+
+  // The submit path must NOT ask: by then the capture is recorded and the form is reset, so
+  // asking whether to discard it would be a lie.
+  const submitTail = noAccessCode.slice(noAccessCode.indexOf("Alert.alert(result.title"));
+  assert.match(
+    submitTail,
+    /goBack\(\)/,
+    "a recorded capture no longer leaves the screen",
+  );
+  assert.doesNotMatch(
+    submitTail,
+    /leaveForm\(\)/,
+    "a worker who has just sent the capture is asked whether to discard it",
+  );
+
+  // Formik holds the reason, the appointment and the photographs, and the header sits outside
+  // it - so the handle has to be passed in, or the check always sees an empty form.
+  assert.match(
+    noAccessCode,
+    /innerRef=\{formRef\}/,
+    "the header cannot see what was captured, so it will never stop anyone",
   );
 });
 

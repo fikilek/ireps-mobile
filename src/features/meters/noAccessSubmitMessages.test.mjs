@@ -7,6 +7,7 @@ import {
   NO_ACCESS_PROGRESS,
   NO_ACCESS_RESULTS,
   noAccessConfirmation,
+  noAccessDiscard,
   noAccessResult,
 } from "./noAccessSubmitMessages.js";
 
@@ -68,4 +69,44 @@ test("NA-R060: the Error Register covers every refusal the server can send", () 
 
 test("a queued visit tells the worker the appointment is unchanged", () => {
   assert.match(noAccessResult("OK_QUEUED").body, /appointment/i);
+});
+
+// NA-R006 — the arrow out of the form, and what it costs.
+
+test("NA-R006: an untouched form is not stopped on the way out", () => {
+  const window = noAccessDiscard({ reasonCode: "", media: [] });
+  assert.equal(window.needed, false);
+});
+
+test("NA-R006: the worker is told what the arrow will lose", () => {
+  const at = buildAppointmentInstant({
+    year: 2026,
+    month: 10,
+    day: 8,
+    hour: 14,
+    minute: 0,
+  });
+  const window = noAccessDiscard({
+    reasonCode: "Property Locked",
+    media: [{ tag: "noAccessPhoto" }],
+    appointment: { at },
+  });
+
+  assert.equal(window.needed, true);
+  assert.match(window.body, /not been sent/);
+  assert.match(window.body, /Reason: Property Locked/);
+  assert.match(window.body, /Photographs: 1/);
+  assert.match(window.body, /Thursday 8 October 2026, 14:00/);
+});
+
+test("NA-R006: a photograph on its own is enough to ask", () => {
+  const window = noAccessDiscard({ media: [{ tag: "noAccessPhoto" }] });
+  assert.equal(window.needed, true);
+  assert.match(window.body, /Photographs: 1/);
+});
+
+test("NA-R006: Other shows the worker's own words here too", () => {
+  const window = noAccessDiscard({ reasonCode: "OTHER", reasonOther: "Vicious dogs" });
+  assert.match(window.body, /Vicious dogs/);
+  assert.doesNotMatch(window.body, /Reason: OTHER/);
 });

@@ -201,7 +201,6 @@ export const PremiseFilterModal = ({
             ) : (
               geofenceStats.map((item, index) => {
                 const isSelected = filterState?.geofenceIds?.includes(item.id);
-                console.log(`item`, item);
                 return (
                   <View key={item.id}>
                     <List.Item

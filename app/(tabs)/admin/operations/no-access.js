@@ -12,7 +12,13 @@
 // upload, picks the right server function and records a refusal. Nothing about sending is
 // written here.
 
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  Stack,
+  useLocalSearchParams,
+  useNavigation,
+  useRouter,
+} from "expo-router";
 import { Formik } from "formik";
 import { useMemo, useRef, useState } from "react";
 import {
@@ -20,6 +26,7 @@ import {
   Alert,
   ScrollView,
   StyleSheet,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { Surface, Text } from "react-native-paper";
@@ -28,21 +35,22 @@ import { IrepsNoAccessForm } from "../../../../components/forms/IrepsNoAccessFor
 import { ForensicFooter } from "../../../../src/features/meters/ForensicFooter";
 import { NO_ACCESS_ROUTE } from "../../../../src/features/meters/accessGate";
 import { buildNoAccessTrnId } from "../../../../src/features/meters/meterDiscoveryTrnId";
-import { isRefusedByOffice } from "../../../../src/features/savedWork/savedWorkRemovalRules";
 import { isCompleteNoAccess } from "../../../../src/features/meters/noAccessReasons";
 import {
   NO_ACCESS_PROGRESS,
   noAccessConfirmation,
+  noAccessDiscard,
   noAccessQueuedResult,
   noAccessResult,
 } from "../../../../src/features/meters/noAccessSubmitMessages";
+import { isRefusedByOffice } from "../../../../src/features/savedWork/savedWorkRemovalRules";
 import { useAuth } from "../../../../src/hooks/useAuth";
+import { processSubmissionQueue } from "../../../../src/services/processSubmissionQueue";
+import { scheduleMeterDiscoveryQueueSyncRetry } from "../../../../src/services/startMeterDiscoveryQueueSyncService";
 import {
   addSubmissionQueueItem,
   getSubmissionQueueItemById,
 } from "../../../../src/utils/submissionQueue";
-import { processSubmissionQueue } from "../../../../src/services/processSubmissionQueue";
-import { scheduleMeterDiscoveryQueueSyncRetry } from "../../../../src/services/startMeterDiscoveryQueueSyncService";
 
 // TR-R003 (0.6.0): THE POSITION NO LONGER COMES FROM THIS PHONE.
 //
@@ -68,6 +76,7 @@ const parseContext = (raw) => {
 
 export default function NoAccessScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const params = useLocalSearchParams();
   const context = useMemo(() => parseContext(params.context), [params.context]);
   const { user, profile } = useAuth();
@@ -149,46 +158,82 @@ export default function NoAccessScreen() {
   //
   // canGoBack is asked because after an app reload there may be nothing underneath. When there
   // is not, replace alone still gets the worker off a form they have already sent.
+  // NA-R006. Settled with the owner on 4 October by tracing it together.
+  //
+  // THE FACT EVERYTHING FOLLOWS FROM: this file lives in app/(tabs)/admin/operations/, so it
+  // is ALWAYS pushed onto the Operations stack in the ADMIN tab - whoever opens it. The pusher
+  // has no say; the file's location decides.
+  //
+  //   From My Work Orders (also Admin): the stack is [my-workorders, no-access]. There IS a
+  //   screen below, so a pop removes the form and uncovers My Work Orders with its state - the
+  //   open bucket, its rows, its filter.
+  //
+  //   From a premise card or a meter (Premises, ASTs): the call CHANGES TAB and pushes, so the
+  //   Operations stack is [no-access] alone. React Navigation will not pop the last screen of a
+  //   stack, so back() cannot remove it - it undoes the TAB CHANGE instead, which is why the
+  //   owner landed on ERFs (the first tab, because backBehavior is not set) with the form still
+  //   sitting on Operations.
+  //
+  // So: pop where a pop is possible, and where it is not, REPLACE the form away and then go to
+  // the worker's own tab. dismiss cannot help - it means "back to the first screen of this
+  // stack", and the form IS that screen.
+  // NA-R006: the header arrow sits OUTSIDE Formik, so it cannot ask useFormikContext what has
+  // been filled in. This is the handle onto the same form the submit uses.
+  const formRef = useRef(null);
+
+  /**
+   * NA-R006 — leaving by the arrow, with a stop when there is something to lose.
+   *
+   * Only the arrow comes through here. The submit path calls goBack() straight, because by
+   * then the capture is recorded and the form has already been reset - asking a worker whether
+   * to discard work that has just been sent would be a lie.
+   */
+  const leaveForm = () => {
+    const window = noAccessDiscard(formRef.current?.values);
+
+    if (!window.needed) {
+      goBack();
+      return;
+    }
+
+    Alert.alert(window.title, window.body, [
+      { text: window.cancel, style: "cancel" },
+      { text: window.confirm, style: "destructive", onPress: goBack },
+    ]);
+  };
+
   const goBack = () => {
     if (!context.returnTo) {
-      // NA-R006: the screen that opened this one should have said. A fault in THAT screen.
       console.log("No Access -- NA-R006: opened with no returnTo", { trnType });
     }
 
-    const target = {
-      pathname: context.returnTo || "/(tabs)/admin/operations/my-workorders",
-    };
+    const returnTo =
+      context.returnTo || "/(tabs)/admin/operations/my-workorders";
 
-    // The tab is the segment AFTER the "(tabs)" group. Taking [1] returns "(tabs)" for every
-    // route in iREPS, which made every caller look like the same stack (owner, ERF 4310).
+    // Is there a screen BELOW this one on THIS stack? router.canGoBack() does not answer that -
+    // it counts the tab change too, which is how it reported true while the pop was impossible.
+    // The Operations layout already reads the stack this way (adminScreenIsBelowOperations).
+    const stackState = navigation?.getState?.();
+    const hasScreenBelow = Number(stackState?.index) > 0;
+
     const tabOf = (path) =>
       String(path || "")
         .split("/")
         .filter(Boolean)[1] || "";
 
-    const sameStack = tabOf(target.pathname) === tabOf(NO_ACCESS_ROUTE);
-    let popped = false;
+    const sameStack = tabOf(returnTo) === tabOf(NO_ACCESS_ROUTE);
 
-    try {
-      if (router.canGoBack?.()) {
-        router.back();
-        popped = true;
-      }
-    } catch (error) {
-      console.log("No Access -- back failed", error?.message);
+    if (sameStack && hasScreenBelow) {
+      // Sales path. Pop uncovers My Work Orders exactly as the worker left it.
+      router.back();
+      return;
     }
 
-    if (sameStack && popped) return;
-
-    try {
-      router.replace(target);
-    } catch (error) {
-      console.log(
-        "No Access -- replace failed, going to My Work Orders",
-        error?.message,
-      );
-      router.replace("/(tabs)/admin/operations/my-workorders");
-    }
+    // The form is alone on the Operations stack. Replace it so Admin is left showing its own
+    // menu - the owner: "if the user goes there after submitting the NA form, he must see the
+    // admin menu" - and then switch to the tab the worker came from.
+    router.replace("/(tabs)/admin");
+    router.replace(returnTo);
   };
 
   // NA-R030: the record. The municipality and the ward are NOT built here - the server reads
@@ -410,7 +455,39 @@ export default function NoAccessScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "No Access" }} />
+      {/* NA-R006: THE WAY OUT, AND IT HAS TO BE DRAWN BY HAND.
+          The owner, 4 October: "there's no arrow there for me to dismiss this form ... if
+          someone gets into this form and then decides, no, actually, that's not what I want to
+          do, then you're stuck."
+          A navigator draws a back arrow only when another screen sits below it on the SAME
+          stack. Opened from a premise card the form is pushed onto the Operations stack from
+          the Premises tab, so it is alone there and no arrow is drawn - the same fact that
+          stopped router.back() from closing it after a submit. The Operations menu above
+          already carries its own arrow for exactly this reason (TB-R051).
+          It leaves through goBack(), so abandoning the form and finishing it end up in the
+          same place: back where the worker opened it from. */}
+      <Stack.Screen
+        options={{
+          title: "No Access",
+          headerBackVisible: false,
+          headerLeft: ({ tintColor }) => (
+            <TouchableOpacity
+              style={styles.backButton}
+              activeOpacity={0.8}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              onPress={leaveForm}
+            >
+              <MaterialCommunityIcons
+                name="chevron-left"
+                size={26}
+                color={tintColor || "#0f172a"}
+              />
+            </TouchableOpacity>
+          ),
+        }}
+      />
       <ScrollView contentContainerStyle={styles.content}>
         <Surface style={styles.context} elevation={1}>
           <Text variant="titleMedium">
@@ -429,6 +506,7 @@ export default function NoAccessScreen() {
         </Surface>
 
         <Formik
+          innerRef={formRef}
           initialValues={{
             reasonCode: "",
             reasonOther: "",
@@ -447,7 +525,7 @@ export default function NoAccessScreen() {
             )
           }
         >
-          {({ values, setValues, errors, handleSubmit }) => (
+          {({ values, setValues, errors /* handleSubmit */ }) => (
             <View>
               <IrepsNoAccessForm
                 visible
@@ -473,7 +551,7 @@ export default function NoAccessScreen() {
 
               <ForensicFooter
                 isTrnLoading={Boolean(busy)}
-                onSubmit={handleSubmit}
+                // onSubmit={handleSubmit}
               />
             </View>
           )}
@@ -484,6 +562,14 @@ export default function NoAccessScreen() {
 }
 
 const styles = StyleSheet.create({
+  // The same arrow the Operations menu draws, so the two look like one app.
+  backButton: {
+    minHeight: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingRight: 12,
+    marginLeft: -6,
+  },
   content: {
     flexGrow: 1,
     padding: 16,

@@ -89,10 +89,7 @@ export default function OperationsLayout() {
         }}
       />
 
-      <Stack.Screen
-        name="no-access"
-        options={{ title: "Targeted Batch No Access" }}
-      />
+      <Stack.Screen name="no-access" options={{ title: "No Access" }} />
       <Stack.Screen
         name="field-analytics"
         options={{
