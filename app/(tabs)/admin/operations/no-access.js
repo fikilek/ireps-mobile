@@ -249,6 +249,18 @@ export default function NoAccessScreen() {
       // position. No root `location`: that home is retired, and the 15 records that used it
       // were all written by this screen.
       astId: context.astId || null,
+      // TR-R001: `origin` is where the work came from - field or office - and a No Access is
+      // always FIELD. A worker is standing at the property, turned away.
+      //
+      // The owner's phone, 4 October 2026: a Meter Inspection no access was refused with
+      // INSPECTION_OFFICE_WMS_ONLY. The rule it hit allows "office work executed from an
+      // instruction, OR field work started on the spot from the meter card" - which is exactly
+      // what he had done. It refused because this form never said which, so the server could
+      // not tell the permitted case from the forbidden one and took the safer answer.
+      //
+      // The server merges `origin.targetedBatch` in on top of this, so a Sales path capture
+      // keeps both: the channel it came through and the batch it followed.
+      origin: { channel: "FIELD" },
       media,
       // TR-R002: the device time goes in METADATA, where the rule puts it - not at the root.
       //

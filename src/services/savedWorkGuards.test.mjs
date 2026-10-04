@@ -592,3 +592,17 @@ test("NA-R006: the tab is read from the right segment", async () => {
     'the tab is read from segment [1] again, which is "(tabs)" for every route',
   );
 });
+
+test("TR-R001: a No Access says it is field work", () => {
+  // The owner's phone, 4 Oct 2026: a Meter Inspection no access captured from the meter card
+  // was refused with INSPECTION_OFFICE_WMS_ONLY. That rule allows "office work executed from
+  // an instruction, or field work started on the spot from the meter card" - and this form
+  // never said which, so the server could not tell the permitted case from the forbidden one.
+  //
+  // A no access is always field work: the worker is standing at the property, turned away.
+  assert.match(
+    noAccessCode,
+    /origin: \{ channel: "FIELD" \}/,
+    "the capture does not say which channel it came through, so every field-originated lifecycle no access is refused",
+  );
+});
