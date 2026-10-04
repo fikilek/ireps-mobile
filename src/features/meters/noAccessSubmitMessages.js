@@ -269,6 +269,14 @@ export const NO_ACCESS_RESULTS = Object.freeze([
     body: "The photograph did not reach the office properly. Take it again and send again.",
   },
   {
+    // The owner, 4 October 2026: "an inspection can be originated on the field and in the
+    // office ... the important thing is that the inspection tells you the origination channel."
+    // The server does not refuse field work - it refuses a capture that did not say.
+    code: "INSPECTION_ORIGIN_MISSING",
+    title: "The office could not tell where this came from",
+    body: "The inspection did not say whether it was started at the meter or issued by the office, so it was not recorded. Send it again, and report it if it happens twice.",
+  },
+  {
     code: "UNKNOWN",
     title: "It did not send",
     body: "Something went wrong and the visit was not recorded. It is saved on the phone. Call the office if it keeps happening.",
