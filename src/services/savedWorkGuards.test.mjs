@@ -186,11 +186,30 @@ test("a submitted No Access form always leaves the screen", () => {
     "nothing pops this screen off the stack",
   );
 
-  // The alert's OK is what leaves. A result window with nothing behind it is a dead end.
+  // THE SUBMIT LEAVES, NOT A BUTTON (owner, 4 Oct 2026: "why don't you do your routing at the
+  // end of the NA submit function").
+  //
+  // It used to be goBack on the alert's OK, so the function finished with the form still on
+  // screen waiting for a tap. If that tap did not come the worker was left on a capture they
+  // had already sent, where the only obvious move is to send it again.
+  assert.equal(
+    noAccessCode.includes("onPress: goBack"),
+    false,
+    "leaving is hidden in a button callback again, so the form stays until somebody taps",
+  );
+
+  // goBack() is called in send() itself, after the form is cleared and the result shown.
   assert.match(
-    noAccessSource,
-    /onPress: goBack/,
-    "the result window no longer takes the worker anywhere",
+    noAccessCode,
+    /Alert\.alert\(result\.title, result\.body\);\s*goBack\(\);/,
+    "the submit no longer leaves the screen by itself",
+  );
+
+  // And no `finally`: it would run setBusy after the screen has gone.
+  assert.equal(
+    /\}\s*finally\s*\{/.test(noAccessCode),
+    false,
+    "finally is back, so cleanup runs after the screen has already been left",
   );
 });
 
@@ -477,5 +496,28 @@ test("NA-R006: back only inside this tab, otherwise navigate across", async () =
     noAccessCode,
     /if \(sameStack\)/,
     "canGoBack is no longer guarded by the stack check",
+  );
+});
+
+test("NA-R006: the tab is read from the right segment", async () => {
+  // Every iREPS route starts "/(tabs)/...", so segment [1] is "(tabs)" for all of them and
+  // comparing it says every screen is in the same stack. The owner found it on ERF 4310: a
+  // Normal Path No Access called back(), had nothing of ours underneath, and the form stayed.
+  const tabOf = (path) =>
+    String(path || "")
+      .split("/")
+      .filter(Boolean)[1] || "";
+
+  assert.equal(tabOf("/(tabs)/admin/operations/no-access"), "admin");
+  assert.equal(tabOf("/(tabs)/admin/operations/my-workorders"), "admin");
+  assert.equal(tabOf("/(tabs)/premises"), "premises");
+  assert.equal(tabOf("/(tabs)/asts"), "asts");
+
+  // And the screen must use filter(Boolean), not a bare [1].
+  // Written so the formatter cannot break it: prettier splits this chain over four lines.
+  assert.match(
+    noAccessCode,
+    /\.split\("\/"\)\s*\.filter\(Boolean\)\[1\]/,
+    'the tab is read from segment [1] again, which is "(tabs)" for every route',
   );
 });

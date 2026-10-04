@@ -179,7 +179,18 @@ export default function NoAccessScreen() {
     // Same tab: go back, and the screen keeps its state - My Work Orders keeps the open bucket
     // and its rows, which is the whole point. Different tab: replace, because there is nothing
     // of ours underneath to go back to.
-    const tabOf = (path) => String(path || "").split("/")[1] || "";
+    // The TAB is the segment after the "(tabs)" group, not the first one.
+    //
+    //   "/(tabs)/admin/operations/no-access".split("/") -> ["", "(tabs)", "admin", ...]
+    //   "/(tabs)/premises".split("/")                   -> ["", "(tabs)", "premises"]
+    //
+    // Taking index [1] returns "(tabs)" for EVERY route, so sameStack was always true and this
+    // called back() on every entry point - including the Normal Path, where there is nothing of
+    // ours underneath, so the form stayed on screen (owner, ERF 4310).
+    const tabOf = (path) =>
+      String(path || "")
+        .split("/")
+        .filter(Boolean)[1] || "";
     const sameStack = tabOf(target.pathname) === tabOf(NO_ACCESS_ROUTE);
 
     if (sameStack) {
@@ -397,15 +408,31 @@ export default function NoAccessScreen() {
 
       // The work is off the form and on the phone, so the form is cleared: a filled-in form
       // left on screen after a save invites the worker to submit it a second time.
+      // THE WORK IS OFF THE FORM. Clear it, say what happened, and leave - in that order, here
+      // at the end of the submit, not hidden in a button's callback (owner, 4 Oct 2026).
+      //
+      // Leaving used to be goBack on the alert's OK. So the function finished with the form
+      // still on screen waiting for a tap, and if that tap did not come - or the alert was
+      // dismissed another way - the worker was left on a capture they had already sent, where
+      // the only obvious move is to send it again.
+      //
+      // The alert is a native window. It stays up over the screen we return to, so the worker
+      // still reads it.
       helpers.resetForm();
-
-      Alert.alert(result.title, result.body, [{ text: "OK", onPress: goBack }]);
-    } catch (error) {
-      const result = noAccessResult(error?.code || "UNKNOWN");
-      Alert.alert(result.title, result.body);
-    } finally {
       sending.current = false;
       setBusy("");
+
+      Alert.alert(result.title, result.body);
+      goBack();
+    } catch (error) {
+      // NOT SAVED. This is the one path where the worker STAYS: the capture never reached the
+      // phone's queue, so there is nothing recorded and nothing to go back to. They are left on
+      // their own filled-in form, able to read the reason and send again.
+      sending.current = false;
+      setBusy("");
+
+      const result = noAccessResult(error?.code || "UNKNOWN");
+      Alert.alert(result.title, result.body);
     }
   }
 
