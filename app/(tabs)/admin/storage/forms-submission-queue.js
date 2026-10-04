@@ -32,6 +32,7 @@ import {
   markSubmissionQueueItemRefused,
   markSubmissionQueueItemSuccess,
   markSubmissionQueueItemSyncing,
+  subscribeToSubmissionQueue,
   removeSubmissionQueueItem,
   updateSubmissionQueueItem,
 } from "../../../../src/utils/submissionQueue";
@@ -458,6 +459,12 @@ export default function SubmissionQueueScreen() {
       loadQueue();
     }, [loadQueue]),
   );
+
+  // OF-R001: the background sender empties the queue without the worker touching anything, and
+  // focus only fires on the way IN. A screen already open went on showing work that had been
+  // sent until the worker left and came back - the owner, 4 October: "it did auto send ... but
+  // it didn't clear the UI." The queue now says when it changes, and this listens.
+  useEffect(() => subscribeToSubmissionQueue(loadQueue), [loadQueue]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

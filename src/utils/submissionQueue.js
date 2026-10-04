@@ -33,12 +33,52 @@ const readQueueFromStorage = () => {
   }
 };
 
+// OF-R001 - THE QUEUE SAYS WHEN IT CHANGES.
+//
+// The owner, 4 October 2026, after the first offline capture: "it did auto send when I opened
+// up the network but it didn't clear the UI ... as soon as I clicked the sync button it just
+// disappeared quickly. It's not like it was sending."
+//
+// The Submission Queue screen read the queue once, when it came into focus, and never again.
+// The background sender empties the queue without the worker touching anything, so a screen
+// that was already open went on showing work that had been sent - and a worker looking at
+// unsent work that is not unsent is being told something untrue by the app, which is the same
+// fault as a refusal shown as "saved".
+//
+// Polling was not the answer: it would be a timer that is almost always wrong, and the queue
+// already knows the moment it changes. Every write in this file goes through the one function
+// below, so that is where it says so.
+const queueListeners = new Set();
+
+/** Hear about every change to the queue. Returns the unsubscribe. */
+export function subscribeToSubmissionQueue(listener) {
+  if (typeof listener !== "function") return () => {};
+
+  queueListeners.add(listener);
+
+  return () => queueListeners.delete(listener);
+}
+
+function announceQueueChanged() {
+  // A listener that throws is a screen's problem, never the queue's: the work is already
+  // written, and losing the write to a render fault would be the worse half of the trade.
+  queueListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch (error) {
+      console.log("submissionQueue -- listener error:", error);
+    }
+  });
+}
+
 const writeQueueToStorage = (queueItems) => {
   try {
     submissionQueueStorage.set(
       SUBMISSION_QUEUE_STORAGE_KEY,
       JSON.stringify(safeArray(queueItems)),
     );
+
+    announceQueueChanged();
 
     return { success: true };
   } catch (error) {

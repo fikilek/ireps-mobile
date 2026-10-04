@@ -196,3 +196,51 @@ test("the sender covers the whole form, not only No Access", () => {
     "the queue no longer knows how to pick out the whole of Meter Discovery",
   );
 });
+
+// OF-R001 — WHAT THE SCREEN SHOWS AFTER THE SENDER HAS BEEN
+//
+// The owner, 4 October 2026, after the first offline capture on his phone: "it did auto send
+// when I opened up the network but it didn't clear the UI ... as soon as I clicked the sync
+// button it just disappeared quickly. It's not like it was sending." The record was written at
+// 18:21:31 and the Submission Queue screen still showed the capture as unsent at 18:25.
+//
+// The screen read the queue once, on focus, and focus only fires on the way IN. The background
+// sender empties the queue without the worker touching anything, so a screen already open went
+// on showing work that had been sent - and a worker looking at unsent work that is not unsent
+// is being told something untrue, which is the same fault as a refusal shown as "saved".
+
+const submissionQueueSource = await readFile(
+  new URL("../utils/submissionQueue.js", import.meta.url),
+  "utf8",
+);
+const queueScreenSource = await readFile(
+  new URL("../../app/(tabs)/admin/storage/forms-submission-queue.js", import.meta.url),
+  "utf8",
+);
+
+test("OF-R001: the queue says when it changes", () => {
+  assert.match(
+    submissionQueueSource,
+    /export function subscribeToSubmissionQueue/,
+    "nothing can hear about a queue change, so every reader is left to guess or poll",
+  );
+
+  // Every write in that file goes through writeQueueToStorage. Announcing anywhere else would
+  // mean a write that changes the queue silently.
+  const writer = submissionQueueSource.slice(
+    submissionQueueSource.indexOf("const writeQueueToStorage"),
+  );
+  assert.match(
+    writer.slice(0, writer.indexOf("return { success: true }")),
+    /announceQueueChanged\(\)/,
+    "the one place that writes the queue does not say so, so some changes are announced and some are not",
+  );
+});
+
+test("OF-R001: the Submission Queue screen hears it, rather than only reading on focus", () => {
+  assert.match(
+    queueScreenSource,
+    /subscribeToSubmissionQueue\(loadQueue\)/,
+    "the screen only reloads when it comes into focus, so a background send leaves sent work on screen",
+  );
+});
