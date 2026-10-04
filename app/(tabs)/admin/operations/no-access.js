@@ -379,7 +379,7 @@ export default function NoAccessScreen() {
         agentUid,
         agentName,
         queueItemIds: [queued?.queueItem?.id],
-        filterMode: "METER_DISCOVERY_NO_ACCESS",
+        filterMode: "NO_ACCESS",
         includeSyncing: true,
       });
 

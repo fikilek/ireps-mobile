@@ -110,12 +110,45 @@ async function deleteUploadedEvidence({
 // A no access is a METER_DISCOVERY now (NA-R003), so it auto-sends with the rest.
 const AUTO_SEND_FORM_TYPES = ["METER_DISCOVERY"];
 
+/**
+ * Is this queue item a No Access capture, of any kind of transaction?
+ *
+ * NA-R001: there is ONE No Access form, and every transaction type that can end in no access
+ * opens it. So a no access is recognised by what it SAYS - the worker could not get in - and
+ * never by which transaction it belongs to.
+ *
+ * The owner, 4 October 2026, testing a Meter Inspection no access with full signal: it was
+ * saved on the phone and never sent, and the phone told him it would "be sent by itself as
+ * soon as there is signal". There was signal. The sender had been asked for METER_DISCOVERY
+ * no accesses only, so an Inspection capture was queued and then skipped - attempts 0 - and
+ * the screen read "still waiting" as "waiting for signal".
+ */
+export function isNoAccessQueueItem(item = {}) {
+  const hasAccess = String(item?.payload?.accessData?.access?.hasAccess || "")
+    .trim()
+    .toLowerCase();
+
+  return hasAccess === "no";
+}
+
 function isAutoSendQueueItem(item = {}) {
   const formType = String(item?.formType || "")
     .trim()
     .toUpperCase();
 
   if (AUTO_SEND_FORM_TYPES.includes(formType)) return true;
+
+  // EVERY no access, whatever transaction it belongs to. A form joins this list only once its
+  // submit path saves before it sends and its callable accepts a repeat safely; the one No
+  // Access form is the same path for all eight types - proved offline on the owner's phone on
+  // 4 October - and onMeterLifecycleTrnCallable already treats a TRN id it has seen before as
+  // a success rather than a duplicate.
+  //
+  // It is deliberately NOT every lifecycle capture: a found-meter inspection goes down its own
+  // submit path, which has not been proved offline, and that is the bar for joining this list.
+  if (isNoAccessQueueItem(item) && getCallableNameForSubmissionQueueItem(item)) {
+    return true;
+  }
 
   // Older captures were saved before formType was always written.
   return isStandardMeterDiscoveryQueueItem(item);
@@ -190,28 +223,11 @@ export const processSubmissionQueue = async ({
         return isAutoSendQueueItem(item);
       }
 
-      if (filterMode === "METER_DISCOVERY_NO_ACCESS") {
-        const formType = String(item?.formType || "")
-          .trim()
-          .toUpperCase();
-        const trnType = String(
-          item?.context?.trnType ||
-            item?.payload?.accessData?.trnType ||
-            item?.payload?.trnType ||
-            "",
-        )
-          .trim()
-          .toUpperCase();
-        const hasAccess = String(
-          item?.payload?.accessData?.access?.hasAccess || "",
-        )
-          .trim()
-          .toLowerCase();
-
-        return (
-          (formType === "METER_DISCOVERY" || trnType === "METER_DISCOVERY") &&
-          hasAccess === "no"
-        );
+      // NA-R001: one No Access form, every transaction type. This used to read
+      // METER_DISCOVERY_NO_ACCESS and demand the transaction be a Meter Discovery, so the
+      // form's own submit skipped an Inspection no access it had just queued.
+      if (filterMode === "NO_ACCESS") {
+        return isNoAccessQueueItem(item);
       }
 
       return true;

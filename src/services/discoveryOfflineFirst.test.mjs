@@ -244,3 +244,80 @@ test("OF-R001: the Submission Queue screen hears it, rather than only reading on
     "the screen only reloads when it comes into focus, so a background send leaves sent work on screen",
   );
 });
+
+// NA-R001 — ONE NO ACCESS FORM MEANS ONE SENDER
+//
+// The owner, 4 October 2026, testing a Meter Inspection no access with full signal: it was
+// saved on the phone and never sent. "Even though there's a network, it goes to the queue."
+// Attempts 0.
+//
+// The form queues the capture and then asks the sender to send that one item - but it asked
+// with a filter that demanded the transaction be a METER_DISCOVERY. An Inspection no access
+// was queued and then skipped, and "still waiting" was read to the worker as "it will be sent
+// by itself as soon as there is signal". There was signal. Nothing was ever going to send it.
+//
+// The background sender had the same hole: a no access on anything but a Meter Discovery was
+// never auto-sent either.
+
+test("NA-R001: the sender recognises a no access by what it says, not by its transaction type", () => {
+  assert.match(
+    queueSource,
+    /export function isNoAccessQueueItem/,
+    "there is no one answer to what a no access is, so each caller decides again",
+  );
+
+  // The comparison, not the words: the comment above it records why the Discovery-only mode
+  // went, and that history is worth keeping.
+  assert.doesNotMatch(
+    queueSource,
+    /filterMode === "METER_DISCOVERY_NO_ACCESS"/,
+    "the Discovery-only filter is back, so a no access on any other transaction is queued and skipped",
+  );
+
+  // The filter is the trnType-blind one.
+  const filter = queueSource.slice(queueSource.indexOf('filterMode === "NO_ACCESS"'));
+  assert.match(
+    filter.slice(0, 200),
+    /isNoAccessQueueItem\(item\)/,
+    "the no-access filter no longer asks the one well what a no access is",
+  );
+});
+
+test("NA-R001: a no access auto-sends whatever transaction it belongs to", () => {
+  const autoSend = queueSource.slice(
+    queueSource.indexOf("function isAutoSendQueueItem"),
+    queueSource.indexOf("export const processSubmissionQueue"),
+  );
+
+  assert.match(
+    autoSend,
+    /isNoAccessQueueItem\(item\)/,
+    "only a Meter Discovery no access auto-sends, so the others sit on the phone until someone taps Sync",
+  );
+
+  // And only where there is a callable to send it to - an unknown type would otherwise be
+  // picked up by the background sender and fail on every run.
+  assert.match(
+    autoSend,
+    /getCallableNameForSubmissionQueueItem\(item\)/,
+    "a capture with nowhere to send would be auto-sent forever",
+  );
+});
+
+test("NA-R001: both forms ask the sender for the same thing", async () => {
+  const noAccessScreen = await readFile(
+    new URL("../../app/(tabs)/admin/operations/no-access.js", import.meta.url),
+    "utf8",
+  );
+
+  for (const [name, source] of [
+    ["the No Access screen", noAccessScreen],
+    ["the Meter Discovery form", formSource],
+  ]) {
+    assert.match(
+      source,
+      /filterMode: "NO_ACCESS"/,
+      `${name} still asks for a Discovery-only send, so it skips the capture it just queued`,
+    );
+  }
+});

@@ -1708,7 +1708,7 @@ export default function FormMeterDiscovery() {
               agentUid,
               agentName,
               queueItemIds: [activeQueueItemId],
-              filterMode: "METER_DISCOVERY_NO_ACCESS",
+              filterMode: "NO_ACCESS",
               includeSyncing: true,
             }),
             15000,
