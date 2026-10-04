@@ -482,20 +482,33 @@ test("a recorded No Access does not jump to the bucket list", () => {
   );
 });
 
-test("NA-R006: back only inside this tab, otherwise navigate across", async () => {
-  // The No Access screen lives in the ADMIN tab. The premise card lives in PREMISES, the meter
-  // list in ASTS. router.back() pops within the ADMIN stack, so using it for every entry point
-  // sent a Normal Path visit to My Work Orders - the last Admin screen - instead of back to the
-  // premise it came from.
+test("NA-R006: the form always leaves the Admin stack, then crosses tabs if it must", () => {
+  // This screen lives in the ADMIN tab and is opened from PREMISES, ASTS and ADMIN.
+  //
+  // router.replace to another tab SWITCHES tab and leaves this screen on the Admin stack - the
+  // owner, 4 Oct: "the form is now sitting on admin stack, it does not close." He found it
+  // still there the next time he opened Admin.
+  //
+  // router.back() pops it, but only reaches the screen underneath IN ADMIN - so using it for
+  // every caller sent a premise-card visit to My Work Orders.
+  //
+  // Both, in order: pop ALWAYS, then replace only when the caller lives in another tab.
   assert.match(
     noAccessCode,
-    /const sameStack =/,
-    "back is used for every entry point again, so a premise-card visit lands in My Work Orders",
+    /let popped = false/,
+    "the pop is conditional again, so a cross-tab caller leaves the form on the Admin stack",
   );
   assert.match(
     noAccessCode,
-    /if \(sameStack\)/,
-    "canGoBack is no longer guarded by the stack check",
+    /if \(sameStack && popped\) return;/,
+    "a same-tab caller will now replace as well as pop, rebuilding the screen it just returned to",
+  );
+
+  // The pop must not sit inside the sameStack branch - that was the shape that left the form up.
+  assert.equal(
+    /if \(sameStack\) \{\s*try \{/.test(noAccessCode),
+    false,
+    "the pop is back inside the stack check, so it only runs for same-tab callers",
   );
 });
 

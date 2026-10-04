@@ -127,90 +127,62 @@ export default function NoAccessScreen() {
   //
   // router.replace cannot silently do nothing: this screen is replaced by the target. That is
   // what "removed from screen" has to mean - not an attempt that may or may not happen.
+  // NA-R006: a closed No Access goes back where it came from - after a recorded visit, after a
+  // refusal, or when the worker simply backs out. The form never stays up.
+  //
+  // THIS SCREEN LIVES IN THE ADMIN TAB (app/(tabs)/admin/operations/no-access.js) and is opened
+  // from PREMISES, ASTS and ADMIN. That one fact caused every version of this that failed:
+  //
+  //   router.replace to another tab SWITCHES tab and leaves this screen on the Admin stack -
+  //   the owner, 4 Oct: "the form is now sitting on admin stack, it does not close". He found
+  //   it still there the next time he opened Admin.
+  //
+  //   router.back() pops it, but only reaches the screen underneath IN ADMIN - so using it for
+  //   every caller sent a premise-card visit to My Work Orders.
+  //
+  // So do both, in order: POP this screen off its own stack, then open the caller's tab if the
+  // caller lives in another one.
+  //
+  //   same tab  -> pop, and stop. The screen underneath is the one they left, still holding its
+  //                state: My Work Orders keeps the open bucket, its rows and its filter.
+  //   other tab -> pop to clear this screen out of Admin, then replace into their tab.
+  //
+  // canGoBack is asked because after an app reload there may be nothing underneath. When there
+  // is not, replace alone still gets the worker off a form they have already sent.
   const goBack = () => {
-    // NA-R006 (1.13.0): back where it came from. This screen serves seven transaction types
-    // and four entry points, so it cannot know where the worker was unless the screen that
-    // opened it said. Every one of them sets returnTo.
-    //
-    // A screen that does not say is a fault in THAT screen. The worker is still landed
-    // somewhere rather than stranded on a form they have already sent, and it is logged so the
-    // missing one is found instead of being absorbed.
     if (!context.returnTo) {
+      // NA-R006: the screen that opened this one should have said. A fault in THAT screen.
       console.log("No Access -- NA-R006: opened with no returnTo", { trnType });
     }
 
     const target = {
       pathname: context.returnTo || "/(tabs)/admin/operations/my-workorders",
-      // STAY IN THE ROWS (owner, 3 Oct 2026: "a closed NA form must remain in my-workorder
-      // rows and not go up to my-workorder buckets").
-      //
-      // This sent backToBuckets for part of one afternoon, on an earlier instruction. A worker
-      // with seventeen rows in a batch does the next one in the same batch, so being put back
-      // at the bucket list made them navigate in again after every visit.
-      params: { targetedBatchRefresh: String(Date.now()) },
     };
 
-    // BACK, NOT REPLACE (owner, 3 Oct 2026: "it still comes back here", and "it pushes them
-    // three layers up and then they must still dig down again").
-    //
-    // my-workorders.js holds the open bucket in component state:
-    //     const [selectedBucket, setSelectedBucket] = useState(null);
-    // and null means "show the bucket list". router.replace UNMOUNTS that screen and mounts a
-    // new one, so selectedBucket starts at null again and the worker is back at the list -
-    // every visit, with seventeen rows in the batch.
-    //
-    // Going back pops this screen off and uncovers the one underneath, still holding its
-    // state: the same bucket, the same rows, the same filter. That is what NA-R006 means by
-    // "where it came from" - the screen they left, not just the route.
-    //
-    // canGoBack is asked first because after an app reload there may be nothing underneath.
-    // replace is then the fallback, which strands nobody - unlike dismissTo this morning,
-    // which silently did nothing and left the worker on a form they had already sent.
-    // BACK only when the screen we want is in THIS stack; otherwise navigate to it.
-    //
-    // The owner, 3 Oct 2026: "so now all no accesses end up in my work orders, even those you
-    // create from the normal path - is that how it should be?" No, and here is why it did.
-    //
-    // This screen lives in the ADMIN tab (app/(tabs)/admin/operations/no-access.js). The
-    // premise card lives in the PREMISES tab. Opening No Access from a premise card crosses
-    // tabs, so router.back() pops within the ADMIN stack and lands on whatever Admin screen was
-    // underneath - My Work Orders. Right for a batch row, wrong for every other entry point.
-    //
-    // Same tab: go back, and the screen keeps its state - My Work Orders keeps the open bucket
-    // and its rows, which is the whole point. Different tab: replace, because there is nothing
-    // of ours underneath to go back to.
-    // The TAB is the segment after the "(tabs)" group, not the first one.
-    //
-    //   "/(tabs)/admin/operations/no-access".split("/") -> ["", "(tabs)", "admin", ...]
-    //   "/(tabs)/premises".split("/")                   -> ["", "(tabs)", "premises"]
-    //
-    // Taking index [1] returns "(tabs)" for EVERY route, so sameStack was always true and this
-    // called back() on every entry point - including the Normal Path, where there is nothing of
-    // ours underneath, so the form stayed on screen (owner, ERF 4310).
+    // The tab is the segment AFTER the "(tabs)" group. Taking [1] returns "(tabs)" for every
+    // route in iREPS, which made every caller look like the same stack (owner, ERF 4310).
     const tabOf = (path) =>
       String(path || "")
         .split("/")
         .filter(Boolean)[1] || "";
-    const sameStack = tabOf(target.pathname) === tabOf(NO_ACCESS_ROUTE);
 
-    if (sameStack) {
-      try {
-        if (router.canGoBack?.()) {
-          router.back();
-          return;
-        }
-      } catch (error) {
-        console.log(
-          "No Access -- back failed, replacing instead",
-          error?.message,
-        );
+    const sameStack = tabOf(target.pathname) === tabOf(NO_ACCESS_ROUTE);
+    let popped = false;
+
+    try {
+      if (router.canGoBack?.()) {
+        router.back();
+        popped = true;
       }
+    } catch (error) {
+      console.log("No Access -- back failed", error?.message);
     }
+
+    if (sameStack && popped) return;
 
     try {
       router.replace(target);
     } catch (error) {
-      // Even a bad returnTo must not strand a worker on a sent form.
       console.log(
         "No Access -- replace failed, going to My Work Orders",
         error?.message,
