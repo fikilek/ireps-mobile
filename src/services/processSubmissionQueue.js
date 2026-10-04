@@ -5,7 +5,7 @@ import {
   getDownloadURL,
   getStorage,
   ref,
-  uploadBytes,
+  uploadBytesResumable,
 } from "firebase/storage";
 import { functions } from "../firebase";
 import { getMediaExtension } from "../utils/getMediaExtension";
@@ -53,7 +53,7 @@ function isStandardMeterDiscoveryQueueItem(item = {}) {
 // anything not on it was put back to waiting and retried for ever while the card read "Draft saved
 // locally" — so every code anybody added later fell into the same trap, silently. Now the trap cannot
 // be re-made: an unknown refusal stops, like every other refusal.
-const KEEP_WAITING_CODES = ["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND"];
+const KEEP_WAITING_CODES = ["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND", "UNAUTHENTICATED", "UNAVAILABLE", "DEADLINE_EXCEEDED", "INTERNAL"];
 
 // A refusal that means "a transaction for this work already exists". Its photographs belong to that
 // transaction, so they are never deleted — the office repairs the work from them (RG-R001 section 8).
@@ -286,12 +286,15 @@ export const processSubmissionQueue = async ({
               const response = await fetch(mediaItem.uri);
               const blob = await response.blob();
 
-              await uploadBytes(storageRef, blob);
+              const upload = uploadBytesResumable(storageRef, blob);
+              const uploadTimer = setTimeout(() => upload.cancel(), 60000);
+              try { await upload; } finally { clearTimeout(uploadTimer); }
               uploadedStoragePaths.push(storagePath);
 
               const downloadUrl = await getDownloadURL(storageRef);
 
-              const { uri, ...cleanItem } = mediaItem;
+              const cleanItem = { ...mediaItem };
+              if (!isNoAccessQueueItem(item)) delete cleanItem.uri;
 
               return {
                 ...cleanItem,
@@ -336,7 +339,7 @@ export const processSubmissionQueue = async ({
           // RG-R001 section 10: this refusal takes its photographs with it too, in the same order as
           // the others — recorded first, then cleared.
           await deleteUploadedEvidence({
-            uploadedStoragePaths,
+            uploadedStoragePaths: isNoAccessQueueItem(item) ? [] : uploadedStoragePaths,
             trnId: finalPayload?.id,
             code: "UNKNOWN_QUEUE_FORM_TYPE",
           });
@@ -344,7 +347,7 @@ export const processSubmissionQueue = async ({
           continue;
         }
 
-        const callable = httpsCallable(functions, callableName);
+        const callable = httpsCallable(functions, callableName, { timeout: 60000 });
 
         const callableResponse = await callable(finalPayload);
 
@@ -408,7 +411,7 @@ export const processSubmissionQueue = async ({
           // becomes retryable again, and a retry sends addresses of files that no longer exist
           // (independent review, 2026-09-28).
           await deleteUploadedEvidence({
-            uploadedStoragePaths,
+            uploadedStoragePaths: isNoAccessQueueItem(item) ? [] : uploadedStoragePaths,
             trnId: finalPayload?.id,
             code,
           });
@@ -431,9 +434,7 @@ export const processSubmissionQueue = async ({
           successResult?.success === true &&
           successResult?.queueItem?.status === "SUCCESS" &&
           successResult?.queueItem?.result?.success === true &&
-          String(finalPayload?.accessData?.trnType || "")
-            .trim()
-            .toUpperCase() === "METER_DISCOVERY"
+          (isNoAccessQueueItem(item) || isStandardMeterDiscoveryQueueItem(item))
         ) {
           try {
             // OF-R001: a found meter keeps its pictures in app storage too now, so the sweep
@@ -496,7 +497,7 @@ export const processSubmissionQueue = async ({
 
           // RG-R001 section 10, after the refusal is recorded — see the answered path above.
           await deleteUploadedEvidence({
-            uploadedStoragePaths,
+            uploadedStoragePaths: isNoAccessQueueItem(item) ? [] : uploadedStoragePaths,
             trnId: item?.payload?.id,
             code,
           });
@@ -508,7 +509,7 @@ export const processSubmissionQueue = async ({
         await markSubmissionQueueItemFailed(
           item.id,
           {
-            code: "SYNC_FAILED",
+            code: code || "SYNC_FAILED",
             message: message || "Sync failed",
             trnId: "NAv",
           },
@@ -518,10 +519,10 @@ export const processSubmissionQueue = async ({
       }
     }
 
-    return {
-      success: true,
-      message: "Queue processed",
-    };
+    const remaining = (await getSubmissionQueue()).filter((entry) =>
+      retryableItems.some((attempted) => attempted.id === entry.id) && ["PENDING", "FAILED", "SYNCING"].includes(entry.status));
+    return { success: remaining.length === 0, code: remaining.length ? "QUEUE_PENDING" : "OK",
+      message: remaining.length ? "Some visits are still waiting to send." : "Queue processed" };
   } catch (error) {
     console.log("processSubmissionQueue error:", error);
 

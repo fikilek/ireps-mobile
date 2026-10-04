@@ -276,6 +276,17 @@ export const NO_ACCESS_RESULTS = Object.freeze([
     title: "The office could not tell where this came from",
     body: "The inspection did not say whether it was started at the meter or issued by the office, so it was not recorded. Send it again, and report it if it happens twice.",
   },
+  { code: "NO_ACCESS_GEOGRAPHY_UNRESOLVED", title: "No Access was not recorded", body: "The ERF has no municipality. Ask the office to correct its geography." },
+  { code: "NO_ACCESS_GEOGRAPHY_MISMATCH", title: "No Access was not recorded", body: "The meter, premise and ERF do not match. Refresh the work order or contact the office." },
+  { code: "NO_ACCESS_ERF_NOT_FOUND", title: "No Access was not recorded", body: "The ERF record is missing. Ask the office to correct the work order." },
+  { code: "AST_NOT_FOUND", title: "No Access was not recorded", body: "The meter record is missing. Refresh your meters or contact the office." },
+  { code: "PREMISE_NOT_FOUND", title: "No Access was not recorded", body: "The premise has not reached the server. Keep the saved visit and send it after the premise is saved." },
+  { code: "INSTRUCTION_TRN_NOT_FOUND", title: "No Access was not recorded", body: "The office instruction no longer exists. Refresh your work orders." },
+  { code: "INVALID_INSTRUCTION_TRN_TYPE", title: "No Access was not recorded", body: "The visit does not match the issued work type. Refresh your work orders." },
+  { code: "INSTRUCTION_NOT_ACCEPTED", title: "No Access was not recorded", body: "Accept the instruction before recording the visit. Then open the saved visit and send it again." },
+  { code: "INSTRUCTION_ASSET_MISMATCH", title: "No Access was not recorded", body: "The meter or premise does not match the instruction. Refresh your work orders or contact the office." },
+  { code: "INSTRUCTION_NOT_ASSIGNED", title: "No Access was not recorded", body: "This instruction belongs to another worker or team. Ask the office to assign it to you." },
+  { code: "TRN_ALREADY_EXISTS", title: "This work is already recorded", body: "This transaction records different work. Refresh your work orders before starting another visit. Your saved capture remains in Submission Queue for review." },
   {
     code: "UNKNOWN",
     title: "It did not send",
@@ -308,6 +319,9 @@ export function noAccessQueuedResult(code) {
 }
 
 /** Never leave a worker with a developer's message. An unknown code reads as UNKNOWN. */
-export function noAccessResult(code) {
-  return BY_CODE.get(String(code || "").trim()) || BY_CODE.get("UNKNOWN");
+export function noAccessResult(code, serverMessage) {
+  const known = BY_CODE.get(String(code || "").trim());
+  if (known) return known;
+  if (serverMessage) return { code, title: "No Access was not recorded", body: `${serverMessage} Open this visit in Submission Queue to correct it, or contact the office. Reference: ${code || "UNKNOWN"}.` };
+  return BY_CODE.get("UNKNOWN");
 }

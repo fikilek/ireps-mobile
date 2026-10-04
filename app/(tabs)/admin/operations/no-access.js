@@ -20,7 +20,7 @@ import {
   useRouter,
 } from "expo-router";
 import { Formik } from "formik";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -35,7 +35,9 @@ import { IrepsNoAccessForm } from "../../../../components/forms/IrepsNoAccessFor
 import { ForensicFooter } from "../../../../src/features/meters/ForensicFooter";
 import { NO_ACCESS_ROUTE } from "../../../../src/features/meters/accessGate";
 import { buildNoAccessTrnId } from "../../../../src/features/meters/meterDiscoveryTrnId";
-import { isCompleteNoAccess } from "../../../../src/features/meters/noAccessReasons";
+import { buildNoAccessPayload, noAccessContextFromQueue, validateNoAccessCapture } from "../../../../src/features/meters/noAccessCapture";
+import { persistNoAccessMeterDiscoveryMedia } from "../../../../src/utils/persistNoAccessMeterDiscoveryMedia";
+import { waitForNoAccessSend } from "../../../../src/features/meters/noAccessSendDeadline";
 import {
   NO_ACCESS_PROGRESS,
   noAccessConfirmation,
@@ -50,6 +52,7 @@ import { scheduleMeterDiscoveryQueueSyncRetry } from "../../../../src/services/s
 import {
   addSubmissionQueueItem,
   getSubmissionQueueItemById,
+  updateSubmissionQueueItem,
 } from "../../../../src/utils/submissionQueue";
 
 // TR-R003 (0.6.0): THE POSITION NO LONGER COMES FROM THIS PHONE.
@@ -78,7 +81,24 @@ export default function NoAccessScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const params = useLocalSearchParams();
-  const context = useMemo(() => parseContext(params.context), [params.context]);
+  const [editingItem, setEditingItem] = useState(null);
+  const [loadingDraft, setLoadingDraft] = useState(Boolean(params.queueItemId));
+  const context = useMemo(() => editingItem ? noAccessContextFromQueue(editingItem) : parseContext(params.context), [params.context, editingItem]);
+  useEffect(() => {
+    if (!params.queueItemId) return;
+    let active = true;
+    getSubmissionQueueItemById(String(params.queueItemId)).then((item) => {
+      if (!active) return;
+      if (!item || !["PENDING", "FAILED", "CONFLICT", "IN_PROGRESS"].includes(item.status)) {
+        Alert.alert("Draft unavailable", "This visit is already sending, already recorded, or no longer saved on this phone.");
+        router.back();
+        return;
+      }
+      setEditingItem(item);
+      setLoadingDraft(false);
+    });
+    return () => { active = false; };
+  }, [params.queueItemId, router]);
   const { user, profile } = useAuth();
 
   const [busy, setBusy] = useState("");
@@ -236,102 +256,13 @@ export default function NoAccessScreen() {
     router.replace(returnTo);
   };
 
-  // NA-R030: the record. The municipality and the ward are NOT built here - the server reads
-  // them from the ERF, which is the authority for where a property is, so the two screens that
-  // open this one cannot assemble them two different ways.
-  function buildPayload({ trnId, capturedAt, value, media }) {
-    return {
-      id: trnId,
-      meterType: "NA",
-      // TR-R003: the server places the position at ast.location.gps and says where it came
-      // from. It needs the meter only to ask whether this no access HAS one - a Reading or a
-      // Disconnection does, a first-visit Discovery does not - so it sends the id, not a
-      // position. No root `location`: that home is retired, and the 15 records that used it
-      // were all written by this screen.
-      astId: context.astId || null,
-      // TR-R001: `origin` is where the work came from - field or office - and a No Access is
-      // always FIELD. A worker is standing at the property, turned away.
-      //
-      // The owner's phone, 4 October 2026: a Meter Inspection no access was refused with
-      // INSPECTION_OFFICE_WMS_ONLY. The rule it hit allows "office work executed from an
-      // instruction, OR field work started on the spot from the meter card" - which is exactly
-      // what he had done. It refused because this form never said which, so the server could
-      // not tell the permitted case from the forbidden one and took the safer answer.
-      //
-      // The server merges `origin.targetedBatch` in on top of this, so a Sales path capture
-      // keeps both: the channel it came through and the batch it followed.
-      origin: { channel: "FIELD" },
-      media,
-      // TR-R002: the device time goes in METADATA, where the rule puts it - not at the root.
-      //
-      // The owner, 3 October, reading his own record: "capturedAt - in the rules, do we have
-      // this in the root?" We do not. And it was not a harmless extra: this screen sent the
-      // real capture time at the root as `capturedAt` and sent NO metadata at all, so the
-      // server found no device time and filled createdOnDevice with its own clock. On his 5185
-      // record capturedAt was 10:33:25 - the true moment - while createdOnDevice read 10:33:31,
-      // the server's. The one true fact sat in the undeclared field and the declared field
-      // held a substitute.
-      metadata: { createdOnDevice: capturedAt, updatedOnDevice: capturedAt },
-      accessData: {
-        trnType,
-        // GMR-R027 indexes the monthly report on parents.lmPcode, and the TRN Registry is
-        // scoped by it, so a record without it exists and cannot be found. The premise knows
-        // both; the server confirms them from the ERF. Either alone was a single point of
-        // failure, and the server's half was missing from DEV while the records were written.
-        parents: {
-          lmPcode: context.lmPcode || "",
-          wardPcode: context.wardPcode || "",
-        },
-        erfId: context.erfId,
-        erfNo: context.erfNo || "NAv",
-        // Every transaction writes premise as { id, address, propertyType }. A no access
-        // writes the same, so a worker reading their queue sees WHERE the work was, and so a
-        // no access record does not read differently from every other record.
-        premise: context.premiseId
-          ? {
-              id: context.premiseId,
-              address: context.premiseAddress || "NAv",
-              propertyType: context.premisePropertyType || "NAv",
-            }
-          : null,
-        access: {
-          hasAccess: "no",
-          reasonCode: value.reasonCode,
-          reasonOther: value.reasonOther,
-          // NA-R031.2: access.reason carries the display words, and every reader prints them.
-          // The server settles the shape again on arrival, but it also VALIDATES before it
-          // normalises - so a payload with no reason here is refused before the door is
-          // reached.
-          reason:
-            String(value.reasonCode).toUpperCase() === "OTHER"
-              ? String(value.reasonOther || "").trim()
-              : String(value.reasonCode || "").trim(),
-          appointment: value.appointment,
-        },
-      },
-      ...(context.targetedBatchContext
-        ? { targetedBatchContext: context.targetedBatchContext }
-        : {}),
-    };
-  }
-
   async function submit(value, media, helpers) {
-    if (sending.current) return;
-
-    if (!isCompleteNoAccess(value, media)) {
-      helpers.setErrors({
-        reason: value.reasonCode
-          ? ""
-          : "Say why you could not touch the meter.",
-        reasonOther:
-          String(value.reasonCode).toUpperCase() === "OTHER" &&
-          !value.reasonOther.trim()
-            ? "Type what stopped you reaching the meter."
-            : "",
-        media: media.some((item) => item?.tag === "noAccessPhoto")
-          ? ""
-          : "A No Access needs one photograph.",
-      });
+    if (sending.current || loadingDraft) return;
+    const errors = validateNoAccessCapture(value, media, {
+      originalAppointment: editingItem?.payload?.accessData?.access?.appointment,
+    });
+    if (Object.keys(errors).length) {
+      helpers.setErrors(errors);
       return;
     }
 
@@ -347,18 +278,31 @@ export default function NoAccessScreen() {
   async function send(value, media, helpers) {
     sending.current = true;
     helpers.setErrors({});
+    let savedQueueId = null;
 
     try {
       setBusy(NO_ACCESS_PROGRESS.queueing);
 
       // Both belong to THIS capture, not to the screen.
-      const trnId = buildTrnId();
+      const trnId = editingItem?.payload?.id || context.instructionTrnId || buildTrnId();
       const capturedAt = new Date().toISOString();
 
-      const payload = buildPayload({ trnId, capturedAt, value, media });
+      const durableMedia = await persistNoAccessMeterDiscoveryMedia({ trnId, media });
+      const payload = buildNoAccessPayload({ context, trnId, capturedAt, value,
+        media: durableMedia, actor: { uid: agentUid, name: agentName },
+        previousMetadata: editingItem?.payload?.metadata,
+      });
+      if (editingItem) {
+        const current = await getSubmissionQueueItemById(editingItem.id);
+        if (!current || !["PENDING", "FAILED", "CONFLICT", "IN_PROGRESS"].includes(current.status)) {
+          throw new Error("This visit is sending or already recorded. Refresh the Submission Queue.");
+        }
+      }
 
       // OF-R001: it is on the phone before any network work is attempted.
-      const queued = await addSubmissionQueueItem({
+      const queued = editingItem ? await updateSubmissionQueueItem(editingItem.id,
+        { payload, status: "PENDING", result: null, refusal: null, outcomeNotified: false }, agentUid, agentName
+      ) : await addSubmissionQueueItem({
         formType: trnType,
         payload,
         context: {
@@ -385,15 +329,16 @@ export default function NoAccessScreen() {
         );
       }
 
+      savedQueueId = queued.queueItem.id;
       setBusy(NO_ACCESS_PROGRESS.recording);
 
-      const processed = await processSubmissionQueue({
+      await waitForNoAccessSend(processSubmissionQueue({
         agentUid,
         agentName,
         queueItemIds: [queued?.queueItem?.id],
         filterMode: "NO_ACCESS",
         includeSyncing: true,
-      });
+      }));
 
       // The signal listener only fires when connectivity CHANGES. A phone that was already
       // offline when the worker saved would otherwise never be woken, and the work would sit
@@ -429,6 +374,7 @@ export default function NoAccessScreen() {
           : isRefusedByOffice(saved)
             ? noAccessResult(
                 saved?.result?.code || saved?.refusal?.code || "UNKNOWN",
+                saved?.result?.message || saved?.refusal?.message,
               )
             : // Still waiting. WHY it is waiting decides the words: a worker in a dead spot
               // is told to carry on, a worker who has been signed out is told to sign in.
@@ -447,6 +393,9 @@ export default function NoAccessScreen() {
       //
       // The alert is a native window. It stays up over the screen we return to, so the worker
       // still reads it.
+      if (["SUCCESS", "CONFLICT"].includes(saved?.status)) {
+        await updateSubmissionQueueItem(saved.id, { outcomeNotified: true });
+      }
       helpers.resetForm();
       sending.current = false;
       setBusy("");
@@ -460,10 +409,19 @@ export default function NoAccessScreen() {
       sending.current = false;
       setBusy("");
 
-      const result = noAccessResult(error?.code || "UNKNOWN");
-      Alert.alert(result.title, result.body);
+      if (savedQueueId) {
+        scheduleMeterDiscoveryQueueSyncRetry({ agentUid, agentName, delayMs: 20000 });
+        const result = noAccessQueuedResult(error?.code);
+        helpers.resetForm();
+        Alert.alert(result.title, result.body);
+        goBack();
+      } else {
+        Alert.alert("Not saved on this phone", `${error?.message || "The visit could not be saved."} Keep this form open and try again.`);
+      }
     }
   }
+
+  if (loadingDraft) return <ActivityIndicator accessibilityLabel="Loading saved visit" />;
 
   return (
     <>
@@ -519,11 +477,12 @@ export default function NoAccessScreen() {
 
         <Formik
           innerRef={formRef}
+          enableReinitialize
           initialValues={{
-            reasonCode: "",
-            reasonOther: "",
-            appointment: null,
-            media: [],
+            reasonCode: editingItem?.payload?.accessData?.access?.reasonCode || "",
+            reasonOther: editingItem?.payload?.accessData?.access?.reasonOther === "NAv" ? "" : editingItem?.payload?.accessData?.access?.reasonOther || "",
+            appointment: editingItem?.payload?.accessData?.access?.appointment || null,
+            media: editingItem?.payload?.media || [],
           }}
           onSubmit={(values, helpers) =>
             submit(
@@ -549,6 +508,7 @@ export default function NoAccessScreen() {
                 agentUid={agentUid}
                 fallbackGps={context.gps || null}
                 reasonErrorText={errors.reason || errors.reasonOther || ""}
+                appointmentErrorText={errors.appointment || ""}
                 mediaErrorText={
                   typeof errors.media === "string" ? errors.media : ""
                 }

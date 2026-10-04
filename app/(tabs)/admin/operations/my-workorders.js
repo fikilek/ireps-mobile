@@ -1,3 +1,4 @@
+import { ACCESS_GATE, NO_ACCESS_ROUTE, buildAssetNoAccessContext } from "../../../../src/features/meters/accessGate";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNetInfo } from "@react-native-community/netinfo";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
@@ -2997,7 +2998,7 @@ export default function WorkorderManagementSystem() {
       meterNo: item?.meterNo,
     });
 
-    router.push({
+    const openAccessForm = () => router.push({
       pathname,
       params: {
         // ✅ Primary WMS execution id.
@@ -3013,6 +3014,21 @@ export default function WorkorderManagementSystem() {
         source: "WMS",
       },
     });
+    if (["METER_INSPECTION", "METER_DISCONNECTION", "METER_RECONNECTION", "METER_REMOVAL", "METER_READING"].includes(item.trnType)) {
+      Alert.alert(ACCESS_GATE.title, ACCESS_GATE.message, [
+        { text: "Cancel", style: "cancel" },
+        { text: ACCESS_GATE.no, onPress: () => router.push({ pathname: NO_ACCESS_ROUTE,
+          params: { context: JSON.stringify({
+            ...buildAssetNoAccessContext({ ...item.raw, id: sourceAstId }, {
+              trnType: item.trnType, returnTo: "/(tabs)/admin/operations/my-workorders",
+            }),
+            instructionTrnId, origin: item.raw?.origin || { channel: "OFFICE" },
+            assignment: item.raw?.assignment || {},
+          }) },
+        }) },
+        { text: ACCESS_GATE.yes, onPress: openAccessForm },
+      ]);
+    } else openAccessForm();
   }
 
   function handleOpenBmdErf({ bucket, erf }) {

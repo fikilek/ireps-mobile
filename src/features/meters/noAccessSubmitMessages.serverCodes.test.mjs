@@ -25,7 +25,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // The web repo beside this one, or a worktree of it. A stream often works in a worktree while
 // the main checkout holds another chat's branch, and a check that only looks in one place is a
 // check that quietly stops running.
-const CANDIDATE_DIRS = ["ireps-web", "ireps-web-na"].map((name) =>
+const CANDIDATE_DIRS = ["ireps-web-inspection-na", "ireps-web", "ireps-web-na"].map((name) =>
   path.resolve(here, "../../../..", name, "functions"),
 );
 
@@ -33,6 +33,7 @@ const CANDIDATE_DIRS = ["ireps-web", "ireps-web-na"].map((name) =>
 // walk into. Payload-shape faults elsewhere are programming errors and are not in scope here.
 const SOURCES = [
   "noAccess/recordNoAccess.js",
+  "noAccess/recordLifecycleNoAccess.js",
   "targetedBatches/batch-work-guard.js",
 ];
 
@@ -69,7 +70,7 @@ test("every business refusal the server can send has worker's words", async (t) 
   const codes = new Set();
 
   // noAccessError("CODE", …)
-  for (const m of read.source.matchAll(/noAccessError\(\s*"([A-Z0-9_]+)"/g))
+  for (const m of read.source.matchAll(/(?:noAccessError|fail)\(\s*"([A-Z0-9_]+)"/g))
     codes.add(m[1]);
   // export const SOMETHING = "SOMETHING" — how the batch guard names its refusal codes. The
   // name must EQUAL the value: that is what makes it a code rather than a constant that

@@ -1,7 +1,7 @@
 import NetInfo from "@react-native-community/netinfo";
-import { AppState } from "react-native";
+import { Alert, AppState } from "react-native";
 import { processSubmissionQueue } from "./processSubmissionQueue";
-import { clearConfirmedSubmissions } from "../utils/submissionQueue";
+import { clearConfirmedSubmissions, getSubmissionQueue, updateSubmissionQueueItem } from "../utils/submissionQueue";
 
 let unsubscribeNetInfo = null;
 let appStateSubscription = null;
@@ -49,6 +49,7 @@ const runQueueSync = async () => {
 
   if (result?.code === "QUEUE_BUSY") {
     scheduleMeterDiscoveryQueueSyncRetry();
+    return result;
   } else if (result?.success) {
     failedRunCount = 0;
   } else {
@@ -59,7 +60,20 @@ const runQueueSync = async () => {
     scheduleMeterDiscoveryQueueSyncRetry({ delayMs: RETRY_LADDER_MS[step] });
   }
 
-  await clearConfirmedSubmissions();
+  // A result arriving after the form's 15-second wait still reaches the worker.
+  if (AppState.currentState === "active") {
+    const finished = (await getSubmissionQueue()).filter((item) => item?.payload?.accessData?.access?.hasAccess === "no" &&
+      !item.outcomeNotified && ["SUCCESS", "CONFLICT"].includes(item.status));
+    if (finished.length) {
+      const recorded = finished.filter((item) => item.status === "SUCCESS").length;
+      const refused = finished.filter((item) => item.status === "CONFLICT");
+      Alert.alert("No Access results", [recorded ? `${recorded} visit(s) recorded.` : "",
+        ...refused.map((item) => `${item.context?.meterNo || item.context?.erfNo || "Visit"}: ${item.result?.message || "The office refused this visit."}`),
+        refused.length ? "Open Submission Queue to correct the refused visits." : ""].filter(Boolean).join("\n"));
+      for (const item of finished) await updateSubmissionQueueItem(item.id, { outcomeNotified: true });
+    }
+    await clearConfirmedSubmissions();
+  }
 
   return result;
 };

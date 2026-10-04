@@ -1239,6 +1239,10 @@ export default function FormMeterRemoval() {
     );
 
     return removeUndefined({
+      metadata: {
+        createdOnDevice: editQueueItem?.payload?.metadata?.createdOnDevice || new Date().toISOString(),
+        updatedOnDevice: new Date().toISOString(),
+      },
       id: resolvedTrnId,
       instructionTrnId: instructionTrnId || "",
       sourceAstId: astDoc?.id || sourceAstId || "NAv",

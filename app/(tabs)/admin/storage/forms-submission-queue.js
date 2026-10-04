@@ -1,8 +1,7 @@
+import { NO_ACCESS_ROUTE } from "../../../../src/features/meters/accessGate";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
-import { httpsCallable } from "firebase/functions";
-import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
@@ -16,25 +15,16 @@ import {
 import { ActivityIndicator, Surface, Text } from "react-native-paper";
 import QueueItemCard from "../../../../components/QueueItemCard";
 import { useGeo } from "../../../../src/context/GeoContext";
-import { functions } from "../../../../src/firebase";
-import { getMediaExtension } from "../../../../src/utils/getMediaExtension";
 import { useAuth } from "../../../../src/hooks/useAuth";
 import { processSubmissionQueue } from "../../../../src/services/processSubmissionQueue";
 import RemoveSavedWorkDialog from "../../../../components/RemoveSavedWorkDialog";
 import { recordWorkRemoval } from "../../../../src/storage/workRemovalLog";
 import {
   clearConfirmedSubmissions,
-  getCallableNameForSubmissionQueueItem,
   getSubmissionQueue,
   getSubmissionQueueItemById,
-  isThrownRefusal,
-  markSubmissionQueueItemFailed,
-  markSubmissionQueueItemRefused,
-  markSubmissionQueueItemSuccess,
-  markSubmissionQueueItemSyncing,
   subscribeToSubmissionQueue,
   removeSubmissionQueueItem,
-  updateSubmissionQueueItem,
 } from "../../../../src/utils/submissionQueue";
 
 const getLifecycleEditRoute = (trnType) => {
@@ -77,17 +67,6 @@ const getQueueTrnType = (item = {}) => {
     .toUpperCase();
 };
 
-const isStandardMeterDiscoveryQueueItem = (item = {}) => {
-  const formType = String(item?.formType || "")
-    .trim()
-    .toUpperCase();
-
-  if (formType === "METER_DISCOVERY") return true;
-  if (formType) return false;
-
-  return getQueueTrnType(item) === "METER_DISCOVERY";
-};
-
 const getQueueInstructionTrnId = (item = {}) => {
   return String(
     item?.context?.instructionTrnId ||
@@ -115,306 +94,10 @@ const getQueueUpdatedAtMs = (item) => {
   return Number.isNaN(ms) ? 0 : ms;
 };
 
-const isAlreadyCompletedLifecycleResult = (result = {}) => {
-  const code = String(result?.code || "")
-    .trim()
-    .toUpperCase();
-
-  const message = String(result?.message || "")
-    .trim()
-    .toUpperCase();
-
-  return (
-    code.includes("ALREADY_COMPLETED") ||
-    code.includes("TRN_ALREADY_COMPLETED") ||
-    code.includes("WORKFLOW_ALREADY_COMPLETED") ||
-    (message.includes("ALREADY") && message.includes("COMPLETED"))
-  );
-};
-
-const processSingleSubmissionQueueItem = async (
-  queueItemId,
-  { agentUid = "SYSTEM", agentName = "SYSTEM" } = {},
-) => {
-  try {
-    const netState = await NetInfo.fetch();
-    const isOnline = Boolean(
-      netState.isConnected && netState.isInternetReachable,
-    );
-
-    if (!isOnline) {
-      return {
-        success: false,
-        message: "Device offline",
-      };
-    }
-
-    const item = await getSubmissionQueueItemById(queueItemId);
-
-    if (!item?.id) {
-      return {
-        success: false,
-        message: "Queue item not found",
-      };
-    }
-
-    const payload = item?.payload || {};
-    const originalMedia = Array.isArray(payload?.media) ? payload.media : [];
-
-    const storage = getStorage();
-
-    const syncedMedia = await Promise.all(
-      originalMedia.map(async (mediaItem) => {
-        if (mediaItem?.uri && !mediaItem?.url) {
-          const folder =
-            payload?.accessData?.access?.hasAccess === "yes"
-              ? `${payload?.meterType}_meters`
-              : "no_access";
-
-          const extension = isStandardMeterDiscoveryQueueItem(item)
-            ? getMediaExtension(mediaItem)
-            : "jpg";
-          const fileName = `${payload?.accessData?.erfId}_${mediaItem?.tag}_${Date.now()}.${extension}`;
-
-          const storageRef = ref(storage, `meters/${folder}/${fileName}`);
-
-          const response = await fetch(mediaItem.uri);
-          const blob = await response.blob();
-
-          await uploadBytes(storageRef, blob);
-
-          const downloadUrl = await getDownloadURL(storageRef);
-
-          const { uri, ...cleanItem } = mediaItem;
-
-          return {
-            ...cleanItem,
-            url: downloadUrl,
-          };
-        }
-
-        return mediaItem;
-      }),
-    );
-
-    const finalPayload = {
-      ...payload,
-      media: syncedMedia,
-    };
-
-    const callableName = getCallableNameForSubmissionQueueItem(item);
-
-    if (!callableName) {
-      // m06: nothing about waiting will give this item a form type. It stops.
-      await markSubmissionQueueItemRefused(
-        queueItemId,
-        {
-          code: "UNKNOWN_QUEUE_FORM_TYPE",
-          message:
-            "This local queue item does not have a recognised form type and cannot be synced safely.",
-          trnId: finalPayload?.id || "NAv",
-        },
-        agentUid,
-        agentName,
-      );
-
-      return {
-        success: false,
-        message:
-          "This local queue item does not have a recognised form type and cannot be synced safely.",
-      };
-    }
-
-    console.log("processSingleSubmissionQueueItem -- callable routing", {
-      queueItemId: item?.id,
-      status: item?.status,
-      formType: item?.formType,
-      trnType:
-        item?.context?.trnType ||
-        item?.payload?.accessData?.trnType ||
-        item?.payload?.trnType,
-      callableName,
-      erfNo: item?.context?.erfNo || item?.payload?.accessData?.erfNo,
-      meterNo: item?.context?.meterNo || item?.payload?.ast?.astData?.astNo,
-    });
-
-    const callable = httpsCallable(functions, callableName);
-
-    const callableResponse = await callable(finalPayload);
-    const result = callableResponse?.data || {};
-
-    if (!result?.success) {
-      const code = result?.code || "SYNC_FAILED";
-
-      console.log(
-        "processSingleSubmissionQueueItem -- callable returned failure",
-        {
-          queueItemId,
-          callableName,
-          code,
-          message: result?.message,
-          trnId: result?.trnId || finalPayload?.id || "NAv",
-          formType: item?.formType,
-          trnType:
-            item?.context?.trnType ||
-            item?.payload?.accessData?.trnType ||
-            item?.payload?.trnType,
-          result,
-        },
-      );
-
-      if (isAlreadyCompletedLifecycleResult(result)) {
-        await markSubmissionQueueItemSuccess(
-          queueItemId,
-          {
-            code: code || "ALREADY_COMPLETED",
-            message:
-              result?.message || "Server already completed this lifecycle TRN.",
-            trnId: result?.trnId || finalPayload?.id || "NAv",
-          },
-          agentUid,
-          agentName,
-        );
-
-        return {
-          success: true,
-          message:
-            result?.message || "Server already completed this lifecycle TRN.",
-        };
-      }
-
-      if (code === "INVALID_PREMISE_ID" || code === "PREMISE_NOT_FOUND") {
-        await updateSubmissionQueueItem(
-          queueItemId,
-          {
-            status: "PENDING",
-            result: {
-              success: false,
-              code,
-              message:
-                result?.message ||
-                "Parent premise is not ready yet. This draft will retry later.",
-              trnId: "NAv",
-            },
-          },
-          agentUid,
-          agentName,
-        );
-
-        return {
-          success: false,
-          message:
-            result?.message ||
-            "Parent premise is not ready yet. This draft will retry later.",
-        };
-      }
-
-      // m06: the server answered and refused. It stops here, in the server's own words.
-      await markSubmissionQueueItemRefused(
-        queueItemId,
-        {
-          code,
-          message: result?.message || "Submission requires review.",
-          trnId: result?.trnId || "NAv",
-        },
-        agentUid,
-        agentName,
-      );
-
-      return {
-        success: false,
-        message: result?.message || "Submission sync failed",
-      };
-    }
-
-    await markSubmissionQueueItemSuccess(
-      queueItemId,
-      {
-        code: result?.code || "SUCCESS",
-        message: result?.message || "Synced successfully",
-        trnId: result?.trnId || finalPayload?.id || "NAv",
-      },
-      agentUid,
-      agentName,
-    );
-
-    return {
-      success: true,
-      message: result?.message || "Queue item synced successfully",
-    };
-  } catch (error) {
-    console.log(
-      "SubmissionQueueScreen -- processSingleSubmissionQueueItem error",
-      {
-        queueItemId,
-        code: error?.code,
-        message: error?.message,
-        stack: error?.stack,
-        raw: error,
-      },
-    );
-
-    const message = error?.message || "";
-    const code = error?.code || "";
-
-    // m06: matched on the code alone. It used to match the word "premise" anywhere in the message, so a
-    // refusal that merely mentioned a premise was forced back into waiting and retried for ever.
-    if (code === "INVALID_PREMISE_ID" || code === "PREMISE_NOT_FOUND") {
-      await updateSubmissionQueueItem(
-        queueItemId,
-        {
-          status: "PENDING",
-          result: {
-            success: false,
-            code: "PREMISE_NOT_READY",
-            message:
-              "Parent premise is not ready yet. This draft will retry later.",
-            trnId: "NAv",
-          },
-        },
-        agentUid,
-        agentName,
-      );
-
-      return {
-        success: false,
-        message:
-          "Parent premise is not ready yet. This draft will retry later.",
-      };
-    }
-
-    // The server threw because it refused: it stops here, in the server's own words. Anything else never
-    // reached the server, so it waits and is sent again.
-    if (isThrownRefusal(code)) {
-      await markSubmissionQueueItemRefused(
-        queueItemId,
-        { code, message: message || "Submission requires review.", trnId: "NAv" },
-        agentUid,
-        agentName,
-      );
-
-      return {
-        success: false,
-        message: message || "Submission requires review.",
-      };
-    }
-
-    await markSubmissionQueueItemFailed(
-      queueItemId,
-      {
-        code: "SYNC_FAILED",
-        message: message || "Sync failed",
-        trnId: "NAv",
-      },
-      agentUid,
-      agentName,
-    );
-
-    return {
-      success: false,
-      message: message || "Sync failed",
-    };
-  }
+const processSingleSubmissionQueueItem = async (queueItemId, { agentUid, agentName } = {}) => {
+  const run = await processSubmissionQueue({ agentUid, agentName, queueItemIds: [queueItemId], includeSyncing: true });
+  const item = await getSubmissionQueueItemById(queueItemId);
+  return item?.result || run;
 };
 
 export default function SubmissionQueueScreen() {
@@ -586,7 +269,6 @@ export default function SubmissionQueueScreen() {
     try {
       setBusy(true);
 
-      await markSubmissionQueueItemSyncing(item.id, agentUid, agentName);
       await loadQueue();
 
       const result = await processSingleSubmissionQueueItem(item.id, {
@@ -620,6 +302,7 @@ export default function SubmissionQueueScreen() {
     const canEdit =
       item?.status === "PENDING" ||
       item?.status === "FAILED" ||
+      item?.status === "CONFLICT" ||
       item?.status === "IN_PROGRESS";
 
     if (!canEdit) {
@@ -630,6 +313,10 @@ export default function SubmissionQueueScreen() {
       return;
     }
 
+    if (item?.payload?.accessData?.access?.hasAccess === "no") {
+      router.push({ pathname: NO_ACCESS_ROUTE, params: { queueItemId: item.id } });
+      return;
+    }
     const trnType = getQueueTrnType(item);
     const lifecycleRoute = getLifecycleEditRoute(trnType);
 

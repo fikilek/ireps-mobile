@@ -17,10 +17,11 @@ import { formatStreetAddress } from "../premises/streetAddress.js";
 // "Objects are not valid as a React child". formatStreetAddress is the app's own formatter,
 // so the words read the same here as everywhere else.
 export function premiseAddressWords(premise = {}) {
-  return formatStreetAddress(premise?.address || {}) || "";
+  return typeof premise?.address === "string" ? premise.address : formatStreetAddress(premise?.address || {}) || "";
 }
 
 export function premisePropertyTypeWords(premise = {}) {
+  if (typeof premise?.propertyType === "string") return premise.propertyType;
   const t = premise?.propertyType || {};
   return [t?.type, t?.name, t?.unitNo]
     .map((v) => String(v ?? "").trim())
@@ -72,5 +73,5 @@ export function buildAssetNoAccessContext(
 
 /** True when the work can be recorded at all — the premise the no access would name. */
 export function assetCanRecordNoAccess(asset = {}) {
-  return Boolean(asset?.accessData?.premise?.id && asset?.accessData?.erfId);
+  return [asset?.accessData?.premise?.id, asset?.accessData?.erfId].every((v) => v && String(v).trim().toUpperCase() !== "NAV");
 }

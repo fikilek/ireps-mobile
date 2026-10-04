@@ -525,7 +525,8 @@ export const clearConfirmedSubmissions = async () => {
     const queue = readQueueFromStorage();
 
     const remaining = queue.filter(
-      (item) => !(item?.status === "SUCCESS" && item?.result?.success === true),
+      (item) => !(item?.status === "SUCCESS" && item?.result?.success === true &&
+        (item?.payload?.accessData?.access?.hasAccess !== "no" || item.outcomeNotified === true)),
     );
 
     const cleared = queue.length - remaining.length;

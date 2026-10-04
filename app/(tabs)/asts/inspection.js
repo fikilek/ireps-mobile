@@ -2847,6 +2847,10 @@ export default function InspectionScreen() {
 
       // INSPECTION-specific captured data.
       inspection: finalInspection,
+      metadata: {
+        createdOnDevice: editQueueItem?.payload?.metadata?.createdOnDevice || finalInspection.inspectedAt,
+        updatedOnDevice: new Date().toISOString(),
+      },
 
       executionOutcome,
 
