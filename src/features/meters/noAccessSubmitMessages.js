@@ -106,7 +106,7 @@ export const NO_ACCESS_RESULTS = Object.freeze([
   {
     code: "OK_QUEUED",
     title: "Saved on this phone",
-    body: "Saved on this phone. It will be sent by itself as soon as there is signal, and sending it again will not create a second record. The appointment keeps the time you set.",
+    body: "Sending has not been confirmed yet. The visit is saved on this phone and will retry automatically.",
   },
   {
     code: "NO_ACCESS_REASON_REQUIRED",
@@ -327,7 +327,7 @@ const BY_CODE = new Map(NO_ACCESS_RESULTS.map((row) => [row.code, row]));
  * Waiting work keeps the code of its last failure, so the words can say which it is. The work
  * is NOT refused in either case: it stays on the phone and goes when the obstacle clears.
  */
-export function noAccessQueuedResult(code) {
+export function noAccessQueuedResult(code, { appointmentAt } = {}) {
   const clean = String(code || "")
     .trim()
     .toLowerCase()
@@ -335,7 +335,14 @@ export function noAccessQueuedResult(code) {
 
   if (clean === "unauthenticated") return noAccessResult("UNAUTHENTICATED");
 
-  return noAccessResult("OK_QUEUED");
+  const result = { ...noAccessResult("OK_QUEUED") };
+  if (clean === "device_offline") {
+    result.body = "The visit is saved on this phone and will be sent automatically when you are online.";
+  } else if (["storage_upload_timeout", "storage/canceled", "storage/retry-limit-exceeded"].includes(clean)) {
+    result.body = "The photo has not finished uploading. The visit is saved on this phone and will retry automatically.";
+  }
+  if (appointmentAt) result.body += " Your appointment time is unchanged.";
+  return result;
 }
 
 /** Never leave a worker with a developer's message. An unknown code reads as UNKNOWN. */

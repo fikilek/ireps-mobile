@@ -9,6 +9,7 @@ import {
   noAccessConfirmation,
   noAccessDiscard,
   noAccessResult,
+  noAccessQueuedResult,
 } from "./noAccessSubmitMessages.js";
 
 test("NA-R061: the confirmation names the appointment when there is one", () => {
@@ -71,8 +72,22 @@ test("NA-R060: the Error Register covers every refusal the server can send", () 
   }
 });
 
-test("a queued visit tells the worker the appointment is unchanged", () => {
-  assert.match(noAccessResult("OK_QUEUED").body, /appointment/i);
+test("only a queued visit with an appointment mentions keeping its time", () => {
+  assert.doesNotMatch(noAccessQueuedResult("SEND_PENDING").body, /appointment|signal|offline/i);
+  assert.match(noAccessQueuedResult("SEND_PENDING", { appointmentAt: "2026-10-06T10:00:00Z" }).body, /appointment time is unchanged/i);
+});
+
+test("queued feedback distinguishes known offline, photo timeout and an unconfirmed send", () => {
+  assert.match(noAccessQueuedResult("DEVICE_OFFLINE").body, /when you are online/);
+  for (const code of ["STORAGE_UPLOAD_TIMEOUT", "storage/canceled", "storage/retry-limit-exceeded"]) {
+    assert.match(noAccessQueuedResult(code).body, /photo has not finished uploading/i);
+    assert.doesNotMatch(noAccessQueuedResult(code).body, /signal|cancelled|canceled|appointment/i);
+  }
+  for (const code of [undefined, "SEND_PENDING", "QUEUE_BUSY", "SYNCING", "functions/internal"]) {
+    assert.match(noAccessQueuedResult(code).body, /not been confirmed/);
+    assert.doesNotMatch(noAccessQueuedResult(code).body, /signal|offline|appointment/i);
+  }
+  assert.equal(noAccessQueuedResult("functions/unauthenticated").code, "UNAUTHENTICATED");
 });
 
 // NA-R006 — the arrow out of the form, and what it costs.

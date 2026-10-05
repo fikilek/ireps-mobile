@@ -276,9 +276,7 @@ export const processSubmissionQueue = async ({
                   : "no_access";
 
               const stableId = payload?.trnId || payload?.id || item?.id;
-              const extension = isStandardMeterDiscoveryQueueItem(item)
-                ? getMediaExtension(mediaItem)
-                : "jpg";
+              const extension = getMediaExtension(mediaItem);
               const fileName = `${stableId}_${mediaItem?.tag}.${extension}`;
 
               const storagePath = `meters/${folder}/${fileName}`;
@@ -288,8 +286,25 @@ export const processSubmissionQueue = async ({
               const blob = await response.blob();
 
               const upload = uploadBytesResumable(storageRef, blob);
-              const uploadTimer = setTimeout(() => upload.cancel(), 60000);
-              try { await upload; } finally { clearTimeout(uploadTimer); }
+              let uploadTimedOut = false;
+              const uploadTimer = setTimeout(() => {
+                uploadTimedOut = true;
+                upload.cancel();
+              }, 60000);
+              try {
+                await upload;
+              } catch (error) {
+                if (uploadTimedOut) {
+                  // Our deadline cancelled the request, not the worker. Keep the
+                  // evidence and tell every transaction the same retryable cause.
+                  throw Object.assign(new Error(
+                    "The file upload timed out. It is saved on this phone and will retry automatically.",
+                  ), { code: "STORAGE_UPLOAD_TIMEOUT" });
+                }
+                throw error;
+              } finally {
+                clearTimeout(uploadTimer);
+              }
               uploadedStoragePaths.push(storagePath);
 
               const downloadUrl = await getDownloadURL(storageRef);

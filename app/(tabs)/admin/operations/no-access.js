@@ -352,7 +352,7 @@ export default function NoAccessScreen() {
       savedQueueId = queued.queueItem.id;
       setBusy(NO_ACCESS_PROGRESS.recording);
 
-      await waitForNoAccessSend(processSubmissionQueue({
+      const sendResult = await waitForNoAccessSend(processSubmissionQueue({
         agentUid,
         agentName,
         queueItemIds: [queued?.queueItem?.id],
@@ -399,7 +399,12 @@ export default function NoAccessScreen() {
             : // Still waiting. WHY it is waiting decides the words: a worker in a dead spot
               // is told to carry on, a worker who has been signed out is told to sign in.
               // "It will send when there is signal" is a lie to the second one.
-              noAccessQueuedResult(saved?.result?.code);
+              noAccessQueuedResult(
+                saved?.result?.code && saved.result.code !== "NAv"
+                  ? saved.result.code
+                  : sendResult?.code,
+                { appointmentAt: payload.accessData?.access?.appointment?.at },
+              );
 
       // The work is off the form and on the phone, so the form is cleared: a filled-in form
       // left on screen after a save invites the worker to submit it a second time.
@@ -431,7 +436,7 @@ export default function NoAccessScreen() {
 
       if (savedQueueId) {
         scheduleMeterDiscoveryQueueSyncRetry({ agentUid, agentName, delayMs: 20000 });
-        const result = noAccessQueuedResult(error?.code);
+        const result = noAccessQueuedResult(error?.code, { appointmentAt: value?.appointment?.at });
         helpers.resetForm();
         Alert.alert(result.title, result.body);
         goBack();
