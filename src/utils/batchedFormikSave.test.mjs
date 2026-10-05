@@ -13,13 +13,17 @@ import { makeBatchedSetFieldValue } from "./batchedFormikSave.js";
 
 const harness = (values) => {
   const calls = [];
+  let currentValues = values;
   const pendingRef = { current: null };
   const setFieldValue = makeBatchedSetFieldValue({
     values,
-    setValues: (next, shouldValidate) => calls.push({ next, shouldValidate }),
+    setValues: (next, shouldValidate) => {
+      currentValues = typeof next === "function" ? next(currentValues) : next;
+      calls.push({ next: currentValues, shouldValidate });
+    },
     pendingRef,
   });
-  return { setFieldValue, calls, pendingRef };
+  return { setFieldValue, calls, pendingRef, updateOutsideBatch: next => { currentValues = next; } };
 };
 
 const settle = () => Promise.resolve().then(() => {});
@@ -82,8 +86,16 @@ test("taps are not merged with each other", async () => {
 
   assert.equal(calls.length, 2, "two taps, two saves");
   assert.equal(pendingRef.current, null, "nothing is left pending between taps");
-  // The second tap starts from the values it was given, which is how Formik re-renders.
+  assert.equal(calls[1].next.a, "1", "even an older handler must preserve current values");
   assert.equal(calls[1].next.b, "2");
+});
+
+test("a pending batch preserves a direct photo update made before it flushes", async () => {
+  const { setFieldValue, calls, updateOutsideBatch } = harness({ reading: "", media: [] });
+  setFieldValue("reading", "524");
+  updateOutsideBatch({ reading: "", media: ["photo.jpg"] });
+  await settle();
+  assert.deepEqual(calls[0].next, { reading: "524", media: ["photo.jpg"] });
 });
 
 test("it does not change the values object it was given", async () => {

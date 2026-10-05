@@ -33,7 +33,8 @@ export function loadEntry(relativePath, overrides) {
       if (replacements.has(name)) return replacements.get(name);
       if (!name.startsWith(".")) return require(name);
       const resolved = path.resolve(path.dirname(filename), name);
-      return load(path.extname(resolved) ? resolved : `${resolved}.js`);
+      return load(path.extname(resolved) ? resolved :
+        [".js", ".jsx"].map(extension => `${resolved}${extension}`).find(candidate => replacements.has(candidate) || fs.existsSync(candidate)));
     };
     vm.runInNewContext(compiled.get(filename), {
       module, exports: module.exports, require: localRequire, console,

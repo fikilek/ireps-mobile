@@ -5,29 +5,28 @@
 // made in one tap are gathered here, applied in one step, and checked once.
 import { getIn, setIn } from "formik";
 
-export function makeBatchedSetFieldValue({ values, setValues, pendingRef }) {
+export function makeBatchedSetFieldValue({ setValues, pendingRef }) {
   return (field, value) => {
     if (!pendingRef.current) {
-      pendingRef.current = { base: values, changes: [] };
+      pendingRef.current = { changes: [] };
 
       Promise.resolve().then(() => {
         const pending = pendingRef.current;
         pendingRef.current = null;
         if (!pending) return;
 
-        const next = pending.changes.reduce(
-          (acc, [path, nextValue]) =>
-            setIn(
-              acc,
-              path,
-              typeof nextValue === "function"
-                ? nextValue(getIn(acc, path))
-                : nextValue,
+        // GPS/camera callbacks may finish after more typing. Apply only their
+        // changes to Formik's current values, never to a pre-capture snapshot.
+        setValues(
+          (currentValues) => pending.changes.reduce(
+            (acc, [path, nextValue]) => setIn(
+              acc, path,
+              typeof nextValue === "function" ? nextValue(getIn(acc, path)) : nextValue,
             ),
-          pending.base,
+            currentValues,
+          ),
+          true,
         );
-
-        setValues(next, true);
       });
     }
 
