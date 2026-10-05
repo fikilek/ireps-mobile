@@ -906,8 +906,7 @@ const styles = StyleSheet.create({
   },
   addressPressable: {
     borderRadius: 6,
-    // paddingVertical: 2,
-    // paddingHorizontal: 2,
+    padding: 6,
   },
 
   addressPressablePressed: {
