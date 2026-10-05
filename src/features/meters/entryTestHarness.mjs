@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 const compiled = new Map();
 
 // Run the real components and shared hooks; replace only native hosts and external services.
-export function loadEntry(relativePath, overrides) {
+export function loadEntry(relativePath, overrides, { exportName = "default", globals = {} } = {}) {
   const modules = new Map();
   const replacements = new Map(Object.entries(overrides).map(([name, value]) => [
     name.startsWith(".") ? path.resolve(root, name) : name, value,
@@ -37,11 +37,13 @@ export function loadEntry(relativePath, overrides) {
         [".js", ".jsx"].map(extension => `${resolved}${extension}`).find(candidate => replacements.has(candidate) || fs.existsSync(candidate)));
     };
     vm.runInNewContext(compiled.get(filename), {
-      module, exports: module.exports, require: localRequire, console,
+      module, exports: module.exports, require: localRequire, console, Date,
+      setTimeout: (...args) => setTimeout(...args), clearTimeout: (...args) => clearTimeout(...args),
+      ...globals,
     }, { filename });
     return module.exports;
   }
-  return load(path.resolve(root, relativePath)).default;
+  return load(path.resolve(root, relativePath))[exportName];
 }
 
 export function deferredGate(requests) {

@@ -53,7 +53,11 @@ export function returnAfterLifecycleWork(router, href, tab = LIFECYCLE_TAB) {
   // finished form standing in the tab being left. The worker came back to Premises later and
   // found New Premise still open, could not get out of it, and cleared it only to meet it
   // again (owner, 2026-09-27). So the tab being left is emptied first.
-  if (move === "navigate") dismissFormStack(router);
+  if (move === "navigate" && !dismissFormStack(router)) {
+    // A form opened across tabs can be the stack's only screen. It cannot be
+    // popped, so replace it with this tab's home before switching tabs.
+    router?.replace?.(tab);
+  }
 
   router?.[move]?.(href);
   return move;

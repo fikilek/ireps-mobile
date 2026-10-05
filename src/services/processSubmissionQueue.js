@@ -132,12 +132,23 @@ export function isNoAccessQueueItem(item = {}) {
   return hasAccess === "no";
 }
 
+export function isSubmittedMeterReadingQueueItem(item = {}) {
+  return item.formType === "METER_READING" && item.context?.autoSend === true;
+}
+
+function retainsDurableEvidence(item) {
+  return isNoAccessQueueItem(item) || isSubmittedMeterReadingQueueItem(item);
+}
+
 function isAutoSendQueueItem(item = {}) {
   const formType = String(item?.formType || "")
     .trim()
     .toUpperCase();
 
   if (AUTO_SEND_FORM_TYPES.includes(formType)) return true;
+  // Only readings explicitly submitted through the durable path join auto-send.
+  // SAVE drafts and older captures retain their existing manual-send behaviour.
+  if (isSubmittedMeterReadingQueueItem(item)) return true;
 
   // EVERY no access, whatever transaction it belongs to. A form joins this list only once its
   // submit path saves before it sends and its callable accepts a repeat safely; the one No
@@ -310,7 +321,7 @@ export const processSubmissionQueue = async ({
               const downloadUrl = await getDownloadURL(storageRef);
 
               const cleanItem = { ...mediaItem };
-              if (!isNoAccessQueueItem(item)) delete cleanItem.uri;
+              if (!retainsDurableEvidence(item)) delete cleanItem.uri;
 
               return {
                 ...cleanItem,
@@ -355,7 +366,7 @@ export const processSubmissionQueue = async ({
           // RG-R001 section 10: this refusal takes its photographs with it too, in the same order as
           // the others — recorded first, then cleared.
           await deleteUploadedEvidence({
-            uploadedStoragePaths: isNoAccessQueueItem(item) ? [] : uploadedStoragePaths,
+            uploadedStoragePaths: retainsDurableEvidence(item) ? [] : uploadedStoragePaths,
             trnId: finalPayload?.id,
             code: "UNKNOWN_QUEUE_FORM_TYPE",
           });
@@ -427,7 +438,7 @@ export const processSubmissionQueue = async ({
           // becomes retryable again, and a retry sends addresses of files that no longer exist
           // (independent review, 2026-09-28).
           await deleteUploadedEvidence({
-            uploadedStoragePaths: isNoAccessQueueItem(item) ? [] : uploadedStoragePaths,
+            uploadedStoragePaths: retainsDurableEvidence(item) ? [] : uploadedStoragePaths,
             trnId: finalPayload?.id,
             code,
           });
@@ -450,7 +461,7 @@ export const processSubmissionQueue = async ({
           successResult?.success === true &&
           successResult?.queueItem?.status === "SUCCESS" &&
           successResult?.queueItem?.result?.success === true &&
-          (isNoAccessQueueItem(item) || isStandardMeterDiscoveryQueueItem(item))
+          (retainsDurableEvidence(item) || isStandardMeterDiscoveryQueueItem(item))
         ) {
           try {
             // OF-R001: a found meter keeps its pictures in app storage too now, so the sweep
@@ -509,7 +520,7 @@ export const processSubmissionQueue = async ({
 
           // RG-R001 section 10, after the refusal is recorded — see the answered path above.
           await deleteUploadedEvidence({
-            uploadedStoragePaths: isNoAccessQueueItem(item) ? [] : uploadedStoragePaths,
+            uploadedStoragePaths: retainsDurableEvidence(item) ? [] : uploadedStoragePaths,
             trnId: item?.payload?.id,
             code,
           });

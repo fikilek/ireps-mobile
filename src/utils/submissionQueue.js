@@ -101,6 +101,7 @@ export const getSubmissionQueueItemById = async (queueItemId) => {
 
 export const addSubmissionQueueItem = async ({
   formType = "NAv",
+  status = "PENDING",
   payload = {},
   context = {},
   createdByUid = "SYSTEM",
@@ -165,7 +166,7 @@ export const addSubmissionQueueItem = async ({
     const newQueueItem = {
       id: generateQueueId(),
       formType,
-      status: "PENDING",
+      status: status === "IN_PROGRESS" ? "IN_PROGRESS" : "PENDING",
 
       payload,
 
@@ -177,6 +178,7 @@ export const addSubmissionQueueItem = async ({
       },
 
       context: {
+        ...(context?.autoSend === true ? { autoSend: true } : {}),
         trnType:
           context?.trnType ||
           payload?.accessData?.trnType ||

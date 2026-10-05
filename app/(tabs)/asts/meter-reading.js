@@ -1,5 +1,4 @@
-import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
-import NetInfo from "@react-native-community/netinfo";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
@@ -25,8 +24,6 @@ import {
 } from "react-native-paper";
 import { array, object, string } from "yup";
 
-import { httpsCallable } from "firebase/functions";
-import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
 import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
 import IrepsSelectWithOther, {
@@ -37,7 +34,6 @@ import IrepsSelectWithOther, {
 import { IrepsMedia } from "../../../components/media/IrepsMedia";
 import { ScreenLock } from "../../../components/SceenLock";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
-import { functions } from "../../../src/firebase";
 import { useAuth } from "../../../src/hooks/useAuth";
 import {
   getFormOptions,
@@ -53,13 +49,19 @@ import {
 import { FORM_TEXT } from "../../../src/theme/formColors";
 import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
 
+import { returnAfterLifecycleWork } from "../../../src/utils/lifecycleReturn";
+import { persistNoAccessMeterDiscoveryMedia } from "../../../src/utils/persistNoAccessMeterDiscoveryMedia";
+import { processSubmissionQueue } from "../../../src/services/processSubmissionQueue";
+import { scheduleMeterDiscoveryQueueSyncRetry } from "../../../src/services/startMeterDiscoveryQueueSyncService";
+import { waitForNoAccessSend as waitForQueuedSend } from "../../../src/features/meters/noAccessSendDeadline";
+import { isRefusedByOffice, isSentToOffice } from "../../../src/features/savedWork/savedWorkRemovalRules";
+
 const EMPTY_SELECT_WITH_OTHER = {
   code: "",
   label: "",
   otherText: "",
 };
 
-const MREAD_SUBMIT_TIMEOUT_MS = 15000;
 const MREAD_MAX_READING_DISTANCE_METERS = 5;
 
 const EXECUTION_MEDIA_TAGS = [
@@ -110,17 +112,6 @@ function isLifecycleInstructionLocked(action = {}) {
       "CANCELLED",
     ].includes(workflowState)
   );
-}
-
-function withSubmitTimeout(promise, timeoutMs = 15000) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => {
-        reject(new Error("SUBMISSION_TIMEOUT"));
-      }, timeoutMs),
-    ),
-  ]);
 }
 
 function removeUndefined(value) {
@@ -1009,7 +1000,13 @@ export default function FormMeterReading() {
     }
   }, [actionRaw]);
 
-  const instructionTrnId = readFirstString(
+  const [editQueueItem, setEditQueueItem] = useState(undefined);
+  // The Saved Forms route also passes the capture id as trnId. Only the stored
+  // payload can distinguish a field capture from an actual office instruction.
+  const queuedInstructionId = readFirstString(editQueueItem?.payload?.instructionTrnId);
+  const instructionTrnId = queueItemId
+    ? (queuedInstructionId === "NAv" ? "" : queuedInstructionId)
+    : readFirstString(
     routeInstructionTrnId,
     routeTrnId,
     action?.instructionTrnId,
@@ -1045,8 +1042,9 @@ export default function FormMeterReading() {
   }, [action]);
 
   const instructionLocked = useMemo(() => {
+    if (queueItemId) return Boolean(instructionTrnId);
     return Boolean(instructionTrnId) || isLifecycleInstructionLocked(action);
-  }, [action, instructionTrnId]);
+  }, [action, instructionTrnId, queueItemId]);
   console.log(`instructionLocked`, instructionLocked);
 
   const router = useRouter();
@@ -1054,7 +1052,6 @@ export default function FormMeterReading() {
   const { profile, user } = useAuth();
   const { data: allServiceProviders = [] } = useGetServiceProvidersQuery();
 
-  const [editQueueItem, setEditQueueItem] = useState(undefined);
   const pendingFieldChangesRef = useRef(null);
   const [inProgress, setInProgress] = useState(false);
   const [saveInProgress, setSaveInProgress] = useState(false);
@@ -1063,13 +1060,8 @@ export default function FormMeterReading() {
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsError, setGpsError] = useState("");
 
-  const [submitOutcome, setSubmitOutcome] = useState({
-    visible: false,
-    type: null,
-    title: "",
-    message: "",
-    goBackOnContinue: true,
-  });
+  const savingRef = useRef(false);
+  const activeQueueIdRef = useRef(queueItemId || null);
 
   const agentUid = user?.uid || "unknown_uid";
   const agentName = profile?.profile?.displayName || "Field Agent";
@@ -1084,7 +1076,7 @@ export default function FormMeterReading() {
   }
 
   function navigateAfterMread() {
-    router.replace(getMreadReturnRoute());
+    returnAfterLifecycleWork(router, getMreadReturnRoute());
   }
 
   useEffect(() => {
@@ -1497,91 +1489,53 @@ export default function FormMeterReading() {
     });
   }
 
-  async function saveDraftToQueue(values, messageTitle, messageBody) {
+  async function persistReadingToQueue(values, submit = false) {
     const baseSystemFields = buildTrnSystemFields();
-    const cleanPayload = buildExecutionPayload(values, values?.media || []);
-    const nextContext = buildQueueContext(values, baseSystemFields);
-
-    let queueResult = null;
-
-    if (queueItemId) {
-      const existingSync = editQueueItem?.sync || {
-        attempts: 0,
-        lastAttemptAt: "NAv",
-        nextRetryAt: "NAv",
-      };
-
-      queueResult = await updateSubmissionQueueItem(
-        queueItemId,
-        {
-          payload: cleanPayload,
-          context: nextContext,
-          status: "IN_PROGRESS",
-          result: {
-            success: false,
-            code: "LOCAL_SAVE_ONLY",
-            message: "Saved locally only. Not submitted.",
-            trnId: cleanPayload?.id || instructionTrnId || "NAv",
-          },
-          sync: {
-            ...existingSync,
-            nextRetryAt: "NAv",
-          },
-        },
-        agentUid,
-        agentName,
-      );
-    } else {
-      queueResult = await addSubmissionQueueItem({
-        formType: "METER_READING",
-        payload: cleanPayload,
-        context: nextContext,
-        status: "IN_PROGRESS",
-        createdByUid: agentUid,
-        createdByUser: agentName,
-      });
+    const existingId = activeQueueIdRef.current || queueItemId;
+    const existing = existingId ? await getSubmissionQueueItemById(existingId) : null;
+    if (existingId && (!existing || !["PENDING", "FAILED", "CONFLICT", "IN_PROGRESS"].includes(existing.status))) {
+      throw new Error("This reading is sending or already recorded. Refresh Submission Queue before editing it.");
     }
-
-    if (!queueResult?.success) {
-      Alert.alert(
-        "Draft Save Failed",
-        "Failed to save meter reading draft locally.",
-      );
-      return false;
+    const payload = buildExecutionPayload(values, values?.media || []);
+    payload.metadata.createdOnDevice = existing?.payload?.metadata?.createdOnDevice || payload.metadata.createdOnDevice;
+    payload.media = await persistNoAccessMeterDiscoveryMedia({ trnId: payload.id, media: payload.media });
+    const context = { ...buildQueueContext(values, baseSystemFields), autoSend: submit };
+    const status = submit ? "PENDING" : "IN_PROGRESS";
+    const queued = existing
+      ? await updateSubmissionQueueItem(existingId, {
+          payload, context, status, result: null, refusal: null, outcomeNotified: false,
+          sync: { ...existing.sync, nextRetryAt: "NAv" },
+        }, agentUid, agentName)
+      : await addSubmissionQueueItem({
+          formType: "METER_READING", payload, context, status,
+          createdByUid: agentUid, createdByUser: agentName,
+        });
+    if (!queued?.success || !queued?.queueItem?.id) {
+      throw new Error(queued?.message || "The reading could not be saved on this phone.");
     }
+    activeQueueIdRef.current = queued.queueItem.id;
+    return queued.queueItem;
+  }
 
-    setSubmitOutcome({
-      visible: true,
-      type: "savedLocally",
-      title: messageTitle || "SAVED LOCALLY",
-      message:
-        messageBody ||
-        "This MREAD execution form was saved locally only. No backend update was made.",
-      goBackOnContinue: true,
-    });
-
-    return true;
+  function finishSavedReading(title, message) {
+    setInProgress(false);
+    setSaveInProgress(false);
+    Alert.alert(title, message);
+    navigateAfterMread();
   }
 
   async function handleSaveMeterReading(values) {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaveInProgress(true);
     try {
-      setSaveInProgress(true);
-
-      await saveDraftToQueue(
-        values,
-        "SAVED LOCALLY",
-        "This MREAD execution form was saved locally only. It was not submitted and no backend update was made.",
-      );
-
-      setSaveInProgress(false);
+      await persistReadingToQueue(values);
+      finishSavedReading("Saved on this phone", "This reading is saved as a draft. Open it from Submission Queue and press SUBMIT when it is ready to send.");
     } catch (error) {
-      console.log("handleSaveMeterReading--error", error);
       setSaveInProgress(false);
-
-      Alert.alert(
-        "Save Failed",
-        error?.message || "Failed to save this MREAD form locally.",
-      );
+      Alert.alert("Not saved on this phone", error?.message || "Keep this form open and try again.");
+    } finally {
+      savingRef.current = false;
     }
   }
 
@@ -1777,6 +1731,7 @@ export default function FormMeterReading() {
   const actionInit = useMemo(() => getInitialValues(), [getInitialValues]);
 
   const handleSubmitMeterReading = async (values) => {
+    if (savingRef.current) return;
     if (!astDoc?.id) {
       Alert.alert("Error", "AST data not found.");
       return;
@@ -1843,134 +1798,44 @@ export default function FormMeterReading() {
       return;
     }
 
+    savingRef.current = true;
+    setInProgress(true);
+    let savedQueueId = null;
+    const scheduleRetry = () => scheduleMeterDiscoveryQueueSyncRetry({ agentUid, agentName, delayMs: 20000 });
     try {
-      setInProgress(true);
-
-      const netState = await NetInfo.fetch();
-      const isOnline = netState.isConnected && netState.isInternetReachable;
-
-      if (!isOnline) {
-        setInProgress(false);
-
-        Alert.alert(
-          "Offline",
-          "You are offline. Use SAVE to keep this MREAD form locally, then submit when online.",
-        );
-
-        return;
+      // The reading and its evidence are durable before connectivity, upload or sending.
+      const queued = await persistReadingToQueue(values, true);
+      savedQueueId = queued.id;
+      const sendResult = await waitForQueuedSend(processSubmissionQueue({
+        agentUid, agentName, queueItemIds: [savedQueueId], includeSyncing: true,
+      }));
+      const saved = await getSubmissionQueueItemById(savedQueueId);
+      if (isSentToOffice(saved)) {
+        await removeSubmissionQueueItem(savedQueueId);
+        finishSavedReading("Meter reading recorded", "The reading has been recorded. You can carry on with the next meter.");
+      } else if (isRefusedByOffice(saved)) {
+        await updateSubmissionQueueItem(savedQueueId, { outcomeNotified: true });
+        finishSavedReading("Reading not accepted", saved?.result?.message || "Open this reading in Submission Queue to correct it.");
+      } else {
+        scheduleRetry();
+        const signInNeeded = saved?.result?.code === "UNAUTHENTICATED" || sendResult?.code === "UNAUTHENTICATED";
+        finishSavedReading(sendResult?.code === "DEVICE_OFFLINE" ? "Saved offline" : "Saved on this phone",
+          signInNeeded
+            ? "Your reading and photos are saved on this phone. Sign in again so they can be sent."
+            : "Your reading and photos are saved on this phone. Sending is not confirmed yet; they will retry automatically when there is a connection.");
       }
-
-      const storage = getStorage();
-      const uploadTrnId = readFirstString(
-        instructionTrnId,
-        values?.id,
-        fieldOriginatedTrnId,
-      );
-
-      const syncedMedia = await Promise.all(
-        filterExecutionMedia(values?.media || []).map(async (item) => {
-          if (item.uri && !item.url) {
-            const fileName = `${uploadTrnId}_${item.tag}_${Date.now()}.jpg`;
-            const storageRef = ref(
-              storage,
-              `meters/lifecycle/meter-reading/${fileName}`,
-            );
-
-            const response = await fetch(item.uri);
-            const blob = await response.blob();
-
-            await uploadBytes(storageRef, blob);
-
-            const downloadUrl = await getDownloadURL(storageRef);
-
-            const { uri, ...cleanItem } = item;
-
-            return {
-              ...cleanItem,
-              url: downloadUrl,
-            };
-          }
-
-          const { uri, ...cleanItem } = item || {};
-          return cleanItem;
-        }),
-      );
-
-      const cleanPayload = buildExecutionPayload(values, syncedMedia);
-
-      const onMeterLifecycleTrnCallable = httpsCallable(
-        functions,
-        "onMeterLifecycleTrnCallable",
-      );
-
-      let result = null;
-
-      try {
-        const callableResult = await withSubmitTimeout(
-          onMeterLifecycleTrnCallable(cleanPayload),
-          MREAD_SUBMIT_TIMEOUT_MS,
-        );
-
-        result = callableResult?.data || {};
-      } catch (error) {
-        if (error?.message === "SUBMISSION_TIMEOUT") {
-          await saveDraftToQueue(
-            values,
-            "SAVED LOCALLY",
-            "The submission took too long. The MREAD form was saved locally only and was not confirmed by the backend.",
-          );
-
-          setInProgress(false);
-          return;
-        }
-
-        setInProgress(false);
-
-        Alert.alert(
-          "Submission Failed",
-          error?.message || "Meter reading submission failed.",
-        );
-
-        return;
-      }
-
-      if (!result?.success) {
-        setInProgress(false);
-
-        Alert.alert(
-          "Submission Failed",
-          result?.message || "Meter reading submission failed.",
-        );
-
-        return;
-      }
-
-      if (queueItemId) {
-        await removeSubmissionQueueItem(queueItemId);
-      }
-
-      setInProgress(false);
-
-      navigateAfterMread();
-      return;
     } catch (error) {
-      console.error("MeterReadingSubmission Error:", error);
-      Alert.alert("Error", error?.message || "Submission failed");
-      setInProgress(false);
+      if (savedQueueId) {
+        scheduleRetry();
+        finishSavedReading("Saved on this phone", "Your reading and photos are saved. Sending is not confirmed yet; they will retry automatically.");
+      } else {
+        setInProgress(false);
+        Alert.alert("Not saved on this phone", error?.message || "Keep this form open and try again.");
+      }
+    } finally {
+      savingRef.current = false;
     }
   };
-
-  function closeAfterExecutionOutcome(outcomeType) {
-    setSubmitOutcome({
-      visible: false,
-      type: null,
-      title: "",
-      message: "",
-      goBackOnContinue: true,
-    });
-
-    navigateAfterMread();
-  }
 
   const confirmCancel = () => {
     Alert.alert(
@@ -2868,78 +2733,6 @@ export default function FormMeterReading() {
                 disabledReason="Complete all required fields before submitting."
               />
 
-              <Portal>
-                <Modal
-                  visible={submitOutcome.visible}
-                  dismissable={false}
-                  contentContainerStyle={[
-                    styles.successModal,
-                    submitOutcome.type === "mreadFailed" &&
-                      styles.failedOutcomeModal,
-                    submitOutcome.type === "noAccess" &&
-                      styles.noAccessOutcomeModal,
-                  ]}
-                >
-                  <View style={styles.successContent}>
-                    <View
-                      style={[
-                        styles.successIconCircle,
-                        submitOutcome.type === "mreadFailed" &&
-                          styles.failedIconCircle,
-                        submitOutcome.type === "savedLocally" &&
-                          styles.savedLocallyIconCircle,
-                        submitOutcome.type === "noAccess" &&
-                          styles.noAccessIconCircle,
-                      ]}
-                    >
-                      <Feather
-                        name={
-                          submitOutcome.type === "mreadFailed"
-                            ? "alert-triangle"
-                            : submitOutcome.type === "savedLocally"
-                              ? "download-cloud"
-                              : submitOutcome.type === "noAccess"
-                                ? "slash"
-                                : "check"
-                        }
-                        size={46}
-                        color="#fff"
-                      />
-                    </View>
-
-                    <Text
-                      style={[
-                        styles.successTitle,
-                        submitOutcome.type === "mreadFailed" &&
-                          styles.failedOutcomeTitle,
-                        submitOutcome.type === "noAccess" &&
-                          styles.noAccessOutcomeTitle,
-                      ]}
-                    >
-                      {submitOutcome.title}
-                    </Text>
-
-                    <Text style={styles.outcomeMessage}>
-                      {submitOutcome.message}
-                    </Text>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.continueBtn,
-                        submitOutcome.type === "mreadFailed" &&
-                          styles.failedContinueBtn,
-                        submitOutcome.type === "noAccess" &&
-                          styles.noAccessContinueBtn,
-                      ]}
-                      onPress={() => {
-                        closeAfterExecutionOutcome(submitOutcome.type);
-                      }}
-                    >
-                      <Text style={styles.continueBtnText}>CONTINUE</Text>
-                    </TouchableOpacity>
-                  </View>
-                </Modal>
-              </Portal>
             </ScrollView>
           );
         }}
