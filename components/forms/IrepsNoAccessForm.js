@@ -14,8 +14,8 @@
 // photograph are that component's, unchanged in behaviour; the appointment is new.
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useEffect, useState } from "react";
+import { AppState, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Divider, Modal, Portal, Surface, TextInput } from "react-native-paper";
 
 import { NO_ACCESS_REASONS } from "../../src/features/meters/noAccessReasons";
@@ -26,6 +26,7 @@ import {
   buildAppointmentInstant,
   formatAppointment,
   isDayPickable,
+  isTimePickable,
   monthGrid,
   monthLabel,
   readAppointmentParts,
@@ -56,6 +57,28 @@ export function IrepsNoAccessForm({
   const [timeOpen, setTimeOpen] = useState(false);
   const [month, setMonth] = useState(() => todayInSast());
   const [pickedDay, setPickedDay] = useState(null);
+  const [pickerNow, setPickerNow] = useState(Date.now);
+  const [timeError, setTimeError] = useState("");
+
+  useEffect(() => {
+    if (!visible || (!dayOpen && !timeOpen)) return;
+    // Quarter-hour slots can expire while the worker leaves the picker open.
+    let timer;
+    const refresh = () => {
+      clearTimeout(timer);
+      const now = Date.now();
+      setPickerNow(now);
+      timer = setTimeout(refresh, 60_000 - (now % 60_000));
+    };
+    refresh();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") refresh();
+    });
+    return () => {
+      clearTimeout(timer);
+      subscription.remove();
+    };
+  }, [visible, dayOpen, timeOpen]);
 
   const reasonCode = String(value?.reasonCode || "").trim();
   const reasonOther = String(value?.reasonOther || "");
@@ -65,22 +88,37 @@ export function IrepsNoAccessForm({
   const update = (patch) => onChange?.({ ...value, ...patch });
 
   function openCalendar() {
-    setMonth(appointment ? readAppointmentParts(appointment.at) : todayInSast());
+    const now = Date.now();
+    setPickerNow(now);
+    setMonth((appointment && readAppointmentParts(appointment.at)) || todayInSast(now));
     setPickedDay(null);
+    setTimeError("");
+    setTimeOpen(false);
     setDayOpen(true);
   }
 
   function pickDay(day) {
+    const now = Date.now();
+    const date = { year: month.year, month: month.month, day };
+    setPickerNow(now);
+    if (!isDayPickable(date, now)) return;
     // NA-R021: choosing the day opens the clock. Two taps, and the worker types nothing.
-    setPickedDay({ year: month.year, month: month.month, day });
+    setPickedDay(date);
+    setTimeError("");
     setDayOpen(false);
     setTimeOpen(true);
   }
 
   function pickTime({ hour, minute }) {
+    const now = Date.now();
+    setPickerNow(now);
+    if (!isTimePickable(pickedDay, { hour, minute }, now)) {
+      setTimeError("That time has passed. Choose a later time or another day.");
+      return;
+    }
     const at = buildAppointmentInstant({ ...pickedDay, hour, minute });
     update({
-      appointment: buildAppointment({ at, actor: { uid: agentUid, name: agentName } }),
+      appointment: buildAppointment({ at, actor: { uid: agentUid, name: agentName }, now: new Date(now).toISOString() }),
     });
     setTimeOpen(false);
   }
@@ -194,11 +232,11 @@ export function IrepsNoAccessForm({
 
                 // A day already past is not offered at all, rather than letting a worker tap
                 // it and be refused afterwards (NA-R023).
-                const pickable = isDayPickable({ year: month.year, month: month.month, day });
+                const pickable = isDayPickable({ year: month.year, month: month.month, day }, pickerNow);
 
                 // Today is marked, because a grid of identical squares gives a worker nothing
                 // to place "tomorrow" or "next Tuesday" against.
-                const today = todayInSast();
+                const today = todayInSast(pickerNow);
                 const isToday =
                   day === today.day &&
                   month.month === today.month &&
@@ -235,17 +273,30 @@ export function IrepsNoAccessForm({
       <Portal>
         <Modal visible={timeOpen} onDismiss={() => setTimeOpen(false)} contentContainerStyle={styles.modal}>
           <Text style={styles.monthLabel}>What time?</Text>
+          {!TIMES.some((option) => isTimePickable(pickedDay, option, pickerNow)) && (
+            <Text style={styles.errorText}>No future times remain on this day. Choose another day.</Text>
+          )}
+          {!!timeError && <Text style={styles.errorText} accessibilityLiveRegion="polite">{timeError}</Text>}
           <ScrollView style={styles.timeList}>
-            {TIMES.map((option) => (
-              <TouchableOpacity
-                key={option.label}
-                style={styles.timeRow}
-                onPress={() => pickTime(option)}
-              >
-                <Text style={styles.timeText}>{option.label}</Text>
-              </TouchableOpacity>
-            ))}
+            {TIMES.map((option) => {
+              const pickable = isTimePickable(pickedDay, option, pickerNow);
+              return (
+                <TouchableOpacity
+                  key={option.label}
+                  style={styles.timeRow}
+                  disabled={!pickable}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !pickable }}
+                  onPress={() => pickTime(option)}
+                >
+                  <Text style={[styles.timeText, !pickable && styles.timeTextPast]}>{option.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
+          <TouchableOpacity style={styles.changeDayButton} onPress={openCalendar}>
+            <Text style={styles.secondaryButtonText}>CHANGE DAY</Text>
+          </TouchableOpacity>
         </Modal>
       </Portal>
     </>
@@ -325,6 +376,11 @@ const styles = StyleSheet.create({
   timeList: { maxHeight: 320 },
   timeRow: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
   timeText: { fontSize: 18, fontWeight: "700", color: FORM_TEXT, textAlign: "center" },
+  timeTextPast: { color: "#cbd5e1" },
+  changeDayButton: {
+    alignItems: "center", paddingVertical: 12, marginTop: 12,
+    borderWidth: 1, borderColor: "#0f766e", borderRadius: 8,
+  },
 
   errorText: { color: "#DC2626", fontSize: 11, fontWeight: "800", marginTop: 6 },
 });

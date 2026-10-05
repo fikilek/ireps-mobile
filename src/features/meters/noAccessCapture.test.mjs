@@ -40,3 +40,13 @@ test("Other requires words and photo evidence is required", () => {
   assert.ok(errors.reasonOther);
   assert.ok(errors.media);
 });
+
+test("U03: today's 02:00 is refused for a new capture and cannot replace a queued agreement", () => {
+  const now = Date.parse("2026-10-05T06:45:00.000Z"); // 08:45 SAST
+  const pastAppointment = { at: "2026-10-05T00:00:00.000Z" }; // 02:00 SAST
+  const pastValue = { ...value, appointment: pastAppointment };
+  assert.ok(validateNoAccessCapture(pastValue, media, { now }).appointment);
+  assert.ok(validateNoAccessCapture(pastValue, media, { now, originalAppointment: value.appointment }).appointment);
+  assert.deepEqual(validateNoAccessCapture(pastValue, media, { now, originalAppointment: pastAppointment }), {});
+  assert.deepEqual(validateNoAccessCapture({ ...value, appointment: null }, media, { now }), {});
+});

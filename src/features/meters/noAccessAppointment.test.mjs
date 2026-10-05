@@ -8,6 +8,7 @@ import {
   formatAppointment,
   isAppointmentInFuture,
   isDayPickable,
+  isTimePickable,
   monthGrid,
   monthLabel,
   readAppointmentParts,
@@ -204,6 +205,56 @@ test("the clock offers quarter hours through the whole day", () => {
   assert.equal(options[0].label, "00:00");
   assert.equal(options[56].label, "14:00");
   assert.equal(options.at(-1).label, "23:45");
+});
+
+test("U03: 02:00 today is disabled after it has passed, while later times remain available", () => {
+  const now = Date.parse("2026-10-05T06:45:00.000Z"); // 08:45 SAST
+  const day = { year: 2026, month: 10, day: 5 };
+  assert.equal(isTimePickable(day, { hour: 2, minute: 0 }, now), false);
+  assert.equal(isTimePickable(day, { hour: 8, minute: 45 }, now), false);
+  assert.equal(isTimePickable(day, { hour: 9, minute: 0 }, now), true);
+  assert.deepEqual(
+    timeOptions().filter((time) => isTimePickable(day, time, now)).map((time) => time.label),
+    timeOptions().slice(36).map((time) => time.label),
+  );
+});
+
+test("a time that expires while the clock is open is refused when tapped", () => {
+  const day = { year: 2026, month: 10, day: 5 };
+  const time = { hour: 9, minute: 0 };
+  assert.equal(isTimePickable(day, time, Date.parse("2026-10-05T06:59:59.999Z")), true);
+  assert.equal(isTimePickable(day, time, Date.parse("2026-10-05T07:00:00.000Z")), false);
+  assert.equal(isTimePickable(day, time, Date.parse("2026-10-05T07:00:00.001Z")), false);
+});
+
+test("tomorrow and far-future dates retain every time, including 02:00", () => {
+  const now = Date.parse("2026-10-05T06:45:00.000Z");
+  for (const day of [{ year: 2026, month: 10, day: 6 }, { year: 2031, month: 7, day: 4 }]) {
+    assert.equal(timeOptions().every((time) => isTimePickable(day, time, now)), true);
+  }
+});
+
+test("a previous day has no available times, even if its clock time is later", () => {
+  const now = Date.parse("2026-10-05T06:45:00.000Z");
+  const yesterday = { year: 2026, month: 10, day: 4 };
+  assert.equal(timeOptions().some((time) => isTimePickable(yesterday, time, now)), false);
+});
+
+test("after the last quarter hour today there are no slots, but tomorrow remains available", () => {
+  const now = Date.parse("2026-10-05T21:45:00.000Z"); // 23:45 SAST
+  assert.equal(timeOptions().some((time) => isTimePickable({ year: 2026, month: 10, day: 5 }, time, now)), false);
+  assert.equal(isTimePickable({ year: 2026, month: 10, day: 6 }, { hour: 0, minute: 0 }, now), true);
+});
+
+test("the clock uses the SAST date across midnight and the year boundary", () => {
+  const now = Date.parse("2026-12-31T22:00:00.000Z"); // 1 January, 00:00 SAST
+  assert.equal(isTimePickable({ year: 2026, month: 12, day: 31 }, { hour: 23, minute: 45 }, now), false);
+  assert.equal(isTimePickable({ year: 2027, month: 1, day: 1 }, { hour: 0, minute: 0 }, now), false);
+  assert.equal(isTimePickable({ year: 2027, month: 1, day: 1 }, { hour: 0, minute: 15 }, now), true);
+});
+
+test("a time cannot be chosen before a day has been selected", () => {
+  assert.equal(isTimePickable(null, { hour: 9, minute: 0 }, NOW), false);
 });
 
 /* ------------------------------------------------------------------ *

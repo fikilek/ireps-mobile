@@ -146,6 +146,12 @@ export function isDayPickable({ year, month, day }, now = Date.now()) {
   return day >= today.day;
 }
 
+/** NA-R023: a new choice must still be future when it is displayed and when it is tapped. */
+export function isTimePickable(day, { hour, minute }, now = Date.now()) {
+  if (!day) return false;
+  return isAppointmentInFuture(buildAppointmentInstant({ ...day, hour, minute }), now);
+}
+
 /** The times offered, every 15 minutes, as a field appointment is never made to the minute. */
 export function timeOptions(stepMinutes = 15) {
   const options = [];
