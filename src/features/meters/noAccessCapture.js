@@ -1,6 +1,6 @@
 import { isAppointmentInFuture } from "./noAccessAppointment.js";
 import { NO_ACCESS_REASONS } from "./noAccessReasons.js";
-import { NO_ACCESS_APPOINTMENT_RULE_VERSION, isLegacySavedNoAccess, isReturnVisitReason, sameNoAccessAgreement } from "./noAccessAppointmentPolicy.js";
+import { NO_ACCESS_APPOINTMENT_RULE_VERSION, isReturnVisitReason, sameNoAccessAgreement } from "./noAccessAppointmentPolicy.js";
 
 const text = (value) => String(value ?? "").trim();
 const reference = (value) => text(value) && text(value).toUpperCase() !== "NAV" ? text(value) : "";
@@ -19,27 +19,25 @@ export function validateNoAccessCapture(value = {}, media = [], {
   if (!media.some((item) => item?.tag === "noAccessPhoto" && text(item.url || item.uri))) {
     errors.media = "A No Access needs one photograph.";
   }
-  const legacy = isLegacySavedNoAccess(value, originalAccess);
   const returnVisit = isReturnVisitReason(reason);
-  if (!legacy && returnVisit && !value.appointment) {
+  if (returnVisit && !value.appointment) {
     errors.appointment = "Choose the date and time agreed for the return visit.";
   }
-  if (!legacy && !returnVisit && value.appointment) {
+  if (!returnVisit && value.appointment) {
     errors.appointment = "Only Occupant requested a return visit can have an appointment. Change the reason to correct this visit.";
   }
   // An unchanged queued agreement survives late delivery and evidence-only correction.
   const unchanged = sameNoAccessAgreement(value, originalAccess);
-  if (value.appointment && !unchanged && !isAppointmentInFuture(value.appointment.at, now)) {
+  if (returnVisit && value.appointment && !unchanged && !isAppointmentInFuture(value.appointment.at, now)) {
     errors.appointment = "Choose a future date and time for the return visit.";
   }
   return errors;
 }
 
-export function buildNoAccessPayload({ context = {}, trnId, capturedAt, value, media, actor = {}, previousMetadata = {}, originalAccess = null }) {
+export function buildNoAccessPayload({ context = {}, trnId, capturedAt, value, media, actor = {}, previousMetadata = {} }) {
   const instructionTrnId = reference(context.instructionTrnId);
   const trnType = text(context.trnType).toUpperCase();
   const other = text(value.reasonCode).toUpperCase() === "OTHER";
-  const legacy = isLegacySavedNoAccess(value, originalAccess);
   return {
     id: instructionTrnId || trnId,
     ...(instructionTrnId ? { instructionTrnId } : {}),
@@ -67,8 +65,8 @@ export function buildNoAccessPayload({ context = {}, trnId, capturedAt, value, m
         reasonCode: other ? "OTHER" : text(value.reasonCode),
         reasonOther: other ? text(value.reasonOther) : "NAv",
         reason: other ? text(value.reasonOther) : text(value.reasonCode),
-        ...(legacy ? {} : { appointmentRuleVersion: NO_ACCESS_APPOINTMENT_RULE_VERSION }),
-        appointment: legacy || isReturnVisitReason(value.reasonCode) ? value.appointment || null : null,
+        appointmentRuleVersion: NO_ACCESS_APPOINTMENT_RULE_VERSION,
+        appointment: isReturnVisitReason(value.reasonCode) ? value.appointment || null : null,
       },
     },
     ...(context.targetedBatchContext ? { targetedBatchContext: context.targetedBatchContext } : {}),

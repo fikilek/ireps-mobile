@@ -211,7 +211,7 @@ export function IrepsNoAccessForm({
           </> : null}
 
           {preservedAppointment ? <Text style={styles.savedAppointment}>
-            Previously arranged: {formatAppointment(appointment.at)}. Kept for this saved visit.
+            Previously arranged: {formatAppointment(appointment.at)}. This saved visit needs a reason and appointment that follow the current rule before it can be sent.
           </Text> : null}
           {!!appointmentErrorText && <Text style={styles.errorText}>{appointmentErrorText}</Text>}
       </Surface>

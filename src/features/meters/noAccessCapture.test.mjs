@@ -75,15 +75,13 @@ test("changing reason clears an appointment; switching back requires a fresh cho
   assert.deepEqual(changeNoAccessReason(value, RETURN_VISIT_REASON), { ...value, reasonOther: "" });
 });
 
-test("an old saved appointment survives late resend and photo-only correction without acquiring version 2", () => {
+test("an incompatible saved appointment stays available for correction and cannot bypass the current rule", () => {
   const legacy = { ...value, reasonCode: "Property Locked" };
   const now = Date.parse("2026-10-10T12:00:00Z");
-  assert.deepEqual(validateNoAccessCapture(legacy, media, { now, originalAccess: legacy }), {});
-  const access = build(legacy, legacy).accessData.access;
-  assert.deepEqual(access.appointment, legacy.appointment);
-  assert.equal(Object.hasOwn(access, "appointmentRuleVersion"), false);
+  assert.ok(validateNoAccessCapture(legacy, media, { now, originalAccess: legacy }).appointment);
+  assert.equal(legacy.appointment, value.appointment);
   const noAppointment = { reasonCode: "OTHER", reasonOther: "Call tomorrow", appointment: null };
-  assert.equal(Object.hasOwn(build(noAppointment, noAppointment).accessData.access, "appointmentRuleVersion"), false);
+  assert.equal(build(noAppointment, noAppointment).accessData.access.appointmentRuleVersion, 2);
 });
 
 test("editing a legacy agreement adopts the current rule without losing the capture identity or original timestamp", () => {
