@@ -368,29 +368,29 @@ const PremiseCard = memo(
                 flexDirection: "row",
                 justifyContent: "space-between",
                 alignItems: "center",
+                gap: 8,
                 // paddingRight: 12,
               }}
             >
-              <View>
+              <View style={styles.addressDetails}>
                 {/* Street Address */}
                 <Pressable
                   onPress={handleTogglePremiseSelection}
                   style={({ pressed }) => [
                     styles.addressPressable,
                     pressed && styles.addressPressablePressed,
-                    { backgroundColor: isSelected ? "lightgrey" : null },
                   ]}
                 >
-                  <Text
-                    style={{
-                      fontSize: 16,
-                      fontWeight: "800",
-                      color: "#1E293B",
-                    }}
-                    numberOfLines={1}
+                  <View
+                    style={[
+                      styles.addressBadge,
+                      isSelected && styles.addressBadgeSelected,
+                    ]}
                   >
-                    {addressStr || "No Address"}
-                  </Text>
+                    <Text style={styles.addressText} numberOfLines={1}>
+                      {addressStr || "No Address"}
+                    </Text>
+                  </View>
                 </Pressable>
 
                 {/* Property Type */}
@@ -738,9 +738,9 @@ const styles = StyleSheet.create({
   identityRow: { flexDirection: "row", alignItems: "center" },
   addressText: {
     fontSize: 16,
+    lineHeight: 20,
     fontWeight: "800",
     color: "#1E293B",
-    maxWidth: "70%",
   },
   propertyTypeText: {
     fontSize: 11,
@@ -904,10 +904,10 @@ const styles = StyleSheet.create({
   typeTagText: {
     fontSize: 12,
   },
-  addressPressable: {
-    borderRadius: 6,
-    padding: 6,
-  },
+  addressDetails: { flexShrink: 1, minWidth: 0 },
+  addressPressable: { alignSelf: "flex-start", maxWidth: "100%" },
+  addressBadge: { borderRadius: 8, padding: 8 },
+  addressBadgeSelected: { backgroundColor: "lightgrey" },
 
   addressPressablePressed: {
     opacity: 0.6,
