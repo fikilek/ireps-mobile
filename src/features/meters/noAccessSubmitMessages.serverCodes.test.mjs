@@ -25,9 +25,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // The web repo beside this one, or a worktree of it. A stream often works in a worktree while
 // the main checkout holds another chat's branch, and a check that only looks in one place is a
 // check that quietly stops running.
-const CANDIDATE_DIRS = ["ireps-web-inspection-na", "ireps-web", "ireps-web-na"].map((name) =>
+const CANDIDATE_DIRS = ["ireps-web", "ireps-web-inspection-na", "ireps-web-na"].map((name) =>
   path.resolve(here, "../../../..", name, "functions"),
 );
+if (process.env.IREPS_WEB_ROOT) CANDIDATE_DIRS.unshift(path.resolve(process.env.IREPS_WEB_ROOT, "functions"));
 
 // The two files whose refusals are BUSINESS refusals — the ones a field worker can actually
 // walk into. Payload-shape faults elsewhere are programming errors and are not in scope here.

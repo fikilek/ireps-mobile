@@ -10,6 +10,7 @@ import {
 import { functions } from "../firebase";
 import { getMediaExtension } from "../utils/getMediaExtension";
 import { cleanupNoAccessMeterDiscoveryMedia } from "../utils/persistNoAccessMeterDiscoveryMedia";
+import { thrownSubmissionRefusal } from "../utils/submissionRefusal";
 
 import {
   getCallableNameForSubmissionQueueItem,
@@ -486,11 +487,7 @@ export const processSubmissionQueue = async ({
         if (isThrownRefusal(code)) {
           await markSubmissionQueueItemRefused(
             item.id,
-            {
-              code,
-              message: message || "Submission requires review.",
-              trnId: "NAv",
-            },
+            thrownSubmissionRefusal(error, item?.payload?.id || "NAv"),
             agentUid,
             agentName,
           );

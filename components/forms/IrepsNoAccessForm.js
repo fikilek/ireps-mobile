@@ -8,7 +8,7 @@
 // Three things, in this order (NA-R010):
 //   1. NA Reason        required
 //   2. NA Photograph    required
-//   3. NA Appointment   optional, on every reason
+//   3. NA Appointment   required only for an agreed return visit
 //
 // It is grown from IrepsNoAccessSection, which it replaces. The reason selector and the
 // photograph are that component's, unchanged in behaviour; the appointment is new.
@@ -19,6 +19,7 @@ import { AppState, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "
 import { Divider, Modal, Portal, Surface, TextInput } from "react-native-paper";
 
 import { NO_ACCESS_REASONS } from "../../src/features/meters/noAccessReasons";
+import { changeNoAccessReason, isLegacySavedNoAccess, isReturnVisitReason } from "../../src/features/meters/noAccessAppointmentPolicy";
 import FormSelect from "./FormSelect";
 import {
   WEEKDAY_INITIALS,
@@ -43,6 +44,7 @@ const TIMES = timeOptions();
 export function IrepsNoAccessForm({
   visible = false,
   value = {},
+  originalAccess = null,
   onChange,
   mediaName = "media",
   mediaTag = "noAccessPhoto",
@@ -84,6 +86,8 @@ export function IrepsNoAccessForm({
   const reasonOther = String(value?.reasonOther || "");
   const appointment = value?.appointment || null;
   const isOther = reasonCode.toUpperCase() === OTHER;
+  const returnVisit = isReturnVisitReason(reasonCode);
+  const preservedAppointment = !returnVisit && appointment && isLegacySavedNoAccess(value, originalAccess);
 
   const update = (patch) => onChange?.({ ...value, ...patch });
 
@@ -133,7 +137,14 @@ export function IrepsNoAccessForm({
           {/* 1. NA Reason — the standard iREPS dropdown (UI: label on top, "Select ...", then
               the chosen value). The same FormSelect every other form uses, so a worker meets
               one kind of dropdown everywhere and a change to it reaches all of them. */}
-          <FormSelect label="NA REASON" name="reasonCode" options={NO_ACCESS_REASONS} />
+          <FormSelect label="NA REASON" name="reasonCode" options={NO_ACCESS_REASONS}
+            onValueChange={(nextReason) => {
+              setDayOpen(false);
+              setTimeOpen(false);
+              setTimeError("");
+              onChange?.(changeNoAccessReason(value, nextReason));
+            }}
+          />
 
           {!!reasonErrorText && <Text style={styles.errorText}>{reasonErrorText}</Text>}
 
@@ -142,7 +153,7 @@ export function IrepsNoAccessForm({
               mode="outlined"
               label="Other NA Reason"
               value={reasonOther}
-              onChangeText={(text) => update({ reasonOther: text })}
+              onChangeText={(text) => update({ reasonOther: text, appointment: null })}
               placeholder="Enter no-access reason"
               multiline
               numberOfLines={3}
@@ -165,13 +176,13 @@ export function IrepsNoAccessForm({
 
           {!!mediaErrorText && <Text style={styles.errorText}>{mediaErrorText}</Text>}
 
+          {returnVisit ? <>
           <Divider style={styles.divider} />
-
-          {/* 3. NA Appointment — optional on every reason (NA-R020) */}
+          {/* 3. NA Appointment — required for the return-visit reason (NA-R020) */}
           <View style={styles.sectionHeader}>
             <MaterialCommunityIcons name="calendar-clock" size={18} color="#dc2626" />
             <Text style={styles.sectionTitle}>NA Appointment</Text>
-            <Text style={styles.optional}>optional</Text>
+            <Text style={styles.required}>required</Text>
           </View>
 
           {appointment ? (
@@ -197,12 +208,17 @@ export function IrepsNoAccessForm({
             </TouchableOpacity>
           )}
 
+          </> : null}
+
+          {preservedAppointment ? <Text style={styles.savedAppointment}>
+            Previously arranged: {formatAppointment(appointment.at)}. Kept for this saved visit.
+          </Text> : null}
           {!!appointmentErrorText && <Text style={styles.errorText}>{appointmentErrorText}</Text>}
       </Surface>
 
       {/* The calendar */}
       <Portal>
-        <Modal visible={dayOpen} onDismiss={() => setDayOpen(false)} contentContainerStyle={styles.modal}>
+        <Modal visible={returnVisit && dayOpen} onDismiss={() => setDayOpen(false)} contentContainerStyle={styles.modal}>
           <View style={styles.monthRow}>
             <TouchableOpacity
               style={styles.monthArrow}
@@ -271,7 +287,7 @@ export function IrepsNoAccessForm({
 
       {/* The clock */}
       <Portal>
-        <Modal visible={timeOpen} onDismiss={() => setTimeOpen(false)} contentContainerStyle={styles.modal}>
+        <Modal visible={returnVisit && timeOpen} onDismiss={() => setTimeOpen(false)} contentContainerStyle={styles.modal}>
           <Text style={styles.monthLabel}>What time?</Text>
           {!TIMES.some((option) => isTimePickable(pickedDay, option, pickerNow)) && (
             <Text style={styles.errorText}>No future times remain on this day. Choose another day.</Text>
@@ -317,7 +333,8 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: { fontSize: 14, fontWeight: "bold", color: "#dc2626" },
-  optional: { fontSize: 11, fontWeight: "700", color: FORM_TEXT, marginLeft: "auto" },
+  required: { fontSize: 11, fontWeight: "700", color: FORM_TEXT, marginLeft: "auto" },
+  savedAppointment: { color: "#0f766e", fontSize: 13, lineHeight: 19, marginTop: 15 },
 
   selector: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",

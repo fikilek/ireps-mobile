@@ -1,3 +1,5 @@
+import { RETURN_VISIT_REASON, isReturnVisitReason } from "./noAccessAppointmentPolicy.js";
+
 export const NO_ACCESS_REASONS = Object.freeze([
   "Property Locked",
   "Access Refused by Occupant",
@@ -6,6 +8,7 @@ export const NO_ACCESS_REASONS = Object.freeze([
   "Meter Obstructed",
   "Property Demolished",
   "Property Vacant",
+  RETURN_VISIT_REASON,
   "Other",
 ]);
 
@@ -50,7 +53,7 @@ export function canEndInNoAccess(trnType) {
 
 /**
  * NA-R010 — a no access is complete with a reason and a photograph. The appointment is
- * optional on every reason and never holds a submission back.
+ * required for the return-visit reason and absent on other new captures.
  */
 export function isCompleteNoAccess(value = {}, media = []) {
   const code = String(value?.reasonCode || "").trim();
@@ -59,6 +62,8 @@ export function isCompleteNoAccess(value = {}, media = []) {
   if (code.toUpperCase() === "OTHER" && !String(value?.reasonOther || "").trim()) {
     return false;
   }
+
+  if (isReturnVisitReason(code) && !value.appointment?.at) return false;
 
   return (Array.isArray(media) ? media : []).some(
     (item) => item?.tag === "noAccessPhoto" && String(item?.url || item?.uri || "").trim(),

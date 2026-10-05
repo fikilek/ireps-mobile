@@ -259,7 +259,7 @@ export default function NoAccessScreen() {
   async function submit(value, media, helpers) {
     if (sending.current || loadingDraft) return;
     const errors = validateNoAccessCapture(value, media, {
-      originalAppointment: editingItem?.payload?.accessData?.access?.appointment,
+      originalAccess: editingItem?.payload?.accessData?.access,
     });
     if (Object.keys(errors).length) {
       helpers.setErrors(errors);
@@ -276,6 +276,15 @@ export default function NoAccessScreen() {
   }
 
   async function send(value, media, helpers) {
+    if (sending.current) return;
+    // A chosen time may have passed while the confirmation was open.
+    const errors = validateNoAccessCapture(value, media, {
+      originalAccess: editingItem?.payload?.accessData?.access,
+    });
+    if (Object.keys(errors).length) {
+      helpers.setErrors(errors);
+      return;
+    }
     sending.current = true;
     helpers.setErrors({});
     let savedQueueId = null;
@@ -291,6 +300,7 @@ export default function NoAccessScreen() {
       const payload = buildNoAccessPayload({ context, trnId, capturedAt, value,
         media: durableMedia, actor: { uid: agentUid, name: agentName },
         previousMetadata: editingItem?.payload?.metadata,
+        originalAccess: editingItem?.payload?.accessData?.access,
       });
       if (editingItem) {
         const current = await getSubmissionQueueItemById(editingItem.id);
@@ -501,6 +511,7 @@ export default function NoAccessScreen() {
               <IrepsNoAccessForm
                 visible
                 value={values}
+                originalAccess={editingItem?.payload?.accessData?.access}
                 onChange={(next) => setValues({ ...values, ...next })}
                 mediaName="media"
                 mediaTag="noAccessPhoto"

@@ -37,6 +37,12 @@ test("NA-R010: Other with nothing said, not complete", () => {
   assert.equal(isCompleteNoAccess({ reasonCode: "OTHER", reasonOther: "Vicious dogs" }, PHOTO), true);
 });
 
-test("NA-R020: the appointment never holds a submission back", () => {
+test("NA-R020: other reasons do not require an appointment", () => {
   assert.equal(isCompleteNoAccess({ reasonCode: "Property Locked", appointment: null }, PHOTO), true);
+});
+
+test("NA-R020: the dedicated return reason requires an appointment", () => {
+  const draft = { reasonCode: "Occupant requested a return visit", appointment: null };
+  assert.equal(isCompleteNoAccess(draft, PHOTO), false);
+  assert.equal(isCompleteNoAccess({ ...draft, appointment: { at: "2026-10-06T08:00:00Z" } }, PHOTO), true);
 });

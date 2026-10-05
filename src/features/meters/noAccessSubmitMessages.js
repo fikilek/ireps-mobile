@@ -215,7 +215,27 @@ export const NO_ACCESS_RESULTS = Object.freeze([
   {
     code: "NO_ACCESS_APPOINTMENT_INVALID",
     title: "The appointment could not be read",
-    body: "The date and time did not arrive properly. Set the appointment again, or send without one.",
+    body: "The appointment or its capture time could not be read. Open the saved visit and set the agreed return appointment again. Call the office if it still cannot be sent.",
+  },
+  {
+    code: "NO_ACCESS_APPOINTMENT_REQUIRED",
+    title: "Choose the return appointment",
+    body: "This reason needs the date and time agreed with the occupant. Open the saved visit, choose that appointment, and send again.",
+  },
+  {
+    code: "NO_ACCESS_APPOINTMENT_NOT_ALLOWED",
+    title: "Check the reason for this visit",
+    body: "An appointment belongs to Occupant requested a return visit. Open the saved visit and correct its reason or remove the appointment.",
+  },
+  {
+    code: "NO_ACCESS_APPOINTMENT_NOT_FUTURE_AT_CAPTURE",
+    title: "The return time was already past",
+    body: "The appointment must be after the visit and after it was arranged. Open the saved visit and correct the agreed date and time.",
+  },
+  {
+    code: "NO_ACCESS_APPOINTMENT_RULE_UNSUPPORTED",
+    title: "Update the app",
+    body: "This saved visit uses an appointment rule the server cannot accept. Keep it on the phone, update the app and contact the office if it still cannot be sent.",
   },
   {
     code: "TARGETED_BATCH_MEMBERSHIP_CONFLICT",
