@@ -7,19 +7,21 @@
 //
 // Three things, in this order (NA-R010):
 //   1. NA Reason        required
-//   2. NA Photograph    required
+//   2. NA Photograph    required for ordinary reasons; not required for a return visit
 //   3. NA Appointment   required only for an agreed return visit
 //
 // It is grown from IrepsNoAccessSection, which it replaces. The reason selector and the
 // photograph are that component's, unchanged in behaviour; the appointment is new.
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useFormikContext } from "formik";
 import { useEffect, useState } from "react";
 import { AppState, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Divider, Modal, Portal, Surface, TextInput } from "react-native-paper";
 
-import { NO_ACCESS_REASONS } from "../../src/features/meters/noAccessReasons";
+import { NO_ACCESS_REASONS, requiresNoAccessPhoto } from "../../src/features/meters/noAccessReasons";
 import { changeNoAccessReason, isLegacySavedNoAccess, isReturnVisitReason } from "../../src/features/meters/noAccessAppointmentPolicy";
+import { noAccessValidationDelay } from "../../src/features/meters/noAccessCapture";
 import FormSelect from "./FormSelect";
 import {
   WEEKDAY_INITIALS,
@@ -61,16 +63,24 @@ export function IrepsNoAccessForm({
   const [pickedDay, setPickedDay] = useState(null);
   const [pickerNow, setPickerNow] = useState(Date.now);
   const [timeError, setTimeError] = useState("");
+  const { validateForm } = useFormikContext();
+  const reasonCode = String(value?.reasonCode || "").trim();
+  const reasonOther = String(value?.reasonOther || "");
+  const appointment = value?.appointment || null;
+  const isOther = reasonCode.toUpperCase() === OTHER;
+  const returnVisit = isReturnVisitReason(reasonCode);
+  const preservedAppointment = !returnVisit && appointment && isLegacySavedNoAccess(value, originalAccess);
 
   useEffect(() => {
-    if (!visible || (!dayOpen && !timeOpen)) return;
-    // Quarter-hour slots can expire while the worker leaves the picker open.
+    if (!visible || (!returnVisit && !dayOpen && !timeOpen)) return;
+    // Both the open picker and the closed form must notice when an agreement expires.
     let timer;
     const refresh = () => {
       clearTimeout(timer);
       const now = Date.now();
       setPickerNow(now);
-      timer = setTimeout(refresh, 60_000 - (now % 60_000));
+      validateForm();
+      timer = setTimeout(refresh, noAccessValidationDelay({ reasonCode, reasonOther, appointment }, originalAccess, now));
     };
     refresh();
     const subscription = AppState.addEventListener("change", (state) => {
@@ -80,14 +90,7 @@ export function IrepsNoAccessForm({
       clearTimeout(timer);
       subscription.remove();
     };
-  }, [visible, dayOpen, timeOpen]);
-
-  const reasonCode = String(value?.reasonCode || "").trim();
-  const reasonOther = String(value?.reasonOther || "");
-  const appointment = value?.appointment || null;
-  const isOther = reasonCode.toUpperCase() === OTHER;
-  const returnVisit = isReturnVisitReason(reasonCode);
-  const preservedAppointment = !returnVisit && appointment && isLegacySavedNoAccess(value, originalAccess);
+  }, [visible, dayOpen, timeOpen, returnVisit, reasonCode, reasonOther, appointment, originalAccess, validateForm]);
 
   const update = (patch) => onChange?.({ ...value, ...patch });
 
@@ -157,14 +160,14 @@ export function IrepsNoAccessForm({
               placeholder="Enter no-access reason"
               multiline
               numberOfLines={3}
-              error={Boolean(reasonErrorText) && !reasonOther.trim()}
+              error={Boolean(reasonErrorText)}
               style={styles.otherInput}
             />
           ) : null}
 
+          {/* Evidence requirements begin only after a reason is selected. */}
+          {requiresNoAccessPhoto(reasonCode) ? <>
           <Divider style={styles.divider} />
-
-          {/* 2. NA Photograph */}
           <IrepsMedia
             name={mediaName}
             tag={mediaTag}
@@ -175,10 +178,12 @@ export function IrepsNoAccessForm({
           />
 
           {!!mediaErrorText && <Text style={styles.errorText}>{mediaErrorText}</Text>}
+          </> : null}
 
           {returnVisit ? <>
           <Divider style={styles.divider} />
           {/* 3. NA Appointment — required for the return-visit reason (NA-R020) */}
+          <View style={[styles.appointmentSection, Boolean(appointmentErrorText) && styles.appointmentError]}>
           <View style={styles.sectionHeader}>
             <MaterialCommunityIcons name="calendar-clock" size={18} color="#dc2626" />
             <Text style={styles.sectionTitle}>NA Appointment</Text>
@@ -188,7 +193,7 @@ export function IrepsNoAccessForm({
           {appointment ? (
             <View>
               {/* NA-R022: one plain line, in the worker's own words and time. */}
-              <Text style={styles.appointmentLine}>{formatAppointment(appointment.at)}</Text>
+              <Text style={[styles.appointmentLine, Boolean(appointmentErrorText) && styles.selectorError]}>{formatAppointment(appointment.at)}</Text>
               <View style={styles.appointmentButtons}>
                 <TouchableOpacity style={styles.secondaryButton} onPress={openCalendar}>
                   <Text style={styles.secondaryButtonText}>CHANGE</Text>
@@ -202,18 +207,19 @@ export function IrepsNoAccessForm({
               </View>
             </View>
           ) : (
-            <TouchableOpacity style={styles.appointmentButton} onPress={openCalendar} activeOpacity={0.8}>
+            <TouchableOpacity style={[styles.appointmentButton, Boolean(appointmentErrorText) && styles.appointmentButtonError]} onPress={openCalendar} activeOpacity={0.8}>
               <MaterialCommunityIcons name="calendar-plus" size={20} color="#fff" />
               <Text style={styles.appointmentButtonText}>MAKE AN APPOINTMENT</Text>
             </TouchableOpacity>
           )}
-
+          {!!appointmentErrorText && <Text style={styles.errorText} accessibilityRole="alert">{appointmentErrorText}</Text>}
+          </View>
           </> : null}
 
           {preservedAppointment ? <Text style={styles.savedAppointment}>
             Previously arranged: {formatAppointment(appointment.at)}. This saved visit needs a reason and appointment that follow the current rule before it can be sent.
           </Text> : null}
-          {!!appointmentErrorText && <Text style={styles.errorText}>{appointmentErrorText}</Text>}
+          {!returnVisit && !!appointmentErrorText && <Text style={styles.errorText} accessibilityRole="alert">{appointmentErrorText}</Text>}
       </Surface>
 
       {/* The calendar */}
@@ -350,6 +356,9 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
     backgroundColor: "#0f766e", paddingVertical: 16, borderRadius: 8,
   },
+  appointmentSection: { borderWidth: 1, borderColor: "transparent", borderRadius: 10, padding: 10 },
+  appointmentError: { borderColor: "#dc2626", backgroundColor: "#fef2f2" },
+  appointmentButtonError: { backgroundColor: "#dc2626" },
 
   appointmentButtonText: { color: "#fff", fontSize: 15, fontWeight: "800", letterSpacing: 0.5 },
 

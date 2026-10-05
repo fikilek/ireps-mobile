@@ -45,4 +45,5 @@ test("NA-R020: the dedicated return reason requires an appointment", () => {
   const draft = { reasonCode: "Occupant requested a return visit", appointment: null };
   assert.equal(isCompleteNoAccess(draft, PHOTO), false);
   assert.equal(isCompleteNoAccess({ ...draft, appointment: { at: "2026-10-06T08:00:00Z" } }, PHOTO), true);
+  assert.equal(isCompleteNoAccess({ ...draft, appointment: { at: "2026-10-06T08:00:00Z" } }, []), true);
 });

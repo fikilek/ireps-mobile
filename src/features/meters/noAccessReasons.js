@@ -12,6 +12,12 @@ export const NO_ACCESS_REASONS = Object.freeze([
   "Other",
 ]);
 
+// No evidence is requested until the reason is known. A return visit needs an agreement.
+export function requiresNoAccessPhoto(reasonCode) {
+  return NO_ACCESS_REASONS.some((reason) => reason.toUpperCase() === String(reasonCode || "").trim().toUpperCase()) &&
+    !isReturnVisitReason(reasonCode);
+}
+
 export function isCompleteNoAccessReason(value) {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
     const code = String(value?.code || value?.label || "").trim();
@@ -52,8 +58,7 @@ export function canEndInNoAccess(trnType) {
 }
 
 /**
- * NA-R010 — a no access is complete with a reason and a photograph. The appointment is
- * required for the return-visit reason and absent on other new captures.
+ * NA-R010 — a return visit needs an appointment; every other reason needs a photograph.
  */
 export function isCompleteNoAccess(value = {}, media = []) {
   const code = String(value?.reasonCode || "").trim();
@@ -63,7 +68,8 @@ export function isCompleteNoAccess(value = {}, media = []) {
     return false;
   }
 
-  if (isReturnVisitReason(code) && !value.appointment?.at) return false;
+  if (isReturnVisitReason(code)) return Boolean(value.appointment?.at);
+  if (!requiresNoAccessPhoto(code) || value.appointment) return false;
 
   return (Array.isArray(media) ? media : []).some(
     (item) => item?.tag === "noAccessPhoto" && String(item?.url || item?.uri || "").trim(),

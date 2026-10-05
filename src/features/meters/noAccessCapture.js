@@ -1,5 +1,5 @@
 import { isAppointmentInFuture } from "./noAccessAppointment.js";
-import { NO_ACCESS_REASONS } from "./noAccessReasons.js";
+import { NO_ACCESS_REASONS, requiresNoAccessPhoto } from "./noAccessReasons.js";
 import { NO_ACCESS_APPOINTMENT_RULE_VERSION, isReturnVisitReason, sameNoAccessAgreement } from "./noAccessAppointmentPolicy.js";
 
 const text = (value) => String(value ?? "").trim();
@@ -11,13 +11,13 @@ export function validateNoAccessCapture(value = {}, media = [], {
   const errors = {};
   const reason = text(value.reasonCode);
   if (!NO_ACCESS_REASONS.some((entry) => entry.toUpperCase() === reason.toUpperCase())) {
-    errors.reason = "Choose why you could not touch the meter.";
+    errors.reasonCode = "Choose why you could not touch the meter.";
   }
   if (reason.toUpperCase() === "OTHER" && !reference(value.reasonOther)) {
     errors.reasonOther = "Type what stopped you reaching the meter.";
   }
-  if (!media.some((item) => item?.tag === "noAccessPhoto" && text(item.url || item.uri))) {
-    errors.media = "A No Access needs one photograph.";
+  if (requiresNoAccessPhoto(reason) && !(Array.isArray(media) ? media : []).some((item) => item?.tag === "noAccessPhoto" && text(item.url || item.uri))) {
+    errors.media = "Take a photograph to support this No Access reason.";
   }
   const returnVisit = isReturnVisitReason(reason);
   if (returnVisit && !value.appointment) {
@@ -32,6 +32,15 @@ export function validateNoAccessCapture(value = {}, media = [], {
     errors.appointment = "Choose a future date and time for the return visit.";
   }
   return errors;
+}
+
+// Keep the picker fresh at minute boundaries and invalidate a new agreement at its exact
+// expiry, even with both picker modals closed. Existing saved agreements keep their contract.
+export function noAccessValidationDelay(value = {}, originalAccess = null, now = Date.now()) {
+  const nextMinute = 60_000 - (now % 60_000);
+  const expiry = Date.parse(value.appointment?.at);
+  if (!isReturnVisitReason(value.reasonCode) || sameNoAccessAgreement(value, originalAccess) || !Number.isFinite(expiry) || expiry <= now) return nextMinute;
+  return Math.min(nextMinute, expiry - now);
 }
 
 export function buildNoAccessPayload({ context = {}, trnId, capturedAt, value, media, actor = {}, previousMetadata = {} }) {

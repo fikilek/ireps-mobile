@@ -20,7 +20,7 @@ import {
   useRouter,
 } from "expo-router";
 import { Formik } from "formik";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -200,6 +200,15 @@ export default function NoAccessScreen() {
   // NA-R006: the header arrow sits OUTSIDE Formik, so it cannot ask useFormikContext what has
   // been filled in. This is the handle onto the same form the submit uses.
   const formRef = useRef(null);
+  const initialValues = useMemo(() => ({
+    reasonCode: editingItem?.payload?.accessData?.access?.reasonCode || "",
+    reasonOther: editingItem?.payload?.accessData?.access?.reasonOther === "NAv" ? "" : editingItem?.payload?.accessData?.access?.reasonOther || "",
+    appointment: editingItem?.payload?.accessData?.access?.appointment || null,
+    media: editingItem?.payload?.media || [],
+  }), [editingItem]);
+  const validateValues = useCallback((values) => validateNoAccessCapture(values, values.media, {
+    originalAccess: editingItem?.payload?.accessData?.access,
+  }), [editingItem]);
 
   /**
    * NA-R006 — leaving by the arrow, with a stop when there is something to lose.
@@ -488,12 +497,12 @@ export default function NoAccessScreen() {
         <Formik
           innerRef={formRef}
           enableReinitialize
-          initialValues={{
-            reasonCode: editingItem?.payload?.accessData?.access?.reasonCode || "",
-            reasonOther: editingItem?.payload?.accessData?.access?.reasonOther === "NAv" ? "" : editingItem?.payload?.accessData?.access?.reasonOther || "",
-            appointment: editingItem?.payload?.accessData?.access?.appointment || null,
-            media: editingItem?.payload?.media || [],
-          }}
+          initialValues={initialValues}
+          initialErrors={validateValues(initialValues)}
+          validate={validateValues}
+          validateOnMount
+          validateOnChange
+          validateOnBlur
           onSubmit={(values, helpers) =>
             submit(
               {
@@ -518,7 +527,7 @@ export default function NoAccessScreen() {
                 agentName={agentName}
                 agentUid={agentUid}
                 fallbackGps={context.gps || null}
-                reasonErrorText={errors.reason || errors.reasonOther || ""}
+                reasonErrorText={errors.reasonCode || errors.reasonOther || ""}
                 appointmentErrorText={errors.appointment || ""}
                 mediaErrorText={
                   typeof errors.media === "string" ? errors.media : ""

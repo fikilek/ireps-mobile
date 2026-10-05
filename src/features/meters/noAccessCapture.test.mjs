@@ -1,13 +1,46 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildNoAccessPayload, validateNoAccessCapture, noAccessContextFromQueue } from "./noAccessCapture.js";
+import { buildNoAccessPayload, validateNoAccessCapture, noAccessContextFromQueue, noAccessValidationDelay } from "./noAccessCapture.js";
 import { RETURN_VISIT_REASON, changeNoAccessReason } from "./noAccessAppointmentPolicy.js";
 import { NO_ACCESS_REASONS } from "./noAccessReasons.js";
+import { formCanSubmit } from "../../utils/formCanSubmit.js";
 
 const value = { reasonCode: RETURN_VISIT_REASON, appointment: { at: "2026-10-05T12:00:00.000Z", madeAt: "2026-10-04T10:00:00.000Z" } };
 const media = [{ tag: "noAccessPhoto", uri: "file:///durable/photo.jpg" }];
 const context = { trnType: "METER_INSPECTION", astId: "AST_1", premiseId: "PRM_1", erfId: "ERF_1", lmPcode: "LM_1", wardPcode: "WARD_1" };
 const capturedAt = "2026-10-04T10:00:00.000Z";
+
+test("load, reason changes, photo removal and appointment removal update only active requirements", () => {
+  const empty = { reasonCode: "", appointment: null, media: [] };
+  assert.deepEqual(Object.keys(validateNoAccessCapture(empty)), ["reasonCode"]);
+  const locked = changeNoAccessReason(empty, "Property Locked");
+  assert.deepEqual(Object.keys(validateNoAccessCapture(locked)), ["media"]);
+  assert.deepEqual(validateNoAccessCapture(locked, media), {});
+  assert.deepEqual(Object.keys(validateNoAccessCapture(locked, [])), ["media"]);
+  const returning = changeNoAccessReason(locked, RETURN_VISIT_REASON);
+  assert.deepEqual(Object.keys(validateNoAccessCapture(returning)), ["appointment"]);
+  assert.deepEqual(validateNoAccessCapture(value, [], { now: 0 }), {});
+  assert.deepEqual(Object.keys(validateNoAccessCapture({ ...value, appointment: null })), ["appointment"]);
+  assert.deepEqual(Object.keys(validateNoAccessCapture(changeNoAccessReason(value, "Property Locked"))), ["media"]);
+});
+
+test("valid and dirty are both mandatory; validation and sending block submission", () => {
+  const ready = { isValid: true, dirty: true };
+  assert.equal(formCanSubmit(ready), true);
+  for (const state of [{ isValid: false }, { dirty: false }, { isValidating: true }, { isSubmitting: true }, { isTrnLoading: true }]) {
+    assert.equal(formCanSubmit({ ...ready, ...state }), false, JSON.stringify(state));
+  }
+  assert.equal(formCanSubmit({ isValid: true, dirty: false, allowPristine: true }), false);
+});
+
+test("appointment revalidation happens at expiry and preserves an unchanged saved agreement", () => {
+  const expiry = Date.parse(value.appointment.at);
+  assert.equal(noAccessValidationDelay(value, null, expiry - 100), 100);
+  assert.deepEqual(validateNoAccessCapture(value, [], { now: expiry - 1 }), {});
+  assert.ok(validateNoAccessCapture(value, [], { now: expiry }).appointment);
+  assert.deepEqual(validateNoAccessCapture(value, [], { now: expiry, originalAccess: value }), {});
+  assert.equal(noAccessValidationDelay(value, value, expiry + 1000), 59000);
+});
 
 test("the actual shared-form payload preserves field inspection identity and appointment", () => {
   const payload = buildNoAccessPayload({ context, trnId: "TRN_MINSP_NA", capturedAt, value, media, actor: { uid: "FWR1", name: "Worker" } });

@@ -10,17 +10,18 @@ import {
 } from "react-native";
 import { Button } from "react-native-paper";
 import { SubmitBlockers } from "../../../components/forms/SubmitBlockers";
+import { formCanSubmit } from "../../utils/formCanSubmit";
 
 export const ForensicFooter = ({ isTrnLoading }) => {
   // const navigation = useNavigation();
   // const { handleSubmit, isValid, dirty, resetForm } = useFormikContext();
-  const { handleSubmit, isValid, dirty, resetForm, isSubmitting, errors } =
+  const { handleSubmit, isValid, isValidating, dirty, resetForm, validateForm, initialValues, isSubmitting, errors } =
     useFormikContext();
 
   // 🎯 The Magic Combination: Local State || API State
   const loading = isSubmitting || isTrnLoading;
 
-  const isFormReady = isValid && dirty;
+  const isFormReady = formCanSubmit({ isValid, isValidating, dirty, isSubmitting, isTrnLoading });
 
   // Style Logic based on your requirements
   const getButtonConfig = () => {
@@ -53,8 +54,8 @@ export const ForensicFooter = ({ isTrnLoading }) => {
 
   return (
     <>
-    {/* Why Submit is not ready yet, in plain words, once the worker has started. */}
-    <SubmitBlockers errors={errors} visible={dirty && !isValid} />
+    {/* UI-R006: show blockers immediately, including on initial load and reset. */}
+    <SubmitBlockers errors={errors} visible={!isValid} />
     <View style={styles.footerContainer}>
       <Button
         mode="outlined"
@@ -62,19 +63,18 @@ export const ForensicFooter = ({ isTrnLoading }) => {
           // 🎯 THE GUARDRAIL: Protecting the Forensic Data
           Alert.alert(
             "Reset Form?",
-            "This will permanently delete all captured data and evidence photos for this premise. Are you sure?",
+            "Discard your changes and restore the values this form had when it opened?",
             [
               {
                 text: "CANCEL",
                 style: "cancel",
-                onPress: () => console.log("Reset Cancelled"),
               },
               {
                 text: "YES, RESET",
                 style: "destructive", // Red warning on iOS
                 onPress: () => {
-                  resetForm(); // 🎯 Formik built-in reset
-                  console.log("Form and Media cleared by user");
+                  resetForm();
+                  validateForm(initialValues);
                 },
               },
             ],
@@ -82,7 +82,7 @@ export const ForensicFooter = ({ isTrnLoading }) => {
           );
         }}
         style={styles.resetBtn}
-        disabled={loading}
+        disabled={!dirty || loading}
         textColor="#64748B"
       >
         RESET
@@ -91,7 +91,9 @@ export const ForensicFooter = ({ isTrnLoading }) => {
       <Button
         mode="contained"
         onPress={handleSubmit}
-        disabled={loading}
+        disabled={!isFormReady}
+        accessibilityState={{ disabled: !isFormReady, busy: Boolean(loading || isValidating) }}
+        theme={{ colors: { onSurfaceDisabled: config.color, surfaceDisabled: loading ? config.bg : "#FEF2F2" } }}
         icon={({ size, color }) =>
           loading ? (
             <ActivityIndicator size={size} color={config.color} />
