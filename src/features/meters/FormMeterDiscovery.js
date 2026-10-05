@@ -1,4 +1,5 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { buildDeviceCaptureTimes } from "./deviceCaptureTimes";
 import * as Location from "expo-location"; // Ensure this is imported at the to
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Formik } from "formik";
@@ -1360,8 +1361,7 @@ export default function FormMeterDiscovery() {
     // signal, and until this it was dated the day it reached the office - so every report that
     // counts field work by date was counting arrival dates.
     const trnMetadata = {
-      createdOnDevice: timestamp,
-      updatedOnDevice: timestamp,
+      ...buildDeviceCaptureTimes(editQueueItem?.payload?.metadata, timestamp),
       createdAt: timestamp,
       createdByUid: agentUid || "unknown_uid",
       createdByUser: agentName || "Field Agent",
@@ -2318,7 +2318,6 @@ export default function FormMeterDiscovery() {
               />
 
               {/* ACCESS TOGGLE */}
-              // ACCESS SECTION
                 <View>
                   {values?.meterType === "electricity" ? (
                     <ElectricitySections

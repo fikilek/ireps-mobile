@@ -1,4 +1,5 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { buildDeviceCaptureTimes } from "./deviceCaptureTimes";
 import NetInfo from "@react-native-community/netinfo";
 import * as Location from "expo-location"; // Ensure this is imported at the to
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -1111,8 +1112,7 @@ export default function FormMeterInstallation() {
 
     // RG-R001 1.1.0 section 2: when the work was done, and when it arrived. Both, always.
     const trnMetadata = {
-      createdOnDevice: timestamp,
-      updatedOnDevice: timestamp,
+      ...buildDeviceCaptureTimes(editQueueItem?.payload?.metadata, timestamp),
       createdAt: timestamp,
       createdByUid: agentUid || "unknown_uid",
       createdByUser: agentName || "Field Agent",
@@ -1789,7 +1789,6 @@ export default function FormMeterInstallation() {
               />
 
               {/* ACCESS TOGGLE */}
-              // ACCESS SECTION
                 <View>
                   {values?.meterType === "electricity" ? (
                     <ElectricitySections

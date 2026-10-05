@@ -38,6 +38,7 @@ import {
   updateSubmissionQueueItem,
 } from "../../../src/utils/submissionQueue";
 import { FORM_TEXT } from "../../../src/theme/formColors";
+import { buildDeviceCaptureTimes } from "../../../src/features/meters/deviceCaptureTimes";
 
 function buildMeterCommissioningTrnId({ wardPcode, erfNo, meterType }) {
   const ts = Date.now();
@@ -731,10 +732,7 @@ export default function FormMeterCommissioning() {
     let cleanPayload = sanitizeCommissioningPayload(
       removeUndefined({
         id: values.id,
-        metadata: {
-          createdOnDevice: editQueueItem?.payload?.metadata?.createdOnDevice || capturedAt,
-          updatedOnDevice: capturedAt,
-        },
+        metadata: buildDeviceCaptureTimes(editQueueItem?.payload?.metadata, capturedAt),
 
         accessData: {
           ...baseSystemFields,
