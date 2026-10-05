@@ -57,8 +57,17 @@ const NaScreen = () => {
           <Text style={styles.timeText}>{details.visitTime}</Text>
         </View>
 
-        {/* COL 2: REASON */}
+        {/* COL 2: TRANSACTION AND REASON */}
         <View style={styles.colReason}>
+          <View style={styles.transactionBadge}>
+            <MaterialCommunityIcons
+              name={details.transactionIcon}
+              size={13}
+              color="#315791"
+              accessible={false}
+            />
+            <Text style={styles.transactionLabel}>{details.transactionLabel}</Text>
+          </View>
           <Text style={styles.reasonText}>
             {access?.reason || "Unknown Reason"}
           </Text>
@@ -190,6 +199,19 @@ const styles = StyleSheet.create({
   timeText: { fontSize: 10, color: "#94a3b8" },
 
   colReason: { flex: 1, minWidth: 0, paddingHorizontal: 8 },
+  transactionBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    maxWidth: "100%",
+    gap: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    marginBottom: 7,
+    borderRadius: 6,
+    backgroundColor: "#edf3ff",
+  },
+  transactionLabel: { flexShrink: 1, fontSize: 11, lineHeight: 14, fontWeight: "600", color: "#315791" },
   reasonText: { fontSize: 13, fontWeight: "800", color: "#1e293b" },
   agentText: { fontSize: 10, color: "#64748b", marginTop: 2 },
   appointmentText: { fontSize: 11, lineHeight: 16, color: "#0f766e", marginTop: 6 },
