@@ -725,10 +725,16 @@ export default function FormMeterCommissioning() {
     }
 
     const baseSystemFields = buildTrnSystemFields();
+    // Capture before uploads or queueing. Editing a saved visit keeps its original time.
+    const capturedAt = new Date().toISOString();
 
     let cleanPayload = sanitizeCommissioningPayload(
       removeUndefined({
         id: values.id,
+        metadata: {
+          createdOnDevice: editQueueItem?.payload?.metadata?.createdOnDevice || capturedAt,
+          updatedOnDevice: capturedAt,
+        },
 
         accessData: {
           ...baseSystemFields,
