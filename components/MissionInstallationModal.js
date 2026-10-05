@@ -1,8 +1,14 @@
-// src/components/modals/MissionDiscoveryModal.js
-
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { Alert, StyleSheet, View } from "react-native";
-import { Button, Modal, Portal, Surface, Text } from "react-native-paper";
+import {
+  ActivityIndicator,
+  Button,
+  Modal,
+  Portal,
+  Surface,
+  Text,
+} from "react-native-paper";
 import {
   BATCH_WORK_BLOCKED,
   BATCH_WORK_BLOCKED_FOOTER,
@@ -20,6 +26,22 @@ export default function MissionInstallationModal() {
   const router = useRouter();
   const { updateGeo } = useGeo();
   const { isVisible, mission, closeMissionInstallation } = useInstallation();
+  const [checkingWork, setCheckingWork] = useState(false);
+  const pendingCheck = useRef(null);
+
+  useEffect(() => {
+    setCheckingWork(false);
+    // A result belongs only to the chooser and premise that started it.
+    return () => {
+      pendingCheck.current = null;
+    };
+  }, [isVisible, mission]);
+
+  const dismiss = () => {
+    pendingCheck.current = null;
+    setCheckingWork(false);
+    closeMissionInstallation();
+  };
 
   const premiseId = mission?.premiseId || mission?.premise?.id;
 
@@ -39,25 +61,38 @@ export default function MissionInstallationModal() {
   // it. UNCHECKED opens the form: the submit path asks the server again, and that answer is
   // the binding one.
   const withFrontGate = async (open) => {
-    const gate = await checkBatchWorkBeforeForm({
-      erfId:
-        mission?.premise?.erfId || mission?.targetedBatchContext?.erfId || "",
-      premiseId: premiseId || "",
-    });
+    // Lock synchronously: a second tap can arrive before disabled buttons render.
+    if (!isVisible || pendingCheck.current) return;
+    const attempt = {};
+    pendingCheck.current = attempt;
+    setCheckingWork(true);
+    try {
+      const gate = await checkBatchWorkBeforeForm({
+        erfId:
+          mission?.premise?.erfId || mission?.targetedBatchContext?.erfId || "",
+        premiseId: premiseId || "",
+      });
 
-    if (gate.state === BATCH_WORK_BLOCKED) {
-      // The server's own sentence, word for word - it names the batch, the geofence, the team
-      // and the date. The phone adds only what the worker should do next.
-      Alert.alert(
-        BATCH_WORK_BLOCKED_TITLE,
-        `${gate.message}
+      if (pendingCheck.current !== attempt) return;
+
+      if (gate.state === BATCH_WORK_BLOCKED) {
+        // Keep the server's explanation and the existing next-step guidance.
+        Alert.alert(
+          BATCH_WORK_BLOCKED_TITLE,
+          `${gate.message}
 
 ${BATCH_WORK_BLOCKED_FOOTER}`,
-      );
-      return;
-    }
+        );
+        return;
+      }
 
-    open();
+      open();
+    } finally {
+      if (pendingCheck.current === attempt) {
+        pendingCheck.current = null;
+        setCheckingWork(false);
+      }
+    }
   };
 
   const goNoAccess = () => {
@@ -128,12 +163,19 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
     <Portal>
       <Modal
         visible={isVisible}
-        onDismiss={closeMissionInstallation}
+        onDismiss={dismiss}
         contentContainerStyle={styles.modalContainer}
       >
         <Text variant="headlineSmall" style={styles.modalTitle}>
           Mission Installation
         </Text>
+
+        {checkingWork && (
+          <View style={styles.progress} accessibilityLiveRegion="polite">
+            <ActivityIndicator size="small" />
+            <Text variant="bodyMedium">Checking work access…</Text>
+          </View>
+        )}
 
         {/* ---------- ACCESS OPTIONS ---------- */}
 
@@ -143,6 +185,7 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
           <View style={styles.toggleRow}>
             <Button
               mode="contained"
+              disabled={checkingWork}
               onPress={() => withFrontGate(goWater)}
               style={{ flex: 1, marginRight: 6 }}
             >
@@ -151,6 +194,7 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
 
             <Button
               mode="contained"
+              disabled={checkingWork}
               onPress={() => withFrontGate(goElectricity)}
               style={{ flex: 1 }}
             >
@@ -165,6 +209,7 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
           <Button
             mode="contained"
             buttonColor="#B22222"
+            disabled={checkingWork}
             onPress={() => withFrontGate(goNoAccess)}
           >
             NO ACCESS (NA)
@@ -175,7 +220,7 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
 
         <Button
           mode="text"
-          onPress={closeMissionInstallation}
+          onPress={dismiss}
           style={styles.dismissButton}
         >
           CANCEL
@@ -208,6 +253,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 12,
     backgroundColor: "#fff",
+  },
+
+  progress: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 12,
   },
 
   toggleRow: {
