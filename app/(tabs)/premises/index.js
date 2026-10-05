@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ActivityIndicator, Surface } from "react-native-paper";
 
-import MissionDiscoveryModal from "../../../components/MissionDiscoveryModal";
 import MissionInstallationModal from "../../../components/MissionInstallationModal";
 import { useDiscovery } from "../../../src/context/DiscoveryContext";
 import { useGeo } from "../../../src/context/GeoContext";
@@ -492,7 +491,6 @@ export default function PremisesScreen() {
         }
       />
 
-      <MissionDiscoveryModal />
       <MissionInstallationModal />
       {batchCheckOverlay}
     </View>

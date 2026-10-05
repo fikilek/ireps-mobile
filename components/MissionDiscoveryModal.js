@@ -1,15 +1,11 @@
 // src/components/modals/MissionDiscoveryModal.js
 
 import { useRouter } from "expo-router";
-import { Alert, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Button, Modal, Portal, Surface, Text } from "react-native-paper";
 import { useDiscovery } from "../src/context/DiscoveryContext";
-import {
-  BATCH_WORK_BLOCKED,
-  BATCH_WORK_BLOCKED_FOOTER,
-  BATCH_WORK_BLOCKED_TITLE,
-  checkBatchWorkBeforeForm,
-} from "../src/features/meters/batchWorkGate";
+import { useWorkAccessCheck } from "../src/features/meters/useWorkAccessCheck";
+import { WorkAccessProgress } from "./WorkAccessProgress";
 import {
   premiseAddressWords,
   premisePropertyTypeWords,
@@ -24,6 +20,14 @@ export default function MissionDiscoveryModal() {
   const router = useRouter();
   const { updateGeo } = useGeo();
   const { isVisible, mission, closeMissionDiscovery } = useDiscovery();
+
+  const { checkingWork, withFrontGate, cancelCheck } = useWorkAccessCheck({
+    enabled: isVisible, context: mission,
+  });
+  const dismiss = () => {
+    cancelCheck();
+    closeMissionDiscovery();
+  };
 
   const premiseId = mission?.premiseId || mission?.premise?.id;
   const targetedBatchContext = serializeTargetedBatchContext(
@@ -55,27 +59,13 @@ export default function MissionDiscoveryModal() {
   // EVERY way out of this modal goes through here, so a route added later cannot quietly miss
   // it. UNCHECKED opens the form: the submit path asks the server again, and that answer is
   // the binding one.
-  const withFrontGate = async (open) => {
-    const gate = await checkBatchWorkBeforeForm({
-      erfId:
-        mission?.premise?.erfId || mission?.targetedBatchContext?.erfId || "",
+  const checkAndOpen = (open) => withFrontGate(
+    {
+      erfId: mission?.premise?.erfId || mission?.targetedBatchContext?.erfId || "",
       premiseId: premiseId || "",
-    });
-
-    if (gate.state === BATCH_WORK_BLOCKED) {
-      // The server's own sentence, word for word - it names the batch, the geofence, the team
-      // and the date. The phone adds only what the worker should do next.
-      Alert.alert(
-        BATCH_WORK_BLOCKED_TITLE,
-        `${gate.message}
-
-${BATCH_WORK_BLOCKED_FOOTER}`,
-      );
-      return;
-    }
-
-    open();
-  };
+    },
+    open,
+  );
 
   const goNoAccess = () => {
     closeMissionDiscovery();
@@ -153,12 +143,14 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
     <Portal>
       <Modal
         visible={isVisible}
-        onDismiss={closeMissionDiscovery}
+        onDismiss={dismiss}
         contentContainerStyle={styles.modalContainer}
       >
         <Text variant="headlineSmall" style={styles.modalTitle}>
           Mission Discovery
         </Text>
+
+        {checkingWork && <WorkAccessProgress />}
 
         {/* ---------- ACCESS OPTIONS ---------- */}
 
@@ -168,7 +160,8 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
           <View style={styles.toggleRow}>
             <Button
               mode="contained"
-              onPress={() => withFrontGate(goWater)}
+            disabled={checkingWork}
+              onPress={() => checkAndOpen(goWater)}
               style={{ flex: 1, marginRight: 6 }}
             >
               WATER
@@ -176,7 +169,8 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
 
             <Button
               mode="contained"
-              onPress={() => withFrontGate(goElectricity)}
+            disabled={checkingWork}
+              onPress={() => checkAndOpen(goElectricity)}
               style={{ flex: 1 }}
             >
               ELEC
@@ -189,8 +183,9 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
         <Surface style={styles.modalCard} elevation={1}>
           <Button
             mode="contained"
+            disabled={checkingWork}
             buttonColor="#B22222"
-            onPress={() => withFrontGate(goNoAccess)}
+            onPress={() => checkAndOpen(goNoAccess)}
           >
             NO ACCESS (NA)
           </Button>
@@ -200,7 +195,7 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
 
         <Button
           mode="text"
-          onPress={closeMissionDiscovery}
+          onPress={dismiss}
           style={styles.dismissButton}
         >
           CANCEL

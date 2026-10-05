@@ -17,12 +17,9 @@ import { useWarehouse } from "../../context/WarehouseContext";
 import { useAuth } from "../../hooks/useAuth";
 import { useGetServiceProvidersQuery } from "../../redux/spApi";
 import { updatedAtLabel } from "../../utils/updatedAtLabel";
-import {
-  BATCH_WORK_BLOCKED,
-  BATCH_WORK_BLOCKED_FOOTER,
-  BATCH_WORK_BLOCKED_TITLE,
-  checkBatchWorkBeforeForm,
-} from "../meters/batchWorkGate";
+import { useIsFocused } from "@react-navigation/native";
+import { useWorkAccessCheck } from "../meters/useWorkAccessCheck";
+import { WorkAccessCheckModal } from "../../../components/WorkAccessProgress";
 import {
   ACCESS_GATE,
   NO_ACCESS_ROUTE,
@@ -304,10 +301,12 @@ const LifecycleActionButton = ({
   available = true,
   onPress,
   showProgress = false,
+  disabled = false,
 }) => {
   return (
     <TouchableOpacity
       onPress={onPress}
+      disabled={disabled}
       activeOpacity={0.75}
       style={[
         styles.lifecycleActionButton,
@@ -561,6 +560,10 @@ const AstItem = ({ item }) => {
   const { profile, isMNG, isSPV, isFWR } = useAuth();
   const [readingHistoryVisible, setReadingHistoryVisible] = useState(false);
   const [lifecycleProgress, setLifecycleProgress] = useState(null);
+  const isFocused = useIsFocused();
+  const { checkingWork, withFrontGate, cancelCheck } = useWorkAccessCheck({
+    enabled: isFocused, context: item,
+  });
 
   // 🎯 DATA EXTRACTION
   const isWater = item.meterType === "water";
@@ -778,56 +781,44 @@ const AstItem = ({ item }) => {
   // Asking BEFORE the access question matters. "Did you reach the meter?" is a question about
   // work the worker is about to do; asking it on an ERF that is not theirs has already wasted
   // their attention and invites them to start.
-  const launchFieldLifecycle = async ({ pathname, trnType }) => {
+  const launchFieldLifecycle = ({ pathname, trnType }) => {
     const erfId = item?.accessData?.erfId || "";
     const premiseId = item?.accessData?.premise?.id || "";
-    const gate = await checkBatchWorkBeforeForm({ erfId, premiseId });
+    return withFrontGate({ erfId, premiseId }, () => {
+      Alert.alert(ACCESS_GATE.title, ACCESS_GATE.message, [
+        {
+          text: ACCESS_GATE.no,
+          style: "destructive",
+          onPress: () => {
+            if (!assetCanRecordNoAccess(item)) {
+              // NA-R044: a no access is to a premise. A meter cannot exist without one, so this
+              // is a fault in the meter record rather than something the worker can fix.
+              Alert.alert(
+                "This meter has no premise",
+                "A No Access says which premise you could not get into, and this meter has none linked. Report it to the office.",
+              );
+              return;
+            }
 
-    if (gate.state === BATCH_WORK_BLOCKED) {
-      // The server's own sentence, word for word: it names the batch, the geofence, the team
-      // and the date. The phone adds only what the worker should do next.
-      Alert.alert(
-        BATCH_WORK_BLOCKED_TITLE,
-        `${gate.message}
-
-${BATCH_WORK_BLOCKED_FOOTER}`,
-      );
-      return;
-    }
-
-    Alert.alert(ACCESS_GATE.title, ACCESS_GATE.message, [
-      {
-        text: ACCESS_GATE.no,
-        style: "destructive",
-        onPress: () => {
-          if (!assetCanRecordNoAccess(item)) {
-            // NA-R044: a no access is to a premise. A meter cannot exist without one, so this
-            // is a fault in the meter record rather than something the worker can fix.
-            Alert.alert(
-              "This meter has no premise",
-              "A No Access says which premise you could not get into, and this meter has none linked. Report it to the office.",
-            );
-            return;
-          }
-
-          router.push({
-            pathname: NO_ACCESS_ROUTE,
-            params: {
-              context: JSON.stringify(
-                buildAssetNoAccessContext(item, {
-                  returnTo: "/(tabs)/asts",
-                  trnType,
-                }),
-              ),
-            },
-          });
+            router.push({
+              pathname: NO_ACCESS_ROUTE,
+              params: {
+                context: JSON.stringify(
+                  buildAssetNoAccessContext(item, {
+                    returnTo: "/(tabs)/asts",
+                    trnType,
+                  }),
+                ),
+              },
+            });
+          },
         },
-      },
-      {
-        text: ACCESS_GATE.yes,
-        onPress: () => openLifecycleForm({ pathname, trnType }),
-      },
-    ]);
+        {
+          text: ACCESS_GATE.yes,
+          onPress: () => openLifecycleForm({ pathname, trnType }),
+        },
+      ]);
+    });
   };
 
   const openLifecycleForm = ({ pathname, trnType }) => {
@@ -1047,29 +1038,9 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
     }
 
     if (canOriginateFieldLct) {
-      router.push({
+      launchFieldLifecycle({
         pathname: "/(tabs)/asts/meter-reading",
-        params: {
-          astId: item.id,
-          premiseId: item?.accessData?.premise?.id || "NAv",
-          returnTo: "/(tabs)/asts",
-          asset: encodeURIComponent(JSON.stringify(item)),
-          action: JSON.stringify({
-            source: "FIELD",
-            trnType: "METER_READING",
-            returnTo: "/(tabs)/asts",
-            astId: item.id,
-            sourceAstId: item.id,
-            premiseId: item?.accessData?.premise?.id || "NAv",
-            meterType: item?.meterType || "NAv",
-            meterNo: item?.ast?.astData?.astNo || "NAv",
-            statusBefore: item?.status?.state || "UNKNOWN",
-            origin: {
-              channel: "FIELD",
-              source: "AST_ITEM",
-            },
-          }),
-        },
+        trnType: "METER_READING",
       });
       return;
     }
@@ -1308,6 +1279,7 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
       {/* Row for TRN/action buttons. Buttons stay visible; restrictions are enforced on tap. */}
       <View style={styles.lifecycleActionRow}>
         <LifecycleActionButton
+          disabled={checkingWork}
           label="COMM"
           icon="progress-check"
           available={canCommission}
@@ -1315,6 +1287,7 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
         />
 
         <LifecycleActionButton
+          disabled={checkingWork}
           label="INSP"
           icon="clipboard-search-outline"
           available={canInspect}
@@ -1323,6 +1296,7 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
         />
 
         <LifecycleActionButton
+          disabled={checkingWork}
           label="DISC"
           icon="power-plug-off-outline"
           available={canDisconnect}
@@ -1331,6 +1305,7 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
         />
 
         <LifecycleActionButton
+          disabled={checkingWork}
           label="RECON"
           icon="power-plug-outline"
           available={canReconnect}
@@ -1339,6 +1314,7 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
         />
 
         <LifecycleActionButton
+          disabled={checkingWork}
           label="REM"
           icon="delete-alert-outline"
           available={canRemove}
@@ -1347,6 +1323,7 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
         />
 
         <LifecycleActionButton
+          disabled={checkingWork}
           label="MREAD"
           icon="counter"
           available={canStartMeterReading}
@@ -1457,6 +1434,8 @@ ${BATCH_WORK_BLOCKED_FOOTER}`,
           Updated {updatedAtText}
         </Text>
       </View>
+
+      <WorkAccessCheckModal visible={checkingWork} onCancel={cancelCheck} />
 
       <LifecycleProgressModal
         visible={Boolean(lifecycleProgress)}

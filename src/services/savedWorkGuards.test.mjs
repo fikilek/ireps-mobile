@@ -409,15 +409,18 @@ test("every way into a transaction form passes the front gate", async () => {
     const source = await read(file);
     assert.match(
       source,
-      /checkBatchWorkBeforeForm\(/,
+      /useWorkAccessCheck\(/,
       `${what} opens a form without asking whose batch the ERF is in`,
     );
     assert.match(
       source,
-      /BATCH_WORK_BLOCKED/,
-      `${what} does not stop the worker when the answer is no`,
+      /withFrontGate\(/,
+      `${what} does not use the shared check when opening a form`,
     );
   }
+  const shared = await read("../features/meters/useWorkAccessCheck.js");
+  assert.match(shared, /checkBatchWorkBeforeForm\(/);
+  assert.match(shared, /BATCH_WORK_BLOCKED/);
 });
 
 test("the front gate shows the server's own sentence, and never writes its own", async () => {
