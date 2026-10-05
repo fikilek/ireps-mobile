@@ -765,9 +765,9 @@ const AstItem = ({ item }) => {
     });
   };
 
-  // No Access rules NA-R003 (1.3.0): THE GATE. Every one of the five transactions a meter can
-  // carry - inspection, disconnection, reconnection, reading, removal - is opened through
-  // here, so the access question is asked once, in one place, for all five.
+  // No Access rules NA-R003: THE GATE. Every field transaction on an existing meter,
+  // including commissioning, is opened through
+  // here, so the access question is asked once, in one place, for every action.
   //
   // A worker who did not reach the meter never opens the transaction form. The form exists to
   // record work on a meter, and there is no meter to work on.
@@ -879,19 +879,9 @@ const AstItem = ({ item }) => {
       return;
     }
 
-    router.push({
+    return launchFieldLifecycle({
       pathname: "/(tabs)/asts/commissioning",
-      params: {
-        astId: item.id,
-        premiseId: item?.accessData?.premise?.id || "NAv",
-        action: JSON.stringify({
-          trnType: "METER_COMMISSIONING",
-          astId: item.id,
-          meterType: item?.meterType || "NAv",
-          meterNo: item?.ast?.astData?.astNo || "NAv",
-          statusBefore: item?.status?.state || "UNKNOWN",
-        }),
-      },
+      trnType: "METER_COMMISSIONING",
     });
   };
 

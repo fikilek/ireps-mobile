@@ -11,6 +11,7 @@ const TRANSACTION_LABELS = Object.freeze({
   METER_RECONNECTION: { label: "Meter reconnection", icon: "power-plug-outline" },
   METER_REMOVAL: { label: "Meter removal", icon: "delete-outline" },
   METER_READING: { label: "Meter reading", icon: "counter" },
+  METER_COMMISSIONING: { label: "Meter commissioning", icon: "check-decagram-outline" },
 });
 
 function ledgerDateTime(iso) {

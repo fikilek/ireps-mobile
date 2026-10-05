@@ -10,13 +10,13 @@ import {
 
 const PHOTO = [{ tag: "noAccessPhoto", uri: "file:///a.jpg" }];
 
-test("NA-R003: seven transaction types can end in a no access", () => {
-  assert.equal(NO_ACCESS_TRN_TYPES.length, 7);
+test("NA-R003: all eight transaction types can end in a no access", () => {
+  assert.equal(NO_ACCESS_TRN_TYPES.length, 8);
   for (const type of NO_ACCESS_TRN_TYPES) assert.equal(canEndInNoAccess(type), true);
 });
 
-test("NA-R003: Commissioning cannot, and neither can an invented type", () => {
-  assert.equal(canEndInNoAccess("METER_COMMISSIONING"), false);
+test("NA-R003: Commissioning shares No Access, but an invented type cannot", () => {
+  assert.equal(canEndInNoAccess("METER_COMMISSIONING"), true);
   assert.equal(canEndInNoAccess("TARGETED_BATCH_NO_ACCESS"), false);
 });
 

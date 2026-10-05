@@ -42,7 +42,7 @@ export function isCompleteNoAccessReason(value) {
 //
 // There is no transaction type called "Targeted Batch No Access". A targeted batch is the
 // route that takes a worker to an ERF; after that the work is an ordinary Meter Discovery.
-// Meter Commissioning is not here either: it always records access.
+// Commissioning uses the same access gate and No Access capture as the other meter work.
 export const NO_ACCESS_TRN_TYPES = Object.freeze([
   "METER_DISCOVERY",
   "METER_INSTALLATION",
@@ -51,6 +51,7 @@ export const NO_ACCESS_TRN_TYPES = Object.freeze([
   "METER_RECONNECTION",
   "METER_READING",
   "METER_REMOVAL",
+  "METER_COMMISSIONING",
 ]);
 
 export function canEndInNoAccess(trnType) {

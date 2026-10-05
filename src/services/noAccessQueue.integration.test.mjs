@@ -13,6 +13,7 @@ const require = createRequire(import.meta.url);
 const types = [
   ["METER_DISCOVERY", "onMeterDiscoveryCallable"],
   ["METER_INSTALLATION", "onMeterInstallationCallable"],
+  ["METER_COMMISSIONING", "onCreateMeterCommissioningCallable"],
   ...["INSPECTION", "DISCONNECTION", "RECONNECTION", "REMOVAL", "READING"].map(type => [`METER_${type}`, "onMeterLifecycleTrnCallable"]),
 ];
 const clone = value => JSON.parse(JSON.stringify(value));

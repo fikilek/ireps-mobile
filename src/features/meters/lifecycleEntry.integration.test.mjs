@@ -6,6 +6,7 @@ import { loadEntry, deferredGate, nativeHosts, paperHosts } from "./entryTestHar
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const actions = [
+  ["COMM", "COMMISSIONING", "FIELD"],
   ["INSP", "INSPECTION", "CONNECTED"],
   ["DISC", "DISCONNECTION", "CONNECTED"],
   ["RECON", "RECONNECTION", "DISCONNECTED"],
@@ -126,10 +127,11 @@ test("an offline meter check still permits the access question", async t => {
   assert.equal(JSON.parse(form.routes[0].params.context).trnType, "METER_READING");
 });
 
+for (const [label, state] of [["INSP", "CONNECTED"], ["COMM", "FIELD"]]) {
 for (const transition of ["cancel", "back", "blur", "replace", "unmount"]) {
-  test(`${transition} ignores a late meter work-access result`, async t => {
-    const form = await mount(t);
-    await form.tap("INSP");
+  test(`${label}: ${transition} ignores a late meter work-access result`, async t => {
+    const form = await mount(t, state);
+    await form.tap(label);
     await form[transition]();
     await form.result("ALLOWED");
     assert.equal(form.alerts.length, 0);
@@ -137,6 +139,34 @@ for (const transition of ["cancel", "back", "blur", "replace", "unmount"]) {
     if (transition !== "unmount") assert.equal(form.spinners, 0);
   });
 }
+}
+
+test("Commissioning checks work ownership, blocks refused work and allows an offline access choice", async t => {
+  const form = await mount(t, "FIELD");
+  await act(async () => {
+    form.button("COMM").props.onPress();
+    form.button("COMM").props.onPress();
+    form.button("INSP").props.onPress();
+  });
+  assert.equal(form.requests.length, 1);
+  await form.result("BLOCKED");
+  assert.equal(form.routes.length, 0);
+  assert.equal(form.alerts.at(-1)[0], "This work is not yours");
+  await form.tap("COMM");
+  await form.result("UNCHECKED", 1);
+  await form.choose("NO ACCESS");
+  assert.equal(JSON.parse(form.routes[0].params.context).trnType, "METER_COMMISSIONING");
+});
+
+test("Commissioning keeps its FIELD and actor eligibility before the shared gate", async t => {
+  for (const [state, office, title] of [["CONNECTED", false, "Not Eligible"], ["FIELD", true, "Not Allowed"]]) {
+    const form = await mount(t, state, office);
+    await form.tap("COMM");
+    assert.equal(form.requests.length, 0);
+    assert.equal(form.routes.length, 0);
+    assert.equal(form.alerts.at(-1)[0], title);
+  }
+});
 
 test("a cancelled request cannot stop the next meter check's spinner", async t => {
   const form = await mount(t);
