@@ -33,12 +33,15 @@ const FormSelect = ({
   icon = "form-select",
   disabled = false,
   onValueChange,
+  // Dependent fields (for example reason + appointment) change in one validated update.
+  getValuesForSelection,
   clearable = false,
   clearLabel = "Select (clear)",
 }) => {
   const {
     values,
     setFieldValue,
+    setValues,
     setFieldTouched,
     errors,
     isSubmitting,
@@ -111,7 +114,11 @@ const FormSelect = ({
                   // file to find, which is exactly why it survived every sweep - so it is written now.
                   titleStyle={styles.optionTitle}
                   onPress={() => {
-                    setFieldValue(name, option.value, true);
+                    if (getValuesForSelection) {
+                      setValues(current => getValuesForSelection(current, option.value), true);
+                    } else {
+                      setFieldValue(name, option.value, true);
+                    }
                     onValueChange?.(option.value);
                     setFieldTouched(name, true, false);
                     setVisible(false);

@@ -534,13 +534,6 @@ export default function NoAccessScreen() {
                 }
               />
 
-              {busy ? (
-                <Surface style={styles.busy} elevation={1}>
-                  <ActivityIndicator />
-                  <Text style={styles.busyText}>{busy}</Text>
-                </Surface>
-              ) : null}
-
               <ForensicFooter
                 isTrnLoading={Boolean(busy)}
                 // onSubmit={handleSubmit}
@@ -575,14 +568,4 @@ const styles = StyleSheet.create({
     gap: 5,
     marginBottom: 12,
   },
-  busy: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 16,
-    borderRadius: 14,
-    backgroundColor: "#FFFFFF",
-    marginBottom: 12,
-  },
-  busyText: { fontSize: 14, fontWeight: "700" },
 });

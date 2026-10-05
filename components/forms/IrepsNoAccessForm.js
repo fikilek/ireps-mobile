@@ -72,15 +72,18 @@ export function IrepsNoAccessForm({
   const preservedAppointment = !returnVisit && appointment && isLegacySavedNoAccess(value, originalAccess);
 
   useEffect(() => {
-    if (!visible || (!returnVisit && !dayOpen && !timeOpen)) return;
+    if (!visible || (!dayOpen && !timeOpen && !(returnVisit && appointment))) return;
     // Both the open picker and the closed form must notice when an agreement expires.
     let timer;
     const refresh = () => {
       clearTimeout(timer);
       const now = Date.now();
       setPickerNow(now);
-      validateForm();
-      timer = setTimeout(refresh, noAccessValidationDelay({ reasonCode, reasonOther, appointment }, originalAccess, now));
+      // On native, Formik refreshes its callback reference in a parent effect. This child
+      // effect can run first, so validateForm() alone may revalidate the PREVIOUS values
+      // and overwrite the change's errors until the next clock tick. Always pass this render.
+      validateForm(value);
+      timer = setTimeout(refresh, noAccessValidationDelay(value, originalAccess, now));
     };
     refresh();
     const subscription = AppState.addEventListener("change", (state) => {
@@ -90,7 +93,7 @@ export function IrepsNoAccessForm({
       clearTimeout(timer);
       subscription.remove();
     };
-  }, [visible, dayOpen, timeOpen, returnVisit, reasonCode, reasonOther, appointment, originalAccess, validateForm]);
+  }, [visible, dayOpen, timeOpen, returnVisit, appointment, value, originalAccess, validateForm]);
 
   const update = (patch) => onChange?.({ ...value, ...patch });
 
@@ -141,11 +144,11 @@ export function IrepsNoAccessForm({
               the chosen value). The same FormSelect every other form uses, so a worker meets
               one kind of dropdown everywhere and a change to it reaches all of them. */}
           <FormSelect label="NA REASON" name="reasonCode" options={NO_ACCESS_REASONS}
-            onValueChange={(nextReason) => {
+            getValuesForSelection={changeNoAccessReason}
+            onValueChange={() => {
               setDayOpen(false);
               setTimeOpen(false);
               setTimeError("");
-              onChange?.(changeNoAccessReason(value, nextReason));
             }}
           />
 
@@ -185,8 +188,8 @@ export function IrepsNoAccessForm({
           {/* 3. NA Appointment — required for the return-visit reason (NA-R020) */}
           <View style={[styles.appointmentSection, Boolean(appointmentErrorText) && styles.appointmentError]}>
           <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="calendar-clock" size={18} color="#dc2626" />
-            <Text style={styles.sectionTitle}>NA Appointment</Text>
+            <MaterialCommunityIcons name="calendar-clock" size={18} color={appointmentErrorText ? "#dc2626" : "#0f766e"} />
+            <Text style={[styles.sectionTitle, Boolean(appointmentErrorText) && styles.invalidTitle]}>NA Appointment</Text>
             <Text style={styles.required}>required</Text>
           </View>
 
@@ -338,7 +341,8 @@ const styles = StyleSheet.create({
     alignItems: "center", gap: 8, marginBottom: 12,
   },
 
-  sectionTitle: { fontSize: 14, fontWeight: "bold", color: "#dc2626" },
+  sectionTitle: { fontSize: 14, fontWeight: "bold", color: FORM_TEXT },
+  invalidTitle: { color: "#dc2626" },
   required: { fontSize: 11, fontWeight: "700", color: FORM_TEXT, marginLeft: "auto" },
   savedAppointment: { color: "#0f766e", fontSize: 13, lineHeight: 19, marginTop: 15 },
 

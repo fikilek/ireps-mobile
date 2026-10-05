@@ -11,7 +11,7 @@ export function validateNoAccessCapture(value = {}, media = [], {
   const errors = {};
   const reason = text(value.reasonCode);
   if (!NO_ACCESS_REASONS.some((entry) => entry.toUpperCase() === reason.toUpperCase())) {
-    errors.reasonCode = "Choose why you could not touch the meter.";
+    errors.reasonCode = "Choose why you could not access the meter.";
   }
   if (reason.toUpperCase() === "OTHER" && !reference(value.reasonOther)) {
     errors.reasonOther = "Type what stopped you reaching the meter.";
