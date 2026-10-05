@@ -382,6 +382,7 @@ const PremiseCard = memo(
                   ]}
                 >
                   <View
+                    collapsable={false}
                     style={[
                       styles.addressBadge,
                       isSelected && styles.addressBadgeSelected,
@@ -906,7 +907,7 @@ const styles = StyleSheet.create({
   },
   addressDetails: { flexShrink: 1, minWidth: 0 },
   addressPressable: { alignSelf: "flex-start", maxWidth: "100%" },
-  addressBadge: { borderRadius: 8, padding: 8 },
+  addressBadge: { borderRadius: 8, padding: 4, overflow: "hidden" },
   addressBadgeSelected: { backgroundColor: "lightgrey" },
 
   addressPressablePressed: {
