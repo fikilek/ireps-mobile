@@ -1,5 +1,4 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { format } from "date-fns"; // 🛰️ Switched to the Sovereign Date-fns Standard
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -14,6 +13,7 @@ import { ActivityIndicator, Modal, Portal } from "react-native-paper";
 
 // 🎯 Data Layer
 import { useWarehouse } from "../../../src/context/WarehouseContext";
+import { noAccessLedgerDetails } from "../../../src/features/meters/noAccessLedger";
 import { useGetTrnsByPremiseIdQuery } from "../../../src/redux/trnsApi";
 
 const NaScreen = () => {
@@ -46,22 +46,15 @@ const NaScreen = () => {
       ? item.media.find((m) => m?.tag === "noAccessPhoto")
       : null;
 
-    const createdAt = item?.metadata?.createdAt || item?.metadata?.updatedAt;
-    const createdByUser =
-      item?.metadata?.createdByUser || item?.metadata?.updatedByUser || "NAv";
-
-    const dateObj = createdAt ? new Date(createdAt) : null;
+    const details = noAccessLedgerDetails(item);
 
     return (
       <View style={styles.row}>
         {/* COL 1: TIMESTAMP */}
         <View style={styles.colTime}>
-          <Text style={styles.dateText}>
-            {dateObj ? format(dateObj, "dd MMM yy") : "---"}
-          </Text>
-          <Text style={styles.timeText}>
-            {dateObj ? format(dateObj, "HH:mm") : "--:--"}
-          </Text>
+          <Text style={styles.visitLabel}>Visit</Text>
+          <Text style={styles.dateText}>{details.visitDate}</Text>
+          <Text style={styles.timeText}>{details.visitTime}</Text>
         </View>
 
         {/* COL 2: REASON */}
@@ -69,7 +62,8 @@ const NaScreen = () => {
           <Text style={styles.reasonText}>
             {access?.reason || "Unknown Reason"}
           </Text>
-          <Text style={styles.agentText}>By: {createdByUser}</Text>
+          <Text style={styles.agentText}>By: {details.worker}</Text>
+          <Text style={styles.appointmentText}>{details.appointment}</Text>
         </View>
 
         {/* COL 3: THUMBNAIL */}
@@ -191,12 +185,14 @@ const styles = StyleSheet.create({
     borderColor: "#e2e8f0",
   },
   colTime: { width: 85 },
+  visitLabel: { fontSize: 10, color: "#64748b", marginBottom: 2 },
   dateText: { fontSize: 11, fontWeight: "900", color: "#64748b" },
   timeText: { fontSize: 10, color: "#94a3b8" },
 
-  colReason: { flex: 1, paddingHorizontal: 8 },
+  colReason: { flex: 1, minWidth: 0, paddingHorizontal: 8 },
   reasonText: { fontSize: 13, fontWeight: "800", color: "#1e293b" },
   agentText: { fontSize: 10, color: "#64748b", marginTop: 2 },
+  appointmentText: { fontSize: 11, lineHeight: 16, color: "#0f766e", marginTop: 6 },
 
   colPhoto: { width: 60, alignItems: "flex-end" },
   thumbnail: {
