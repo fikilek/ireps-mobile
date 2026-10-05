@@ -1,6 +1,6 @@
 import { isAppointmentInFuture } from "./noAccessAppointment.js";
 import { NO_ACCESS_REASONS, requiresNoAccessPhoto } from "./noAccessReasons.js";
-import { NO_ACCESS_APPOINTMENT_RULE_VERSION, isReturnVisitReason, sameNoAccessAgreement } from "./noAccessAppointmentPolicy.js";
+import { NO_ACCESS_APPOINTMENT_RULE_VERSION, isReturnVisitReason, sameNoAccessAgreement, normalizeNoAccessReasonCode } from "./noAccessAppointmentPolicy.js";
 
 const text = (value) => String(value ?? "").trim();
 const reference = (value) => text(value) && text(value).toUpperCase() !== "NAV" ? text(value) : "";
@@ -9,7 +9,7 @@ export function validateNoAccessCapture(value = {}, media = [], {
   now = Date.now(), originalAccess = null,
 } = {}) {
   const errors = {};
-  const reason = text(value.reasonCode);
+  const reason = normalizeNoAccessReasonCode(value.reasonCode);
   if (!NO_ACCESS_REASONS.some((entry) => entry.toUpperCase() === reason.toUpperCase())) {
     errors.reasonCode = "Choose why you could not access the meter.";
   }
@@ -24,7 +24,7 @@ export function validateNoAccessCapture(value = {}, media = [], {
     errors.appointment = "Choose the date and time agreed for the return visit.";
   }
   if (!returnVisit && value.appointment) {
-    errors.appointment = "Only Occupant requested a return visit can have an appointment. Change the reason to correct this visit.";
+    errors.appointment = "Only Return visit requested can have an appointment. Change the reason to correct this visit.";
   }
   // An unchanged queued agreement survives late delivery and evidence-only correction.
   const unchanged = sameNoAccessAgreement(value, originalAccess);
@@ -71,9 +71,9 @@ export function buildNoAccessPayload({ context = {}, trnId, capturedAt, value, m
       premise: { id: reference(context.premiseId), address: context.premiseAddress || "NAv", propertyType: context.premisePropertyType || "NAv" },
       access: {
         hasAccess: "no",
-        reasonCode: other ? "OTHER" : text(value.reasonCode),
+        reasonCode: other ? "OTHER" : normalizeNoAccessReasonCode(value.reasonCode),
         reasonOther: other ? text(value.reasonOther) : "NAv",
-        reason: other ? text(value.reasonOther) : text(value.reasonCode),
+        reason: other ? text(value.reasonOther) : normalizeNoAccessReasonCode(value.reasonCode),
         appointmentRuleVersion: NO_ACCESS_APPOINTMENT_RULE_VERSION,
         appointment: isReturnVisitReason(value.reasonCode) ? value.appointment || null : null,
       },

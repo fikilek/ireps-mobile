@@ -35,6 +35,7 @@ import { IrepsNoAccessForm } from "../../../../components/forms/IrepsNoAccessFor
 import { ForensicFooter } from "../../../../src/features/meters/ForensicFooter";
 import { NO_ACCESS_ROUTE } from "../../../../src/features/meters/accessGate";
 import { buildNoAccessTrnId } from "../../../../src/features/meters/meterDiscoveryTrnId";
+import { normalizeNoAccessReasonCode } from "../../../../src/features/meters/noAccessAppointmentPolicy";
 import { buildNoAccessPayload, noAccessContextFromQueue, validateNoAccessCapture } from "../../../../src/features/meters/noAccessCapture";
 import { persistNoAccessMeterDiscoveryMedia } from "../../../../src/utils/persistNoAccessMeterDiscoveryMedia";
 import { waitForNoAccessSend } from "../../../../src/features/meters/noAccessSendDeadline";
@@ -201,7 +202,7 @@ export default function NoAccessScreen() {
   // been filled in. This is the handle onto the same form the submit uses.
   const formRef = useRef(null);
   const initialValues = useMemo(() => ({
-    reasonCode: editingItem?.payload?.accessData?.access?.reasonCode || "",
+    reasonCode: normalizeNoAccessReasonCode(editingItem?.payload?.accessData?.access?.reasonCode),
     reasonOther: editingItem?.payload?.accessData?.access?.reasonOther === "NAv" ? "" : editingItem?.payload?.accessData?.access?.reasonOther || "",
     appointment: editingItem?.payload?.accessData?.access?.appointment || null,
     media: editingItem?.payload?.media || [],

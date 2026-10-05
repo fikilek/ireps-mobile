@@ -225,7 +225,7 @@ export const NO_ACCESS_RESULTS = Object.freeze([
   {
     code: "NO_ACCESS_APPOINTMENT_NOT_ALLOWED",
     title: "Check the reason for this visit",
-    body: "An appointment belongs to Occupant requested a return visit. Open the saved visit and correct its reason or remove the appointment.",
+    body: "An appointment belongs to Return visit requested. Open the saved visit and correct its reason or remove the appointment.",
   },
   {
     code: "NO_ACCESS_APPOINTMENT_NOT_FUTURE_AT_CAPTURE",
