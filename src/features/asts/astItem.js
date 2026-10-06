@@ -786,6 +786,7 @@ const AstItem = ({ item }) => {
     const premiseId = item?.accessData?.premise?.id || "";
     return withFrontGate({ erfId, premiseId }, () => {
       Alert.alert(ACCESS_GATE.title, ACCESS_GATE.message, [
+        { text: "CANCEL", style: "cancel" },
         {
           text: ACCESS_GATE.no,
           style: "destructive",
