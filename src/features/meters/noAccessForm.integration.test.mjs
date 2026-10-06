@@ -129,6 +129,48 @@ test("return selection validates immediately before any clock tick", async t => 
   assert.equal(Date.now(), now, "The clock did not advance");
 });
 
+test("Other requires an explanation even with a photo, and clearing it blocks submission again", async t => {
+  const form = await mount(t);
+  await form.reason("Other");
+  await form.photo();
+  const input = () => form.renderer.root.findAllByType("TextInput")
+    .find(node => node.props.label === "Other NA Reason");
+  const change = async value => act(async () => input().props.onChangeText(value));
+
+  for (const value of ["", "   \t\n", "NAv"]) {
+    await change(value);
+    assert.equal(form.state.errors.reasonOther, "Type what stopped you reaching the meter.");
+    assert.equal(input().props.error, true);
+    assert.equal(form.button("SUBMIT").props.disabled, true);
+    assert.equal(form.state.errors.media, undefined, "The explanation is the only missing requirement");
+  }
+
+  await change("  Guard asked me to contact the building manager  ");
+  assert.equal(form.state.errors.reasonOther, undefined);
+  assert.equal(input().props.error, false);
+  assert.equal(form.button("SUBMIT").props.disabled, false);
+  const payload = capture.buildNoAccessPayload({ context: { trnType: "METER_INSPECTION" },
+    value: form.state.values, media: photo, trnId: "TEST_OTHER", capturedAt: new Date(now).toISOString() });
+  assert.equal(payload.accessData.access.reasonOther, "Guard asked me to contact the building manager");
+
+  await change("");
+  assert.ok(form.state.errors.reasonOther);
+  assert.equal(form.button("SUBMIT").props.disabled, true);
+  assert.equal(Date.now(), now, "Validation must not wait for a timer");
+});
+
+test("a saved Other visit with no explanation remains invalid when reopened", async t => {
+  const saved = { ...initial, reasonCode: "OTHER", reasonOther: "   ", media: photo };
+  const form = await mount(t, saved, saved);
+  assert.ok(form.state.errors.reasonOther);
+  assert.equal(form.state.isValid, false);
+  assert.equal(form.button("SUBMIT").props.disabled, true);
+  const input = form.renderer.root.findAllByType("TextInput").find(node => node.props.label === "Other NA Reason");
+  await act(async () => input.props.onChangeText("Guard could not find the meter room key"));
+  assert.equal(form.state.errors.reasonOther, undefined);
+  assert.equal(form.button("SUBMIT").props.disabled, false);
+});
+
 test("switching ordinary reasons clears the photo and immediately requires fresh evidence", async t => {
   const form = await mount(t);
   await form.reason("Property Locked");
