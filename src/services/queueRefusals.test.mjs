@@ -39,7 +39,9 @@ test("a refusal the phone has never heard of still stops (x11 and m06)", () => {
 });
 
 test("only a job that is genuinely not ready yet keeps waiting", () => {
-  assert.deepEqual(keepWaiting, ["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND"]);
+  // Transport/authentication failures can also be returned by the callable. They are
+  // temporary delivery failures, unlike a refusal of the submitted work.
+  assert.deepEqual(keepWaiting, ["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND", "UNAUTHENTICATED", "UNAVAILABLE", "DEADLINE_EXCEEDED", "INTERNAL"]);
   const branch = queueSource.slice(
     queueSource.indexOf("if (KEEP_WAITING_CODES.includes(code)) {"),
     queueSource.indexOf("// The server answered and refused"),
@@ -87,11 +89,11 @@ test("a refusal the server THROWS also stops, and a lost connection still waits"
     "the Firebase client prefixes these, so the prefix must be stripped",
   );
 
-  // Both catch blocks ask it, and both keep their fallback as waiting.
-  for (const source of [queueSource, storageSource]) {
-    assert.match(source, /isThrownRefusal\(code\)/);
-    assert.match(source, /markSubmissionQueueItemFailed\(/);
-  }
+  // Manual sync now delegates to the same processor as automatic sync.
+  assert.match(queueSource, /isThrownRefusal\(code\)/);
+  assert.match(queueSource, /markSubmissionQueueItemFailed\(/);
+  assert.match(storageSource, /processSubmissionQueue\(\{ agentUid, agentName, queueItemIds: \[queueItemId\], includeSyncing: true \}\)/);
+  assert.doesNotMatch(storageSource, /httpsCallable\(/);
 });
 
 test("waiting is decided by the code, never by words in the message", () => {
@@ -111,12 +113,11 @@ test("m06 is closed: nothing the server refuses is written back as waiting", () 
   const failed = failedSource.slice(failedSource.indexOf("export const markSubmissionQueueItemFailed"));
   assert.match(failed, /status: "PENDING"/);
 
-  // Both files send a refusal to the refusal marker, and keep the waiting marker for their catch block.
-  for (const source of [queueSource, storageSource]) {
-    const waiting = (source.match(/markSubmissionQueueItemFailed\(/g) || []).length;
-    assert.equal(waiting, 1, "only the catch block may keep a job waiting");
-    assert.match(source, /markSubmissionQueueItemRefused\(/);
-  }
+  // Only the shared processor owns outcomes; the queue screen must not overwrite them.
+  const waiting = (queueSource.match(/markSubmissionQueueItemFailed\(/g) || []).length;
+  assert.equal(waiting, 1, "only the catch block may keep a job waiting");
+  assert.match(queueSource, /markSubmissionQueueItemRefused\(/);
+  assert.doesNotMatch(storageSource, /markSubmissionQueueItem(?:Failed|Refused)\(/);
 });
 
 test("a refused job can still be opened, so Remove is not the only way out", () => {

@@ -10,6 +10,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { buildDeviceCaptureTimes } from "./deviceCaptureTimes.js";
 
 const discoverySource = await readFile(
   new URL("./FormMeterDiscovery.js", import.meta.url),
@@ -35,10 +36,13 @@ test("Meter Discovery sends the time the work was done", () => {
   const metadata = discoverySource.slice(at, at + 400);
   assert.match(
     metadata,
-    /createdOnDevice: timestamp/,
+    /\.\.\.buildDeviceCaptureTimes\(editQueueItem\?\.payload\?\.metadata, timestamp\)/,
     "the phone does not say when the work was done, so the office will date it on arrival",
   );
-  assert.match(metadata, /updatedOnDevice: timestamp/);
+  const timestamp = "2026-10-06T07:00:00.000Z";
+  assert.deepEqual(buildDeviceCaptureTimes(undefined, timestamp), {
+    createdOnDevice: timestamp, updatedOnDevice: timestamp,
+  });
 });
 
 test("Meter Installation sends it too", () => {
@@ -46,8 +50,12 @@ test("Meter Installation sends it too", () => {
   assert.ok(at > 0, "the installation form no longer builds its own metadata");
 
   const metadata = installationSource.slice(at, at + 400);
-  assert.match(metadata, /createdOnDevice: timestamp/);
-  assert.match(metadata, /updatedOnDevice: timestamp/);
+  assert.match(metadata, /\.\.\.buildDeviceCaptureTimes\(editQueueItem\?\.payload\?\.metadata, timestamp\)/);
+  const original = "2026-10-06T07:00:00.000Z";
+  const edited = "2026-10-06T08:00:00.000Z";
+  assert.deepEqual(buildDeviceCaptureTimes({ createdOnDevice: original }, edited), {
+    createdOnDevice: original, updatedOnDevice: edited,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -170,7 +178,7 @@ test("a premise that is not ready yet still waits instead of being refused", () 
   // that will change on its own keeps waiting. The premise arriving late is the second kind.
   assert.match(
     queueSource,
-    /const KEEP_WAITING_CODES = \["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND"\]/,
+    /const KEEP_WAITING_CODES = \["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND",/,
   );
 });
 

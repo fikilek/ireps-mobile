@@ -10,6 +10,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { buildNoAccessPayload } from "../features/meters/noAccessCapture.js";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
@@ -242,11 +243,11 @@ test("the No Access screen takes no position from the phone at all", () => {
 
   // It sends the meter id instead, which is all the server needs to ask whether this no access
   // HAS a meter - a Reading does, a first-visit Discovery does not.
-  assert.match(
-    noAccessSource,
-    /astId: context\.astId \|\| null/,
-    "the server cannot tell whether there is an asset to take a position from",
-  );
+  assert.match(noAccessSource, /buildNoAccessPayload\(\{ context, trnId, capturedAt, value,/);
+  for (const astId of ["AST_1", null]) {
+    const payload = buildNoAccessPayload({ context: { astId }, value: {}, media: [] });
+    assert.equal(payload.astId, astId, "the server needs the asset reference to resolve the known location");
+  }
 
   // The retired home. Every record that ever used it was a no access written by this screen.
   assert.equal(
@@ -311,7 +312,7 @@ test("the No Access id belongs to the capture, not to the screen", () => {
 
   assert.match(
     noAccessCode,
-    /const trnId = buildTrnId\(\)/,
+    /const trnId = editingItem\?\.payload\?\.id \|\| context\.instructionTrnId \|\| buildTrnId\(\)/,
     "the id is no longer built for each submission",
   );
 
@@ -602,10 +603,9 @@ test("TR-R001: a No Access says it is field work", () => {
   // an instruction, or field work started on the spot from the meter card" - and this form
   // never said which, so the server could not tell the permitted case from the forbidden one.
   //
-  // A no access is always field work: the worker is standing at the property, turned away.
-  assert.match(
-    noAccessCode,
-    /origin: \{ channel: "FIELD" \}/,
-    "the capture does not say which channel it came through, so every field-originated lifecycle no access is refused",
-  );
+  // An ad hoc visit is FIELD; executing an existing instruction retains OFFICE origin.
+  const field = buildNoAccessPayload({ context: {}, value: {}, media: [] });
+  assert.equal(field.origin.channel, "FIELD");
+  const office = buildNoAccessPayload({ context: { instructionTrnId: "OFFICE_1" }, value: {}, media: [] });
+  assert.equal(office.origin.channel, "OFFICE");
 });
