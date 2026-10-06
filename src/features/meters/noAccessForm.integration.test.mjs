@@ -29,7 +29,7 @@ async function mount(t, openingValues = initial, originalAccess = null) {
   let state;
   let alert;
   let foreground;
-  const native = Object.fromEntries(["View", "Text", "TouchableOpacity", "ScrollView", "ActivityIndicator"].map(name => [name, name]));
+  const native = Object.fromEntries(["View", "Text", "TouchableOpacity", "ScrollView", "ActivityIndicator", "Image", "Modal"].map(name => [name, name]));
   Object.assign(native, {
     StyleSheet: { create: value => value }, Platform: { OS: "android" },
     Alert: { alert: (...args) => { alert = args; } },
@@ -49,7 +49,7 @@ async function mount(t, openingValues = initial, originalAccess = null) {
     "../../src/features/meters/noAccessAppointmentPolicy": policy,
     "../../src/features/meters/noAccessAppointment": appointment,
     "../../utils/formCanSubmit": readiness,
-    "../media/IrepsMedia": { IrepsMedia: "Media" },
+    "./IrepsCamera": { IrepsCamera: "Camera" },
     "../../../components/forms/SubmitBlockers": { SubmitBlockers: "SubmitBlockers" },
   };
   function load(file) {
@@ -66,6 +66,7 @@ async function mount(t, openingValues = initial, originalAccess = null) {
     return module.exports;
   }
   overrides["./FormSelect"] = load("components/forms/FormSelect.js");
+  overrides["../media/IrepsMedia"] = load("components/media/IrepsMedia.js");
   const { IrepsNoAccessForm } = load("components/forms/IrepsNoAccessForm.js");
   const { ForensicFooter } = load("src/features/meters/ForensicFooter.js");
   function Body() {
@@ -121,10 +122,53 @@ test("return selection validates immediately before any clock tick", async t => 
   await form.photo();
   assert.equal(form.button("SUBMIT").props.disabled, false);
   await form.reason(policy.RETURN_VISIT_REASON);
+  assert.equal(form.state.values.media.length, 0, "Changing to a return visit removes the previous photo from the payload");
   assert.ok(form.state.errors.appointment, "Newly visible appointment must already be invalid; no timer has run");
   assert.equal(form.state.errors.media, undefined);
   assert.equal(form.button("SUBMIT").props.disabled, true);
   assert.equal(Date.now(), now, "The clock did not advance");
+});
+
+test("switching ordinary reasons clears the photo and immediately requires fresh evidence", async t => {
+  const form = await mount(t);
+  await form.reason("Property Locked");
+  await form.photo();
+  assert.ok(form.renderer.root.findAllByType("Image").length > 0);
+  assert.equal(form.button("SUBMIT").props.disabled, false);
+  await form.reason("Access Refused by Occupant");
+  assert.equal(form.state.values.media.length, 0);
+  assert.equal(form.renderer.root.findAllByType("Image").length, 0, "The previous thumbnail must disappear too");
+  assert.ok(form.state.errors.media);
+  assert.equal(form.button("SUBMIT").props.disabled, true);
+  await form.photo();
+  assert.equal(form.state.errors.media, undefined);
+  assert.equal(form.button("SUBMIT").props.disabled, false);
+  await form.reason(policy.RETURN_VISIT_REASON);
+  await form.agreement();
+  await form.reason("Property Locked");
+  assert.equal(form.state.values.media.length, 0, "Returning to the original reason must not resurrect its photo");
+  assert.equal(form.state.values.appointment, null);
+  assert.ok(form.state.errors.media);
+  assert.equal(form.button("SUBMIT").props.disabled, true);
+});
+
+test("reselecting a saved reason keeps its photo and confirmed reset restores the opening draft", async t => {
+  const saved = { ...initial, reasonCode: "Property Locked", media: photo };
+  const form = await mount(t, saved, saved);
+  await form.reason("Property Locked");
+  assert.deepEqual(form.state.values.media, photo);
+  assert.equal(form.state.dirty, false);
+  await form.reason("Access Refused by Occupant");
+  assert.equal(form.state.values.media.length, 0);
+  await act(async () => form.button("RESET").props.onPress());
+  await act(async () => form.alert[2].find(button => button.text === "CANCEL").onPress?.());
+  assert.equal(form.state.values.media.length, 0);
+  await act(async () => form.button("RESET").props.onPress());
+  await act(async () => form.alert[2].find(button => button.text === "YES, RESET").onPress());
+  assert.deepEqual(form.state.values, saved);
+  assert.ok(form.renderer.root.findAllByType("Image").length > 0);
+  assert.equal(form.state.dirty, false);
+  assert.equal(form.button("SUBMIT").props.disabled, true);
 });
 
 test("completing and removing an appointment updates errors before a clock tick", async t => {

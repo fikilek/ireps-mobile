@@ -23,10 +23,13 @@ export function isLegacySavedNoAccess(value, originalAccess) {
 }
 
 export function changeNoAccessReason(value, reasonCode) {
+  const sameReason = code(normalizeNoAccessReasonCode(reasonCode)) === code(normalizeNoAccessReasonCode(value.reasonCode));
   return {
     ...value,
     reasonCode: normalizeNoAccessReasonCode(reasonCode),
     reasonOther: code(reasonCode) === "OTHER" ? value.reasonOther : "",
-    appointment: code(normalizeNoAccessReasonCode(reasonCode)) === code(normalizeNoAccessReasonCode(value.reasonCode)) ? value.appointment : null,
+    appointment: sameReason ? value.appointment : null,
+    // Evidence belongs to the selected reason; reselecting that same reason keeps it.
+    ...(sameReason ? {} : { media: [] }),
   };
 }
