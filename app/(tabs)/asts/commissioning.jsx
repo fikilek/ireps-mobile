@@ -39,22 +39,12 @@ import {
 } from "../../../src/utils/submissionQueue";
 import { FORM_TEXT } from "../../../src/theme/formColors";
 import { buildDeviceCaptureTimes } from "../../../src/features/meters/deviceCaptureTimes";
+import { buildTrnId } from "../../../src/features/trns/trnId";
 
+// NA-R005: every transaction id is built in one place. This used to be built here, with
+// "NA" for an unknown meter type where the rule says "NAv".
 function buildMeterCommissioningTrnId({ wardPcode, erfNo, meterType }) {
-  const ts = Date.now();
-
-  const safeWardPcode = String(wardPcode || "NAv")
-    .replace(/[^A-Za-z0-9]/g, "")
-    .slice(0, 12);
-
-  const safeErfNo = String(erfNo || "NAv")
-    .replace(/[^A-Za-z0-9]/g, "")
-    .slice(0, 12);
-
-  const typeCode =
-    meterType === "water" ? "WTR" : meterType === "electricity" ? "ELC" : "NA";
-
-  return `TRN_MCOM_${ts}_${typeCode}_${safeWardPcode}_${safeErfNo}`;
+  return buildTrnId({ trnType: "METER_COMMISSIONING", meterType, wardPcode, erfNo });
 }
 
 function withSubmitTimeout(promise, timeoutMs = 15000) {

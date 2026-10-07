@@ -52,6 +52,7 @@ import { buildInstallationRouteParams } from "../../../src/features/meters/norma
 import { functions } from "../../../src/firebase";
 import { useAuth } from "../../../src/hooks/useAuth";
 import { getLocalSelectLookup } from "../../../src/features/meters/formOptions";
+import { buildTrnId } from "../../../src/features/trns/trnId";
 import { useGetServiceProvidersQuery } from "../../../src/redux/spApi";
 import {
   addSubmissionQueueItem,
@@ -1149,26 +1150,15 @@ export default function FormMeterRemoval() {
     if (instructionTrnId) return instructionTrnId;
     if (!isFieldOrigin) return "";
 
-    const cleanMeterType = String(meterType || "")
-      .trim()
-      .toLowerCase();
-
-    const serviceCode =
-      cleanMeterType === "electricity" || cleanMeterType === "elec"
-        ? "ELC"
-        : cleanMeterType === "water" || cleanMeterType === "wtr"
-          ? "WTR"
-          : "MTR";
-
-    const safeWardPcode = String(wardPcode || "WARD")
-      .replace(/[^a-zA-Z0-9]+/g, "_")
-      .toUpperCase();
-
-    const safeErfNo = String(erfNo || "ERF")
-      .replace(/[^a-zA-Z0-9]+/g, "_")
-      .toUpperCase();
-
-    return `TRN_MREM_${Date.now()}_${serviceCode}_${safeWardPcode}_${safeErfNo}`;
+    // NA-R005: every transaction id is built in one place. This used to be built here,
+    // with "MTR" for an unknown meter type and "WARD"/"ERF" for a missing ward or ERF -
+    // spellings no other form used, in a string that can never be corrected.
+    return buildTrnId({
+      trnType: "METER_REMOVAL",
+      meterType,
+      wardPcode,
+      erfNo,
+    });
   }, [instructionTrnId, isFieldOrigin, meterType, wardPcode, erfNo]);
 
   // UI-R003: lists on the phone, never from the server.

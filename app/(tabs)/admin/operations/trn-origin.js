@@ -31,6 +31,7 @@ import { useGetServiceProvidersQuery } from "../../../../src/redux/spApi";
 import { useGetUsersQuery } from "../../../../src/redux/usersApi";
 import { addSubmissionQueueItem } from "../../../../src/utils/submissionQueue";
 import { FORM_TEXT, FORM_PLACEHOLDER } from "../../../../src/theme/formColors";
+import { buildTrnId } from "../../../../src/features/trns/trnId";
 
 const LCT_TYPES = {
   METER_INSPECTION: {
@@ -286,20 +287,16 @@ function getAssetGps(asset) {
   };
 }
 
-function getTrnIdSuffix(asset) {
-  const meterType = getMeterType(asset);
-  const typeCode =
-    meterType === "electricity" ? "ELC" : meterType === "water" ? "WTR" : "GEN";
-
-  const wardPcode = asset?.accessData?.parents?.wardPcode || "NA";
-  const erfNo = asset?.accessData?.erfNo || "NA";
-
-  return `${typeCode}_${wardPcode}_${erfNo}`;
-}
-
+// NA-R005: every transaction id is built in one place. The office path used to build its
+// own here, answering "GEN" for an unknown meter type and "NA" for a missing ward or ERF —
+// two more spellings of the same gap, in a string that can never be corrected.
 function buildInstructionTrnId({ trnType, asset }) {
-  const config = LCT_TYPES[trnType] || LCT_TYPES.METER_INSPECTION;
-  return `${config.prefix}_${Date.now()}_${getTrnIdSuffix(asset)}`;
+  return buildTrnId({
+    trnType,
+    meterType: getMeterType(asset),
+    wardPcode: asset?.accessData?.parents?.wardPcode,
+    erfNo: asset?.accessData?.erfNo,
+  });
 }
 
 // function normalizePublishedOptions(options = []) {

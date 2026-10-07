@@ -49,6 +49,7 @@ import {
 } from "../../../src/utils/submissionQueue";
 import { FORM_TEXT } from "../../../src/theme/formColors";
 import { getFormOptions } from "../../../src/features/meters/formOptions";
+import { buildTrnId } from "../../../src/features/trns/trnId";
 import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
 
 const EMPTY_SELECT_WITH_OTHER = {
@@ -1027,26 +1028,15 @@ export default function FormMeterReconnection() {
     if (instructionTrnId) return instructionTrnId;
     if (!isFieldOrigin) return "";
 
-    const cleanMeterType = String(meterType || "")
-      .trim()
-      .toLowerCase();
-
-    const serviceCode =
-      cleanMeterType === "electricity" || cleanMeterType === "elec"
-        ? "ELC"
-        : cleanMeterType === "water" || cleanMeterType === "wtr"
-          ? "WTR"
-          : "MTR";
-
-    const safeWardPcode = String(wardPcode || "WARD")
-      .replace(/[^a-zA-Z0-9]+/g, "_")
-      .toUpperCase();
-
-    const safeErfNo = String(erfNo || "ERF")
-      .replace(/[^a-zA-Z0-9]+/g, "_")
-      .toUpperCase();
-
-    return `TRN_MRCN_${Date.now()}_${serviceCode}_${safeWardPcode}_${safeErfNo}`;
+    // NA-R005: every transaction id is built in one place. This used to be built here,
+    // with "MTR" for an unknown meter type and "WARD"/"ERF" for a missing ward or ERF -
+    // spellings no other form used, in a string that can never be corrected.
+    return buildTrnId({
+      trnType: "METER_RECONNECTION",
+      meterType,
+      wardPcode,
+      erfNo,
+    });
   }, [instructionTrnId, isFieldOrigin, meterType, wardPcode, erfNo]);
 
   function buildTrnSystemFields() {

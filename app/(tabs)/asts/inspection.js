@@ -77,6 +77,7 @@ import {
   updateSubmissionQueueItem,
 } from "../../../src/utils/submissionQueue";
 import { FORM_TEXT } from "../../../src/theme/formColors";
+import { buildTrnId } from "../../../src/features/trns/trnId";
 
 const EMPTY_SELECT_WITH_OTHER = {
   code: "",
@@ -2462,12 +2463,17 @@ export default function InspectionScreen() {
     )
       .replace(/[^a-zA-Z0-9]+/g, "_")
       .toUpperCase();
-    const serviceCode =
-      normalizeLower(action?.meterType) === "water" ? "WTR" : "ELC";
-
+    // NA-R005: every transaction id is built in one place. This used to be built here, and
+    // it answered "ELC" for anything that was not water — so a meter of unknown kind was
+    // recorded as electricity, in an id that can never be corrected. It is `NAv` now.
     fieldInspectionTrnIdRef.current =
       editQueueItem?.payload?.id ||
-      `TRN_MINSP_${Date.now()}_${serviceCode}_${safeWard}_${safeErf}`;
+      buildTrnId({
+        trnType: "METER_INSPECTION",
+        meterType: action?.meterType,
+        wardPcode: safeWard,
+        erfNo: safeErf,
+      });
   }
 
   // The number of this inspection: the office instruction it executes, or its

@@ -48,6 +48,7 @@ import {
 } from "../../utils/submissionQueue";
 import { ForensicFooter } from "./ForensicFooter";
 import { isCompleteNoAccessReason } from "./noAccessReasons";
+import { buildTrnId } from "../trns/trnId.js";
 import {
   anomalyPhotoRequired,
   getFormOptionValues,
@@ -69,21 +70,10 @@ function getOptions(name) {
   return list;
 }
 
+// NA-R005: every transaction id is built in one place. This used to be built here, with
+// "NA" for an unknown meter type where the rule says "NAv".
 function buildMeterInstallationTrnId({ wardPcode, erfNo, meterType }) {
-  const ts = Date.now();
-
-  const safeWardPcode = String(wardPcode || "NAv")
-    .replace(/[^A-Za-z0-9]/g, "")
-    .slice(0, 12);
-
-  const safeErfNo = String(erfNo || "NAv")
-    .replace(/[^A-Za-z0-9]/g, "")
-    .slice(0, 12);
-
-  const typeCode =
-    meterType === "water" ? "WTR" : meterType === "electricity" ? "ELC" : "NA";
-
-  return `TRN_MINST_${ts}_${typeCode}_${safeWardPcode}_${safeErfNo}`;
+  return buildTrnId({ trnType: "METER_INSTALLATION", meterType, wardPcode, erfNo });
 }
 
 function normalizeInstallMeterType(value) {

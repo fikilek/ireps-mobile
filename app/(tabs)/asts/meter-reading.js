@@ -55,6 +55,7 @@ import { processSubmissionQueue } from "../../../src/services/processSubmissionQ
 import { scheduleMeterDiscoveryQueueSyncRetry } from "../../../src/services/startMeterDiscoveryQueueSyncService";
 import { waitForNoAccessSend as waitForQueuedSend } from "../../../src/features/meters/noAccessSendDeadline";
 import { isRefusedByOffice, isSentToOffice } from "../../../src/features/savedWork/savedWorkRemovalRules";
+import { buildTrnId } from "../../../src/features/trns/trnId";
 
 const EMPTY_SELECT_WITH_OTHER = {
   code: "",
@@ -1313,26 +1314,15 @@ export default function FormMeterReading() {
   const fieldOriginatedTrnId = useMemo(() => {
     if (instructionTrnId) return instructionTrnId;
 
-    const cleanMeterType = String(meterType || "")
-      .trim()
-      .toLowerCase();
-
-    const serviceCode =
-      cleanMeterType === "electricity" || cleanMeterType === "elec"
-        ? "ELC"
-        : cleanMeterType === "water" || cleanMeterType === "wtr"
-          ? "WTR"
-          : "MTR";
-
-    const safeWardPcode = String(wardPcode || "WARD")
-      .replace(/[^a-zA-Z0-9]+/g, "_")
-      .toUpperCase();
-
-    const safeErfNo = String(erfNo || "ERF")
-      .replace(/[^a-zA-Z0-9]+/g, "_")
-      .toUpperCase();
-
-    return `TRN_MREAD_${Date.now()}_${serviceCode}_${safeWardPcode}_${safeErfNo}`;
+    // NA-R005: every transaction id is built in one place. This used to be built here,
+    // with "MTR" for an unknown meter type and "WARD"/"ERF" for a missing ward or ERF -
+    // spellings no other form used, in a string that can never be corrected.
+    return buildTrnId({
+      trnType: "METER_READING",
+      meterType,
+      wardPcode,
+      erfNo,
+    });
   }, [instructionTrnId, meterType, wardPcode, erfNo]);
 
   // UI-R003: lists on the phone, never from the server.
