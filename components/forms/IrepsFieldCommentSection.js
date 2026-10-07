@@ -8,11 +8,10 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from "expo-audio";
-import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Location from "expo-location";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { getIn, useFormikContext } from "formik";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   AppState,
@@ -24,7 +23,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { ActivityIndicator, IconButton, Surface } from "react-native-paper";
+import { IconButton, Surface } from "react-native-paper";
 
 import { IrepsMedia } from "../media/IrepsMedia";
 import { FORM_TEXT, FORM_PLACEHOLDER } from "../../src/theme/formColors";
@@ -310,22 +309,24 @@ function ForensicMediaSlot({
       </View>
 
       <View style={styles.irepsMediaContainer}>
-        <View style={styles.cameraBox}>
-          <IconButton
-            icon={recording ? "stop" : icon}
-            mode="contained"
-            containerColor={recording ? "#DC2626" : "#34D399"}
-            iconColor="white"
-            size={28}
-            onPress={onCapture}
-            disabled={disabled || (Boolean(item) && !recording)}
-          />
-          {recording ? (
-            <Text style={styles.recordingTime}>
-              {formatDuration(recordingDuration)}
-            </Text>
-          ) : null}
-        </View>
+        {onCapture ? (
+          <View style={styles.cameraBox}>
+            <IconButton
+              icon={recording ? "stop" : icon}
+              mode="contained"
+              containerColor={recording ? "#DC2626" : "#34D399"}
+              iconColor="white"
+              size={28}
+              onPress={onCapture}
+              disabled={disabled || (Boolean(item) && !recording)}
+            />
+            {recording ? (
+              <Text style={styles.recordingTime}>
+                {formatDuration(recordingDuration)}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={styles.ribbonSlot}>
           {item ? (
@@ -399,17 +400,11 @@ export function IrepsFieldCommentSection({
   disabled = false,
 }) {
   const { values, setFieldValue } = useFormikContext();
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const audioRecorderState = useAudioRecorderState(audioRecorder);
 
-  const [cameraVisible, setCameraVisible] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [recordingVideo, setRecordingVideo] = useState(false);
   const [currentGps, setCurrentGps] = useState(null);
   const [previewType, setPreviewType] = useState(null);
-
-  const cameraRef = useRef(null);
 
   const commentValue = String(getIn(values, commentName) || "");
   const media = normalizeMediaArray(getIn(values, mediaName));
@@ -527,69 +522,6 @@ export function IrepsFieldCommentSection({
     }
   }
 
-  async function openVideoCamera() {
-    if (disabled || video) return;
-
-    if (!cameraPermission?.granted) {
-      const result = await requestCameraPermission();
-
-      if (!result?.granted) {
-        Alert.alert(
-          "Camera Permission Required",
-          "Camera access is required to record a field comment video.",
-        );
-        return;
-      }
-    }
-
-    await resolveGps();
-    setCameraVisible(true);
-  }
-
-  async function startVideoRecording() {
-    if (!cameraRef.current || recordingVideo || processing || video) return;
-
-    try {
-      setRecordingVideo(true);
-      setProcessing(true);
-
-      const result = await cameraRef.current.recordAsync();
-
-      if (!result?.uri) {
-        throw new Error("No video URI returned.");
-      }
-
-      replaceTaggedMedia(
-        FIELD_COMMENT_MEDIA_TAGS.video,
-        buildMediaObject({
-          tag: FIELD_COMMENT_MEDIA_TAGS.video,
-          uri: result.uri,
-          type: "video",
-          source: "camera",
-        }),
-      );
-
-      setCameraVisible(false);
-    } catch (error) {
-      console.log("IrepsFieldCommentSection startVideoRecording error", error);
-
-      if (!String(error?.message || "").includes("Recording stopped")) {
-        Alert.alert("Video Failed", error?.message || "Could not record video.");
-      }
-    } finally {
-      setRecordingVideo(false);
-      setProcessing(false);
-    }
-  }
-
-  function stopVideoRecording() {
-    try {
-      cameraRef.current?.stopRecording?.();
-    } catch (error) {
-      console.log("IrepsFieldCommentSection stopVideoRecording error", error);
-    }
-  }
-
   async function startVoiceRecording() {
     if (disabled || voice || isRecordingAudio) return;
 
@@ -674,7 +606,7 @@ export function IrepsFieldCommentSection({
       </View>
 
       <Text style={styles.sectionHelpText}>
-        Optional field notes and supporting media. This section does not block submission.
+        Add optional text, a photo or a voice clip.
       </Text>
 
       <View style={styles.questionCard}>
@@ -739,21 +671,20 @@ export function IrepsFieldCommentSection({
         type="voice"
       />
 
-      <ForensicMediaSlot
-        title="Video Clip"
-        description="Record an optional supporting field video."
-        icon="video-outline"
-        item={video}
-        onCapture={openVideoCamera}
-        onRemove={() => {
-          setPreviewType(null);
-          replaceTaggedMedia(FIELD_COMMENT_MEDIA_TAGS.video, null);
-        }}
-        onPreview={() => setPreviewType("video")}
-        disabled={disabled}
-        recording={recordingVideo}
-        type="video"
-      />
+      {video ? (
+        <ForensicMediaSlot
+          title="Saved Video Clip"
+          description="Previously captured field video."
+          item={video}
+          onRemove={() => {
+            setPreviewType(null);
+            replaceTaggedMedia(FIELD_COMMENT_MEDIA_TAGS.video, null);
+          }}
+          onPreview={() => setPreviewType("video")}
+          disabled={disabled}
+          type="video"
+        />
+      ) : null}
 
       {previewType === "voice" && voice ? (
         <FieldCommentAudioPreviewModal
@@ -768,71 +699,6 @@ export function IrepsFieldCommentSection({
           onClose={() => setPreviewType(null)}
         />
       ) : null}
-
-      <Modal
-        visible={cameraVisible}
-        animationType="slide"
-        onRequestClose={() => {
-          if (recordingVideo) {
-            stopVideoRecording();
-          }
-
-          setCameraVisible(false);
-        }}
-      >
-        <View style={styles.cameraScreen}>
-          <CameraView
-            ref={cameraRef}
-            style={StyleSheet.absoluteFill}
-            facing="back"
-            mode="video"
-          />
-
-          <View style={styles.cameraOverlay} pointerEvents="box-none">
-            <View style={styles.cameraTopSection}>
-              <Text style={styles.cameraGuideText}>
-                ALIGN {FIELD_COMMENT_MEDIA_TAGS.video.toUpperCase()}
-              </Text>
-            </View>
-
-            <View style={styles.cameraReticle} />
-
-            <View style={styles.cameraBottomSection}>
-              <IconButton
-                icon="close"
-                iconColor="white"
-                containerColor="rgba(0,0,0,0.3)"
-                onPress={() => {
-                  if (recordingVideo) {
-                    stopVideoRecording();
-                  }
-
-                  setCameraVisible(false);
-                }}
-              />
-
-              <Pressable
-                style={styles.shutterButton}
-                onPress={recordingVideo ? stopVideoRecording : startVideoRecording}
-                disabled={processing && !recordingVideo}
-              >
-                <View
-                  style={[
-                    styles.shutterInner,
-                    recordingVideo && styles.videoStopInner,
-                  ]}
-                >
-                  {processing && !recordingVideo ? (
-                    <ActivityIndicator color="red" />
-                  ) : null}
-                </View>
-              </Pressable>
-
-              <View style={{ width: 60 }} />
-            </View>
-          </View>
-        </View>
-      </Modal>
     </Surface>
   );
 }
@@ -1131,72 +997,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "900",
     marginTop: 3,
-  },
-
-  cameraScreen: {
-    flex: 1,
-    backgroundColor: "black",
-  },
-
-  cameraOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 60,
-  },
-
-  cameraTopSection: {
-    alignItems: "center",
-  },
-
-  cameraGuideText: {
-    color: "white",
-    fontWeight: "bold",
-    backgroundColor: "rgba(0,0,0,0.5)",
-    padding: 10,
-    borderRadius: 20,
-  },
-
-  cameraReticle: {
-    width: 280,
-    height: 240,
-    borderWidth: 2,
-    borderColor: "#34D399",
-    borderStyle: "dashed",
-    borderRadius: 20,
-  },
-
-  cameraBottomSection: {
-    flexDirection: "row",
-    width: "100%",
-    justifyContent: "space-around",
-    alignItems: "center",
-  },
-
-  shutterButton: {
-    width: 75,
-    height: 75,
-    borderRadius: 40,
-    backgroundColor: "white",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  shutterInner: {
-    width: 65,
-    height: 65,
-    borderRadius: 35,
-    borderWidth: 2,
-    borderColor: "black",
-  },
-
-  videoStopInner: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    backgroundColor: "#DC2626",
-    borderWidth: 0,
-    alignSelf: "center",
-    marginTop: 16,
   },
 });
