@@ -609,3 +609,46 @@ test("TR-R001: a No Access says it is field work", () => {
   const office = buildNoAccessPayload({ context: { instructionTrnId: "OFFICE_1" }, value: {}, media: [] });
   assert.equal(office.origin.channel, "OFFICE");
 });
+
+// NA-R063 … NA-R066 — a refusal is one of two things (owner, 7 October 2026).
+
+test("NA-R065: the capture the app built wrong is not classed as a network fault", async () => {
+  // The owner's worked example. INVALID_PREMISE_ID means the payload named no premise; NA-R084.1
+  // forbids backfilling one, so it can never become true later. It sat in KEEP_WAITING_CODES
+  // beside the genuine network faults, so the sender retried it on every signal change and every
+  // rung of the ladder while the card read "Draft saved locally".
+  const queueSource = await read("./processSubmissionQueue.js");
+  const list = queueSource.slice(
+    queueSource.indexOf("const KEEP_WAITING_CODES"),
+    queueSource.indexOf("\n", queueSource.indexOf("const KEEP_WAITING_CODES")),
+  );
+
+  assert.doesNotMatch(
+    list,
+    /INVALID_PREMISE_ID/,
+    "a capture that named no premise is being retried for ever and called a network fault",
+  );
+
+  // The genuinely transient ones stay. Removing them would strand a worker in a dead spot.
+  for (const code of ["PREMISE_NOT_FOUND", "UNAUTHENTICATED", "UNAVAILABLE", "DEADLINE_EXCEEDED", "INTERNAL"]) {
+    assert.match(list, new RegExp(code), `${code} is genuinely transient and must keep waiting`);
+  }
+});
+
+test("NA-R066: the Submission Queue card answers a refusal in the worker's own words", async () => {
+  // This card is the screen where a worker meets a refusal, and it printed the raw code in
+  // capitals with the sentence clipped to two lines. The Error Register's rows were written for
+  // exactly this moment.
+  const cardSource = await read("../../components/QueueItemCard.js");
+
+  assert.match(
+    cardSource,
+    /refusalMessage/,
+    "the card shows the server's code instead of the words written for the worker",
+  );
+  assert.doesNotMatch(
+    cardSource,
+    /numberOfLines=\{2\}[\s\S]{0,80}statusInfoMessage|statusInfoMessage[^>]*numberOfLines=\{2\}/,
+    "the worker's words are clipped to two lines and cut in half",
+  );
+});

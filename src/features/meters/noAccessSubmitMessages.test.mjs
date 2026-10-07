@@ -10,6 +10,8 @@ import {
   noAccessDiscard,
   noAccessResult,
   noAccessQueuedResult,
+  isSystemFaultCode,
+  refusalMessage,
 } from "./noAccessSubmitMessages.js";
 
 test("NA-R061: the confirmation names the appointment when there is one", () => {
@@ -128,4 +130,39 @@ test("NA-R006: Other shows the worker's own words here too", () => {
   const window = noAccessDiscard({ reasonCode: "OTHER", reasonOther: "Vicious dogs" });
   assert.match(window.body, /Vicious dogs/);
   assert.doesNotMatch(window.body, /Reason: OTHER/);
+});
+
+// NA-R063 … NA-R066 — a refusal is one of two things (owner, 7 October 2026).
+
+test("NA-R065: a capture the app built wrong is a system fault, not the worker's fault", () => {
+  for (const code of ["INVALID_PREMISE_ID", "INVALID_TRN_ID", "INVALID_AST_ID", "INVALID_ACCESS_DATA"]) {
+    assert.equal(isSystemFaultCode(code), true, `${code} is not recognised as a system fault`);
+    const window = refusalMessage(code);
+    assert.match(window.body, /not your fault/);
+    assert.match(window.body, /reported/);
+    // It must not ASK them to act. "nothing to correct on the form" is the opposite of that,
+    // so the test reads for the instruction, not for the word.
+    assert.doesNotMatch(
+      window.body,
+      /send it again|try again|open the saved visit|choose a reason|take (it|the photograph) again/i,
+      `${code} sends the worker to fix something no correction can reach`,
+    );
+  }
+});
+
+test("NA-R065: a refusal the worker CAN act on is not dressed up as a system fault", () => {
+  for (const code of ["INSTRUCTION_NOT_ACCEPTED", "NO_ACCESS_PHOTO_REQUIRED", "NO_ACCESS_REASON_REQUIRED"]) {
+    assert.equal(isSystemFaultCode(code), false, `${code} was swallowed by the system-fault row`);
+  }
+});
+
+test("NA-R066: a code with no row still answers in words, never a developer's string", () => {
+  const window = refusalMessage("SOME_CODE_NOBODY_WROTE_WORDS_FOR");
+  assert.equal(window.code, "UNKNOWN");
+  assert.ok(window.title && window.body);
+});
+
+test("NA-R065: the server's own prefix does not hide a system fault", () => {
+  assert.equal(isSystemFaultCode("functions/INVALID_PREMISE_ID"), true);
+  assert.equal(isSystemFaultCode("  invalid_premise_id  "), true);
 });

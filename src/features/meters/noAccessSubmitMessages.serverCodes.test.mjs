@@ -25,7 +25,12 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // The web repo beside this one, or a worktree of it. A stream often works in a worktree while
 // the main checkout holds another chat's branch, and a check that only looks in one place is a
 // check that quietly stops running.
-const CANDIDATE_DIRS = ["ireps-web", "ireps-web-inspection-na", "ireps-web-na"].map((name) =>
+const CANDIDATE_DIRS = [
+  "ireps-web",
+  "ireps-web-inspection-release",
+  "ireps-web-inspection-na",
+  "ireps-web-na",
+].map((name) =>
   path.resolve(here, "../../../..", name, "functions"),
 );
 if (process.env.IREPS_WEB_ROOT) CANDIDATE_DIRS.unshift(path.resolve(process.env.IREPS_WEB_ROOT, "functions"));
@@ -61,12 +66,24 @@ async function readServerSources() {
 test("every business refusal the server can send has worker's words", async (t) => {
   const read = await readServerSources();
 
-  if (!read) {
-    t.skip(
-      `the web repo is not beside this one (looked in: ${CANDIDATE_DIRS.join(" , ")}), so the server's codes could not be read`,
-    );
-    return;
-  }
+  // NA-R066 (owner, 7 October 2026): a check that cannot find the server to compare against
+  // FAILS. It does not pass quietly.
+  //
+  // This skipped. On the machine this was written on it had been skipping - green, every run,
+  // checking nothing - because the neighbouring web checkout sat on an older branch that does
+  // not contain recordLifecycleNoAccess.js, and one unreadable file sends the whole lookup to
+  // the next candidate and then to null. The guard built to stop the Error Register drifting
+  // had quietly stopped running, which is the same fault one level up.
+  assert.ok(
+    read,
+    [
+      "The server's codes could not be read, so this check could not run - and a check that cannot run must not report success.",
+      "Looked in:",
+      ...CANDIDATE_DIRS.map((dir) => `  ${dir}`),
+      "Point it at a checkout of the web repo on current main, for example:",
+      "  IREPS_WEB_ROOT=C:/dev/ireps-web npm test",
+    ].join("\n"),
+  );
 
   const codes = new Set();
 

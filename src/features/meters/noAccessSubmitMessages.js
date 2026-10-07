@@ -308,11 +308,57 @@ export const NO_ACCESS_RESULTS = Object.freeze([
   { code: "INSTRUCTION_NOT_ASSIGNED", title: "No Access was not recorded", body: "This instruction belongs to another worker or team. Ask the office to assign it to you." },
   { code: "TRN_ALREADY_EXISTS", title: "This work is already recorded", body: "This transaction records different work. Refresh your work orders before starting another visit. Your saved capture remains in Submission Queue for review." },
   {
+    // NA-R065 — A FAULT IN THE SYSTEM IS NOT A FAULT IN THE WORKER.
+    //
+    // The owner, 7 October 2026: "if somehow the system does the ID wrong, you can't submit that
+    // because the ID doesn't meet the rules. But then in situations like that, we need to have a
+    // way to know, because then it means the problem is not from the user, it's from the system."
+    //
+    // One row for all of them, deliberately. A worker cannot tell a missing transaction id from a
+    // missing premise id from work sent to the wrong door, and nothing they could do would differ
+    // if they could. So they are told the one thing that is true and useful: it is not yours to
+    // fix, and somebody has been told. The code stays beside it on the card, small, for the office.
+    code: "SYSTEM_FAULT",
+    title: "The app sent something the office could not accept",
+    body: "This is not your fault and there is nothing to correct on the form. It has been reported. Carry on with your work, and tell the office if it keeps happening.",
+  },
+  {
     code: "UNKNOWN",
     title: "It did not send",
     body: "Something went wrong and the visit was not recorded. It is saved on the phone. Call the office if it keeps happening.",
   },
 ]);
+
+// NA-R065: the captures the APP built wrong. Not one of them can be put right by the worker, and
+// not one of them can come right on a later try - the payload is built wrong on every attempt.
+//
+// INVALID_PREMISE_ID is the owner's worked example. It means the payload named no premise; NA-R084.1
+// forbids backfilling one, so it can never become true later. It sat in the phone's KEEP_WAITING
+// list beside the genuine network faults until 7 October 2026, so the sender retried it on every
+// signal change and every rung of the 60s/300s/900s/3600s ladder, telling the worker each time that
+// the capture was safe and would send itself. It never would.
+export const SYSTEM_FAULT_CODES = Object.freeze([
+  "INVALID_PREMISE_ID",
+  "INVALID_TRN_ID",
+  "INVALID_ACCESS_DATA",
+  "INVALID_LIFECYCLE_TRN_TYPE",
+  "INVALID_AST_ID",
+  "LCT_TYPE_NOT_IMPLEMENTED",
+  "UNKNOWN_QUEUE_FORM_TYPE",
+  "INVALID_TRN_TYPE",
+  "INVALID_COMMISSIONING_TRN_ID",
+  "INVALID_COMMISSIONING_TRN_TYPE",
+]);
+
+/** Did the app build this capture wrong, rather than the worker filling it in wrong? */
+export function isSystemFaultCode(code) {
+  return SYSTEM_FAULT_CODES.includes(
+    String(code || "")
+      .trim()
+      .replace(/^functions\//, "")
+      .toUpperCase(),
+  );
+}
 
 const BY_CODE = new Map(NO_ACCESS_RESULTS.map((row) => [row.code, row]));
 
@@ -351,4 +397,21 @@ export function noAccessResult(code, serverMessage) {
   if (known) return known;
   if (serverMessage) return { code, title: "No Access was not recorded", body: `${serverMessage} Open this visit in Submission Queue to correct it, or contact the office. Reference: ${code || "UNKNOWN"}.` };
   return BY_CODE.get("UNKNOWN");
+}
+
+/**
+ * NA-R066 — the words for a refusal, wherever a worker meets it.
+ *
+ * The Error Register is not a reference document. It is what the worker reads on the screen where
+ * the refusal reaches them - and until 7 October 2026 the Submission Queue card, which is that
+ * screen, printed the raw code in capitals and clipped the server's sentence to two lines. Forty
+ * eight rows of a worker's own words, and the one place they were needed went around them.
+ *
+ * A system fault answers with the one shared row (NA-R065). Anything else answers with its own row,
+ * and a code with no row falls to UNKNOWN rather than showing a worker a developer's string.
+ */
+export function refusalMessage(code, serverMessage) {
+  if (isSystemFaultCode(code)) return noAccessResult("SYSTEM_FAULT");
+
+  return noAccessResult(code, serverMessage);
 }

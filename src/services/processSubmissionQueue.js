@@ -54,7 +54,14 @@ function isStandardMeterDiscoveryQueueItem(item = {}) {
 // anything not on it was put back to waiting and retried for ever while the card read "Draft saved
 // locally" — so every code anybody added later fell into the same trap, silently. Now the trap cannot
 // be re-made: an unknown refusal stops, like every other refusal.
-const KEEP_WAITING_CODES = ["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND", "UNAUTHENTICATED", "UNAVAILABLE", "DEADLINE_EXCEEDED", "INTERNAL"];
+//
+// INVALID_PREMISE_ID WAS HERE AND DOES NOT BELONG (NA-R065, owner, 7 October 2026). It means the
+// payload named no premise. NA-R084.1 forbids backfilling one, so it can never become true later -
+// it is a capture the APP built wrong, not a phone that could not reach the office. Classed with
+// the network faults it was retried on every signal change and every rung of the ladder below,
+// and the card said "Draft saved locally" each time. It now stops, like every other refusal, and
+// the worker is told it is not their fault (isSystemFaultCode / SYSTEM_FAULT).
+const KEEP_WAITING_CODES = ["PREMISE_NOT_FOUND", "UNAUTHENTICATED", "UNAVAILABLE", "DEADLINE_EXCEEDED", "INTERNAL"];
 
 // A refusal that means "a transaction for this work already exists". Its photographs belong to that
 // transaction, so they are never deleted — the office repairs the work from them (RG-R001 section 8).

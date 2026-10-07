@@ -41,7 +41,9 @@ test("a refusal the phone has never heard of still stops (x11 and m06)", () => {
 test("only a job that is genuinely not ready yet keeps waiting", () => {
   // Transport/authentication failures can also be returned by the callable. They are
   // temporary delivery failures, unlike a refusal of the submitted work.
-  assert.deepEqual(keepWaiting, ["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND", "UNAUTHENTICATED", "UNAVAILABLE", "DEADLINE_EXCEEDED", "INTERNAL"]);
+  // NA-R065 (owner, 7 October 2026): INVALID_PREMISE_ID left this list. A capture the APP built
+  // wrong is not a phone that could not reach the office, and it cannot come right on a later try.
+  assert.deepEqual(keepWaiting, ["PREMISE_NOT_FOUND", "UNAUTHENTICATED", "UNAVAILABLE", "DEADLINE_EXCEEDED", "INTERNAL"]);
   const branch = queueSource.slice(
     queueSource.indexOf("if (KEEP_WAITING_CODES.includes(code)) {"),
     queueSource.indexOf("// The server answered and refused"),

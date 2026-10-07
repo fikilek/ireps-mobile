@@ -176,9 +176,17 @@ test("a refusal shows the worker the plain sentence and keeps our own words for 
 test("a premise that is not ready yet still waits instead of being refused", () => {
   // RG-R001 section 6 draws the line: a refusal that will never change by itself stops, and anything
   // that will change on its own keeps waiting. The premise arriving late is the second kind.
-  assert.match(
+  //
+  // INVALID_PREMISE_ID used to be asserted here beside it and was removed on 7 October 2026
+  // (NA-R065). The two are not the same fault wearing different names. PREMISE_NOT_FOUND means
+  // the premise exists and has not reached the server yet - it comes right by itself.
+  // INVALID_PREMISE_ID means the payload named NO premise, and NA-R084.1 forbids backfilling one,
+  // so no amount of waiting can make it true. It is a capture the app built wrong.
+  assert.match(queueSource, /const KEEP_WAITING_CODES = \["PREMISE_NOT_FOUND",/);
+  assert.doesNotMatch(
     queueSource,
-    /const KEEP_WAITING_CODES = \["INVALID_PREMISE_ID", "PREMISE_NOT_FOUND",/,
+    /const KEEP_WAITING_CODES = \[[^\]]*INVALID_PREMISE_ID/,
+    "a capture that named no premise is waiting for something that can never arrive",
   );
 });
 

@@ -7,6 +7,7 @@ import {
 } from "react-native";
 import { Surface, Text } from "react-native-paper";
 import { formatStreetAddress } from "../src/features/premises/streetAddress";
+import { refusalMessage } from "../src/features/meters/noAccessSubmitMessages";
 
 // The badge is what a worker reads. CONFLICT is a coder's word for "the server said no", and the button
 // under it already reads Refused — two words for one state (owner, 26 Sep). The stored status stays
@@ -132,9 +133,21 @@ export default function QueueItemCard({
       };
     }
 
+    // NA-R066 - A REFUSAL IS ANSWERED IN THE WORKER'S OWN WORDS, ON THE SCREEN WHERE THEY MEET IT.
+    //
+    // This card is that screen, and until 7 October 2026 it printed the raw server code in capitals
+    // with the sentence clipped to two lines: INSTRUCTION_NOT_ACCEPTED, INVALID_PREMISE_ID. The
+    // Error Register's forty-eight rows of a worker's own words were written for exactly this
+    // moment and the one place they were needed went around them.
+    //
+    // The code is kept and still shown, small, because the office needs it to answer a phone call.
+    // What changes is which of the two the worker reads first.
+    const refusalCode = item?.result?.code || "NAv";
+    const words = refusalMessage(refusalCode, item?.result?.message);
+
     return {
-      code: item?.result?.code || "NAv",
-      message: item?.result?.message || "NAv",
+      code: refusalCode,
+      message: words?.title ? `${words.title}. ${words.body}` : item?.result?.message || "NAv",
     };
   })();
 
@@ -258,7 +271,10 @@ export default function QueueItemCard({
           {displayResult.code}
         </Text>
 
-        <Text style={styles.statusInfoMessage} numberOfLines={2}>
+        {/* NA-R066: the worker's words are a sentence and an instruction, not a fragment. Two
+            lines cut them in half - a worker read "This is not your fault and there is nothing"
+            and nothing more. */}
+        <Text style={styles.statusInfoMessage} numberOfLines={5}>
           {displayResult.message}
         </Text>
       </View>
