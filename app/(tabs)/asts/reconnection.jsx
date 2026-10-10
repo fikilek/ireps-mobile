@@ -28,7 +28,11 @@ import { httpsCallable } from "firebase/functions";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
 import { returnAfterLifecycleWork } from "../../../src/utils/lifecycleReturn";
-import { IrepsFieldCommentSection } from "../../../components/forms/IrepsFieldCommentSection";
+import {
+  FIELD_COMMENT_MEDIA_TAG_LIST,
+  IrepsFieldCommentSection,
+  fieldCommentSchema,
+} from "../../../components/forms/IrepsFieldCommentSection";
 import { IrepsFormActions } from "../../../components/forms/IrepsFormActions";
 import IrepsSelectWithOther, {
   isSelectWithOtherFilled,
@@ -64,9 +68,7 @@ const EXECUTION_MEDIA_TAGS = [
   "instructionMedia",
   "reconnectionEvidence",
   "noAccessPhoto",
-  "fieldCommentPhoto",
-  "fieldCommentVoice",
-  "fieldCommentVideo",
+  ...FIELD_COMMENT_MEDIA_TAG_LIST,
 ];
 
 function makeEmptySelectWithOther() {
@@ -420,9 +422,7 @@ const ReconnectionSchema = object()
       }),
     }),
 
-    fieldComment: object().shape({
-      text: string().notRequired(),
-    }),
+    fieldComment: fieldCommentSchema,
 
     media: array().of(object()),
   })

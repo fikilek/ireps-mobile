@@ -26,7 +26,10 @@ import {
 
 // Firebase & Redux
 import { ElectricitySections } from "../../../components/forms/ElectricitySections";
-import { IrepsFieldCommentSection } from "../../../components/forms/IrepsFieldCommentSection";
+import {
+  IrepsFieldCommentSection,
+  fieldCommentSchema,
+} from "../../../components/forms/IrepsFieldCommentSection";
 import { buildMeterDiscoveryTrnId } from "./meterDiscoveryTrnId";
 import { WaterSections } from "../../../components/forms/WaterSections";
 import { ScreenLock } from "../../../components/SceenLock";
@@ -162,10 +165,6 @@ const METER_PLACEMENT_VALUES = getFormOptionValues("placements");
 const REMAINING_CREDIT_COMMENT_REASONS = getFormOptionValues(
   "remaining_credit_comment_reasons",
 );
-
-const fieldCommentSchema = object().shape({
-  text: string().notRequired(),
-});
 
 function withRemainingCreditValidation(schema) {
   return schema.test(

@@ -1,13 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import {
-  AudioModule,
-  RecordingPresets,
-  setAudioModeAsync,
-  useAudioPlayer,
-  useAudioPlayerStatus,
-  useAudioRecorder,
-  useAudioRecorderState,
-} from "expo-audio";
+import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import * as Location from "expo-location";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { getIn, useFormikContext } from "formik";
@@ -24,6 +16,7 @@ import {
   View,
 } from "react-native";
 import { IconButton, Surface } from "react-native-paper";
+import { object, string } from "yup";
 
 import { IrepsMedia } from "../media/IrepsMedia";
 import { FORM_TEXT, FORM_PLACEHOLDER } from "../../src/theme/formColors";
@@ -33,6 +26,16 @@ export const FIELD_COMMENT_MEDIA_TAGS = {
   voice: "fieldCommentVoice",
   video: "fieldCommentVideo",
 };
+
+// Every tag a field comment can carry, for the forms that list the tags they
+// upload. Voice and video are no longer captured (owner, 11 October 2026) but
+// records already hold them, so they stay on the list and keep reaching
+// Storage - a tag a form forgets is a clip a worker loses.
+export const FIELD_COMMENT_MEDIA_TAG_LIST = Object.values(FIELD_COMMENT_MEDIA_TAGS);
+
+// The shape a field comment's text takes on every form. Text is optional, and
+// UI-R006 asks the form to agree with the server, which asks for nothing here.
+export const fieldCommentSchema = object().shape({ text: string().notRequired() });
 
 function makeMediaId() {
   const random = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -400,9 +403,6 @@ export function IrepsFieldCommentSection({
   disabled = false,
 }) {
   const { values, setFieldValue } = useFormikContext();
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const audioRecorderState = useAudioRecorderState(audioRecorder);
-
   const [currentGps, setCurrentGps] = useState(null);
   const [previewType, setPreviewType] = useState(null);
 
@@ -412,8 +412,6 @@ export function IrepsFieldCommentSection({
   const photo = media.find((item) => item?.tag === FIELD_COMMENT_MEDIA_TAGS.photo);
   const voice = media.find((item) => item?.tag === FIELD_COMMENT_MEDIA_TAGS.voice);
   const video = media.find((item) => item?.tag === FIELD_COMMENT_MEDIA_TAGS.video);
-
-  const isRecordingAudio = Boolean(audioRecorderState?.isRecording);
 
   const resolvedGps =
     currentGps?.lat != null && currentGps?.lng != null
@@ -522,78 +520,6 @@ export function IrepsFieldCommentSection({
     }
   }
 
-  async function startVoiceRecording() {
-    if (disabled || voice || isRecordingAudio) return;
-
-    try {
-      const permission = await AudioModule.requestRecordingPermissionsAsync();
-
-      if (!permission?.granted) {
-        Alert.alert(
-          "Microphone Permission Required",
-          "Microphone access is required to record a field comment voice clip.",
-        );
-        return;
-      }
-
-      await resolveGps();
-
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
-
-      await audioRecorder.prepareToRecordAsync();
-      audioRecorder.record();
-    } catch (error) {
-      console.log("IrepsFieldCommentSection startVoiceRecording error", error);
-      Alert.alert(
-        "Voice Recording Failed",
-        error?.message || "Could not start voice recording.",
-      );
-    }
-  }
-
-  async function stopVoiceRecording() {
-    if (!isRecordingAudio) return;
-
-    try {
-      await audioRecorder.stop();
-
-      const uri = audioRecorder.uri;
-
-      if (!uri) {
-        throw new Error("No audio URI returned.");
-      }
-
-      replaceTaggedMedia(
-        FIELD_COMMENT_MEDIA_TAGS.voice,
-        buildMediaObject({
-          tag: FIELD_COMMENT_MEDIA_TAGS.voice,
-          uri,
-          type: "audio",
-          source: "voice",
-          durationMillis: Number(audioRecorderState?.durationMillis || 0),
-        }),
-      );
-    } catch (error) {
-      console.log("IrepsFieldCommentSection stopVoiceRecording error", error);
-      Alert.alert(
-        "Voice Recording Failed",
-        error?.message || "Could not save voice recording.",
-      );
-    } finally {
-      try {
-        await setAudioModeAsync({
-          allowsRecording: false,
-          playsInSilentMode: true,
-        });
-      } catch (audioModeError) {
-        console.log("IrepsFieldCommentSection audio mode reset error", audioModeError);
-      }
-    }
-  }
-
   return (
     <Surface style={styles.container} elevation={1}>
       <View style={styles.sectionHeader}>
@@ -606,7 +532,7 @@ export function IrepsFieldCommentSection({
       </View>
 
       <Text style={styles.sectionHelpText}>
-        Add optional text, a photo or a voice clip.
+        Add optional text or a photo.
       </Text>
 
       <View style={styles.questionCard}>
@@ -654,22 +580,20 @@ export function IrepsFieldCommentSection({
         />
       </View>
 
-      <ForensicMediaSlot
-        title="Voice Clip"
-        description="Record an optional supporting voice clip."
-        icon="microphone-outline"
-        item={voice}
-        onCapture={isRecordingAudio ? stopVoiceRecording : startVoiceRecording}
-        onRemove={() => {
-          setPreviewType(null);
-          replaceTaggedMedia(FIELD_COMMENT_MEDIA_TAGS.voice, null);
-        }}
-        onPreview={() => setPreviewType("voice")}
-        disabled={disabled}
-        recording={isRecordingAudio}
-        recordingDuration={audioRecorderState?.durationMillis}
-        type="voice"
-      />
+      {voice ? (
+        <ForensicMediaSlot
+          title="Saved Voice Clip"
+          description="Previously captured field voice clip."
+          item={voice}
+          onRemove={() => {
+            setPreviewType(null);
+            replaceTaggedMedia(FIELD_COMMENT_MEDIA_TAGS.voice, null);
+          }}
+          onPreview={() => setPreviewType("voice")}
+          disabled={disabled}
+          type="voice"
+        />
+      ) : null}
 
       {video ? (
         <ForensicMediaSlot
