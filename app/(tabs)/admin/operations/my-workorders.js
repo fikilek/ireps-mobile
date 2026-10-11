@@ -88,6 +88,7 @@ import {
 } from "../../../../src/redux/workOrderKeepers";
 import { removeSubmissionQueueItemsByInstructionTrnId } from "../../../../src/utils/submissionQueue";
 import { FORM_TEXT, FORM_PLACEHOLDER } from "../../../../src/theme/formColors";
+import { countMyWork, isStillHisWork } from "../../../../src/features/workOrders/myWorkItems";
 
 // UI-R005: a work bucket is one block a worker can see the edges of. The page
 // behind them is #f8fafc, so a white card on it had no edge in sunlight.
@@ -138,8 +139,6 @@ const STATE_FILTERS = [
   { key: "ACCEPTED", label: "Accepted" },
   { key: "IN_PROGRESS", label: "In Progress" },
   { key: "COMPLETED", label: "Completed" },
-  { key: "REJECTED", label: "Rejected" },
-  { key: "CANCELLED", label: "Cancelled" },
 ];
 
 const EXECUTION_ROUTES = {
@@ -235,33 +234,10 @@ function formatDateTime(value) {
   return date.toLocaleString();
 }
 
-function emptyCounts() {
-  return {
-    issued: 0,
-    reassigned: 0,
-    accepted: 0,
-    rejected: 0,
-    inProgress: 0,
-    completed: 0,
-    cancelled: 0,
-    total: 0,
-  };
-}
-
+// One well: the total and its four boxes are built together, so the badge
+// can only ever be their sum. See src/features/workOrders/myWorkItems.js.
 function countItems(items = []) {
-  return items.reduce((acc, item) => {
-    acc.total += 1;
-
-    if (item.workflowState === "ISSUED") acc.issued += 1;
-    if (item.workflowState === "REASSIGNED") acc.reassigned += 1;
-    if (item.workflowState === "ACCEPTED") acc.accepted += 1;
-    if (item.workflowState === "REJECTED") acc.rejected += 1;
-    if (item.workflowState === "IN_PROGRESS") acc.inProgress += 1;
-    if (item.workflowState === "COMPLETED") acc.completed += 1;
-    if (item.workflowState === "CANCELLED") acc.cancelled += 1;
-
-    return acc;
-  }, emptyCounts());
+  return countMyWork(items);
 }
 
 function stateCount(items = [], state) {
@@ -2037,7 +2013,10 @@ export default function WorkorderManagementSystem() {
 
   const individualItems = useMemo(() => {
     return allItems.filter(
-      (item) => item.scopeBucket === "MY_WORK" && !isBgoChildItem(item),
+      (item) =>
+        item.scopeBucket === "MY_WORK" &&
+        !isBgoChildItem(item) &&
+        isStillHisWork(item),
     );
   }, [allItems]);
 
