@@ -40,7 +40,9 @@ test("a rejected job is not his work, so it is not counted", () => {
 
 test("a cancelled job is not his work either - the office withdrew it", () => {
   assert.equal(isStillHisWork(item("CANCELLED")), false);
-  assert.deepEqual(WORK_HE_NO_LONGER_HOLDS, ["REJECTED", "CANCELLED"]);
+  // CREATED and DELETED joined on 11 October 2026 with the state machine:
+  // a job in the pool is with nobody, and one in the bin is nobody's.
+  assert.deepEqual(WORK_HE_NO_LONGER_HOLDS, ["REJECTED", "CANCELLED", "CREATED", "DELETED"]);
 });
 
 test("the owner's own card: 7 becomes 5, and 5 is what the boxes say", () => {
@@ -105,4 +107,34 @@ test("the screen reads the one well, and offers no chip that can never fill", as
   assert.doesNotMatch(chips, /REJECTED/);
   assert.doesNotMatch(chips, /CANCELLED/);
   assert.match(chips, /ISSUED/);
+});
+
+test("a job in the pool or in the bin is not his, and is not drawn", () => {
+  // DR-R001 5.5, owner 11 October 2026: "DELETED must not show in FWRs
+  // devices. It will confuse them." CREATED is the same case for a different
+  // reason - a job waiting to be given out is with nobody.
+  for (const notHis of ["CREATED", "DELETED"]) {
+    assert.equal(isStillHisWork({ workflowState: notHis }), false, notHis);
+  }
+
+  // And the three that are his, or were.
+  for (const his of ["ISSUED", "ACCEPTED", "COMPLETED"]) {
+    assert.equal(isStillHisWork({ workflowState: his }), true, his);
+  }
+});
+
+test("a job refused or taken back leaves his phone even with stale targets", () => {
+  // It can be unallocated or deleted while his phone still has it cached, so
+  // the filter is on the STATE, not on whether his name is still on it.
+  const stale = { workflowState: "CREATED", assignment: { targets: [{ type: "USER", id: "him" }] } };
+
+  assert.equal(isStillHisWork(stale), false);
+  assert.equal(countMyWork([stale]).total, 0);
+});
+
+test("his completed work stays on his phone", () => {
+  // Corrected on 11 October 2026: the rule first said the phone showed only
+  // Issued and Accepted. The owner never said that - his card has a working
+  // Completed box, and his bucket counts the work he finished.
+  assert.equal(countMyWork([{ workflowState: "COMPLETED" }]).completed, 1);
 });

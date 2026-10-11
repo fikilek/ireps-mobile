@@ -17,10 +17,20 @@
 // But the server still accepts work FROM it, so if one ever does rest there
 // it is work awaiting his acceptance - counted as issued, rather than
 // counted in the total and drawn in no box, which is the fault this fixes.
-export const WORK_HE_NO_LONGER_HOLDS = ["REJECTED", "CANCELLED"];
+export const WORK_HE_NO_LONGER_HOLDS = ["REJECTED", "CANCELLED", "CREATED", "DELETED"];
 
 // Every state a job in his list can be in. The four boxes cover all of them,
 // which is what makes the total above them equal to their sum.
+//
+// CREATED and DELETED joined the list above on 11 October 2026, when the
+// state machine of `DR-R001` 5 landed. The owner: "DELETED must not show in
+// FWRs devices. It will confuse them." CREATED is the same case for a
+// different reason - a job in the pool is with nobody, so it is not his.
+//
+// They are excluded by STATE, not only by whether his name is on the
+// assignment, because a job can be unallocated or deleted while his phone
+// still holds it cached. A record that reaches him with stale targets must
+// not be drawn.
 export const WORK_HE_STILL_HOLDS = [
   "ISSUED",
   "REASSIGNED",
