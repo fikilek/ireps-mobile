@@ -1,5 +1,6 @@
 // src/context/WarehouseContext.js
 
+import { withoutDeletedWork } from "../features/trns/deletedWork";
 import { createContext, useContext, useMemo } from "react";
 import { useGeo } from "./GeoContext";
 import { useAuth } from "../hooks/useAuth";
@@ -127,7 +128,11 @@ export const WarehouseProvider = ({ children }) => {
       scopeReady && packKeyMatches ? wardErfs?.metaEntries || [] : [];
     const allPrems = scopeReady ? wardPrems || [] : [];
     const allMeters = scopeReady ? cloudMeters || [] : [];
-    const allTrns = scopeReady ? cloudTrns || [] : [];
+    // A DELETED JOB IS NOT ON HIS PHONE (`DR-R001` 5.5). One unconstrained
+    // ward query feeds the TRNs tab, the premise and asset lists, the TRN
+    // filter and stats, and all five admin dashboards - so the exclusion
+    // belongs here, once, and not in nine places.
+    const allTrns = scopeReady ? withoutDeletedWork(cloudTrns) : [];
 
     const geoLibrary = buildGeoLibrary({
       wards: allWards,

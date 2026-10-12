@@ -1,3 +1,4 @@
+import { isLifecycleInstructionLocked } from "../../../src/features/workOrders/instructionLock";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -90,30 +91,7 @@ function readFirstString(...values) {
   return "";
 }
 
-function getInstructionWorkflowState(action = {}) {
-  return String(
-    action?.workflowState || action?.workflow?.state || "",
-  ).toUpperCase();
-}
 
-function isLifecycleInstructionLocked(action = {}) {
-  const workflowState = getInstructionWorkflowState(action);
-
-  return (
-    action?.source === "WMS" ||
-    Boolean(action?.instructionTrnId) ||
-    Boolean(action?.trnId) ||
-    Boolean(action?.id) ||
-    [
-      "ISSUED",
-      "REASSIGNED",
-      "ACCEPTED",
-      "REJECTED",
-      "COMPLETED",
-      "CANCELLED",
-    ].includes(workflowState)
-  );
-}
 
 function removeUndefined(value) {
   return JSON.parse(

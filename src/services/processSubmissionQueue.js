@@ -68,6 +68,26 @@ const KEEP_WAITING_CODES = ["PREMISE_NOT_FOUND", "UNAUTHENTICATED", "UNAVAILABLE
 const REFUSALS_WITH_A_SURVIVING_TRANSACTION = [
   "REGISTRATION_INCOMPLETE",
   "TRN_ALREADY_EXISTS",
+
+  // THE OFFICE TOOK THE WORK BACK WHILE HE WAS AT THE METER.
+  //
+  // Found 12 October 2026 by an adversarial read, not by a worker losing
+  // photographs - though that is what it would have cost. The server refuses
+  // a submission whose instruction is not ACCEPTED, and that refusal is
+  // thrown, so the queue treated it as terminal and deleted the files. But
+  // the transaction is ALIVE: the office unallocated it, deleted it or the
+  // three-day clock returned it (`DR-R001` 5.5, 5.6), and the record is
+  // sitting in `Created` waiting to be given out again - quite possibly to
+  // him. His photographs belong to that transaction and the office repairs
+  // the work from them (`RG-R001` section 8).
+  //
+  // It became ordinary rather than rare the day the override and the expiry
+  // landed. Every one of those three moves produces exactly this state.
+  "INSTRUCTION_NOT_ACCEPTED",
+
+  // The same shape: the job is somebody else's now, and the transaction it
+  // belongs to is still there.
+  "INSTRUCTION_NOT_ASSIGNED",
 ];
 
 /**

@@ -1,3 +1,4 @@
+import { isDeletedWork } from "../features/trns/deletedWork";
 import { createApi, fakeBaseQuery } from "@reduxjs/toolkit/query/react";
 import {
   collection,
@@ -752,6 +753,20 @@ function normalizeWmsWorkItem({
 
 // TB-R052: a finished work order (Completed or Cancelled) is listed for 30 days after it last changed; an open
 // one is always listed.
+/**
+ * A job in the bin is never a work order. `DR-R001` 5.5.
+ *
+ * Said by NAME rather than left to the allowlist below. Today DELETED is
+ * absent from `WMS_WORKFLOW_STATES` and so never drawn - but that is an
+ * accident of a list that also still names four words which stopped being
+ * states on 11 October, and `isListedWorkOrder` defaults an unrecognised
+ * state to "open work order, always listed, whatever its age". The first
+ * person to widen that list would ship deleted work to a worker permanently.
+ */
+function isBinnedWorkOrder(trn) {
+  return isDeletedWork(trn);
+}
+
 function isListedWorkOrder(trn = {}, nowMs = Date.now()) {
   if (!WMS_FINISHED_WORKFLOW_STATES.includes(getWorkflowState(trn))) return true;
 
@@ -789,6 +804,8 @@ function buildWmsData({
   const isManager = isManagerScopeActor({ actor, serviceProviders });
 
   const items = trns
+    // Said first and said by name. `DR-R001` 5.5.
+    .filter((trn) => !isBinnedWorkOrder(trn))
     .filter((trn) => WMS_LCT_TYPES.includes(getTrnType(trn)))
     .filter((trn) => WMS_WORKFLOW_STATES.includes(getWorkflowState(trn)))
     .filter((trn) => cleanMode !== "INDIVIDUAL" || isListedWorkOrder(trn, nowMs))

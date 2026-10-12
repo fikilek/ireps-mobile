@@ -1,3 +1,4 @@
+import { isLifecycleInstructionLocked } from "../../../src/features/workOrders/instructionLock";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -98,30 +99,7 @@ function readFirstString(...values) {
   return "";
 }
 
-function getInstructionWorkflowState(action = {}) {
-  return String(
-    action?.workflowState || action?.workflow?.state || "",
-  ).toUpperCase();
-}
 
-function isLifecycleInstructionLocked(action = {}) {
-  const workflowState = getInstructionWorkflowState(action);
-
-  return (
-    action?.source === "WMS" ||
-    Boolean(action?.instructionTrnId) ||
-    Boolean(action?.trnId) ||
-    Boolean(action?.id) ||
-    [
-      "ISSUED",
-      "REASSIGNED",
-      "ACCEPTED",
-      "REJECTED",
-      "COMPLETED",
-      "CANCELLED",
-    ].includes(workflowState)
-  );
-}
 
 function withSubmitTimeout(promise, timeoutMs = 15000) {
   return Promise.race([

@@ -303,9 +303,14 @@ export const NO_ACCESS_RESULTS = Object.freeze([
   { code: "PREMISE_NOT_FOUND", title: "No Access was not recorded", body: "The premise has not reached the server. Keep the saved visit and send it after the premise is saved." },
   { code: "INSTRUCTION_TRN_NOT_FOUND", title: "No Access was not recorded", body: "The office instruction no longer exists. Refresh your work orders." },
   { code: "INVALID_INSTRUCTION_TRN_TYPE", title: "No Access was not recorded", body: "The visit does not match the issued work type. Refresh your work orders." },
-  { code: "INSTRUCTION_NOT_ACCEPTED", title: "No Access was not recorded", body: "Accept the instruction before recording the visit. Then open the saved visit and send it again." },
+  // It used to say "Accept the instruction before recording the visit", which
+  // he cannot do: by the time the server says this, the work is not his to
+  // accept. The office has taken it back, or nobody answered it for three
+  // days and it went back to the pool on its own (`DR-R001` 5.5, 5.6). His
+  // capture and his photographs are kept either way.
+  { code: "INSTRUCTION_NOT_ACCEPTED", title: "This work is no longer yours", body: "The office has taken this job back, or it went back to the pool because it waited too long. Nothing you captured is lost. Speak to the office - if they give it to you again it will be in My Workorders." },
   { code: "INSTRUCTION_ASSET_MISMATCH", title: "No Access was not recorded", body: "The meter or premise does not match the instruction. Refresh your work orders or contact the office." },
-  { code: "INSTRUCTION_NOT_ASSIGNED", title: "No Access was not recorded", body: "This instruction belongs to another worker or team. Ask the office to assign it to you." },
+  { code: "INSTRUCTION_NOT_ASSIGNED", title: "This work is somebody else's", body: "This job belongs to another worker now. Nothing you captured is lost. Ask the office to give it to you if it should be yours." },
   { code: "TRN_ALREADY_EXISTS", title: "This work is already recorded", body: "This transaction records different work. Refresh your work orders before starting another visit. Your saved capture remains in Submission Queue for review." },
   {
     // NA-R065 — A FAULT IN THE SYSTEM IS NOT A FAULT IN THE WORKER.
