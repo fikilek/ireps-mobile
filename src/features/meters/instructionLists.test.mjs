@@ -10,30 +10,114 @@ import test from "node:test";
 
 import { getFormOptions } from "./formOptions.js";
 
-// Read from irepsSelectLookups on DEV, 25 September 2026, before the lists
-// were brought into the app.
-const ON_THE_SERVER = {
-  inspection_instructions: [
-    ["Check illegal connection", "CHECK_ILLEGAL_CONNECTION"],
-    ["General inspection", "GENERAL_INSPECTION"],
-  ],
+// The CODES the server had, read from irepsSelectLookups on DEV, 25 September
+// 2026, before the lists were brought into the app.
+//
+// AMENDED 13 October 2026. This used to pin the words as well, and that was
+// wrong in the way this file's own header warns against: "the words a manager
+// sees may be improved, but a code is what lands on the record". When the
+// owner reworded two disconnection reasons - Credit Control Instruction to
+// Client instruction, Non Payment to Customer instruction - the words moved,
+// the codes did not, and this test failed for a change it should have allowed.
+// A test that breaks on an improvement teaches people to edit the test.
+const CODES_ON_THE_SERVER = {
+  inspection_instructions: ["CHECK_ILLEGAL_CONNECTION", "GENERAL_INSPECTION"],
+  // Reordered 13 October 2026 to match the web: the reason issued against a
+  // specific finding goes first, as the inspection list already did.
   disconnection_instructions: [
-    ["Credit Control Instruction", "CREDIT_CONTROL_INSTRUCTION"],
-    ["Illegal Connection", "ILLEGAL_CONNECTION"],
-    ["Non Payment", "NON_PAYMENT"],
+    "ILLEGAL_CONNECTION",
+    "CREDIT_CONTROL_INSTRUCTION",
+    "NON_PAYMENT",
   ],
-  reconnection_instructions: [["Reconnect meter", "RECONNECT_METER"]],
 };
 
-for (const [listName, expected] of Object.entries(ON_THE_SERVER)) {
-  test(`${listName} keeps the codes and words the server had`, () => {
-    const options = getFormOptions(listName);
-    assert.deepEqual(
-      options.map((option) => [option.label, option.value]),
-      expected,
-    );
+for (const [listName, expected] of Object.entries(CODES_ON_THE_SERVER)) {
+  test(`${listName} keeps the codes the server had, whatever the words become`, () => {
+    assert.deepEqual(getFormOptions(listName).map((option) => option.value), expected);
   });
 }
+
+test("the reconnection list says WHY, not what the transaction already is", () => {
+  // The server's only entry was RECONNECT_METER, "Reconnect meter" - the
+  // transaction's own name, which tells a reader nothing about why it was
+  // sent. The owner settled the real reasons on 13 October 2026
+  // (`DR-R001` 3.4.1): payment received, client instruction, and Other, which
+  // the select adds itself.
+  assert.deepEqual(
+    getFormOptions("reconnection_instructions").map((option) => option.value),
+    ["PAYMENT_RECEIVED", "CLIENT_INSTRUCTION"],
+  );
+});
+
+test("one word for one thing: the client is the client on both lanes", () => {
+  // Owner: "lets stick to 'client instruction' for both DCN and RCN".
+  const wordsFor = (list) =>
+    getFormOptions(list).find((o) => /client/i.test(o.label))?.label;
+
+  assert.equal(wordsFor("disconnection_instructions"), "Client instruction");
+  assert.equal(wordsFor("reconnection_instructions"), "Client instruction");
+});
+
+test("...on different codes, so the two counts never merge", () => {
+  const codeFor = (list) =>
+    getFormOptions(list).find((o) => o.label === "Client instruction").value;
+
+  assert.equal(codeFor("disconnection_instructions"), "CREDIT_CONTROL_INSTRUCTION");
+  assert.equal(codeFor("reconnection_instructions"), "CLIENT_INSTRUCTION");
+});
+
+test("the phone and the web offer the same reasons, by code", async () => {
+  // Two lists for one thing is how they drift. The web's well is the other
+  // half of this fact, so they are compared rather than trusted. No regex is
+  // built here: the lists are read by slicing between the markers, which does
+  // not care how the file is formatted.
+  const webRoot = process.env.IREPS_WEB_ROOT || "C:/dev/ireps-web-dcn";
+  const { readFileSync } = await import("node:fs");
+
+  let web;
+  try {
+    web = readFileSync(webRoot + "/src/components/ito/itoReasons.js", "utf8");
+  } catch {
+    return; // the web repo is not beside this one; nothing to compare
+  }
+
+  const codesForWork = (work) => {
+    const from = web.indexOf(work + ": Object.freeze([");
+    if (from < 0) return null;
+
+    const body = web.slice(from, web.indexOf("]),", from));
+    const out = [];
+
+    for (const line of body.split(String.fromCharCode(10))) {
+      const at = line.indexOf('reason("');
+      if (at < 0) continue;
+
+      const rest = line.slice(at + 8);
+      const code = rest.slice(0, rest.indexOf('"'));
+
+      if (code && code !== "OTHER") out.push(code);
+    }
+
+    return out;
+  };
+
+  for (const [list, work] of [
+    ["disconnection_instructions", "disconnect"],
+    ["reconnection_instructions", "reconnect"],
+    ["inspection_instructions", "inspect"],
+    ["removal_instructions", "remove"],
+    ["meter_reading_instructions", "read"],
+  ]) {
+    const webCodes = codesForWork(work);
+
+    assert.ok(webCodes, "the web has a list for " + work);
+    assert.deepEqual(
+      getFormOptions(list).map((o) => o.value),
+      webCodes,
+      list + " and the web's " + work + " must offer the same codes",
+    );
+  }
+});
 
 test("every instruction list has something to choose", () => {
   for (const listName of [

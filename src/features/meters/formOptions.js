@@ -218,26 +218,55 @@ const FORM_OPTIONS = Object.freeze({
     option("General inspection", "GENERAL_INSPECTION"),
   ]),
 
+  // ILLEGAL CONNECTION FIRST, matching the web (`itoReasons.js`) and the rule
+  // already set for inspections: the reason issued against a specific finding
+  // goes before the general ones. The phone listed Client instruction first
+  // and the web listed Illegal connection first - the same three reasons in
+  // two orders, which a cross-repo test caught on 13 October 2026.
+  //
+  // THE WORDS CHANGED, THE CODES DID NOT. Owner, 9 and 13 October 2026:
+  // "Credit Control Instruction" reads as "Client instruction" and
+  // "Non Payment" as "Customer instruction". `DR-R001` 3.4 stores a reason as
+  // a code precisely so a rewording leaves every record already captured
+  // countable.
   disconnection_instructions: Object.freeze([
     describedOption(
-      "Credit Control Instruction",
-      "CREDIT_CONTROL_INSTRUCTION",
-      "Disconnection instructed for credit control purposes.",
-    ),
-    describedOption(
-      "Illegal Connection",
+      "Illegal connection",
       "ILLEGAL_CONNECTION",
       "Disconnection instructed due to an illegal connection.",
     ),
     describedOption(
-      "Non Payment",
+      "Client instruction",
+      "CREDIT_CONTROL_INSTRUCTION",
+      "Disconnection instructed by the client.",
+    ),
+    describedOption(
+      "Customer instruction",
       "NON_PAYMENT",
-      "Disconnection instructed due to non-payment.",
+      "Disconnection instructed by the customer.",
     ),
   ]),
 
+  // Owner, 13 October 2026: "payment received, lm instruction , Other", then
+  // "lets stick to 'client instruction' for both DCN and RCN" - the LM IS the
+  // client, and one thing has one word.
+  //
+  // `RECONNECT_METER` is retired from the list. It said "Reconnect meter" on a
+  // reconnection, which restates the transaction instead of saying why it was
+  // sent - so it was never a reason. It is NOT deleted from iREPS: records
+  // already carrying it keep it and stay readable, which is why the code is
+  // named here rather than forgotten.
   reconnection_instructions: Object.freeze([
-    option("Reconnect meter", "RECONNECT_METER"),
+    describedOption(
+      "Payment received",
+      "PAYMENT_RECEIVED",
+      "The customer has paid, so the supply goes back on.",
+    ),
+    describedOption(
+      "Client instruction",
+      "CLIENT_INSTRUCTION",
+      "Reconnection instructed by the client.",
+    ),
   ]),
 
   // UI-R003 1.7.0: these two lived in their own screen. They were never
