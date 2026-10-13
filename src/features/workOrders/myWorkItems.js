@@ -47,6 +47,54 @@ export function isStillHisWork(item) {
   return !WORK_HE_NO_LONGER_HOLDS.includes(stateOf(item));
 }
 
+/**
+ * Is this job in the ward the worker has chosen?
+ *
+ * Owner, 13 October 2026, looking at Siya on TEST: **"we cant use different
+ * counting systems in 1 app"**, then **"will u please fix your counting"**.
+ *
+ * His card said four inspections under a header reading *Endumeni / W6*. The
+ * office's ward-scoped screen said three, and the office was right: the
+ * fourth was `TRN_MINSP_1783504345513_ELC_ZA7423006_5550` - ward `ZA7423006`,
+ * municipality `ZA7423`. **A different municipality entirely**, drawn on a
+ * screen that says Endumeni at the top.
+ *
+ * These lists carried NO geography filter at all. The ward chip in the header
+ * was decoration, so a worker who had ever worked anywhere else saw that work
+ * mixed into his ward's numbers for ever, and no two screens in iREPS could
+ * agree about him.
+ *
+ * It is scoped on the WARD, and the municipality is checked too where both
+ * are known: ward codes are unique in practice, but a record is only properly
+ * placed by both (owner, 3 October 2026 - every record carries its
+ * municipality and its ward).
+ *
+ * A job with NO ward on it is KEPT, deliberately. Dropping it would hide a
+ * defective record from the only person who can see the meter, which is the
+ * opposite of what `UI-R008` asks: a gap is shown, not tidied away. It will
+ * read `NAv` and be a job to fix.
+ */
+export function isInChosenWard(item, wardPcode, lmPcode = "") {
+  const want = String(wardPcode ?? "").trim().toUpperCase();
+
+  // No ward chosen yet: nothing is excluded, because nothing has been asked.
+  if (!want) return true;
+
+  const itemWard = String(item?.wardPcode ?? "").trim().toUpperCase();
+
+  // A record that does not say where it is stays visible, and says NAv.
+  if (!itemWard) return true;
+
+  if (itemWard !== want) return false;
+
+  const wantLm = String(lmPcode ?? "").trim().toUpperCase();
+  const itemLm = String(item?.lmPcode ?? "").trim().toUpperCase();
+
+  if (!wantLm || !itemLm) return true;
+
+  return itemLm === wantLm;
+}
+
 // The total and the four numbers beneath it, built together from one list so
 // they cannot disagree. The badge used to be the list's length over seven
 // states while the boxes drew four, so two rejected jobs were counted and

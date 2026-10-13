@@ -88,7 +88,11 @@ import {
 } from "../../../../src/redux/workOrderKeepers";
 import { removeSubmissionQueueItemsByInstructionTrnId } from "../../../../src/utils/submissionQueue";
 import { FORM_TEXT, FORM_PLACEHOLDER } from "../../../../src/theme/formColors";
-import { countMyWork, isStillHisWork } from "../../../../src/features/workOrders/myWorkItems";
+import {
+  countMyWork,
+  isInChosenWard,
+  isStillHisWork,
+} from "../../../../src/features/workOrders/myWorkItems";
 
 // UI-R005: a work bucket is one block a worker can see the edges of. The page
 // behind them is #f8fafc, so a white card on it had no edge in sunlight.
@@ -2011,14 +2015,30 @@ export default function WorkorderManagementSystem() {
     clearPendingTargetedBatchAction,
   ]);
 
+  // HIS WORK IN THE WARD HE HAS CHOSEN. Owner, 13 October 2026: "we cant use
+  // different counting systems in 1 app".
+  //
+  // This list carried no geography filter, so a worker who had ever worked in
+  // another municipality saw that work counted here under a header naming
+  // Endumeni. Siya's card read four inspections where the office's screen
+  // read three, and the office was right: the fourth was in ward ZA7423006,
+  // municipality ZA7423.
+  //
+  // `individualItems` is the one set behind the bucket count, the group badge,
+  // the four boxes and the rows behind the tap, so scoping it here scopes all
+  // of them together and none can disagree with another.
+  const chosenWardPcode = getGeoPcode(geoState?.selectedWard);
+  const chosenLmPcode = getGeoPcode(geoState?.selectedLm);
+
   const individualItems = useMemo(() => {
     return allItems.filter(
       (item) =>
         item.scopeBucket === "MY_WORK" &&
         !isBgoChildItem(item) &&
-        isStillHisWork(item),
+        isStillHisWork(item) &&
+        isInChosenWard(item, chosenWardPcode, chosenLmPcode),
     );
-  }, [allItems]);
+  }, [allItems, chosenWardPcode, chosenLmPcode]);
 
   // TB-R052: each list is read for the worker's teams and says which teams those were.
   const bgoTeamIds = useMemo(

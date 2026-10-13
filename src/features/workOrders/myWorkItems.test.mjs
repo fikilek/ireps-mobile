@@ -13,6 +13,7 @@ import {
   WORK_HE_STILL_HOLDS,
   countMyWork,
   drawnTotal,
+  isInChosenWard,
   isStillHisWork,
 } from "./myWorkItems.js";
 
@@ -137,4 +138,63 @@ test("his completed work stays on his phone", () => {
   // Issued and Accepted. The owner never said that - his card has a working
   // Completed box, and his bucket counts the work he finished.
   assert.equal(countMyWork([{ workflowState: "COMPLETED" }]).completed, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Owner, 13 October 2026: "we cant use different counting systems in 1 app",
+// then "will u please fix your counting". Siya's phone counted a job from
+// municipality ZA7423 under a header reading Endumeni / W6.
+// ---------------------------------------------------------------------------
+
+test("a job in another ward is not his ward's work", () => {
+  const here = { wardPcode: "ZA5241006", lmPcode: "ZA5241" };
+  const elsewhere = { wardPcode: "ZA7423006", lmPcode: "ZA7423" };
+
+  assert.equal(isInChosenWard(here, "ZA5241006", "ZA5241"), true);
+  assert.equal(isInChosenWard(elsewhere, "ZA5241006", "ZA5241"), false);
+});
+
+test("Siya's own case: four inspections become three", () => {
+  // The exact records. The fourth is TRN_MINSP_..._ELC_ZA7423006_5550.
+  const siya = [
+    { workflowState: "ISSUED", wardPcode: "ZA5241006", lmPcode: "ZA5241" },
+    { workflowState: "ACCEPTED", wardPcode: "ZA5241006", lmPcode: "ZA5241" },
+    { workflowState: "ACCEPTED", wardPcode: "ZA5241006", lmPcode: "ZA5241" },
+    { workflowState: "COMPLETED", wardPcode: "ZA7423006", lmPcode: "ZA7423" },
+  ];
+
+  const inWard = siya.filter((i) => isInChosenWard(i, "ZA5241006", "ZA5241"));
+
+  assert.equal(inWard.length, 3, "the office's three, not the phone's four");
+  assert.equal(countMyWork(inWard).total, 3);
+  assert.equal(drawnTotal(countMyWork(inWard)), 3, "and the boxes still add up");
+});
+
+test("the same ward in a different municipality is not the same place", () => {
+  // Ward codes are unique in practice, but a record is placed by BOTH.
+  const other = { wardPcode: "ZA5241006", lmPcode: "ZA9471" };
+
+  assert.equal(isInChosenWard(other, "ZA5241006", "ZA5241"), false);
+});
+
+test("a record with no ward is KEPT, and shown as the gap it is", () => {
+  // UI-R008: a gap is shown, not tidied away. Dropping it would hide a
+  // defective record from the only person who can see the meter.
+  const noWard = { workflowState: "ISSUED" };
+
+  assert.equal(isInChosenWard(noWard, "ZA5241006", "ZA5241"), true);
+});
+
+test("before a ward is chosen, nothing is excluded", () => {
+  const anywhere = { wardPcode: "ZA7423006", lmPcode: "ZA7423" };
+
+  assert.equal(isInChosenWard(anywhere, ""), true);
+  assert.equal(isInChosenWard(anywhere, null), true);
+});
+
+test("a job whose municipality is unknown is judged on its ward alone", () => {
+  // Half a fact is not a reason to hide the job.
+  const noLm = { wardPcode: "ZA5241006" };
+
+  assert.equal(isInChosenWard(noLm, "ZA5241006", "ZA5241"), true);
 });
