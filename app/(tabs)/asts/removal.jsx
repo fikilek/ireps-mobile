@@ -1,8 +1,8 @@
 import { isLifecycleInstructionLocked } from "../../../src/features/workOrders/instructionLock";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Formik } from "formik";
+import { Stack, useRouter } from "expo-router";
+import { Formik, useQaAmendment, useQaSearchParams as useLocalSearchParams } from "../../../src/features/qa/QaAmendmentContext";
 import { makeBatchedSetFieldValue } from "../../../src/utils/batchedFormikSave";
 import { returnAfterLifecycleWork } from "../../../src/utils/lifecycleReturn";
 import {
@@ -717,6 +717,8 @@ const OfficeInstructionSection = ({
 };
 
 export default function FormMeterRemoval() {
+  const qaAmendment = useQaAmendment();
+  const qaMeter = qaAmendment?.meter;
   const {
     astId: astIdRaw,
     sourceAstId: sourceAstIdRaw,
@@ -792,7 +794,8 @@ export default function FormMeterRemoval() {
   const { profile, user } = useAuth();
   const { data: allServiceProviders = [] } = useGetServiceProvidersQuery();
 
-  const [editQueueItem, setEditQueueItem] = useState(undefined);
+  const [localEditQueueItem, setEditQueueItem] = useState(undefined);
+  const editQueueItem = qaAmendment?.editQueueItem || localEditQueueItem;
   const pendingFieldChangesRef = useRef(null);
 
   const actionOriginChannel = String(action?.origin?.channel || "")
@@ -918,9 +921,10 @@ export default function FormMeterRemoval() {
     };
   }, [queueItemId]);
 
-  const isEditMode = !!queueItemId;
+  const isEditMode = !!qaAmendment || !!queueItemId;
 
   const astDoc = useMemo(() => {
+    if (qaMeter) return qaMeter;
     const id = sourceAstId;
     if (!id) return null;
 
@@ -999,7 +1003,7 @@ export default function FormMeterRemoval() {
       },
       meterType: readFirstString(action?.meterType, "NAv"),
     };
-  }, [all?.meters, sourceAstId, action, premiseId]);
+  }, [qaMeter, all?.meters, sourceAstId, action, premiseId]);
 
   const premise = useMemo(() => {
     const id =
@@ -1102,7 +1106,7 @@ export default function FormMeterRemoval() {
     action?.meterPreStatus,
   ]);
 
-  const isEligible = initialEligible === true;
+  const isEligible = !!qaAmendment || initialEligible === true;
 
   const userSpId = profile?.employment?.serviceProvider?.id;
 
@@ -1372,6 +1376,7 @@ export default function FormMeterRemoval() {
   }
 
   async function handleSaveRemoval(values) {
+    if (qaAmendment) return qaAmendment.save(values);
     try {
       setSaveInProgress(true);
 
@@ -1580,7 +1585,7 @@ export default function FormMeterRemoval() {
   const actionInit = useMemo(() => getInitialValues(), [getInitialValues]);
 
   const handleSubmitRemoval = async (values) => {
-    if (!instructionTrnId && !isFieldOrigin) {
+    if (!qaAmendment && !instructionTrnId && !isFieldOrigin) {
       Alert.alert(
         "Missing Instruction",
         "This REM execution form must be opened from an accepted WMS instruction.",
@@ -1847,7 +1852,7 @@ export default function FormMeterRemoval() {
     );
   }
 
-  if (!instructionTrnId && !isFieldOrigin) {
+  if (!qaAmendment && !instructionTrnId && !isFieldOrigin) {
     return (
       <ScrollView style={styles.container}>
         <Stack.Screen
@@ -1883,7 +1888,7 @@ export default function FormMeterRemoval() {
     );
   }
 
-  if (!astDoc || initialEligible === null) {
+  if (!qaAmendment && (!astDoc || initialEligible === null)) {
     return (
       <View style={styles.loaderWrap}>
         <ActivityIndicator size="large" color="#2563eb" />
@@ -1947,6 +1952,7 @@ export default function FormMeterRemoval() {
       />
 
       <Formik
+        qaSerialize={values => buildExecutionPayload(values, values.media)}
         initialValues={actionInit}
         onSubmit={handleSubmitRemoval}
         validationSchema={RemovalSchema}

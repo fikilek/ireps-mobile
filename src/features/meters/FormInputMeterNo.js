@@ -17,8 +17,9 @@ import { cleanMeterNumberInput } from "./meterNumberRule";
 import { FORM_TEXT, FORM_PLACEHOLDER } from "../../theme/formColors";
 
 const FormInputMeterNo = ({ label, name, disabled }) => {
-  const { setFieldValue, values, errors, handleBlur, isSubmitting } =
+  const { setFieldValue, values, errors, handleBlur, isSubmitting, status } =
     useFormikContext();
+  disabled = disabled || status?.qaAmendment;
   const { all } = useWarehouse();
 
   const [scannerVisible, setScannerVisible] = useState(false);

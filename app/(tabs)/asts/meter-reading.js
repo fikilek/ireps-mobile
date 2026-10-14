@@ -1,8 +1,8 @@
 import { isLifecycleInstructionLocked } from "../../../src/features/workOrders/instructionLock";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Formik } from "formik";
+import { Stack, useRouter } from "expo-router";
+import { Formik, useQaAmendment, useQaSearchParams as useLocalSearchParams } from "../../../src/features/qa/QaAmendmentContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -942,6 +942,8 @@ const OfficeInstructionSection = ({
 };
 
 export default function FormMeterReading() {
+  const qaAmendment = useQaAmendment();
+  const qaMeter = qaAmendment?.meter;
   const {
     astId: astIdRaw,
     sourceAstId: sourceAstIdRaw,
@@ -979,7 +981,8 @@ export default function FormMeterReading() {
     }
   }, [actionRaw]);
 
-  const [editQueueItem, setEditQueueItem] = useState(undefined);
+  const [localEditQueueItem, setEditQueueItem] = useState(undefined);
+  const editQueueItem = qaAmendment?.editQueueItem || localEditQueueItem;
   // The Saved Forms route also passes the capture id as trnId. Only the stored
   // payload can distinguish a field capture from an actual office instruction.
   const queuedInstructionId = readFirstString(editQueueItem?.payload?.instructionTrnId);
@@ -1081,9 +1084,10 @@ export default function FormMeterReading() {
     };
   }, [queueItemId]);
 
-  const isEditMode = !!queueItemId;
+  const isEditMode = !!qaAmendment || !!queueItemId;
 
   const astDoc = useMemo(() => {
+    if (qaMeter) return qaMeter;
     const id = sourceAstId;
     if (!id) return null;
 
@@ -1162,7 +1166,7 @@ export default function FormMeterReading() {
       },
       meterType: readFirstString(action?.meterType, "NAv"),
     };
-  }, [all?.meters, sourceAstId, action, premiseId]);
+  }, [qaMeter, all?.meters, sourceAstId, action, premiseId]);
 
   const premise = useMemo(() => {
     const id =
@@ -1267,7 +1271,7 @@ export default function FormMeterReading() {
     action?.meterPreStatus,
   ]);
 
-  const isEligible = initialEligible === true;
+  const isEligible = !!qaAmendment || initialEligible === true;
 
   const userSpId = profile?.employment?.serviceProvider?.id;
 
@@ -1493,6 +1497,7 @@ export default function FormMeterReading() {
   }
 
   async function handleSaveMeterReading(values) {
+    if (qaAmendment) return qaAmendment.save(values);
     if (savingRef.current) return;
     savingRef.current = true;
     setSaveInProgress(true);
@@ -1840,7 +1845,7 @@ export default function FormMeterReading() {
     );
   }
 
-  if (!astDoc || initialEligible === null) {
+  if (!qaAmendment && (!astDoc || initialEligible === null)) {
     return (
       <View style={styles.loaderWrap}>
         <ActivityIndicator size="large" color="#2563eb" />
@@ -1904,6 +1909,7 @@ export default function FormMeterReading() {
       />
 
       <Formik
+        qaSerialize={values => buildExecutionPayload(values, values.media)}
         initialValues={actionInit}
         onSubmit={handleSubmitMeterReading}
         validationSchema={MeterReadingSchema}

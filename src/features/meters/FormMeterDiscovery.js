@@ -1,8 +1,8 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { buildDeviceCaptureTimes } from "./deviceCaptureTimes";
 import * as Location from "expo-location"; // Ensure this is imported at the to
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Formik } from "formik";
+import { Stack, useRouter } from "expo-router";
+import { Formik, useQaAmendment, useQaSearchParams as useLocalSearchParams } from "../qa/QaAmendmentContext";
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -386,6 +386,7 @@ function buildCanonicalMeterDiscoveryMedia(values) {
 
 // --- MAIN FORM COMPONENT ---
 export default function FormMeterDiscovery() {
+  const qaAmendment = useQaAmendment();
   const {
     premiseId,
     action: actionRaw,
@@ -397,7 +398,8 @@ export default function FormMeterDiscovery() {
     ? queueItemIdRaw[0]
     : queueItemIdRaw;
 
-  const [editQueueItem, setEditQueueItem] = useState(undefined);
+  const [localEditQueueItem, setEditQueueItem] = useState(undefined);
+  const editQueueItem = qaAmendment?.editQueueItem || localEditQueueItem;
 
   const targetedBatchContext = useMemo(
     () =>
@@ -500,9 +502,9 @@ export default function FormMeterDiscovery() {
     };
   }, [queueItemId]);
 
-  const isEditMode = !!queueItemId;
+  const isEditMode = !!qaAmendment || !!queueItemId;
 
-  const premise = warehousePremise || draftPremise || null;
+  const premise = qaAmendment?.premise || warehousePremise || draftPremise || null;
   // const premise = all.prems.find((p) => p.id === premiseId);
 
   const parents = premise?.parents || {};
@@ -2248,6 +2250,7 @@ export default function FormMeterDiscovery() {
         status="Securing encrypted data packet..."
       />
       <Formik
+        qaSerialize={values => ({ ...values, ast: buildCanonicalMeterDiscoveryAst(values), media: buildCanonicalMeterDiscoveryMedia(values) })}
         initialValues={actionInit.initValues}
         onSubmit={handleSubmitDiscovery}
         validationSchema={actionInit.schema}

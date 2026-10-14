@@ -2,6 +2,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { FlashList } from "@shopify/flash-list";
 import { format, isValid } from "date-fns";
 import { useMemo, useState } from "react";
+import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Image,
@@ -1166,6 +1167,7 @@ function FormSummaryModal({ visible, item, mediaItems = [], onClose }) {
 }
 
 export default function TrnsScreen() {
+  const router = useRouter();
   const { filtered, sync } = useWarehouse();
   const { filterState, isFiltering } = useTrnFilter();
 
@@ -1184,6 +1186,7 @@ export default function TrnsScreen() {
   if (noWard) {
     return (
       <View style={[styles.container, styles.center]}>
+        <TouchableOpacity onPress={() => router.push("/(tabs)/trns/qa")}><Text style={{ color: "#075dc5", padding: 16 }}>QA · returned work and notifications</Text></TouchableOpacity>
         <Text style={styles.loadingText}>
           Select a ward to view field transactions.
         </Text>
@@ -1195,6 +1198,7 @@ export default function TrnsScreen() {
     return (
       <View style={[styles.container, styles.center]}>
         <ActivityIndicator size="large" color="#3B82F6" />
+        <TouchableOpacity onPress={() => router.push("/(tabs)/trns/qa")}><Text style={{ color: "#075dc5", padding: 16 }}>QA · returned work and notifications</Text></TouchableOpacity>
         <Text style={styles.loadingText}>Syncing Audit Logs...</Text>
       </View>
     );
@@ -1202,6 +1206,7 @@ export default function TrnsScreen() {
 
   return (
     <View style={styles.container}>
+      <TouchableOpacity onPress={() => router.push("/(tabs)/trns/qa")} style={{ padding: 16, backgroundColor: "#eaf2ff" }}><Text style={{ color: "#075dc5", fontWeight: "700" }}>QA · returned work and notifications</Text></TouchableOpacity>
       <FlashList
         data={displayTrns}
         renderItem={({ item }) => <TrnItem item={item} />}
