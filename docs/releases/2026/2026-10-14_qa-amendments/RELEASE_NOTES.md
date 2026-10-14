@@ -32,3 +32,10 @@ Verification includes all saved forms, normal submission regression tests,
 duplicate/uncertain sends, upload recovery, author scope, takeover, immutable
 evidence, concurrent review and newer-meter protection. Owner acceptance begins
 with Meter Discovery on hosted DEV and the matching DEV mobile update.
+
+## QA Fail explanation update — 14 October 2026
+
+The owner made the QA Fail explanation optional while retaining the required
+failure reason. The phone's returned-work list and correction form display that
+reason even when the reviewer supplied no explanation. Amendment explanations
+and supervisor-takeover reasons remain required.
