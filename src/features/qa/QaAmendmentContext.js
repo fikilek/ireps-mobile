@@ -19,7 +19,7 @@ function QaControls({ serialize }) {
   return <ScrollView style={{ flexGrow: 0, maxHeight: "45%", backgroundColor: "#eaf2ff" }} contentContainerStyle={{ padding: 16, gap: 10 }} keyboardShouldPersistTaps="handled">
     <Text style={{ fontSize: 19, fontWeight: "700", color: "#102c54" }}>Correct submitted work · QA {qa.context.state}</Text>
     <Text selectable style={{ color: "#172b4d" }}>{qa.context.trnId}</Text>
-    {!!qa.context.snapshot.qa?.comment && <Text style={{ color: "#8b1b1b" }}>{qa.context.snapshot.qa.reasonLabel}: {qa.context.snapshot.qa.comment}</Text>}
+    {(!!qa.context.snapshot.qa?.reasonLabel || !!qa.context.snapshot.qa?.comment) && <Text style={{ color: "#8b1b1b" }}>{[qa.context.snapshot.qa.reasonLabel, qa.context.snapshot.qa.comment].filter(Boolean).join(": ")}</Text>}
     <Text style={{ color: "#172b4d" }}>The same transaction and all earlier versions are retained. Meter number, original visit and physical outcome cannot be changed here.</Text>
     <TextInput accessibilityLabel="Correction explanation" placeholder="Explain the correction (required)" placeholderTextColor="#52647a" value={qa.explanation} onChangeText={qa.setExplanation} multiline maxLength={4000} style={{ color: "#172b4d", backgroundColor: "white", padding: 10 }} />
     {qa.context.takeover && <TextInput accessibilityLabel="Takeover reason" placeholder="Why are you taking over? Confirm the submitter has left." placeholderTextColor="#52647a" value={qa.takeoverReason} onChangeText={qa.setTakeoverReason} multiline maxLength={4000} style={{ color: "#172b4d", backgroundColor: "white", padding: 10 }} />}

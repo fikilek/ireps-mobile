@@ -51,7 +51,7 @@ export default function QaWork() {
     {items.map(item => <TouchableOpacity key={item.trnId} onPress={() => open(item.trnId)} style={{ padding: 14, gap: 6, backgroundColor: "#eaf2ff" }}>
       <Text style={{ color: "#102c54", fontWeight: "700" }}>QA {item.state} · {item.meterNo || item.trnType}</Text>
       <Text style={{ color: "#172b4d" }}>{item.trnId}</Text>
-      {!!item.comment && <Text style={{ color: "#8b1b1b" }}>{item.reason}: {item.comment}</Text>}
+      {(!!item.reason || !!item.comment) && <Text style={{ color: "#8b1b1b" }}>{[item.reason, item.comment].filter(Boolean).join(": ")}</Text>}
       <Text style={{ color: "#075dc5" }}>{takeover ? "Open for authorised takeover" : "Open saved form"}</Text>
     </TouchableOpacity>)}
     {!busy && !items.length && <Text style={{ color: "#172b4d" }}>No eligible work in this list.</Text>}
