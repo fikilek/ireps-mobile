@@ -1,7 +1,7 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Formik } from "formik";
+import { Stack, useRouter } from "expo-router";
+import { Formik, useQaAmendment, useQaSearchParams as useLocalSearchParams } from "../../../src/features/qa/QaAmendmentContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -2388,6 +2388,8 @@ function ComparisonModal({
 }
 
 export default function InspectionScreen() {
+  const qaAmendment = useQaAmendment();
+  const qaMeter = qaAmendment?.meter;
   const router = useRouter();
   const params = useLocalSearchParams();
   const { all } = useWarehouse();
@@ -2418,6 +2420,7 @@ export default function InspectionScreen() {
   );
 
   const astDoc = useMemo(() => {
+    if (qaMeter) return qaMeter;
     const meters = Array.isArray(all?.meters) ? all.meters : [];
 
     return (
@@ -2427,7 +2430,7 @@ export default function InspectionScreen() {
       action ||
       null
     );
-  }, [all?.meters, sourceAstId, action]);
+  }, [qaMeter, all?.meters, sourceAstId, action]);
 
   const officeInstruction = getOfficeInstruction(action);
   const officeInstructionMedia = Array.isArray(action?.officeInstructionMedia)
@@ -2440,7 +2443,8 @@ export default function InspectionScreen() {
   const agentName =
     profile?.profile?.displayName || profile?.profile?.email || "Field Agent";
 
-  const [editQueueItem, setEditQueueItem] = useState(undefined);
+  const [localEditQueueItem, setEditQueueItem] = useState(undefined);
+  const editQueueItem = qaAmendment?.editQueueItem || localEditQueueItem;
   const pendingFieldChangesRef = useRef(null);
 
   // MN-R001 section 8 (1.1.0): a field worker who finds a meter live again
@@ -2561,7 +2565,7 @@ export default function InspectionScreen() {
     normalizeUpper(lastKnown?.status?.state || action?.meterPreStatus),
   );
 
-  const isEligible = statusIsEligible && isKnownMeterKind;
+  const isEligible = !!qaAmendment || (statusIsEligible && isKnownMeterKind);
 
   const eligibilityBlockMessage = !statusIsEligible
     ? "DECOMMISSIONED meters cannot be inspected."
@@ -3006,6 +3010,7 @@ export default function InspectionScreen() {
   }
 
   async function handleSaveInspection(values) {
+    if (qaAmendment) return qaAmendment.save(values);
     try {
       setSaveInProgress(true);
 
@@ -3027,7 +3032,7 @@ export default function InspectionScreen() {
   }
 
   async function handleSubmitInspection(values, helpers) {
-    if (!instructionTrnId && !isFieldOrigin) {
+    if (!qaAmendment && !instructionTrnId && !isFieldOrigin) {
       setInProgress(false);
       Alert.alert(
         "Missing Instruction",
@@ -3560,7 +3565,7 @@ export default function InspectionScreen() {
     );
   }
 
-  if (!instructionTrnId && !isFieldOrigin) {
+  if (!qaAmendment && !instructionTrnId && !isFieldOrigin) {
     return (
       <ScrollView style={styles.container}>
         <Stack.Screen
@@ -3594,6 +3599,7 @@ export default function InspectionScreen() {
       />
 
       <Formik
+        qaSerialize={values => buildExecutionPayload(values, values.media)}
         initialValues={actionInit}
         validationSchema={InspectionSchema}
         onSubmit={handleSubmitInspection}

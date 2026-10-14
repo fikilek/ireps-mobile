@@ -1,7 +1,7 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Formik } from "formik";
+import { Stack, useRouter } from "expo-router";
+import { Formik, useQaAmendment, useQaSearchParams as useLocalSearchParams } from "../../../src/features/qa/QaAmendmentContext";
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -364,6 +364,8 @@ const YesNoQuestion = ({
 };
 
 export default function FormMeterCommissioning() {
+  const qaAmendment = useQaAmendment();
+  const qaMeter = qaAmendment?.meter;
   const {
     astId: astIdRaw,
     premiseId: premiseIdRaw,
@@ -397,7 +399,8 @@ export default function FormMeterCommissioning() {
     isLoading: isServiceProvidersLoading,
   } = useGetServiceProvidersQuery();
 
-  const [editQueueItem, setEditQueueItem] = useState(undefined);
+  const [localEditQueueItem, setEditQueueItem] = useState(undefined);
+  const editQueueItem = qaAmendment?.editQueueItem || localEditQueueItem;
   const [inProgress, setInProgress] = useState(false);
 
   const [initialEligible, setInitialEligible] = useState(null);
@@ -436,14 +439,15 @@ export default function FormMeterCommissioning() {
     };
   }, [queueItemId]);
 
-  const isEditMode = !!queueItemId;
+  const isEditMode = !!qaAmendment || !!queueItemId;
 
   const astDoc = useMemo(() => {
+    if (qaMeter) return qaMeter;
     const id = astId || action?.astId;
     if (!id) return null;
 
     return (all?.meters || []).find((meter) => meter?.id === id) || null;
-  }, [all?.meters, astId, action?.astId]);
+  }, [qaMeter, all?.meters, astId, action?.astId]);
 
   const premise = useMemo(() => {
     const id =
@@ -553,10 +557,7 @@ export default function FormMeterCommissioning() {
 
   const isCommissionRoleLoading = isSPV && isServiceProvidersLoading;
 
-  const isEligible =
-    initialEligible === true &&
-    isValidCommissionMeterType &&
-    canCreateAndSubmitCommissioning;
+  const isEligible = !!qaAmendment || (initialEligible === true && isValidCommissionMeterType && canCreateAndSubmitCommissioning);
 
   console.log(`isEligible`, isEligible);
 
@@ -966,7 +967,7 @@ export default function FormMeterCommissioning() {
     );
   }
 
-  if (!astDoc || initialEligible === null || isCommissionRoleLoading) {
+  if (!qaAmendment && (!astDoc || initialEligible === null || isCommissionRoleLoading)) {
     return (
       <View style={styles.loaderWrap}>
         <ActivityIndicator size="large" color="#2563eb" />
@@ -1027,6 +1028,7 @@ export default function FormMeterCommissioning() {
       />
 
       <Formik
+        qaSerialize={values => values}
         initialValues={actionInit}
         onSubmit={handleSubmitCommissioning}
         validationSchema={commissioningSchema}

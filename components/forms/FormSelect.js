@@ -45,13 +45,14 @@ const FormSelect = ({
     setFieldTouched,
     errors,
     isSubmitting,
+    status,
   } = useFormikContext();
   const [visible, setVisible] = useState(false);
 
   const value = getIn(values, name);
   const error = getIn(errors, name);
   const hasError = !!error;
-  const isDisabled = disabled || isSubmitting;
+  const isDisabled = disabled || isSubmitting || (status?.qaAmendment && (name === "accessData.access.hasAccess" || name === "status.state" || /^(commissioning|removal)\..*\.answer$/.test(name)));
 
   const normalizedOptions = [
     ...(clearable ? [{ label: clearLabel, value: "" }] : []),

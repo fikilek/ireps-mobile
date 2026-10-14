@@ -63,7 +63,8 @@ export function IrepsNoAccessForm({
   const [pickedDay, setPickedDay] = useState(null);
   const [pickerNow, setPickerNow] = useState(Date.now);
   const [timeError, setTimeError] = useState("");
-  const { validateForm } = useFormikContext();
+  const { validateForm, status } = useFormikContext();
+  const originalAppointmentOnly = status?.qaAmendment === true;
   const reasonCode = String(value?.reasonCode || "").trim();
   const reasonOther = String(value?.reasonOther || "");
   const appointment = value?.appointment || null;
@@ -186,7 +187,8 @@ export function IrepsNoAccessForm({
           {returnVisit ? <>
           <Divider style={styles.divider} />
           {/* 3. NA Appointment — required for the return-visit reason (NA-R020) */}
-          <View style={[styles.appointmentSection, Boolean(appointmentErrorText) && styles.appointmentError]}>
+          <View pointerEvents={originalAppointmentOnly ? "none" : "auto"} style={[styles.appointmentSection, Boolean(appointmentErrorText) && styles.appointmentError]}>
+          {originalAppointmentOnly && <Text style={{ color: FORM_TEXT }}>The original appointment is retained. A new agreement requires a new transaction.</Text>}
           <View style={styles.sectionHeader}>
             <MaterialCommunityIcons name="calendar-clock" size={18} color={appointmentErrorText ? "#dc2626" : "#0f766e"} />
             <Text style={[styles.sectionTitle, Boolean(appointmentErrorText) && styles.invalidTitle]}>NA Appointment</Text>
