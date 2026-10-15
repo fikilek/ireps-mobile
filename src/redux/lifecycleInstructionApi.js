@@ -40,6 +40,9 @@ const WMS_WORKFLOW_STATES = [
   "REJECTED",
   "IN_PROGRESS",
   "COMPLETED",
+  "QA FAIL",
+  "QA UPDATED",
+  "QA PASS",
   "CANCELLED",
 ];
 
@@ -55,17 +58,9 @@ const WMS_OPEN_WORKFLOW_STATES = [
   "REJECTED",
   "IN_PROGRESS",
 ];
-const WMS_FINISHED_WORKFLOW_STATES = ["COMPLETED", "CANCELLED"];
 
 // TB-R052: every channel the server gives a TRN except FIELD (a field form is never an office work order).
 const WMS_OFFICE_CHANNELS = ["OFFICE", "API", "AMI", "INTEGRATION"];
-
-// TB-R052: how often a kept list re-checks which finished work orders are still within 30 days.
-const WMS_LISTED_CHECK_MS = 60 * 60 * 1000;
-
-// TB-R052: a finished work order is listed for 30 days after it last changed.
-const WMS_FINISHED_LISTED_DAYS = 30;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 // TB-R052: how often the phone's queue is checked for items waiting on the server.
 const WMS_QUEUE_CHECK_MS = 30000;
@@ -138,6 +133,9 @@ function buildEmptyStateCounts() {
     rejected: 0,
     inProgress: 0,
     completed: 0,
+    qaFail: 0,
+    qaUpdated: 0,
+    qaPass: 0,
     cancelled: 0,
     total: 0,
   };
@@ -186,6 +184,12 @@ function getStateCountKey(state) {
       return "inProgress";
     case "COMPLETED":
       return "completed";
+    case "QA FAIL":
+      return "qaFail";
+    case "QA UPDATED":
+      return "qaUpdated";
+    case "QA PASS":
+      return "qaPass";
     case "CANCELLED":
       return "cancelled";
     default:
@@ -547,6 +551,11 @@ function getScopeBucket({ trn, actor, teamMap, managerCanSee }) {
   if (visibility.teamAssigned) return "TEAM_WORK";
   if (visibility.spAssigned) return "SP_WORK";
   if (managerCanSee) return "MANAGEMENT_SCOPE";
+  // Participation preserves visibility only within the current provider scope;
+  // it does not change canCorrect/canExecute authorization.
+  if (actor?.uid && actor?.spId === getTrnServiceProviderId(trn) &&
+      (trn.workflow?.completedByUid === actor.uid ||
+       trn.workflow?.submittedByUids?.includes(actor.uid))) return "MY_WORK";
 
   return "HIDDEN";
 }
@@ -734,6 +743,10 @@ function normalizeWmsWorkItem({
     },
 
     permissions: {
+      canCorrect: !getBgoBatchIdFromTrn(trn) && !trn.targetedBatchContext && workflowState === "QA FAIL" && isFieldExecutor &&
+        trn?.workflow?.completedByUid === actor?.uid &&
+        getTrnServiceProviderId(trn) === actor?.spId &&
+        (!trn?.qa?.state || trn.qa.state === "FAIL"),
       canAccept: canAcceptReject,
       canReject: canAcceptReject,
       canExecute,
@@ -751,27 +764,9 @@ function normalizeWmsWorkItem({
   };
 }
 
-// TB-R052: a finished work order (Completed or Cancelled) is listed for 30 days after it last changed; an open
-// one is always listed.
-/**
- * A job in the bin is never a work order. `DR-R001` 5.5.
- *
- * Said by NAME rather than left to the allowlist below. Today DELETED is
- * absent from `WMS_WORKFLOW_STATES` and so never drawn - but that is an
- * accident of a list that also still names four words which stopped being
- * states on 11 October, and `isListedWorkOrder` defaults an unrecognised
- * state to "open work order, always listed, whatever its age". The first
- * person to widen that list would ship deleted work to a worker permanently.
- */
+// Indefinite visibility never grants access to deleted work. DR-R001 5.5.
 function isBinnedWorkOrder(trn) {
   return isDeletedWork(trn);
-}
-
-function isListedWorkOrder(trn = {}, nowMs = Date.now()) {
-  if (!WMS_FINISHED_WORKFLOW_STATES.includes(getWorkflowState(trn))) return true;
-
-  const changedAt = toMillis(getUpdatedAt(trn));
-  return changedAt > 0 && nowMs - changedAt <= WMS_FINISHED_LISTED_DAYS * DAY_MS;
 }
 
 // TB-R052: updatedAt is set once the work orders, teams and service providers have all been read; stream says
@@ -803,12 +798,12 @@ function buildWmsData({
   });
   const isManager = isManagerScopeActor({ actor, serviceProviders });
 
-  const items = trns
+  const items = mergeWorkOrderStreams([trns])
     // Said first and said by name. `DR-R001` 5.5.
     .filter((trn) => !isBinnedWorkOrder(trn))
     .filter((trn) => WMS_LCT_TYPES.includes(getTrnType(trn)))
     .filter((trn) => WMS_WORKFLOW_STATES.includes(getWorkflowState(trn)))
-    .filter((trn) => cleanMode !== "INDIVIDUAL" || isListedWorkOrder(trn, nowMs))
+    .filter((trn) => cleanMode !== "BGO_BUCKET" || !["QA FAIL", "QA UPDATED", "QA PASS"].includes(getWorkflowState(trn)))
     .filter((trn) => normalizeUpper(trn?.origin?.channel) !== "FIELD")
     .filter((trn) => {
       const trnBgoBatchId = getBgoBatchIdFromTrn(trn);
@@ -925,6 +920,23 @@ function readWmsWorkItemsFor(endpointName) {
 // TB-R052: office work orders are read by type and state (never the newest TRNs of all workers), with the
 // worker's teams and the service providers; the phone keeps the worker's, their team's and their service
 // provider's. An opened BGO batch reads its own TRNs.
+export function mergeWorkOrderStreams(streams, known = new Map()) {
+  const byId = new Map();
+  const time = trn => {
+    const value = trn?.metadata?.updatedAt;
+    return typeof value?.toMillis === "function" ? value.toMillis() : Date.parse(value || "") || 0;
+  };
+  for (const docs of streams) for (const trn of docs) {
+    if (!trn?.id) continue;
+    const previous = byId.get(trn.id) || known.get(trn.id);
+    if (!previous || time(trn) >= time(previous)) byId.set(trn.id, trn);
+    else byId.set(trn.id, previous);
+  }
+  known.clear();
+  for (const [id, trn] of byId) known.set(id, trn);
+  return [...byId.values()];
+}
+
 async function streamWmsWorkItems(
   args = {},
   { updateCachedData, cacheDataLoaded, cacheEntryRemoved, getState },
@@ -943,7 +955,6 @@ async function streamWmsWorkItems(
   const subscriptions = [];
   let active = true;
   let queueTimer = null;
-  let listedTimer = null;
 
   const rebuild = () => {
     if (!active) return;
@@ -993,6 +1004,12 @@ async function streamWmsWorkItems(
 
   try {
     await cacheDataLoaded;
+    // Never open an unscoped work subscription for an absent session.
+    if (!actorUid) {
+      await cacheEntryRemoved;
+      liveData.close();
+      return;
+    }
 
     if (cleanMode === "BGO_BUCKET" && selectedBgoBatchId) {
       const streamLimit = Number(args?.limit || WMS_DEMO_STREAM_LIMIT);
@@ -1013,13 +1030,18 @@ async function streamWmsWorkItems(
       follow("trns", "WORK_ORDERS", (_key, onDocs, onError) => {
         const byType = where("accessData.trnType", "in", WMS_LCT_TYPES);
         const fromOffice = where("origin.channel", "in", WMS_OFFICE_CHANNELS);
+        // ITO release: exclusive UID streaming is deliberately unavailable.
         const groups = {
           open: [byType, where("workflow.state", "in", WMS_OPEN_WORKFLOW_STATES)],
           completed: [byType, where("workflow.state", "==", "COMPLETED"), fromOffice],
           cancelled: [byType, where("workflow.state", "==", "CANCELLED"), fromOffice],
+          qaFail: [byType, where("workflow.state", "==", "QA FAIL"), fromOffice],
+          qaUpdated: [byType, where("workflow.state", "==", "QA UPDATED"), fromOffice],
+          qaPass: [byType, where("workflow.state", "==", "QA PASS"), fromOffice],
         };
         const names = Object.keys(groups);
         const answers = {};
+        const known = new Map();
         const unsubscribes = names.map((group) =>
           listenTrns(
             groups[group],
@@ -1028,7 +1050,7 @@ async function streamWmsWorkItems(
               answers[group] = { docs, fromCache: meta?.fromCache === true };
               if (!names.every((name) => answers[name])) return;
               onDocs(
-                names.flatMap((name) => answers[name].docs),
+                mergeWorkOrderStreams(names.map((name) => answers[name].docs), known),
                 { fromCache: names.some((name) => answers[name].fromCache) },
               );
             },
@@ -1074,8 +1096,6 @@ async function streamWmsWorkItems(
       followQueue();
       queueTimer = setInterval(followQueue, WMS_QUEUE_CHECK_MS);
 
-      // TB-R052: a finished work order leaves the list 30 days after it last changed, even while nothing else changes.
-      listedTimer = setInterval(rebuild, WMS_LISTED_CHECK_MS);
     }
 
     if (actorUid) {
@@ -1094,7 +1114,6 @@ async function streamWmsWorkItems(
   await cacheEntryRemoved;
   active = false;
   clearInterval(queueTimer);
-  clearInterval(listedTimer);
   for (const subscription of subscriptions) subscription.stop();
   liveData.close();
 }

@@ -8,8 +8,8 @@ const require = createRequire(import.meta.url);
 const filename = new URL("./amendmentQueue.js", import.meta.url);
 const code = transformSync(fs.readFileSync(filename, "utf8"), { babelrc: false, configFile: false,
   plugins: [require.resolve("@babel/plugin-transform-modules-commonjs")] }).code;
-function setup() {
-  const values = new Map(), calls = [], uploads = [], copies = [], files = new Map();
+function setup(values = new Map()) {
+  const calls = [], uploads = [], copies = [], files = new Map();
   let serial = 0, failure = null, resolveCall;
   const auth = { currentUser: { uid: "worker" } };
   const modules = {
@@ -58,4 +58,23 @@ test("two send taps share one in-flight request; another account cannot send it"
   q.putQaDraft("worker", "t1", q.draft); q.auth.currentUser.uid = "other";
   await assert.rejects(q.sendQaDraft("worker", "t1"), /account/); assert.equal(q.calls.length, 1);
   assert.equal(q.listQaDrafts("other").length, 0);
+});
+
+
+test("restart retains an uncertain request; account switch cannot replay it; confirmed replay clears it", async () => {
+  const first = setup();
+  first.draft.pending.fields.media = [];
+  first.putQaDraft("worker", "t1", first.draft);
+  first.fail({ code: "functions/unavailable", message: "Accepted but acknowledgement lost" });
+  await assert.rejects(first.sendQaDraft("worker", "t1"));
+  const restarted = setup(first.values);
+  assert.ok(restarted.getQaDraft("worker", "t1").pending);
+  restarted.auth.currentUser.uid = "other";
+  await assert.rejects(restarted.sendQaDraft("worker", "t1"), /account/);
+  assert.equal(restarted.calls.length, 0);
+  assert.ok(restarted.getQaDraft("worker", "t1").pending);
+  restarted.auth.currentUser.uid = "worker";
+  await restarted.sendQaDraft("worker", "t1");
+  assert.deepEqual(restarted.calls[0], first.calls[0]);
+  assert.equal(restarted.getQaDraft("worker", "t1"), null);
 });

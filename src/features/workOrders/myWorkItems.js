@@ -37,6 +37,9 @@ export const WORK_HE_STILL_HOLDS = [
   "ACCEPTED",
   "IN_PROGRESS",
   "COMPLETED",
+  "QA FAIL",
+  "QA UPDATED",
+  "QA PASS",
 ];
 
 function stateOf(item) {
@@ -100,13 +103,22 @@ export function isInChosenWard(item, wardPcode, lmPcode = "") {
 // states while the boxes drew four, so two rejected jobs were counted and
 // shown nowhere, and nothing said why the numbers would not add up.
 export function countMyWork(items) {
-  const list = Array.isArray(items) ? items.filter(isStillHisWork) : [];
+  const seen = new Set();
+  const list = Array.isArray(items) ? items.filter(isStillHisWork).filter(item => {
+    if (!item.id) return true;
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  }) : [];
 
   const counts = {
     issued: 0,
     accepted: 0,
     inProgress: 0,
     completed: 0,
+    qaFail: 0,
+    qaUpdated: 0,
+    qaPass: 0,
     total: list.length,
   };
 
@@ -117,6 +129,9 @@ export function countMyWork(items) {
     else if (state === "ACCEPTED") counts.accepted += 1;
     else if (state === "IN_PROGRESS") counts.inProgress += 1;
     else if (state === "COMPLETED") counts.completed += 1;
+    else if (state === "QA FAIL") counts.qaFail += 1;
+    else if (state === "QA UPDATED") counts.qaUpdated += 1;
+    else if (state === "QA PASS") counts.qaPass += 1;
   }
 
   return counts;
@@ -130,6 +145,9 @@ export function drawnTotal(counts) {
     Number(counts?.issued || 0) +
     Number(counts?.accepted || 0) +
     Number(counts?.inProgress || 0) +
-    Number(counts?.completed || 0)
+    Number(counts?.completed || 0) +
+    Number(counts?.qaFail || 0) +
+    Number(counts?.qaUpdated || 0) +
+    Number(counts?.qaPass || 0)
   );
 }

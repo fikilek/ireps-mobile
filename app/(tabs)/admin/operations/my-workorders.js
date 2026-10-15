@@ -1,3 +1,5 @@
+import { getQaDraft } from "../../../../src/features/qa/amendmentQueue";
+import { usePendingQaRecovery } from "../../../../src/features/qa/usePendingQaRecovery";
 import { ACCESS_GATE, NO_ACCESS_ROUTE, buildAssetNoAccessContext } from "../../../../src/features/meters/accessGate";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNetInfo } from "@react-native-community/netinfo";
@@ -143,6 +145,12 @@ const STATE_FILTERS = [
   { key: "ACCEPTED", label: "Accepted" },
   { key: "IN_PROGRESS", label: "In Progress" },
   { key: "COMPLETED", label: "Completed" },
+];
+
+const ITO_QA_FILTERS = [
+  { key: "QA FAIL", label: "QA Fail" },
+  { key: "QA UPDATED", label: "QA Updated" },
+  { key: "QA PASS", label: "QA Pass" },
 ];
 
 const EXECUTION_ROUTES = {
@@ -2913,6 +2921,14 @@ export default function WorkorderManagementSystem() {
   }
 
   function handleExecute(item) {
+    if (!isBgoChildItem(item) && getQaDraft(actorUid, item.id)?.pending) {
+      router.push({ pathname: "/(tabs)/trns/correct", params: { trnId: item.id } });
+      return;
+    }
+    if (item?.workflowState === "QA FAIL" && item?.permissions?.canCorrect === true) {
+      router.push({ pathname: "/(tabs)/trns/correct", params: { trnId: item.id } });
+      return;
+    }
     if (!isExecutableWorkflowState(item?.workflowState)) {
       Alert.alert(
         "TRN Not Executable",
@@ -5205,6 +5221,9 @@ function GroupLanding({
                 label="Completed"
                 value={group?.counts?.completed || 0}
               />
+              <MiniCount label="QA Fail" value={group?.counts?.qaFail || 0} />
+              <MiniCount label="QA Updated" value={group?.counts?.qaUpdated || 0} />
+              <MiniCount label="QA Pass" value={group?.counts?.qaPass || 0} />
             </View>
           </Pressable>
         ))}
@@ -5269,7 +5288,7 @@ function GroupDetail({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.filterRow}
       >
-        {STATE_FILTERS.map((filter) => {
+        {(isBgoBucketView ? STATE_FILTERS : [...STATE_FILTERS, ...ITO_QA_FILTERS]).map((filter) => {
           const active = stateFilter === filter.key;
           const count = stateCount(allGroupItems, filter.key);
 
@@ -5436,6 +5455,9 @@ function WorkItemCard({
   onExecute,
 }) {
   const [instructionMediaVisible, setInstructionMediaVisible] = useState(false);
+  const { user: recoveryUser } = useAuth();
+  const pendingReceipt = usePendingQaRecovery(recoveryUser?.uid, item?.id);
+  const canRecover = !isBgoBucketView && !isBgoChildItem(item) && pendingReceipt;
 
   const instructionMedia = getInstructionMedia(item);
   const hasInstructionMedia = instructionMedia.length > 0;
@@ -5622,6 +5644,11 @@ function WorkItemCard({
       ) : null}
 
       <View style={styles.actionsRow}>
+        {!isBgoWorkItem && (canRecover || (item?.workflowState === "QA FAIL" && item?.permissions?.canCorrect === true)) ? (
+          <Pressable style={[styles.actionBtn, styles.executeBtn]} onPress={() => onExecute(item)} disabled={deciding}>
+            <Text style={styles.executeBtnText}>{canRecover ? "RESOLVE SUBMISSION" : "CORRECT"}</Text>
+          </Pressable>
+        ) : null}
         {canShowAccept ? (
           <Pressable
             style={[

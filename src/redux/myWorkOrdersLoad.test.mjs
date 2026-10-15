@@ -45,50 +45,13 @@ function endpoint(source, name, next) {
 
 // ---------- Office work orders ----------
 
-const isListedWorkOrder = new Function(
-  [
-    extractConst(wmsSource, "WMS_FINISHED_WORKFLOW_STATES"),
-    extractConst(wmsSource, "WMS_FINISHED_LISTED_DAYS"),
-    extractConst(wmsSource, "DAY_MS"),
-    ...["normalizeUpper", "toMillis", "getWorkflowState", "getCreatedAt", "getUpdatedAt", "isListedWorkOrder"].map((name) =>
-      extractFunction(wmsSource, name),
-    ),
-    "return isListedWorkOrder;",
-  ].join("\n"),
-)();
-
-const NOW = Date.parse("2026-09-17T12:00:00.000Z");
-const daysAgo = (days) => new Date(NOW - days * 24 * 60 * 60 * 1000).toISOString();
-const workOrder = (state, updatedAt, createdAt = daysAgo(90)) => ({
-  workflow: { state },
-  metadata: { updatedAt, createdAt },
-});
-
-test("TB-R052 open work orders are always listed, whatever their age", () => {
-  for (const state of ["ISSUED", "REASSIGNED", "ACCEPTED", "REJECTED", "IN_PROGRESS"]) {
-    assert.equal(isListedWorkOrder(workOrder(state, daysAgo(400)), NOW), true, state);
-  }
-});
-
-test("TB-R052 finished work orders are listed for 30 days after they last changed", () => {
-  for (const state of ["COMPLETED", "CANCELLED"]) {
-    assert.equal(isListedWorkOrder(workOrder(state, daysAgo(0)), NOW), true, state);
-    assert.equal(isListedWorkOrder(workOrder(state, daysAgo(30)), NOW), true, `${state} on day 30`);
-    assert.equal(isListedWorkOrder(workOrder(state, daysAgo(30.01)), NOW), false, `${state} after 30 days`);
-  }
-  // Without updatedAt the creation time counts; without either it is not listed.
-  assert.equal(isListedWorkOrder({ workflow: { state: "COMPLETED" }, metadata: { createdAt: daysAgo(3) } }, NOW), true);
-  assert.equal(isListedWorkOrder({ workflow: { state: "COMPLETED" } }, NOW), false);
-  // A Firestore Timestamp is read too.
-  const timestamp = { toMillis: () => NOW - 2 * 24 * 60 * 60 * 1000 };
-  assert.equal(isListedWorkOrder({ workflow: { state: "CANCELLED" }, metadata: { updatedAt: timestamp } }, NOW), true);
-});
-
-test("TB-R052 the 30-day list applies to the worker's own list, not an opened BGO batch", () => {
+test("ITO visibility has no age cutoff or expiry timer; BGO selection stays separate", () => {
+  assert.doesNotMatch(wmsSource, /WMS_FINISHED_LISTED_DAYS|WMS_LISTED_CHECK_MS|listedTimer/);
   const build = extractFunction(wmsSource, "buildWmsData");
-  assert.match(build, /cleanMode !== "INDIVIDUAL" \|\| isListedWorkOrder\(trn, nowMs\)/);
+  assert.doesNotMatch(build, /isListedWorkOrder/);
+  assert.match(build, /cleanMode === "BGO_BUCKET"/);
+  assert.match(build, /trnBgoBatchId === selectedBgoBatchId/);
   assert.match(build, /updatedAt: loaded \? new Date\(nowMs\)\.toISOString\(\) : null/);
-  assert.match(build, /stream,/);
 });
 
 // TB-R052: the work order stream itself, run from its source text against a fake Firestore. buildWmsData is
@@ -99,17 +62,17 @@ function evaluateWmsStream(bindings) {
   const start = wmsSource.indexOf("async function streamWmsWorkItems(");
   assert.notEqual(start, -1, "streamWmsWorkItems not found");
   const body = [
-    ...["WMS_LCT_TYPES", "WMS_OPEN_WORKFLOW_STATES", "WMS_OFFICE_CHANNELS", "WMS_DEMO_STREAM_LIMIT", "WMS_QUEUE_CHECK_MS", "WMS_LISTED_CHECK_MS", "WMS_INDIVIDUAL_ENDPOINT"].map((name) =>
+    ...["WMS_LCT_TYPES", "WMS_OPEN_WORKFLOW_STATES", "WMS_OFFICE_CHANNELS", "WMS_DEMO_STREAM_LIMIT", "WMS_QUEUE_CHECK_MS", "WMS_INDIVIDUAL_ENDPOINT"].map((name) =>
       extractConst(wmsSource, name),
     ),
-    ...["normalizeUpper", "readFirstString", "wmsWorkItemsKey", "wmsWorkItemsCacheKey"].map((name) => extractFunction(wmsSource, name)),
+    ...["normalizeUpper", "readFirstString", "wmsWorkItemsKey", "wmsWorkItemsCacheKey", "mergeWorkOrderStreams"].map((name) => extractFunction(wmsSource, name)),
     extractBlock(wmsSource, start, "streamWmsWorkItems"),
     "return streamWmsWorkItems;",
   ].join("\n");
   return new Function(...Object.keys(bindings), body)(...Object.values(bindings));
 }
 
-async function startWmsStream(args, { pending = [] } = {}) {
+async function startWmsStream(args, { pending = [], uidStreams = false, emptyQa = true } = {}) {
   const listeners = [];
   const intervals = new Map();
   let nextInterval = 1;
@@ -124,6 +87,7 @@ async function startWmsStream(args, { pending = [] } = {}) {
     };
   };
   const bindings = {
+    process: { env: { EXPO_PUBLIC_ITO_UID_STREAMS_ENABLED: String(uidStreams) } },
     db: { name: "fake-db" },
     collection: (_db, path) => ({ path }),
     query: (reference, ...constraints) => ({ path: reference.path, constraints }),
@@ -171,6 +135,7 @@ async function startWmsStream(args, { pending = [] } = {}) {
     getState: () => ({}),
   });
   await new Promise((resolve) => setImmediate(resolve));
+  if (emptyQa) for (const listener of listeners.filter(item => /^WMS_QA/.test(item.label))) listener.onDocs([], { fromCache: false });
   const live = () => listeners.filter((listener) => listener.active);
   const byLabel = (label) => {
     const found = live().filter((listener) => listener.label === label);
@@ -202,6 +167,56 @@ async function startWmsStream(args, { pending = [] } = {}) {
 
 const WMS_ARGS = { actorUid: "U1", actorRole: "FWR", actorSpId: "SP1", actorName: "Field Worker", mode: "INDIVIDUAL" };
 const trn = (id) => ({ id });
+
+test("API state counters include each canonical QA state and count deduplicated TRNs", () => {
+  const count = new Function([
+    'normalizeUpper', 'buildEmptyStateCounts', 'getStateCountKey', 'incrementStateCount', 'mergeWorkOrderStreams',
+  ].map(name => extractFunction(wmsSource, name)).join('\n') +
+    '\nreturn streams => { const counts = buildEmptyStateCounts(); for (const trn of mergeWorkOrderStreams(streams)) incrementStateCount(counts, trn.workflow.state); return counts; };')();
+  const docs = ['COMPLETED', 'QA FAIL', 'QA UPDATED', 'QA PASS'].map((state, index) => ({ id: String(index), workflow: { state } }));
+  const counts = count([docs, docs]);
+  assert.equal(counts.total, 4);
+  assert.deepEqual([counts.completed, counts.qaFail, counts.qaUpdated, counts.qaPass], [1, 1, 1, 1]);
+});
+
+test("legacy state streams deduplicate overlapping snapshots and retain current QA state", async () => {
+  const stream = await startWmsStream(WMS_ARGS);
+  try {
+    stream.byLabel("WMS_OPEN_TRN").onDocs([], { fromCache: false });
+    stream.byLabel("WMS_CANCELLED_TRN").onDocs([], { fromCache: false });
+    const old = { id: "original", workflow: { state: "COMPLETED" }, metadata: { updatedAt: "2020-01-01" } };
+    const current = { ...old, workflow: { state: "QA FAIL" }, metadata: { updatedAt: "2020-01-02" } };
+    stream.byLabel("WMS_COMPLETED_TRN").onDocs([old], { fromCache: false });
+    stream.byLabel("WMS_QAFAIL_TRN").onDocs([current], { fromCache: false });
+    assert.deepEqual(stream.last.trns, [current]);
+    stream.byLabel("WMS_COMPLETED_TRN").onDocs([], { fromCache: false });
+    assert.deepEqual(stream.last.trns, [current]);
+    stream.byLabel("WMS_QAFAIL_TRN").onDocs([], { fromCache: false });
+    assert.deepEqual(stream.last.trns, []);
+  } finally { await stream.remove(); }
+  assert.equal(stream.live().length, 0);
+});
+
+test("legacy subscriptions include each canonical QA state within query limits", async () => {
+  const stream = await startWmsStream(WMS_ARGS, { emptyQa: false });
+  try {
+    for (const [label, state] of [["QAFAIL", "QA FAIL"], ["QAUPDATED", "QA UPDATED"], ["QAPASS", "QA PASS"]]) {
+      const constraints = stream.byLabel(`WMS_${label}_TRN`).target.constraints;
+      assert.ok(constraints.some(c => c.field === "workflow.state" && c.value === state));
+      assert.ok(constraints.filter(c => c.op === "in").reduce((n, c) => n * c.value.length, 1) <= 30);
+    }
+  } finally { await stream.remove(); }
+});
+
+test("missing session opens no subscriptions; legacy compatibility cannot activate UID-only queries", async () => {
+  const absent = await startWmsStream({ ...WMS_ARGS, actorUid: "" }, { uidStreams: true });
+  assert.equal(absent.live().length, 0);
+  await absent.remove();
+  const second = await startWmsStream({ ...WMS_ARGS, actorUid: "U2" }, { uidStreams: true });
+  assert.equal(second.live().some(item => item.label === "WMS_ASSIGNED_TRN"), false);
+  assert.ok(second.byLabel("WMS_OPEN_TRN"));
+  await second.remove();
+});
 
 test("TB-R052 office work orders: open ones, and Completed or Cancelled ones from office channels only", async () => {
   const stream = await startWmsStream(WMS_ARGS);
@@ -296,11 +311,11 @@ test("TB-R052 queued forms are confirmed from exactly their own TRNs, followed a
   checks[0].callback();
   assert.equal(stream.live().some((listener) => listener.label === "WMS_QUEUE_TRN"), false, "nothing to confirm, nothing read");
 
-  // A finished work order leaves the list after 30 days even while nothing changes: the list is rebuilt hourly.
-  assert.equal([...stream.intervals.values()].filter((interval) => interval.ms === 60 * 60 * 1000).length, 1);
+  // Indefinite ITO visibility needs no age-based reevaluation timer.
+  assert.equal([...stream.intervals.values()].filter((interval) => interval.ms === 60 * 60 * 1000).length, 0);
 
   await stream.remove();
-  assert.equal(stream.intervals.size, 0, "both checks stop with the entry");
+  assert.equal(stream.intervals.size, 0, "queue checks stop with the entry");
   assert.equal(stream.live().length, 0, "every listener stops with the entry");
 });
 

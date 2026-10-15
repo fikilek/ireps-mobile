@@ -72,7 +72,7 @@ test("the work-order stream excludes the bin BY NAME, not by accident", async ()
 
   // And it is the FIRST filter in the chain, so nothing downstream can
   // reinstate it.
-  const chain = source.slice(source.indexOf("const items = trns"));
+  const chain = source.slice(source.indexOf("const items = mergeWorkOrderStreams([trns])"));
 
   assert.ok(
     chain.indexOf("isBinnedWorkOrder") < chain.indexOf("WMS_LCT_TYPES"),

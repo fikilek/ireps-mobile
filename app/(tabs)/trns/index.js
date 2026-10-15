@@ -1186,7 +1186,7 @@ export default function TrnsScreen() {
   if (noWard) {
     return (
       <View style={[styles.container, styles.center]}>
-        <TouchableOpacity onPress={() => router.push("/(tabs)/trns/qa")}><Text style={{ color: "#075dc5", padding: 16 }}>QA · returned work and notifications</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push("/(tabs)/admin/operations/my-workorders")}><Text style={{ color: "#075dc5", padding: 16 }}>My Work Orders</Text></TouchableOpacity>
         <Text style={styles.loadingText}>
           Select a ward to view field transactions.
         </Text>
@@ -1198,7 +1198,7 @@ export default function TrnsScreen() {
     return (
       <View style={[styles.container, styles.center]}>
         <ActivityIndicator size="large" color="#3B82F6" />
-        <TouchableOpacity onPress={() => router.push("/(tabs)/trns/qa")}><Text style={{ color: "#075dc5", padding: 16 }}>QA · returned work and notifications</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push("/(tabs)/admin/operations/my-workorders")}><Text style={{ color: "#075dc5", padding: 16 }}>My Work Orders</Text></TouchableOpacity>
         <Text style={styles.loadingText}>Syncing Audit Logs...</Text>
       </View>
     );
@@ -1206,7 +1206,7 @@ export default function TrnsScreen() {
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity onPress={() => router.push("/(tabs)/trns/qa")} style={{ padding: 16, backgroundColor: "#eaf2ff" }}><Text style={{ color: "#075dc5", fontWeight: "700" }}>QA · returned work and notifications</Text></TouchableOpacity>
+      <TouchableOpacity onPress={() => router.push("/(tabs)/admin/operations/my-workorders")} style={{ padding: 16, backgroundColor: "#eaf2ff" }}><Text style={{ color: "#075dc5", fontWeight: "700" }}>My Work Orders</Text></TouchableOpacity>
       <FlashList
         data={displayTrns}
         renderItem={({ item }) => <TrnItem item={item} />}

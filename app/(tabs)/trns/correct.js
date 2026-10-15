@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, Text, TouchableOpacity, View } from "react-na
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../../../src/firebase";
+import { returnAfterLifecycleWork } from "../../../src/utils/lifecycleReturn";
 import { useAuth } from "../../../src/hooks/useAuth";
 import { QaAmendmentContext } from "../../../src/features/qa/QaAmendmentContext";
 import NoAccessCorrection from "../../../src/features/qa/NoAccessCorrection";
@@ -24,6 +25,11 @@ const retryable = error => ["functions/unavailable", "functions/deadline-exceede
 export default function CorrectTransaction() {
   const { trnId } = useLocalSearchParams();
   const { user } = useAuth(); const uid = user?.uid;
+  // Account/TRN changes must discard the previous editor and its async responses.
+  return <CorrectionLoader key={`${uid}/${trnId}`} uid={uid} trnId={trnId} />;
+}
+
+function CorrectionLoader({ uid, trnId }) {
   const router = useRouter(); const navigation = useNavigation();
   const [loaded, setLoaded] = useState(null), [error, setError] = useState("");
   const [newer, setNewer] = useState(null);
@@ -36,7 +42,7 @@ export default function CorrectTransaction() {
     httpsCallable(functions, "getTrnQaAmendment", { timeout: 120000 })({ trnId }).then(result => {
       if (!active) return;
       if (cached?.context && (cached.context.sourceVersion !== result.data.sourceVersion || cached.context.previousReviewId !== result.data.previousReviewId)) {
-        setError("The office record changed after this phone draft was saved. The draft is retained. Return to QA work and reopen after reviewing the latest record.");
+        setError("The office record changed after this phone draft was saved. The draft is retained. Return to My Work Orders and reopen after reviewing the latest record.");
         setNewer({ context: result.data, cached });
         return;
       }
@@ -98,7 +104,7 @@ function CorrectionEditor({ uid, loaded, router, navigation }) {
       const result = await sendQaDraft(uid, trnId);
       leaving.current = true;
       Alert.alert("Correction received", `QA ${result.amendment.state}. The office has received the correction and its history.`);
-      router.replace("/(tabs)/trns/qa");
+      returnAfterLifecycleWork(router, "/(tabs)/admin/operations/my-workorders", "/(tabs)/trns");
     } catch (failure) {
       setMessage(failure.message);
       const current = getQaDraft(uid, trnId);
@@ -112,7 +118,7 @@ function CorrectionEditor({ uid, loaded, router, navigation }) {
     setBusy(true); setMessage("");
     try {
       const confirmed = await new Promise(resolve => Alert.alert("Send this correction?",
-        `The original submission and all earlier versions will be retained. QA will ${context.state === "FAIL" ? "move to Updated for another review" : "remain Draft"}.${retain ? " Newer meter facts will be kept." : ""}`,
+        `The original submission and all earlier versions will be retained. QA will ${context.state === "FAIL" ? "move to Updated for another review" : "remain COMPLETED awaiting QA"}.${retain ? " Newer meter facts will be kept." : ""}`,
         [{ text: "Keep editing", style: "cancel", onPress: () => resolve(false) },
           { text: "Send correction", onPress: () => resolve(true) }], { cancelable: false }));
       if (!confirmed) return;
