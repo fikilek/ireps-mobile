@@ -1897,7 +1897,7 @@ export default function FormMeterRemoval() {
     );
   }
 
-  if (initialEligible === false) {
+  if (!qaAmendment && initialEligible === false) {
     return (
       <ScrollView style={styles.container}>
         <Stack.Screen

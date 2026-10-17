@@ -1798,7 +1798,8 @@ export default function FormMeterDisconnection() {
     );
   }
 
-  if (initialEligible === false) {
+  // QA corrections amend the existing TRN; they do not initiate another disconnection.
+  if (!qaAmendment && initialEligible === false) {
     return (
       <ScrollView style={styles.container}>
         <Stack.Screen

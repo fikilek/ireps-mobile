@@ -5703,7 +5703,9 @@ function WorkItemCard({
 
         {!canShowAccept &&
         !canShowReject &&
-        !canShowExecute ? (
+        !canShowExecute &&
+        !canRejectAcceptedWork &&
+        !(!isBgoWorkItem && (canRecover || (item?.workflowState === "QA FAIL" && item?.permissions?.canCorrect === true))) ? (
           <View style={styles.noActionBox}>
             <MaterialCommunityIcons
               name="lock-check-outline"

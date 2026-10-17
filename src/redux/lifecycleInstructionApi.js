@@ -1,4 +1,3 @@
-import { isDeletedWork } from "../features/trns/deletedWork";
 import { createApi, fakeBaseQuery } from "@reduxjs/toolkit/query/react";
 import {
   collection,
@@ -8,6 +7,7 @@ import {
   where,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
+import { isDeletedWork } from "../features/trns/deletedWork";
 import { db, functions } from "../firebase";
 import {
   getPendingReconcilableTrnIds,
@@ -553,9 +553,13 @@ function getScopeBucket({ trn, actor, teamMap, managerCanSee }) {
   if (managerCanSee) return "MANAGEMENT_SCOPE";
   // Participation preserves visibility only within the current provider scope;
   // it does not change canCorrect/canExecute authorization.
-  if (actor?.uid && actor?.spId === getTrnServiceProviderId(trn) &&
-      (trn.workflow?.completedByUid === actor.uid ||
-       trn.workflow?.submittedByUids?.includes(actor.uid))) return "MY_WORK";
+  if (
+    actor?.uid &&
+    actor?.spId === getTrnServiceProviderId(trn) &&
+    (trn.workflow?.completedByUid === actor.uid ||
+      trn.workflow?.submittedByUids?.includes(actor.uid))
+  )
+    return "MY_WORK";
 
   return "HIDDEN";
 }
@@ -668,6 +672,7 @@ function normalizeWmsWorkItem({
     canFieldAct &&
     ["ACCEPTED", "IN_PROGRESS"].includes(workflowState);
 
+
   return {
     id: trn?.id || "NAv",
     trnType,
@@ -743,10 +748,13 @@ function normalizeWmsWorkItem({
     },
 
     permissions: {
-      canCorrect: !getBgoBatchIdFromTrn(trn) && !trn.targetedBatchContext && workflowState === "QA FAIL" && isFieldExecutor &&
+      canCorrect:
+        workflowState === "QA FAIL" &&
+        isFieldExecutor &&
         trn?.workflow?.completedByUid === actor?.uid &&
         getTrnServiceProviderId(trn) === actor?.spId &&
         (!trn?.qa?.state || trn.qa.state === "FAIL"),
+
       canAccept: canAcceptReject,
       canReject: canAcceptReject,
       canExecute,
@@ -803,13 +811,19 @@ function buildWmsData({
     .filter((trn) => !isBinnedWorkOrder(trn))
     .filter((trn) => WMS_LCT_TYPES.includes(getTrnType(trn)))
     .filter((trn) => WMS_WORKFLOW_STATES.includes(getWorkflowState(trn)))
-    .filter((trn) => cleanMode !== "BGO_BUCKET" || !["QA FAIL", "QA UPDATED", "QA PASS"].includes(getWorkflowState(trn)))
+    .filter(
+      (trn) =>
+        cleanMode !== "BGO_BUCKET" ||
+        !["QA FAIL", "QA UPDATED", "QA PASS"].includes(getWorkflowState(trn)),
+    )
     .filter((trn) => normalizeUpper(trn?.origin?.channel) !== "FIELD")
     .filter((trn) => {
       const trnBgoBatchId = getBgoBatchIdFromTrn(trn);
 
       if (cleanMode === "BGO_BUCKET") {
-        return Boolean(selectedBgoBatchId) && trnBgoBatchId === selectedBgoBatchId;
+        return (
+          Boolean(selectedBgoBatchId) && trnBgoBatchId === selectedBgoBatchId
+        );
       }
 
       return !trnBgoBatchId;
@@ -913,7 +927,10 @@ export function wmsWorkItemsCacheKey(endpointName, args = {}) {
 
 function readWmsWorkItemsFor(endpointName) {
   return (args = {}) => ({
-    data: wmsLiveData.read(wmsWorkItemsCacheKey(endpointName, args), EMPTY_WMS_DATA),
+    data: wmsLiveData.read(
+      wmsWorkItemsCacheKey(endpointName, args),
+      EMPTY_WMS_DATA,
+    ),
   });
 }
 
@@ -922,16 +939,19 @@ function readWmsWorkItemsFor(endpointName) {
 // provider's. An opened BGO batch reads its own TRNs.
 export function mergeWorkOrderStreams(streams, known = new Map()) {
   const byId = new Map();
-  const time = trn => {
+  const time = (trn) => {
     const value = trn?.metadata?.updatedAt;
-    return typeof value?.toMillis === "function" ? value.toMillis() : Date.parse(value || "") || 0;
+    return typeof value?.toMillis === "function"
+      ? value.toMillis()
+      : Date.parse(value || "") || 0;
   };
-  for (const docs of streams) for (const trn of docs) {
-    if (!trn?.id) continue;
-    const previous = byId.get(trn.id) || known.get(trn.id);
-    if (!previous || time(trn) >= time(previous)) byId.set(trn.id, trn);
-    else byId.set(trn.id, previous);
-  }
+  for (const docs of streams)
+    for (const trn of docs) {
+      if (!trn?.id) continue;
+      const previous = byId.get(trn.id) || known.get(trn.id);
+      if (!previous || time(trn) >= time(previous)) byId.set(trn.id, trn);
+      else byId.set(trn.id, previous);
+    }
   known.clear();
   for (const [id, trn] of byId) known.set(id, trn);
   return [...byId.values()];
@@ -950,7 +970,11 @@ async function streamWmsWorkItems(
   const latest = {
     trns: { docs: [], loaded: false, status: LIVE_STREAM_STATUS.CONNECTING },
     teams: { docs: [], loaded: false, status: LIVE_STREAM_STATUS.CONNECTING },
-    serviceProviders: { docs: [], loaded: false, status: LIVE_STREAM_STATUS.CONNECTING },
+    serviceProviders: {
+      docs: [],
+      loaded: false,
+      status: LIVE_STREAM_STATUS.CONNECTING,
+    },
   };
   const subscriptions = [];
   let active = true;
@@ -977,7 +1001,12 @@ async function streamWmsWorkItems(
   };
 
   const listenTrns = (constraints, label, onDocs, onError) =>
-    listenQuery(query(collection(db, "trns"), ...constraints), label, onDocs, onError);
+    listenQuery(
+      query(collection(db, "trns"), ...constraints),
+      label,
+      onDocs,
+      onError,
+    );
 
   // One live part of the screen: its documents, whether the server has answered them, and its status.
   const follow = (name, key, subscribe) => {
@@ -1032,12 +1061,35 @@ async function streamWmsWorkItems(
         const fromOffice = where("origin.channel", "in", WMS_OFFICE_CHANNELS);
         // ITO release: exclusive UID streaming is deliberately unavailable.
         const groups = {
-          open: [byType, where("workflow.state", "in", WMS_OPEN_WORKFLOW_STATES)],
-          completed: [byType, where("workflow.state", "==", "COMPLETED"), fromOffice],
-          cancelled: [byType, where("workflow.state", "==", "CANCELLED"), fromOffice],
-          qaFail: [byType, where("workflow.state", "==", "QA FAIL"), fromOffice],
-          qaUpdated: [byType, where("workflow.state", "==", "QA UPDATED"), fromOffice],
-          qaPass: [byType, where("workflow.state", "==", "QA PASS"), fromOffice],
+          open: [
+            byType,
+            where("workflow.state", "in", WMS_OPEN_WORKFLOW_STATES),
+          ],
+          completed: [
+            byType,
+            where("workflow.state", "==", "COMPLETED"),
+            fromOffice,
+          ],
+          cancelled: [
+            byType,
+            where("workflow.state", "==", "CANCELLED"),
+            fromOffice,
+          ],
+          qaFail: [
+            byType,
+            where("workflow.state", "==", "QA FAIL"),
+            fromOffice,
+          ],
+          qaUpdated: [
+            byType,
+            where("workflow.state", "==", "QA UPDATED"),
+            fromOffice,
+          ],
+          qaPass: [
+            byType,
+            where("workflow.state", "==", "QA PASS"),
+            fromOffice,
+          ],
         };
         const names = Object.keys(groups);
         const answers = {};
@@ -1050,7 +1102,10 @@ async function streamWmsWorkItems(
               answers[group] = { docs, fromCache: meta?.fromCache === true };
               if (!names.every((name) => answers[name])) return;
               onDocs(
-                mergeWorkOrderStreams(names.map((name) => answers[name].docs), known),
+                mergeWorkOrderStreams(
+                  names.map((name) => answers[name].docs),
+                  known,
+                ),
                 { fromCache: names.some((name) => answers[name].fromCache) },
               );
             },
@@ -1068,7 +1123,12 @@ async function streamWmsWorkItems(
           listenInChunks({
             ids: idsFromKey(key),
             listen: (values, onDocs, onError) =>
-              listenTrns([where(documentId(), "in", values)], "WMS_QUEUE_TRN", onDocs, onError),
+              listenTrns(
+                [where(documentId(), "in", values)],
+                "WMS_QUEUE_TRN",
+                onDocs,
+                onError,
+              ),
             next: (docs, meta) => {
               if (!handlers.isCurrent()) return;
               handlers.live(meta);
@@ -1095,17 +1155,25 @@ async function streamWmsWorkItems(
       };
       followQueue();
       queueTimer = setInterval(followQueue, WMS_QUEUE_CHECK_MS);
-
     }
 
     if (actorUid) {
       follow("teams", actorUid, listenActorTeams);
     } else {
-      latest.teams = { docs: [], loaded: true, status: LIVE_STREAM_STATUS.LIVE };
+      latest.teams = {
+        docs: [],
+        loaded: true,
+        status: LIVE_STREAM_STATUS.LIVE,
+      };
     }
 
     follow("serviceProviders", "ALL", (_key, onDocs, onError) =>
-      listenQuery(query(collection(db, "serviceProviders")), "WMS_SP", onDocs, onError),
+      listenQuery(
+        query(collection(db, "serviceProviders")),
+        "WMS_SP",
+        onDocs,
+        onError,
+      ),
     );
   } catch (error) {
     console.error("❌ [WMS_STREAM_SETUP_ERROR]:", error);

@@ -1675,7 +1675,7 @@ export default function FormMeterReconnection() {
     );
   }
 
-  if (initialEligible === false) {
+  if (!qaAmendment && initialEligible === false) {
     return (
       <ScrollView style={styles.container}>
         <Stack.Screen

@@ -114,7 +114,7 @@ function CorrectionEditor({ uid, loaded, router, navigation }) {
   };
   const submit = async (canonical, raw = canonical) => {
     if (busy) return;
-    if (!explanation.trim() || (context.takeover && !takeoverReason.trim())) { setMessage("Enter the correction explanation and, for takeover, its reason."); return; }
+    if (context.takeover && !takeoverReason.trim()) { setMessage("Explain the supervisor takeover and confirm the original submitter has left."); return; }
     setBusy(true); setMessage("");
     try {
       const confirmed = await new Promise(resolve => Alert.alert("Send this correction?",

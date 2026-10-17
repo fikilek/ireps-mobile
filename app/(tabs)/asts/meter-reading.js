@@ -1854,7 +1854,7 @@ export default function FormMeterReading() {
     );
   }
 
-  if (initialEligible === false) {
+  if (!qaAmendment && initialEligible === false) {
     return (
       <ScrollView style={styles.container}>
         <Stack.Screen
