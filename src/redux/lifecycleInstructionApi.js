@@ -927,10 +927,7 @@ export function wmsWorkItemsCacheKey(endpointName, args = {}) {
 
 function readWmsWorkItemsFor(endpointName) {
   return (args = {}) => ({
-    data: wmsLiveData.read(
-      wmsWorkItemsCacheKey(endpointName, args),
-      EMPTY_WMS_DATA,
-    ),
+    data: wmsLiveData.read(wmsWorkItemsCacheKey(endpointName, args), EMPTY_WMS_DATA),
   });
 }
 
