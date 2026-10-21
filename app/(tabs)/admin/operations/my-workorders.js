@@ -5065,6 +5065,7 @@ function TargetedBatchRowCardBase({
 
       <View style={styles.mdBgoErfFooterRow}>
         <TargetedBatchActionTile label="PREMISE" value={actions.premise.value} helperText={actions.premise.helperText} icon="home-outline"
+          tone={actions.premise.tone || "default"}
           disabled={actions.premise.disabled}
           opening={openingIntent === actions.premise.intent} onPress={() => onAction({ bucket, row, intent: actions.premise.intent })} />
         <TargetedBatchActionTile label="AST" value={actions.ast.value} helperText={actions.ast.helperText} icon="meter-electric-outline"
@@ -5103,6 +5104,10 @@ const TARGETED_BATCH_ROW_CARD_FIELDS = [
   (row) => row?.fieldWorkMeterId,
   (row) => row?.raw?.fieldWorkMeterId,
   (row) => row?.noAccessCount,
+  (row) => row?.qa?.premiseStatus,
+  (row) => row?.raw?.qa?.premiseStatus,
+  (row) => row?.qa?.premiseReasonLabel,
+  (row) => row?.raw?.qa?.premiseReasonLabel,
 ];
 
 // The batch is compared by id only: the card shows nothing of it, and the stable onAction

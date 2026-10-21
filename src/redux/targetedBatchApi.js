@@ -368,6 +368,7 @@ export function normalizeTargetedBatchRow(row = {}) {
     salesPoint: row?.salesPoint || null,
     executionOutcome: cleanText(row?.execution?.outcome),
     scope: row?.scope || {},
+    qa: row?.qa || null,
     refs,
     raw: row,
   };

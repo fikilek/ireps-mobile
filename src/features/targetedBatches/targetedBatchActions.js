@@ -41,6 +41,17 @@ export function getTargetedBatchRowActionState(row = {}) {
     ? Math.max(0, Math.trunc(noAccessCount))
     : 0;
 
+  const qaStatus = clean(row?.qa?.premiseStatus || row?.raw?.qa?.premiseStatus).toUpperCase();
+  const qaReasonLabel = clean(row?.qa?.premiseReasonLabel || row?.raw?.qa?.premiseReasonLabel);
+  const premiseQaTone = qaStatus === "QA_FAIL" ? "issue" : "default";
+  const premiseQaHelperText = qaStatus === "QA_FAIL"
+    ? (qaReasonLabel || "QA FAIL")
+    : qaStatus === "QA_PENDING"
+      ? "QA PENDING"
+      : qaStatus === "QA_PASS"
+        ? "QA PASS"
+        : undefined;
+
   // TB-R051 (1.3.42): a Completed meter opens its meter, premise and ERF, but starts nothing: No Access stays
   // disabled. A row with no meter or premise linked (the meter was found outside this batch) opens them by
   // looking the meter up by its meter number.
@@ -49,6 +60,8 @@ export function getTargetedBatchRowActionState(row = {}) {
       premise: {
         value: premiseId ? 1 : 0,
         disabled: false,
+        ...(premiseQaTone !== "default" ? { tone: premiseQaTone } : {}),
+        ...(premiseQaHelperText !== undefined ? { helperText: premiseQaHelperText } : {}),
         intent: premiseId
           ? TARGETED_BATCH_INTENTS.OPEN_PREMISE
           : TARGETED_BATCH_INTENTS.OPEN_FOUND_METER_PREMISE,
@@ -84,7 +97,13 @@ export function getTargetedBatchRowActionState(row = {}) {
   }
 
   return {
-    premise: { value: premiseId ? 1 : 0, disabled: false, intent: TARGETED_BATCH_INTENTS.OPEN_PREMISE },
+    premise: {
+      value: premiseId ? 1 : 0,
+      disabled: false,
+      ...(premiseQaTone !== "default" ? { tone: premiseQaTone } : {}),
+      ...(premiseQaHelperText !== undefined ? { helperText: premiseQaHelperText } : {}),
+      intent: TARGETED_BATCH_INTENTS.OPEN_PREMISE,
+    },
     ast: {
       value: meterId ? 1 : 0,
       // TB-R051 (1.3.68): no button is dead. Meter Discovery still needs the premise first, so the

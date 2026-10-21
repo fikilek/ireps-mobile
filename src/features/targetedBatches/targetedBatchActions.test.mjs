@@ -205,3 +205,31 @@ test("NA-R044.3: the ERF button stays available either way", () => {
   assert.equal(without.erf.disabled, false);
   assert.equal(without.erf.blocked, null);
 });
+
+test("Premise QA status projection on PREMISE action tile", () => {
+  const pending = getTargetedBatchRowActionState({
+    refs: { erfId: "ERF_1", premiseId: "PRM_1" },
+    qa: { premiseStatus: "QA_PENDING" },
+  });
+  assert.equal(pending.premise.helperText, "QA PENDING");
+  assert.equal(pending.premise.tone, undefined);
+
+  const passed = getTargetedBatchRowActionState({
+    refs: { erfId: "ERF_1", premiseId: "PRM_1" },
+    qa: { premiseStatus: "QA_PASS" },
+  });
+  assert.equal(passed.premise.helperText, "QA PASS");
+  assert.equal(passed.premise.tone, undefined);
+
+  const failed = getTargetedBatchRowActionState({
+    refs: { erfId: "ERF_1", premiseId: "PRM_1" },
+    qa: {
+      premiseStatus: "QA_FAIL",
+      premiseReasonCode: "ADDRESS_INCORRECT",
+      premiseReasonLabel: "Address Incorrect (wrong street number)",
+    },
+  });
+  assert.equal(failed.premise.helperText, "Address Incorrect (wrong street number)");
+  assert.equal(failed.premise.tone, "issue");
+});
+
