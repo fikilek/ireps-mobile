@@ -353,11 +353,42 @@ export const premisesApi = createApi({
     updatePremise: builder.mutation({
       async queryFn(updatedPremise) {
         try {
-          const docRef = doc(db, "premises", updatedPremise.id);
-          await setDoc(docRef, updatedPremise, { merge: true });
-          return { data: updatedPremise };
+          const premiseId = updatedPremise?.id;
+          const savePremiseCorrectionCallable = httpsCallable(
+            functions,
+            "savePremiseCorrection",
+          );
+          const response = await savePremiseCorrectionCallable({
+            premiseId,
+            payload: updatedPremise,
+            explanation: updatedPremise?.explanation || "Premise corrected by fieldworker",
+          });
+          const result = response?.data || {};
+
+          if (!result?.success) {
+            return {
+              error: {
+                code: result?.code || "UNKNOWN_ERROR",
+                message: result?.message || "Could not save premise correction",
+                premiseId,
+              },
+            };
+          }
+
+          return {
+            data: {
+              ...updatedPremise,
+              ...result,
+            },
+          };
         } catch (error) {
-          return { error: error.message };
+          return {
+            error: {
+              code: error?.code || "UNKNOWN_ERROR",
+              message: error?.message || "Could not save premise correction",
+              premiseId: updatedPremise?.id,
+            },
+          };
         }
       },
 

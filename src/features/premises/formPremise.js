@@ -1511,11 +1511,17 @@ export default function FormPremise() {
       try {
         // const firestoreSubmitStartedAtMs = Date.now();
 
-        // TB-R067 (1.3.73): a premise picked from a row's list is joined by the server, which only the
-        // create callable reaches - updatePremise writes to Firestore from the phone and would leave the
-        // row joined to nothing. The callable knows the premise already exists: it links it and leaves
-        // everything else alone.
-        if (isEdit && !rowPremiseJoin) {
+        // TB-R067 (1.3.73): a premise picked from a row's list to join an unlinked row is joined by
+        // createPremise callable. Any edit/correction of an already-linked or standalone premise invokes
+        // updatePremise (savePremiseCorrection callable) so QA state and projections update.
+        const isPickAndJoinFromList = Boolean(
+          isEdit &&
+            rowPremiseJoin &&
+            rowPremiseJoin?.premiseId &&
+            rowPremiseJoin.premiseId !== premiseDocId,
+        );
+
+        if (isEdit && !isPickAndJoinFromList) {
           result = await withSubmitTimeout(
             updatePremise(finalValues).unwrap(),
             15000,
