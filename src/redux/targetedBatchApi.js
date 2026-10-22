@@ -12,6 +12,10 @@ import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../firebase";
 import { resolveTargetedBatchSalesPoint } from "../features/targetedBatches/targetedBatchMapPoints";
 import { readRowLastWorkedMillis } from "../features/targetedBatches/rowLastWorked";
+import {
+  targetedBatchRowStatus,
+  TARGETED_BATCH_STATUS_FILTERS,
+} from "../features/targetedBatches/targetedBatchRowSearch";
 import { listenActorTeams, listenWhereIn } from "./firestoreListeners";
 import {
   FIRESTORE_IN_LIMIT,
@@ -456,10 +460,15 @@ export function buildTargetedBatchRowsData({
     (acc, row) => {
       acc.total += 1;
 
-      // TB-R051: the header counts use the status the phone shows.
-      if (row.displayStatus === "COMPLETED") {
+      // TB-R051 / PR-R001: header counts use 5-way disjoint classification
+      const status = targetedBatchRowStatus(row);
+      if (status === TARGETED_BATCH_STATUS_FILTERS.QA_FAIL) {
+        acc.qaFail += 1;
+      } else if (status === TARGETED_BATCH_STATUS_FILTERS.QA_PASS) {
+        acc.qaPass += 1;
+      } else if (status === TARGETED_BATCH_STATUS_FILTERS.COMPLETED) {
         acc.completed += 1;
-      } else if (row.displayStatus === "IN_PROGRESS") {
+      } else if (status === TARGETED_BATCH_STATUS_FILTERS.IN_PROGRESS) {
         acc.inProgress += 1;
       } else {
         acc.notStarted += 1;
@@ -472,6 +481,8 @@ export function buildTargetedBatchRowsData({
       notStarted: 0,
       inProgress: 0,
       completed: 0,
+      qaPass: 0,
+      qaFail: 0,
     },
   );
 

@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { chooseFoundMeter, describeFoundMeter, foundMeterMessage, wardNumberFromPcode } from "./foundMeter.js";
 import {
+  calculateTbQaFinal,
   filterTargetedBatchRowsByStatus,
   nextTargetedBatchStatusFilter,
   searchTargetedBatchRows,
@@ -19,47 +20,92 @@ const finderSource = await readFile(new URL("./findMetersByNumber.js", import.me
 const rows = [
   { id: "R1", displayStatus: "NOT_STARTED", meterNo: "04111111111", addressLine1: "1 Church St" },
   { id: "R2", displayStatus: "IN_PROGRESS", meterNo: "04222222222", addressLine1: "2 Church St" },
-  { id: "R3", displayStatus: "COMPLETED", meterNo: "04333333333", addressLine1: "3 Main Rd" },
-  { id: "R4", displayStatus: "COMPLETED", meterNo: "04444444444", addressLine1: "4 Church St" },
+  { id: "R3", displayStatus: "COMPLETED", meterNo: "04333333333", addressLine1: "3 Main Rd" }, // QA NAv -> Completed
+  { id: "R4", displayStatus: "COMPLETED", meterNo: "04444444444", addressLine1: "4 Church St", qa: { premiseStatus: "QA_PASS", meterStatus: "QA_PASS" } }, // QA PASS
   { id: "R5", displayStatus: "", executionStatus: "NOT_STARTED", meterNo: "04555555555", addressLine1: "5 Main Rd" },
+  { id: "R6", displayStatus: "COMPLETED", meterNo: "04666666666", addressLine1: "6 Main Rd", qa: { premiseStatus: "QA_FAIL", meterStatus: "QA_PASS" } }, // QA FAIL
 ];
 const ids = (list) => list.map((row) => row.id);
 
-test("TB-R051 1.3.42 a row counts under Completed, In Progress, else Not Started, as the header counts do", () => {
-  assert.deepEqual(rows.map(targetedBatchRowStatus), ["NOT_STARTED", "IN_PROGRESS", "COMPLETED", "COMPLETED", "NOT_STARTED"]);
+test("TB-R051 / PR-R001: 8 canonical cases governing aggregate TB QA Final", () => {
+  // Case 1 & 2: Sales state gates QA. Before COMPLETED, overall QA is QA NAv.
+  assert.equal(calculateTbQaFinal({ displayStatus: "NOT_STARTED", qa: { premiseStatus: "QA_PASS", meterStatus: "QA_PASS" } }), "QA NAv");
+  assert.equal(calculateTbQaFinal({ displayStatus: "IN_PROGRESS", qa: { premiseStatus: "QA_FAIL", meterStatus: "QA_FAIL" } }), "QA NAv");
+
+  // Case 3: Completed with both QA PENDING -> QA PENDING
+  assert.equal(calculateTbQaFinal({ displayStatus: "COMPLETED", qa: { premiseStatus: "QA_PENDING", meterStatus: "QA_PENDING" } }), "QA PENDING");
+
+  // Case 4: Completed with Premise QA FAIL -> QA FAIL (regardless of meter QA)
+  assert.equal(calculateTbQaFinal({ displayStatus: "COMPLETED", qa: { premiseStatus: "QA_FAIL", meterStatus: "QA_PASS" } }), "QA FAIL");
+  assert.equal(calculateTbQaFinal({ displayStatus: "COMPLETED", qa: { premiseStatus: "QA_FAIL", meterStatus: "QA_NAv" } }), "QA FAIL");
+  assert.equal(calculateTbQaFinal({ displayStatus: "COMPLETED", qa: { premiseStatus: "QA_FAIL", meterStatus: "QA_PENDING" } }), "QA FAIL");
+
+  // Case 5: Completed with Meter QA FAIL -> QA FAIL (regardless of premise QA)
+  assert.equal(calculateTbQaFinal({ displayStatus: "COMPLETED", qa: { premiseStatus: "QA_PASS", meterStatus: "QA_FAIL" } }), "QA FAIL");
+  assert.equal(calculateTbQaFinal({ displayStatus: "COMPLETED", qa: { premiseStatus: "QA_NAv", meterStatus: "QA_FAIL" } }), "QA FAIL");
+
+  // Case 6: Completed with both QA PASS -> QA PASS
+  assert.equal(calculateTbQaFinal({ displayStatus: "COMPLETED", qa: { premiseStatus: "QA_PASS", meterStatus: "QA_PASS" } }), "QA PASS");
+
+  // Case 7: Completed with Premise QA PASS and Meter QA NAv -> QA NAv
+  assert.equal(calculateTbQaFinal({ displayStatus: "COMPLETED", qa: { premiseStatus: "QA_PASS", meterStatus: "QA_NAv" } }), "QA NAv");
+
+  // Case 8: Completed with Premise QA NAv and Meter QA PASS -> QA NAv
+  assert.equal(calculateTbQaFinal({ displayStatus: "COMPLETED", qa: { premiseStatus: "QA_NAv", meterStatus: "QA_PASS" } }), "QA NAv");
+
+  // No Access is excluded from TB QA calculation
+  assert.equal(calculateTbQaFinal({ displayStatus: "COMPLETED", qa: { premiseStatus: "QA_PASS", meterStatus: "QA_PASS", noAccessStatus: "QA_FAIL" } }), "QA PASS");
+});
+
+test("TB-R051 1.3.92 a row counts under 5 mutually exclusive buckets: Total = Not Started + In Progress + Completed + QA PASS + QA FAIL", () => {
+  assert.deepEqual(rows.map(targetedBatchRowStatus), [
+    "NOT_STARTED",
+    "IN_PROGRESS",
+    "COMPLETED",
+    "QA_PASS",
+    "NOT_STARTED",
+    "QA_FAIL",
+  ]);
   // Any other or missing status counts as Not Started, like buildTargetedBatchRowsData's summary.
   assert.equal(targetedBatchRowStatus({ displayStatus: "NO_ACCESS" }), "NOT_STARTED");
   assert.equal(targetedBatchRowStatus(null), "NOT_STARTED");
+
+  // Resubmission flow: when a failed premise is corrected and resubmitted, QA returns to QA_PENDING -> row moves back to COMPLETED
+  const resubmittedRow = { displayStatus: "COMPLETED", qa: { premiseStatus: "QA_PENDING", meterStatus: "QA_PASS" } };
+  assert.equal(targetedBatchRowStatus(resubmittedRow), "COMPLETED");
 });
 
-test("TB-R051 1.3.42 each status filter shows only its meters; Total shows every meter", () => {
-  assert.deepEqual(ids(filterTargetedBatchRowsByStatus(rows, "TOTAL")), ["R1", "R2", "R3", "R4", "R5"]);
+test("TB-R051 1.3.92 each status filter shows only its meters; Total shows every meter", () => {
+  assert.deepEqual(ids(filterTargetedBatchRowsByStatus(rows, "TOTAL")), ["R1", "R2", "R3", "R4", "R5", "R6"]);
   assert.deepEqual(ids(filterTargetedBatchRowsByStatus(rows, "NOT_STARTED")), ["R1", "R5"]);
   assert.deepEqual(ids(filterTargetedBatchRowsByStatus(rows, "IN_PROGRESS")), ["R2"]);
-  assert.deepEqual(ids(filterTargetedBatchRowsByStatus(rows, "COMPLETED")), ["R3", "R4"]);
-  assert.deepEqual(ids(filterTargetedBatchRowsByStatus(rows, "SOMETHING_ELSE")), ["R1", "R2", "R3", "R4", "R5"]);
+  assert.deepEqual(ids(filterTargetedBatchRowsByStatus(rows, "COMPLETED")), ["R3"]);
+  assert.deepEqual(ids(filterTargetedBatchRowsByStatus(rows, "QA_PASS")), ["R4"]);
+  assert.deepEqual(ids(filterTargetedBatchRowsByStatus(rows, "QA_FAIL")), ["R6"]);
+  assert.deepEqual(ids(filterTargetedBatchRowsByStatus(rows, "SOMETHING_ELSE")), ["R1", "R2", "R3", "R4", "R5", "R6"]);
   assert.deepEqual(filterTargetedBatchRowsByStatus(null, "COMPLETED"), []);
 });
 
 test("TB-R051 1.3.42 the search works inside the selected status", () => {
-  const completedOnChurch = searchTargetedBatchRows(filterTargetedBatchRowsByStatus(rows, "COMPLETED"), "church");
-  assert.deepEqual(ids(completedOnChurch), ["R4"]);
+  const qaPassOnChurch = searchTargetedBatchRows(filterTargetedBatchRowsByStatus(rows, "QA_PASS"), "church");
+  assert.deepEqual(ids(qaPassOnChurch), ["R4"]);
 });
 
 test("TB-R051 1.3.42 tapping a status selects it; tapping it again, or Total, goes back to every meter", () => {
-  const { TOTAL, NOT_STARTED, IN_PROGRESS, COMPLETED } = TARGETED_BATCH_STATUS_FILTERS;
+  const { TOTAL, NOT_STARTED, IN_PROGRESS, COMPLETED, QA_PASS, QA_FAIL } = TARGETED_BATCH_STATUS_FILTERS;
   assert.equal(nextTargetedBatchStatusFilter(TOTAL, COMPLETED), COMPLETED);
   assert.equal(nextTargetedBatchStatusFilter(COMPLETED, COMPLETED), TOTAL);
-  assert.equal(nextTargetedBatchStatusFilter(COMPLETED, IN_PROGRESS), IN_PROGRESS);
-  assert.equal(nextTargetedBatchStatusFilter(IN_PROGRESS, TOTAL), TOTAL);
+  assert.equal(nextTargetedBatchStatusFilter(COMPLETED, QA_PASS), QA_PASS);
+  assert.equal(nextTargetedBatchStatusFilter(QA_PASS, QA_FAIL), QA_FAIL);
+  assert.equal(nextTargetedBatchStatusFilter(QA_FAIL, TOTAL), TOTAL);
   assert.equal(nextTargetedBatchStatusFilter(TOTAL, TOTAL), TOTAL);
   assert.equal(nextTargetedBatchStatusFilter(NOT_STARTED, "rubbish"), TOTAL);
 });
 
-test("TB-R051 1.3.42 the header: four filters Total, Not Started, In Progress, Completed; no foreign words", () => {
+test("TB-R051 1.3.92 the header: six filters Total, Not Started, In Progress, Completed, QA PASS, QA FAIL", () => {
   const buttons = screenSource.slice(screenSource.indexOf("const TARGETED_BATCH_STATUS_FILTER_BUTTONS = ["), screenSource.indexOf("];", screenSource.indexOf("const TARGETED_BATCH_STATUS_FILTER_BUTTONS = [")));
-  assert.deepEqual([...buttons.matchAll(/label: "([^"]+)"/g)].map((match) => match[1]), ["Total", "Not Started", "In Progress", "Completed"]);
-  assert.deepEqual([...buttons.matchAll(/summaryKey: "([^"]+)"/g)].map((match) => match[1]), ["total", "notStarted", "inProgress", "completed"]);
+  assert.deepEqual([...buttons.matchAll(/label: "([^"]+)"/g)].map((match) => match[1]), ["Total", "Not Started", "In Progress", "Completed", "QA PASS", "QA FAIL"]);
+  assert.deepEqual([...buttons.matchAll(/summaryKey: "([^"]+)"/g)].map((match) => match[1]), ["total", "notStarted", "inProgress", "completed", "qaPass", "qaFail"]);
   const worklist = screenSource.slice(screenSource.indexOf("function TargetedBatchRowsWorklist("), screenSource.indexOf("function TargetedBatchRowCardBase("));
   for (const word of [">Rows<", ">Started<", ">Done<", "Status on the phone"]) assert.equal(worklist.includes(word), false, word);
   assert.match(worklist, /onPress=\{\(\) => onStatusFilterPress\?\.\(button\.key\)\}/);

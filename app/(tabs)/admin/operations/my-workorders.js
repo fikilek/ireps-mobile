@@ -194,12 +194,14 @@ const TARGETED_BATCH_INTENT_LABELS = Object.freeze({
   [TARGETED_BATCH_INTENTS.OPEN_FOUND_METER_PREMISE]: "Premise",
 });
 
-// TB-R051 (1.3.42): the batch header's four filters, left to right, with the status colours of the batch map.
+// TB-R051 (1.3.42, 1.3.92): the batch header's six filters: Total, Not Started, In Progress, Completed, QA PASS, QA FAIL.
 const TARGETED_BATCH_STATUS_FILTER_BUTTONS = [
   { key: TARGETED_BATCH_STATUS_FILTERS.TOTAL, label: "Total", summaryKey: "total", color: "#0f172a" },
   { key: TARGETED_BATCH_STATUS_FILTERS.NOT_STARTED, label: "Not Started", summaryKey: "notStarted", color: MAP_STATUS_COLORS.NOT_STARTED },
   { key: TARGETED_BATCH_STATUS_FILTERS.IN_PROGRESS, label: "In Progress", summaryKey: "inProgress", color: MAP_STATUS_COLORS.IN_PROGRESS },
   { key: TARGETED_BATCH_STATUS_FILTERS.COMPLETED, label: "Completed", summaryKey: "completed", color: MAP_STATUS_COLORS.COMPLETED },
+  { key: TARGETED_BATCH_STATUS_FILTERS.QA_PASS, label: "QA PASS", summaryKey: "qaPass", color: "#16a34a" },
+  { key: TARGETED_BATCH_STATUS_FILTERS.QA_FAIL, label: "QA FAIL", summaryKey: "qaFail", color: "#dc2626" },
 ];
 
 // TB-R051 (1.3.42): nothing starts work on a Completed meter.
@@ -7403,25 +7405,25 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
 
-  // TB-R051 (1.3.42): the batch header's four status filters, equal width across the screen.
+  // TB-R051 (1.3.42, 1.3.92): the batch header's six status filters, equal width across the screen.
   tbStatusFilterRow: {
     flexDirection: "row",
-    gap: 6,
-    marginHorizontal: 12,
+    gap: 4,
+    marginHorizontal: 8,
     marginBottom: 8,
   },
 
   tbStatusFilter: {
     flex: 1,
     minHeight: 52,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: "#e2e8f0",
     backgroundColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 4,
-    paddingVertical: 6,
+    paddingHorizontal: 2,
+    paddingVertical: 5,
   },
 
   tbStatusFilterPressed: {
@@ -7430,14 +7432,14 @@ const styles = StyleSheet.create({
 
   tbStatusFilterLabel: {
     color: FORM_TEXT,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "800",
     textAlign: "center",
   },
 
   tbStatusFilterValue: {
     marginTop: 2,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "900",
   },
 

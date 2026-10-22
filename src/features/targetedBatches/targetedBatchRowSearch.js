@@ -71,19 +71,69 @@ export function searchTargetedBatchRows(rows, query) {
   return (Array.isArray(rows) ? rows : []).filter((row) => targetedBatchRowMatchesSearch(row, query));
 }
 
-// TB-R051 (1.3.42): the batch header's filters. Total shows every meter; a status shows only its meters.
+// TB-R051 (1.3.42, 1.3.92): the batch header's filters. Total shows every meter; a status shows only its meters.
 export const TARGETED_BATCH_STATUS_FILTERS = Object.freeze({
   TOTAL: "TOTAL",
   NOT_STARTED: "NOT_STARTED",
   IN_PROGRESS: "IN_PROGRESS",
   COMPLETED: "COMPLETED",
+  QA_PASS: "QA_PASS",
+  QA_FAIL: "QA_FAIL",
 });
 
-// The status a row counts under, by the same test as the header counts: Completed, In Progress, else Not Started.
+function normalizeComponentQa(raw) {
+  const clean = String(raw || "").trim().toUpperCase().replace(/_/g, " ");
+  if (clean === "QA PASS" || clean === "PASS") return "QA PASS";
+  if (clean === "QA FAIL" || clean === "FAIL") return "QA FAIL";
+  if (clean === "QA PENDING" || clean === "PENDING") return "QA PENDING";
+  return "QA NAv";
+}
+
+// TB-R051 / PR-R001: 8 canonical cases governing aggregate TB QA Final from Premise QA and Meter QA
+export function calculateTbQaFinal(row) {
+  const salesState = String(row?.displayStatus || row?.executionStatus || "").trim().toUpperCase();
+  // 1. Sales State gates QA. Before COMPLETED, the overall QA is QA NAv.
+  if (salesState !== "COMPLETED") {
+    return "QA NAv";
+  }
+
+  const premiseQa = normalizeComponentQa(row?.qa?.premiseStatus || row?.raw?.qa?.premiseStatus);
+  const meterQa = normalizeComponentQa(row?.qa?.meterStatus || row?.raw?.qa?.meterStatus);
+
+  // 2. Failure takes precedence: A failure in either applicable component makes TB QA Final QA FAIL.
+  if (premiseQa === "QA FAIL" || meterQa === "QA FAIL") {
+    return "QA FAIL";
+  }
+
+  // 3. Both components must pass for TB QA Final to be QA PASS.
+  if (premiseQa === "QA PASS" && meterQa === "QA PASS") {
+    return "QA PASS";
+  }
+
+  // 4. In-flight review: Both pending or one pending and other passed
+  if (
+    (premiseQa === "QA PENDING" && meterQa === "QA PENDING") ||
+    (premiseQa === "QA PASS" && meterQa === "QA PENDING") ||
+    (premiseQa === "QA PENDING" && meterQa === "QA PASS")
+  ) {
+    return "QA PENDING";
+  }
+
+  // 5. QA NAv is not a pass: If either component is unavailable, the overall result remains unavailable.
+  return "QA NAv";
+}
+
+// The status a row counts under, by the same test as the header counts:
+// Total = Not Started + In Progress + Completed + QA PASS + QA FAIL
 export function targetedBatchRowStatus(row) {
   const status = String(row?.displayStatus || row?.executionStatus || "").trim().toUpperCase();
-  if (status === "COMPLETED") return TARGETED_BATCH_STATUS_FILTERS.COMPLETED;
   if (status === "IN_PROGRESS") return TARGETED_BATCH_STATUS_FILTERS.IN_PROGRESS;
+  if (status === "COMPLETED") {
+    const tbQa = calculateTbQaFinal(row);
+    if (tbQa === "QA FAIL") return TARGETED_BATCH_STATUS_FILTERS.QA_FAIL;
+    if (tbQa === "QA PASS") return TARGETED_BATCH_STATUS_FILTERS.QA_PASS;
+    return TARGETED_BATCH_STATUS_FILTERS.COMPLETED;
+  }
   return TARGETED_BATCH_STATUS_FILTERS.NOT_STARTED;
 }
 
@@ -93,7 +143,9 @@ export function filterTargetedBatchRowsByStatus(rows, filter) {
   if (
     wanted !== TARGETED_BATCH_STATUS_FILTERS.NOT_STARTED &&
     wanted !== TARGETED_BATCH_STATUS_FILTERS.IN_PROGRESS &&
-    wanted !== TARGETED_BATCH_STATUS_FILTERS.COMPLETED
+    wanted !== TARGETED_BATCH_STATUS_FILTERS.COMPLETED &&
+    wanted !== TARGETED_BATCH_STATUS_FILTERS.QA_PASS &&
+    wanted !== TARGETED_BATCH_STATUS_FILTERS.QA_FAIL
   ) {
     return list;
   }
