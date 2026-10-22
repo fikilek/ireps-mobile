@@ -89,20 +89,31 @@ function normalizeComponentQa(raw) {
   return "QA NAv";
 }
 
-// TB-R051 / PR-R001: 8 canonical cases governing aggregate TB QA Final from Premise QA and Meter QA
+// TB-R051 / PR-R001: Canonical aggregate TB QA Final from Premise QA and Meter QA
 export function calculateTbQaFinal(row) {
-  const salesState = String(row?.displayStatus || row?.executionStatus || "").trim().toUpperCase();
-  // 1. Sales State gates QA. Before COMPLETED, the overall QA is QA NAv.
-  if (salesState !== "COMPLETED") {
-    return "QA NAv";
-  }
+  // 1. Direct authoritative persisted TB QA status on the row
+  const tbStatus = normalizeComponentQa(
+    row?.qa?.tbStatus ||
+      row?.raw?.qa?.tbStatus ||
+      row?.qa?.finalStatus ||
+      row?.raw?.qa?.finalStatus,
+  );
+  if (tbStatus === "QA FAIL") return "QA FAIL";
+  if (tbStatus === "QA PASS") return "QA PASS";
+  if (tbStatus === "QA PENDING") return "QA PENDING";
 
   const premiseQa = normalizeComponentQa(row?.qa?.premiseStatus || row?.raw?.qa?.premiseStatus);
   const meterQa = normalizeComponentQa(row?.qa?.meterStatus || row?.raw?.qa?.meterStatus);
 
-  // 2. Failure takes precedence: A failure in either applicable component makes TB QA Final QA FAIL.
+  // 2. Component failure takes immediate precedence:
+  // A failure in either Premise QA or Meter QA makes TB QA Final QA FAIL.
   if (premiseQa === "QA FAIL" || meterQa === "QA FAIL") {
     return "QA FAIL";
+  }
+
+  const salesState = String(row?.displayStatus || row?.executionStatus || "").trim().toUpperCase();
+  if (salesState !== "COMPLETED") {
+    return "QA NAv";
   }
 
   // 3. Both components must pass for TB QA Final to be QA PASS.
@@ -126,14 +137,15 @@ export function calculateTbQaFinal(row) {
 // The status a row counts under, by the same test as the header counts:
 // Total = Not Started + In Progress + Completed + QA PASS + QA FAIL
 export function targetedBatchRowStatus(row) {
+  const tbQa = calculateTbQaFinal(row);
+  if (tbQa === "QA FAIL") return TARGETED_BATCH_STATUS_FILTERS.QA_FAIL;
+
   const status = String(row?.displayStatus || row?.executionStatus || "").trim().toUpperCase();
-  if (status === "IN_PROGRESS") return TARGETED_BATCH_STATUS_FILTERS.IN_PROGRESS;
   if (status === "COMPLETED") {
-    const tbQa = calculateTbQaFinal(row);
-    if (tbQa === "QA FAIL") return TARGETED_BATCH_STATUS_FILTERS.QA_FAIL;
     if (tbQa === "QA PASS") return TARGETED_BATCH_STATUS_FILTERS.QA_PASS;
     return TARGETED_BATCH_STATUS_FILTERS.COMPLETED;
   }
+  if (status === "IN_PROGRESS") return TARGETED_BATCH_STATUS_FILTERS.IN_PROGRESS;
   return TARGETED_BATCH_STATUS_FILTERS.NOT_STARTED;
 }
 

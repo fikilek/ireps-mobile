@@ -28,9 +28,10 @@ const rows = [
 const ids = (list) => list.map((row) => row.id);
 
 test("TB-R051 / PR-R001: 8 canonical cases governing aggregate TB QA Final", () => {
-  // Case 1 & 2: Sales state gates QA. Before COMPLETED, overall QA is QA NAv.
+  // Before COMPLETED, unreviewed is QA NAv, but component failure immediately yields QA FAIL
   assert.equal(calculateTbQaFinal({ displayStatus: "NOT_STARTED", qa: { premiseStatus: "QA_PASS", meterStatus: "QA_PASS" } }), "QA NAv");
-  assert.equal(calculateTbQaFinal({ displayStatus: "IN_PROGRESS", qa: { premiseStatus: "QA_FAIL", meterStatus: "QA_FAIL" } }), "QA NAv");
+  assert.equal(calculateTbQaFinal({ displayStatus: "IN_PROGRESS", qa: { premiseStatus: "QA_FAIL", meterStatus: "QA_FAIL" } }), "QA FAIL");
+  assert.equal(calculateTbQaFinal({ displayStatus: "IN_PROGRESS", qa: { tbStatus: "QA_FAIL" } }), "QA FAIL");
 
   // Case 3: Completed with both QA PENDING -> QA PENDING
   assert.equal(calculateTbQaFinal({ displayStatus: "COMPLETED", qa: { premiseStatus: "QA_PENDING", meterStatus: "QA_PENDING" } }), "QA PENDING");

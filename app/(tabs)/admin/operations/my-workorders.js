@@ -53,6 +53,7 @@ import {
 } from "../../../../src/features/targetedBatches/targetedBatchActions";
 import { BATCH_DISCOVERY_REASONS } from "../../../../src/features/targetedBatches/targetedBatchContextCarry";
 import {
+  calculateTbQaFinal,
   filterTargetedBatchRowsByStatus,
   nextTargetedBatchStatusFilter,
   searchTargetedBatchRows,
@@ -1874,6 +1875,22 @@ export default function WorkorderManagementSystem() {
           }
 
           setRowPremiseChoice({ rowId: currentRow.id, erfId: pending.erfId });
+          return;
+        } else if (
+          pending.intent === TARGETED_BATCH_INTENTS.OPEN_PREMISE &&
+          premiseId
+        ) {
+          const erfId = cleanId(currentRow?.erfId || currentRow?.refs?.erfId || pending.erfId);
+          clearPendingTargetedBatchAction(pending.requestKey);
+          setTargetedBatchMapOpen(false);
+          router.push({
+            pathname: "/premises/formPremise",
+            params: {
+              id: erfId,
+              premiseId,
+              targetedBatchContext: serializedTargetedBatchContext,
+            },
+          });
           return;
         } else {
           navigationTarget = "/(tabs)/premises";
@@ -5007,14 +5024,26 @@ function TargetedBatchRowCardBase({
   // TB-R051: the status the phone shows (Sales VISIBLE or a completed row is Completed).
   const displayStatus =
     normalizeUpper(row?.displayStatus || row?.executionStatus) || "NOT_STARTED";
-  const statusBadgeStyle =
-    displayStatus === "COMPLETED"
+  const tbQa = calculateTbQaFinal(row);
+  const isQaFail = tbQa === "QA FAIL";
+  const isQaPass = tbQa === "QA PASS";
+
+  const cardStatus = isQaFail
+    ? "QA FAIL"
+    : isQaPass
+      ? "QA PASS"
+      : displayStatus.replace(/_/g, " ");
+
+  const statusBadgeStyle = isQaFail
+    ? styles.badgeRed
+    : isQaPass || displayStatus === "COMPLETED"
       ? styles.badgeGreen
       : displayStatus === "IN_PROGRESS"
         ? styles.badgeOrange
         : null;
-  const statusBadgeTextStyle =
-    displayStatus === "COMPLETED"
+  const statusBadgeTextStyle = isQaFail
+    ? styles.badgeRedText
+    : isQaPass || displayStatus === "COMPLETED"
       ? styles.badgeGreenText
       : displayStatus === "IN_PROGRESS"
         ? styles.badgeOrangeText
@@ -5060,7 +5089,7 @@ function TargetedBatchRowCardBase({
 
         <View style={[styles.mdBgoErfStatusBadge, statusBadgeStyle]}>
           <Text style={[styles.mdBgoErfStatusText, statusBadgeTextStyle]}>
-            {displayStatus.replace(/_/g, " ")}
+            {cardStatus}
           </Text>
         </View>
       </View>

@@ -229,7 +229,7 @@ test("Premise QA status projection on PREMISE action tile", () => {
       premiseReasonLabel: "Address Incorrect (wrong street number)",
     },
   });
-  assert.equal(failed.premise.helperText, "Address Incorrect (wrong street number)");
+  assert.equal(failed.premise.helperText, "QA FAIL");
   assert.equal(failed.premise.tone, "issue");
 });
 

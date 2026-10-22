@@ -45,7 +45,7 @@ export function getTargetedBatchRowActionState(row = {}) {
   const qaReasonLabel = clean(row?.qa?.premiseReasonLabel || row?.raw?.qa?.premiseReasonLabel);
   const premiseQaTone = qaStatus === "QA_FAIL" ? "issue" : "default";
   const premiseQaHelperText = qaStatus === "QA_FAIL"
-    ? (qaReasonLabel || "QA FAIL")
+    ? "QA FAIL"
     : qaStatus === "QA_PENDING"
       ? "QA PENDING"
       : qaStatus === "QA_PASS"
