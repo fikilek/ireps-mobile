@@ -1883,14 +1883,13 @@ export default function WorkorderManagementSystem() {
           const erfId = cleanId(currentRow?.erfId || currentRow?.refs?.erfId || pending.erfId);
           clearPendingTargetedBatchAction(pending.requestKey);
           setTargetedBatchMapOpen(false);
-          router.push({
-            pathname: "/premises/formPremise",
-            params: {
-              id: erfId,
-              premiseId,
-              targetedBatchContext: serializedTargetedBatchContext,
-            },
+          updateGeo({
+            selectedWard: pending.ward,
+            selectedErf,
+            selectedPremise: premise,
+            lastSelectionType: "PREMISE",
           });
+          openRowPremiseForm({ row: currentRow, params: { id: erfId, premiseId } });
           return;
         } else {
           navigationTarget = "/(tabs)/premises";
