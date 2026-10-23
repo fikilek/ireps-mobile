@@ -1186,6 +1186,8 @@ export default function FormPremise() {
         noAccessTrnIds: Array.isArray(sourceData?.noAccessTrnIds)
           ? sourceData.noAccessTrnIds
           : [],
+        qa: sourceData?.qa || null,
+        submissionRequestId: `PRM_SAVE_${sourceData?.id}_${Date.now()}`,
       };
     }
 
@@ -1751,6 +1753,19 @@ export default function FormPremise() {
               />
 
               <ScrollView contentContainerStyle={styles.formScroll}>
+                {isEdit && sourcePremise?.qa?.status === "QA_FAIL" ? (
+                  <Surface
+                    style={{ marginBottom: 12, padding: 14, backgroundColor: "#fff1f2", borderWidth: 1, borderColor: "#fda4af", borderRadius: 10 }}
+                    elevation={1}
+                  >
+                    <Text style={{ fontWeight: "800", color: "#b91c1c", marginBottom: 4 }}>QA FAIL — correction required</Text>
+                    <Text style={{ color: FORM_TEXT }}>{sourcePremise.qa.reasonLabel || "Review the Premise and correct the issue before submitting."}</Text>
+                    {sourcePremise.qa.comment ? <Text style={{ color: FORM_TEXT, marginTop: 4 }}>{sourcePremise.qa.comment}</Text> : null}
+                    <Text style={{ color: FORM_TEXT, marginTop: 6, fontSize: 12 }}>
+                      Reviewed by {sourcePremise.qa.reviewedByUser || "QA reviewer"}{sourcePremise.qa.reviewedAt ? ` · ${new Date(sourcePremise.qa.reviewedAt).toLocaleString()}` : ""}
+                    </Text>
+                  </Surface>
+                ) : null}
                 {/* Property Clasification */}
                 <View style={styles.sectionHeader}>
                   <MaterialCommunityIcons

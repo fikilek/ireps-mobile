@@ -202,11 +202,24 @@ export default function MapsScreen() {
       return;
     }
 
+    const confirmed = await new Promise((resolve) => {
+      Alert.alert(
+        "Save GPS correction?",
+        "This changes the Premise location and sends it back for QA review.",
+        [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+          { text: "Save GPS", onPress: () => resolve(true) },
+        ],
+      );
+    });
+    if (!confirmed) return;
+
     try {
       setSavingDragId(dragPremiseId);
 
       const updatedPremise = {
         ...prem,
+        submissionRequestId: `PRM_GPS_${prem.id}_${Date.now()}`,
         geometry: {
           ...(prem?.geometry || {}),
           centroid: {

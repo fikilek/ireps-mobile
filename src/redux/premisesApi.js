@@ -361,6 +361,8 @@ export const premisesApi = createApi({
           const response = await savePremiseCorrectionCallable({
             premiseId,
             payload: updatedPremise,
+            sourceVersion: updatedPremise?.qa?.sourceVersion,
+            requestId: updatedPremise?.submissionRequestId || `${premiseId}_${Date.now()}`,
             explanation: updatedPremise?.explanation || "Premise corrected by fieldworker",
           });
           const result = response?.data || {};
