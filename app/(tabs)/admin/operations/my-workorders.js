@@ -4182,6 +4182,14 @@ function TargetedBatchCard({
           value={counts?.completed ?? 0}
         />
         <MiniCount
+          label="QA Pass"
+          value={counts?.qaPass ?? 0}
+        />
+        <MiniCount
+          label="QA Fail"
+          value={counts?.qaFail ?? 0}
+        />
+        <MiniCount
           label="Allocated"
           value={counts?.allocated ?? 0}
         />

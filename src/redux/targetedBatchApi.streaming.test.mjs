@@ -817,3 +817,29 @@ test("TB-R051 buckets carry the geofence link and schema version", () => {
   assert.equal(legacy.schemaVersion, null);
   assert.equal(normalizeBucket({ id: TB, geofenceId: "  ", schemaVersion: "" }).geofenceId, null);
 });
+
+test("PR-R001 / TB-R051 batch counts include QA PASS and QA FAIL and deduct from inProgress", () => {
+  const batch = {
+    id: TB,
+    counts: {
+      totalRows: 17,
+      executionStartedRows: 17,
+      completedRows: 1,
+      qaPassRows: 0,
+      qaFailRows: 1,
+      allocatedRows: 17,
+    },
+  };
+  const bucket = normalizeBucket(batch);
+  assert.deepEqual(bucket.counts, {
+    total: 17,
+    allocated: 17,
+    unallocated: 0,
+    notStarted: 0,
+    inProgress: 15,
+    completed: 1,
+    qaPass: 0,
+    qaFail: 1,
+  });
+});
+
