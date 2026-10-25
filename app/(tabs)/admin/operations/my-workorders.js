@@ -4122,13 +4122,40 @@ function TargetedBatchCard({
         {bucket?.subtitle || "Sales targeted field work"}
       </Text>
 
-      <View style={styles.bucketMetaGrid}>
-        <InfoLine
-          icon="format-list-numbered"
-          label="Total Rows"
-          value={counts?.total ?? bucket?.totalRows ?? 0}
-        />
+      {/* PR-R001 / TB-R051: Level 2 Batch Card stats row, exactly matching Level 3 */}
+      <View style={styles.tbCardStatusRow}>
+        {TARGETED_BATCH_STATUS_FILTER_BUTTONS.map((button) => {
+          const isTotal = button.key === TARGETED_BATCH_STATUS_FILTERS.TOTAL;
+          const count = isTotal
+            ? counts?.total ?? bucket?.totalRows ?? 0
+            : counts?.[button.summaryKey] ?? 0;
 
+          return (
+            <View
+              key={button.key}
+              style={[
+                styles.tbStatusFilter,
+                isTotal && styles.tbStatusFilterTotal,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.tbStatusFilterLabel,
+                  isTotal && styles.tbStatusFilterLabelTotal,
+                ]}
+                numberOfLines={2}
+              >
+                {button.label}
+              </Text>
+              <Text style={[styles.tbStatusFilterValue, { color: button.color }]}>
+                {count}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+
+      <View style={styles.bucketMetaGrid}>
         <InfoLine
           icon="account-hard-hat-outline"
           label="Target"
@@ -4152,46 +4179,9 @@ function TargetedBatchCard({
         />
 
         <InfoLine
-          icon="text-box-outline"
-          label="Selection Reason"
-          value={bucket?.selection?.reason || "NAv"}
-        />
-
-        <InfoLine
           icon="clock-outline"
           label="Age"
           value={formatAge(bucket?.ageSeconds)}
-        />
-      </View>
-
-      {/* TB-R051: these counts are the batch record's own counts, not the status on the phone (a Sales
-          VISIBLE meter is Completed only in the batch rows header), so they carry their own caption.
-          The card does not load the batch rows. */}
-      <Text style={styles.tbCountsCaption}>Batch record</Text>
-      <View style={styles.groupCounts}>
-        <MiniCount
-          label="Not Started"
-          value={counts?.notStarted ?? 0}
-        />
-        <MiniCount
-          label="In Progress"
-          value={counts?.inProgress ?? 0}
-        />
-        <MiniCount
-          label="Completed"
-          value={counts?.completed ?? 0}
-        />
-        <MiniCount
-          label="QA Pass"
-          value={counts?.qaPass ?? 0}
-        />
-        <MiniCount
-          label="QA Fail"
-          value={counts?.qaFail ?? 0}
-        />
-        <MiniCount
-          label="Allocated"
-          value={counts?.allocated ?? 0}
         />
       </View>
 
@@ -7447,6 +7437,22 @@ const styles = StyleSheet.create({
     gap: 4,
     marginHorizontal: 8,
     marginBottom: 8,
+  },
+
+  tbCardStatusRow: {
+    flexDirection: "row",
+    gap: 4,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+
+  tbStatusFilterTotal: {
+    backgroundColor: "#f1f5f9",
+    borderColor: "#cbd5e1",
+  },
+
+  tbStatusFilterLabelTotal: {
+    color: "#0f172a",
   },
 
   tbStatusFilter: {
