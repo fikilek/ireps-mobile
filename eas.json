@@ -59,7 +59,7 @@
     },
     "live": {
       "distribution": "internal",
-      "channel": "production",
+      "channel": "live",
       "autoIncrement": true,
       "android": {
         "buildType": "apk"
