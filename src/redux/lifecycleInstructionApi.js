@@ -41,7 +41,6 @@ const WMS_WORKFLOW_STATES = [
   "IN_PROGRESS",
   "COMPLETED",
   "QA FAIL",
-  "QA UPDATED",
   "QA PASS",
   "CANCELLED",
 ];
@@ -134,7 +133,6 @@ function buildEmptyStateCounts() {
     inProgress: 0,
     completed: 0,
     qaFail: 0,
-    qaUpdated: 0,
     qaPass: 0,
     cancelled: 0,
     total: 0,
@@ -186,8 +184,6 @@ function getStateCountKey(state) {
       return "completed";
     case "QA FAIL":
       return "qaFail";
-    case "QA UPDATED":
-      return "qaUpdated";
     case "QA PASS":
       return "qaPass";
     case "CANCELLED":
@@ -814,7 +810,7 @@ function buildWmsData({
     .filter(
       (trn) =>
         cleanMode !== "BGO_BUCKET" ||
-        !["QA FAIL", "QA UPDATED", "QA PASS"].includes(getWorkflowState(trn)),
+        !["QA FAIL", "QA PASS"].includes(getWorkflowState(trn)),
     )
     .filter((trn) => normalizeUpper(trn?.origin?.channel) !== "FIELD")
     .filter((trn) => {
@@ -1075,11 +1071,6 @@ async function streamWmsWorkItems(
           qaFail: [
             byType,
             where("workflow.state", "==", "QA FAIL"),
-            fromOffice,
-          ],
-          qaUpdated: [
-            byType,
-            where("workflow.state", "==", "QA UPDATED"),
             fromOffice,
           ],
           qaPass: [

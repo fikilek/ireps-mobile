@@ -173,10 +173,10 @@ test("API state counters include each canonical QA state and count deduplicated 
     'normalizeUpper', 'buildEmptyStateCounts', 'getStateCountKey', 'incrementStateCount', 'mergeWorkOrderStreams',
   ].map(name => extractFunction(wmsSource, name)).join('\n') +
     '\nreturn streams => { const counts = buildEmptyStateCounts(); for (const trn of mergeWorkOrderStreams(streams)) incrementStateCount(counts, trn.workflow.state); return counts; };')();
-  const docs = ['COMPLETED', 'QA FAIL', 'QA UPDATED', 'QA PASS'].map((state, index) => ({ id: String(index), workflow: { state } }));
+  const docs = ['COMPLETED', 'QA FAIL', 'QA PASS'].map((state, index) => ({ id: String(index), workflow: { state } }));
   const counts = count([docs, docs]);
-  assert.equal(counts.total, 4);
-  assert.deepEqual([counts.completed, counts.qaFail, counts.qaUpdated, counts.qaPass], [1, 1, 1, 1]);
+  assert.equal(counts.total, 3);
+  assert.deepEqual([counts.completed, counts.qaFail, counts.qaPass], [1, 1, 1]);
 });
 
 test("legacy state streams deduplicate overlapping snapshots and retain current QA state", async () => {
@@ -200,7 +200,7 @@ test("legacy state streams deduplicate overlapping snapshots and retain current 
 test("legacy subscriptions include each canonical QA state within query limits", async () => {
   const stream = await startWmsStream(WMS_ARGS, { emptyQa: false });
   try {
-    for (const [label, state] of [["QAFAIL", "QA FAIL"], ["QAUPDATED", "QA UPDATED"], ["QAPASS", "QA PASS"]]) {
+    for (const [label, state] of [["QAFAIL", "QA FAIL"], ["QAPASS", "QA PASS"]]) {
       const constraints = stream.byLabel(`WMS_${label}_TRN`).target.constraints;
       assert.ok(constraints.some(c => c.field === "workflow.state" && c.value === state));
       assert.ok(constraints.filter(c => c.op === "in").reduce((n, c) => n * c.value.length, 1) <= 30);

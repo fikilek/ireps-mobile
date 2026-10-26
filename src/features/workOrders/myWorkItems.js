@@ -38,7 +38,6 @@ export const WORK_HE_STILL_HOLDS = [
   "IN_PROGRESS",
   "COMPLETED",
   "QA FAIL",
-  "QA UPDATED",
   "QA PASS",
 ];
 
@@ -117,7 +116,6 @@ export function countMyWork(items) {
     inProgress: 0,
     completed: 0,
     qaFail: 0,
-    qaUpdated: 0,
     qaPass: 0,
     total: list.length,
   };
@@ -130,7 +128,6 @@ export function countMyWork(items) {
     else if (state === "IN_PROGRESS") counts.inProgress += 1;
     else if (state === "COMPLETED") counts.completed += 1;
     else if (state === "QA FAIL") counts.qaFail += 1;
-    else if (state === "QA UPDATED") counts.qaUpdated += 1;
     else if (state === "QA PASS") counts.qaPass += 1;
   }
 
@@ -147,7 +144,6 @@ export function drawnTotal(counts) {
     Number(counts?.inProgress || 0) +
     Number(counts?.completed || 0) +
     Number(counts?.qaFail || 0) +
-    Number(counts?.qaUpdated || 0) +
     Number(counts?.qaPass || 0)
   );
 }

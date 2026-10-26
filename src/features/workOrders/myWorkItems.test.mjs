@@ -24,12 +24,11 @@ const item = (workflowState, trnType = "METER_DISCONNECTION") => ({
 });
 
 test("QA states count distinct original TRNs when visibility scopes overlap", () => {
-  const rows = ["COMPLETED", "QA FAIL", "QA UPDATED", "QA PASS"].map((workflowState, id) => ({ ...item(workflowState), id: String(id) }));
+  const rows = ["COMPLETED", "QA FAIL", "QA PASS"].map((workflowState, id) => ({ ...item(workflowState), id: String(id) }));
   const counts = countMyWork([...rows, ...rows]);
-  assert.equal(counts.total, 4);
+  assert.equal(counts.total, 3);
   assert.equal(counts.completed, 1);
   assert.equal(counts.qaFail, 1);
-  assert.equal(counts.qaUpdated, 1);
   assert.equal(counts.qaPass, 1);
   assert.equal(drawnTotal(counts), counts.total);
 });

@@ -150,7 +150,6 @@ const STATE_FILTERS = [
 
 const ITO_QA_FILTERS = [
   { key: "QA FAIL", label: "QA Fail" },
-  { key: "QA UPDATED", label: "QA Updated" },
   { key: "QA PASS", label: "QA Pass" },
 ];
 
@@ -5255,7 +5254,6 @@ function GroupLanding({
                 value={group?.counts?.completed || 0}
               />
               <MiniCount label="QA Fail" value={group?.counts?.qaFail || 0} />
-              <MiniCount label="QA Updated" value={group?.counts?.qaUpdated || 0} />
               <MiniCount label="QA Pass" value={group?.counts?.qaPass || 0} />
             </View>
           </Pressable>
