@@ -140,17 +140,17 @@ const WMS_GROUPS = [
 ];
 
 const STATE_FILTERS = [
-  { key: "ALL", label: "All" },
-  { key: "ISSUED", label: "Issued" },
-  { key: "REASSIGNED", label: "Reassigned" },
-  { key: "ACCEPTED", label: "Accepted" },
-  { key: "IN_PROGRESS", label: "In Progress" },
-  { key: "COMPLETED", label: "Completed" },
+  { key: "ALL", label: "All", color: "#0f172a" },
+  { key: "ISSUED", label: "Issued", color: "#2563eb" },
+  { key: "REASSIGNED", label: "Reassigned", color: "#7c3aed" },
+  { key: "ACCEPTED", label: "Accepted", color: "#16a34a" },
+  { key: "IN_PROGRESS", label: "In Progress", color: "#d97706" },
+  { key: "COMPLETED", label: "Completed", color: "#16a34a" },
 ];
 
 const ITO_QA_FILTERS = [
-  { key: "QA FAIL", label: "QA Fail" },
-  { key: "QA PASS", label: "QA Pass" },
+  { key: "QA FAIL", label: "QA FAIL", color: "#dc2626" },
+  { key: "QA PASS", label: "QA PASS", color: "#16a34a" },
 ];
 
 const EXECUTION_ROUTES = {
@@ -313,6 +313,10 @@ function getStateBadgeStyle(state) {
     case "REJECTED":
     case "CANCELLED":
       return styles.badgeRed;
+    case "QA FAIL":
+      return styles.badgeQaFail;
+    case "QA PASS":
+      return styles.badgeGreen;
     default:
       return styles.badgeMuted;
   }
@@ -331,6 +335,10 @@ function getStateBadgeTextStyle(state) {
     case "REJECTED":
     case "CANCELLED":
       return styles.badgeRedText;
+    case "QA FAIL":
+      return styles.badgeQaFailText;
+    case "QA PASS":
+      return styles.badgeGreenText;
     default:
       return styles.badgeMutedText;
   }
@@ -1165,7 +1173,9 @@ export default function WorkorderManagementSystem() {
 
   useFocusEffect(
     useCallback(() => {
+      setProcessingItemAction(null);
       return () => {
+        setProcessingItemAction(null);
         clearOpeningTargetedBatch();
         clearPendingTargetedBatchAction();
         // TB-R051: the batch map closes whenever the screen loses focus. A detached tab dismisses the
@@ -2949,6 +2959,13 @@ export default function WorkorderManagementSystem() {
   }
 
   function handleExecute(item) {
+    if (!item?.id) return;
+
+    setProcessingItemAction({
+      itemId: item.id,
+      action: "EXECUTE",
+    });
+
     if (!isBgoChildItem(item) && getQaDraft(actorUid, item.id)?.pending) {
       router.push({ pathname: "/(tabs)/trns/correct", params: { trnId: item.id } });
       return;
@@ -2958,6 +2975,7 @@ export default function WorkorderManagementSystem() {
       return;
     }
     if (!isExecutableWorkflowState(item?.workflowState)) {
+      setProcessingItemAction(null);
       Alert.alert(
         "TRN Not Executable",
         "Only ACCEPTED or IN_PROGRESS work items can be opened for execution.",
@@ -2968,6 +2986,7 @@ export default function WorkorderManagementSystem() {
     const pathname = EXECUTION_ROUTES[item?.trnType];
 
     if (!pathname) {
+      setProcessingItemAction(null);
       Alert.alert(
         "Execution Route",
         "This work type can be issued and accepted, but execution is not enabled on this screen yet.",
@@ -2984,6 +3003,7 @@ export default function WorkorderManagementSystem() {
       item?.premiseId || item?.raw?.accessData?.premise?.id || null;
 
     if (!instructionTrnId) {
+      setProcessingItemAction(null);
       Alert.alert(
         "Work Item Not Ready",
         "This WMS item does not have a lifecycle instruction TRN id.",
@@ -3059,7 +3079,7 @@ export default function WorkorderManagementSystem() {
     });
     if (["METER_INSPECTION", "METER_DISCONNECTION", "METER_RECONNECTION", "METER_REMOVAL", "METER_READING"].includes(item.trnType)) {
       Alert.alert(ACCESS_GATE.title, ACCESS_GATE.message, [
-        { text: "Cancel", style: "cancel" },
+        { text: "Cancel", style: "cancel", onPress: () => setProcessingItemAction(null) },
         { text: ACCESS_GATE.no, onPress: () => router.push({ pathname: NO_ACCESS_ROUTE,
           params: { context: JSON.stringify({
             ...buildAssetNoAccessContext({ ...item.raw, id: sourceAstId }, {
@@ -5303,6 +5323,18 @@ function GroupDetail({
   const offlineWithoutItems =
     offline && (Array.isArray(allGroupItems) ? allGroupItems.length : 0) === 0;
 
+  const groupFilters = isBgoBucketView
+    ? STATE_FILTERS
+    : [...STATE_FILTERS, ...ITO_QA_FILTERS];
+
+  const filterRows = useMemo(() => {
+    const rows = [];
+    for (let i = 0; i < groupFilters.length; i += 4) {
+      rows.push(groupFilters.slice(i, i + 4));
+    }
+    return rows;
+  }, [groupFilters]);
+
   const renderWorkItem = ({ item }) => (
     <WorkItemCard
       item={item}
@@ -5333,42 +5365,60 @@ function GroupDetail({
         </View>
       </View>
 
-      <ScrollView
-        horizontal
-        style={styles.filterScroll}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-      >
-        {(isBgoBucketView ? STATE_FILTERS : [...STATE_FILTERS, ...ITO_QA_FILTERS]).map((filter) => {
-          const active = stateFilter === filter.key;
-          const count = stateCount(allGroupItems, filter.key);
+      <View style={styles.groupStatusFilterGrid}>
+        {filterRows.map((row, rowIndex) => (
+          <View key={`filter-row-${rowIndex}`} style={styles.groupStatusFilterRow}>
+            {row.map((filter) => {
+              const selected = stateFilter === filter.key;
+              const count = stateCount(allGroupItems, filter.key);
+              const isTotal = filter.key === "ALL";
 
-          return (
-            <Pressable
-              key={filter.key}
-              style={[styles.filterChip, active && styles.filterChipActive]}
-              onPress={() => setStateFilter(filter.key)}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  active && styles.filterChipTextActive,
-                ]}
-              >
-                {filter.label}
-              </Text>
-              <Text
-                style={[
-                  styles.filterCountText,
-                  active && styles.filterCountTextActive,
-                ]}
-              >
-                {count}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+              return (
+                <Pressable
+                  key={filter.key}
+                  style={({ pressed }) => [
+                    styles.tbStatusFilter,
+                    isTotal && styles.tbStatusFilterTotal,
+                    selected && {
+                      borderColor: filter.color,
+                      backgroundColor: isTotal ? "#f1f5f9" : `${filter.color}14`,
+                    },
+                    pressed && styles.tbStatusFilterPressed,
+                  ]}
+                  onPress={() =>
+                    setStateFilter((current) =>
+                      current === filter.key ? "ALL" : filter.key,
+                    )
+                  }
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${filter.label}: ${count}`}
+                  hitSlop={4}
+                >
+                  <Text
+                    style={[
+                      styles.tbStatusFilterLabel,
+                      isTotal && styles.tbStatusFilterLabelTotal,
+                      selected && { color: filter.color },
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {filter.label}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.tbStatusFilterValue,
+                      { color: filter.color },
+                    ]}
+                  >
+                    {count}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
+      </View>
 
       {detailError ? (
         <View style={styles.detailPreparingCard}>
@@ -5393,7 +5443,7 @@ function GroupDetail({
       ) : (
         <FlashList
           data={items}
-          extraData={{ deciding, processingItemAction }}
+          extraData={{ deciding, processingItemAction, stateFilter }}
           keyExtractor={(item, index) => item?.id || item?.raw?.id || String(index)}
           renderItem={renderWorkItem}
           estimatedItemSize={430}
@@ -5516,6 +5566,8 @@ function WorkItemCard({
   const processingAction = processingItemAction?.action;
   const isAccepting = processingThisItem && processingAction === "ACCEPT";
   const isRejecting = processingThisItem && processingAction === "REJECT";
+  const isExecuting = processingThisItem && processingAction === "EXECUTE";
+  const actionDisabled = deciding || isAccepting || isRejecting || isExecuting;
 
   const instructionMedia = getInstructionMedia(item);
   const hasInstructionMedia = instructionMedia.length > 0;
@@ -5703,8 +5755,19 @@ function WorkItemCard({
 
       <View style={styles.actionsRow}>
         {!isBgoWorkItem && (canRecover || (item?.workflowState === "QA FAIL" && item?.permissions?.canCorrect === true)) ? (
-          <Pressable style={[styles.actionBtn, styles.executeBtn]} onPress={() => onExecute(item)} disabled={deciding}>
-            <Text style={styles.executeBtnText}>{canRecover ? "RESOLVE SUBMISSION" : "CORRECT"}</Text>
+          <Pressable
+            style={[styles.actionBtn, styles.executeBtn, actionDisabled && styles.actionDisabled]}
+            onPress={() => onExecute(item)}
+            disabled={actionDisabled}
+          >
+            {isExecuting ? (
+              <>
+                <ActivityIndicator size="small" color="#ffffff" />
+                <Text style={styles.executeBtnText}>Opening…</Text>
+              </>
+            ) : (
+              <Text style={styles.executeBtnText}>{canRecover ? "RESOLVE SUBMISSION" : "CORRECT"}</Text>
+            )}
           </Pressable>
         ) : null}
         {canShowAccept ? (
@@ -5712,10 +5775,10 @@ function WorkItemCard({
             style={[
               styles.actionBtn,
               styles.acceptBtn,
-              (deciding || isAccepting || isRejecting) && styles.actionDisabled,
+              actionDisabled && styles.actionDisabled,
             ]}
             onPress={() => onAccept(item)}
-            disabled={deciding || isAccepting || isRejecting}
+            disabled={actionDisabled}
           >
             {isAccepting ? (
               <>
@@ -5733,10 +5796,10 @@ function WorkItemCard({
             style={[
               styles.actionBtn,
               styles.rejectBtn,
-              (deciding || isAccepting || isRejecting) && styles.actionDisabled,
+              actionDisabled && styles.actionDisabled,
             ]}
             onPress={() => onReject(item)}
-            disabled={deciding || isAccepting || isRejecting}
+            disabled={actionDisabled}
           >
             {isRejecting ? (
               <>
@@ -5751,11 +5814,18 @@ function WorkItemCard({
 
         {canShowExecute ? (
           <Pressable
-            style={[styles.actionBtn, styles.executeBtn]}
+            style={[styles.actionBtn, styles.executeBtn, actionDisabled && styles.actionDisabled]}
             onPress={() => onExecute(item)}
-            disabled={deciding}
+            disabled={actionDisabled}
           >
-            <Text style={styles.executeBtnText}>EXECUTE</Text>
+            {isExecuting ? (
+              <>
+                <ActivityIndicator size="small" color="#ffffff" />
+                <Text style={styles.executeBtnText}>Opening…</Text>
+              </>
+            ) : (
+              <Text style={styles.executeBtnText}>EXECUTE</Text>
+            )}
           </Pressable>
         ) : null}
 
@@ -5764,12 +5834,19 @@ function WorkItemCard({
             style={[
               styles.actionBtn,
               styles.rejectWorkBtn,
-              deciding && styles.actionDisabled,
+              actionDisabled && styles.actionDisabled,
             ]}
             onPress={() => onReject(item)}
-            disabled={deciding}
+            disabled={actionDisabled}
           >
-            <Text style={styles.rejectWorkBtnText}>REJECT WORK</Text>
+            {isRejecting ? (
+              <>
+                <ActivityIndicator size="small" color="#991b1b" />
+                <Text style={styles.rejectWorkBtnText}>Rejecting…</Text>
+              </>
+            ) : (
+              <Text style={styles.rejectWorkBtnText}>REJECT WORK</Text>
+            )}
           </Pressable>
         ) : null}
 
@@ -6082,7 +6159,10 @@ function RejectModal({ visible, item, busy, onClose, onSubmit }) {
                     disabled={busy || isSubmitting}
                   >
                     {busy || isSubmitting ? (
-                      <ActivityIndicator size="small" color="#7f1d1d" />
+                      <>
+                        <ActivityIndicator size="small" color="#7f1d1d" />
+                        <Text style={styles.modalRejectText}>Rejecting…</Text>
+                      </>
                     ) : (
                       <Text style={styles.modalRejectText}>{submitText}</Text>
                     )}
@@ -6661,6 +6741,14 @@ const styles = StyleSheet.create({
   badgeOrangeText: { color: "#c2410c" },
   badgeRed: { backgroundColor: "#fee2e2" },
   badgeRedText: { color: "#991b1b" },
+  badgeQaFail: {
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#f87171",
+  },
+  badgeQaFailText: {
+    color: "#dc2626",
+  },
   badgeMuted: { backgroundColor: "#f1f5f9" },
   badgeMutedText: { color: "#475569" },
   infoGrid: {
@@ -6967,8 +7055,10 @@ const styles = StyleSheet.create({
   modalButton: {
     minHeight: 46,
     borderRadius: 13,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 6,
   },
   modalCancelButton: {
     flex: 0.75,
@@ -7468,6 +7558,17 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     textTransform: "uppercase",
     marginBottom: 3,
+  },
+
+  groupStatusFilterGrid: {
+    marginHorizontal: 8,
+    marginBottom: 8,
+    gap: 4,
+  },
+
+  groupStatusFilterRow: {
+    flexDirection: "row",
+    gap: 4,
   },
 
   // TB-R051 (1.3.42, 1.3.92): the batch header's six status filters, equal width across the screen.
