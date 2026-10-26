@@ -974,6 +974,7 @@ export default function WorkorderManagementSystem() {
     processingTargetedBatchAction,
     setProcessingTargetedBatchAction,
   ] = useState(null);
+  const [processingItemAction, setProcessingItemAction] = useState(null);
   const [openingTargetedBatchId, setOpeningTargetedBatchId] = useState(null);
   const [
     pendingTargetedBatchAction,
@@ -2555,6 +2556,12 @@ export default function WorkorderManagementSystem() {
   async function submitDecision({ item, action, rejectReason = "" }) {
     if (!item?.id || actionBusy) return false;
 
+    const normalizedAction = normalizeUpper(action);
+    setProcessingItemAction({
+      itemId: item.id,
+      action: normalizedAction,
+    });
+
     try {
       const result = await acceptRejectLifecycleInstruction({
         trnIds: [item.id],
@@ -2580,6 +2587,10 @@ export default function WorkorderManagementSystem() {
       );
 
       return false;
+    } finally {
+      setProcessingItemAction((current) =>
+        current?.itemId === item.id ? null : current,
+      );
     }
   }
 
@@ -3662,6 +3673,7 @@ export default function WorkorderManagementSystem() {
               ? backToBuckets
               : backToIndividualGroups
           }
+          processingItemAction={processingItemAction}
           onAccept={handleAccept}
           onReject={setRejectItem}
           onExecute={handleExecute}
@@ -4211,9 +4223,12 @@ function TargetedBatchCard({
             onPress={() => onAcceptTargetedBatch(bucket)}
             disabled={disabled}
           >
+            {processingThisBatch && processingAction === "ACCEPT" ? (
+              <ActivityIndicator size="small" color="#14532d" />
+            ) : null}
             <Text style={styles.acceptBtnText}>
               {processingThisBatch && processingAction === "ACCEPT"
-                ? "ACCEPTING..."
+                ? "Accepting…"
                 : "ACCEPT"}
             </Text>
           </Pressable>
@@ -4229,9 +4244,12 @@ function TargetedBatchCard({
             onPress={() => onRejectTargetedBatch(bucket)}
             disabled={disabled}
           >
+            {processingThisBatch && processingAction === "REJECT" ? (
+              <ActivityIndicator size="small" color="#991b1b" />
+            ) : null}
             <Text style={styles.rejectBtnText}>
               {processingThisBatch && processingAction === "REJECT"
-                ? "REJECTING..."
+                ? "Rejecting…"
                 : "REJECT"}
             </Text>
           </Pressable>
@@ -4469,7 +4487,7 @@ function BucketCard({
             ) : null}
             <Text style={styles.acceptBtnText}>
               {processingThisBgoBucket && processingAction === "ACCEPT"
-                ? "ACCEPTING..."
+                ? "Accepting…"
                 : "ACCEPT"}
             </Text>
           </Pressable>
@@ -4490,7 +4508,7 @@ function BucketCard({
             ) : null}
             <Text style={styles.rejectBtnText}>
               {processingThisBgoBucket && processingAction === "REJECT"
-                ? "REJECTING..."
+                ? "Rejecting…"
                 : "REJECT"}
             </Text>
           </Pressable>
@@ -5271,6 +5289,7 @@ function GroupDetail({
   allGroupItems,
   items,
   deciding,
+  processingItemAction = null,
   isBgoBucketView = false,
   isPreparingBgoDetail = false,
   detailError = null,
@@ -5288,6 +5307,7 @@ function GroupDetail({
     <WorkItemCard
       item={item}
       deciding={deciding}
+      processingItemAction={processingItemAction}
       isBgoBucketView={isBgoBucketView}
       onAccept={onAccept}
       onReject={onReject}
@@ -5373,6 +5393,7 @@ function GroupDetail({
       ) : (
         <FlashList
           data={items}
+          extraData={{ deciding, processingItemAction }}
           keyExtractor={(item, index) => item?.id || item?.raw?.id || String(index)}
           renderItem={renderWorkItem}
           estimatedItemSize={430}
@@ -5480,6 +5501,7 @@ function getCompletedInfo(item = {}) {
 function WorkItemCard({
   item,
   deciding,
+  processingItemAction = null,
   isBgoBucketView = false,
   onAccept,
   onReject,
@@ -5489,6 +5511,11 @@ function WorkItemCard({
   const { user: recoveryUser } = useAuth();
   const pendingReceipt = usePendingQaRecovery(recoveryUser?.uid, item?.id);
   const canRecover = !isBgoBucketView && !isBgoChildItem(item) && pendingReceipt;
+
+  const processingThisItem = processingItemAction?.itemId === item?.id;
+  const processingAction = processingItemAction?.action;
+  const isAccepting = processingThisItem && processingAction === "ACCEPT";
+  const isRejecting = processingThisItem && processingAction === "REJECT";
 
   const instructionMedia = getInstructionMedia(item);
   const hasInstructionMedia = instructionMedia.length > 0;
@@ -5685,12 +5712,19 @@ function WorkItemCard({
             style={[
               styles.actionBtn,
               styles.acceptBtn,
-              deciding && styles.actionDisabled,
+              (deciding || isAccepting || isRejecting) && styles.actionDisabled,
             ]}
             onPress={() => onAccept(item)}
-            disabled={deciding}
+            disabled={deciding || isAccepting || isRejecting}
           >
-            <Text style={styles.acceptBtnText}>ACCEPT</Text>
+            {isAccepting ? (
+              <>
+                <ActivityIndicator size="small" color="#14532d" />
+                <Text style={styles.acceptBtnText}>Accepting…</Text>
+              </>
+            ) : (
+              <Text style={styles.acceptBtnText}>ACCEPT</Text>
+            )}
           </Pressable>
         ) : null}
 
@@ -5699,12 +5733,19 @@ function WorkItemCard({
             style={[
               styles.actionBtn,
               styles.rejectBtn,
-              deciding && styles.actionDisabled,
+              (deciding || isAccepting || isRejecting) && styles.actionDisabled,
             ]}
             onPress={() => onReject(item)}
-            disabled={deciding}
+            disabled={deciding || isAccepting || isRejecting}
           >
-            <Text style={styles.rejectBtnText}>REJECT</Text>
+            {isRejecting ? (
+              <>
+                <ActivityIndicator size="small" color="#991b1b" />
+                <Text style={styles.rejectBtnText}>Rejecting…</Text>
+              </>
+            ) : (
+              <Text style={styles.rejectBtnText}>REJECT</Text>
+            )}
           </Pressable>
         ) : null}
 
