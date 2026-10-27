@@ -1,7 +1,7 @@
 import {
   TRN_DATE_PRESETS,
   TRN_FILTER_DATA_ISSUE,
-} from "../../context/TrnFilterContext";
+} from "../../context/TrnFilterContext.js";
 
 export const TRN_FILTER_VALUES = {
   DATA_ISSUE: TRN_FILTER_DATA_ISSUE,
@@ -535,12 +535,46 @@ function matchesSearch(item = {}, filterState = {}) {
   return getSearchHaystack(item).includes(query);
 }
 
+export function isEligibleFailedTrn(item = {}) {
+  const workflowState = String(
+    item?.workflowState || item?.workflow?.state || "",
+  )
+    .trim()
+    .toUpperCase();
+
+  const qaState = String(
+    item?.qa?.state || item?.qa?.status || "",
+  )
+    .trim()
+    .toUpperCase();
+
+  // A final QA PASS decision is immutable and not eligible for failure filtering/TRN EDIT
+  if (
+    workflowState === "QA PASS" ||
+    qaState === "PASS" ||
+    qaState === "QA_PASS"
+  ) {
+    return false;
+  }
+
+  // Authoritative QA FAIL decision
+  return (
+    workflowState === "QA FAIL" ||
+    qaState === "FAIL" ||
+    qaState === "QA_FAIL"
+  );
+}
+
 export function filterTrns(list = [], filterState = {}) {
   const source = Array.isArray(list) ? list : [];
 
   return source.filter((item) => {
     if (!matchesSearch(item, filterState)) return false;
     if (!matchesDatePreset(item, filterState)) return false;
+
+    if (filterState?.failedOnly && !isEligibleFailedTrn(item)) {
+      return false;
+    }
 
     if (!includesSelected(filterState?.trnTypes, getTrnType(item))) {
       return false;

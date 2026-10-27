@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useMemo } from "react";
 
 import { TrnFilterProvider } from "../../../src/context/TrnFilterContext";
@@ -11,6 +11,7 @@ import TrnStatsModal from "../../../src/features/trns/TrnStatsModal";
 import { useTrnFilter } from "../../../src/hooks/useTrnFilter";
 
 function TrnsLayoutContent() {
+  const router = useRouter();
   const { all, filtered: warehouseFiltered } = useWarehouse();
 
   const baseTrns = useMemo(
@@ -58,6 +59,19 @@ function TrnsLayoutContent() {
                 onFilterPress={() => setShowFilters(true)}
                 onStatsPress={() => setShowStats(true)}
                 onQuickReset={resetFilters}
+                onWorkOrdersPress={() =>
+                  router.push("/(tabs)/admin/operations/my-workorders")
+                }
+                showWorkOrdersButton={true}
+                onFailedTogglePress={() =>
+                  setFilterState((prev) => ({
+                    ...prev,
+                    failedOnly: !prev.failedOnly,
+                  }))
+                }
+                showFailedToggleButton={true}
+                isFailedActive={Boolean(filterState.failedOnly)}
+                compactSearch={true}
               />
             ),
           }}

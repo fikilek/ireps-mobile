@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Modal,
   Platform,
@@ -14,6 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useAuth } from "../../../src/hooks/useAuth";
 import { useWarehouse } from "../../../src/context/WarehouseContext";
 import { filterTrns } from "../../../src/features/trns/filterTrns";
 import { useTrnFilter } from "../../../src/hooks/useTrnFilter";
@@ -718,6 +720,8 @@ function buildMediaRows(item = {}) {
 }
 
 const TrnItem = ({ item }) => {
+  const router = useRouter();
+  const { user } = useAuth();
   const [summaryVisible, setSummaryVisible] = useState(false);
 
   const trnType = item?.accessData?.trnType || "UNKNOWN_TRN";
@@ -798,6 +802,40 @@ const TrnItem = ({ item }) => {
 
   const dateAt = item.metadata?.updatedAt;
 
+  const isQaFail =
+    workflowState === "QA FAIL" ||
+    item?.qa?.state === "FAIL" ||
+    item?.qa?.status === "QA_FAIL";
+
+  const isQaPass =
+    workflowState === "QA PASS" ||
+    item?.qa?.state === "PASS" ||
+    item?.qa?.status === "QA_PASS";
+
+  const handleQaFailPress = (e) => {
+    e?.stopPropagation?.();
+
+    if (user?.role === "FWR") {
+      const submitterUid =
+        item?.workflow?.completedByUid ||
+        item?.metadata?.createdOnDeviceByUid ||
+        item?.metadata?.createdByUid;
+
+      if (submitterUid && user?.uid !== submitterUid) {
+        Alert.alert(
+          "Correction Restricted",
+          "Only the original field submitter may correct this failed transaction.",
+        );
+        return;
+      }
+    }
+
+    router.push({
+      pathname: "/(tabs)/trns/correct",
+      params: { trnId: item.id },
+    });
+  };
+
   const rawDate = dateAt?.__time__ || dateAt;
 
   const parsedDate = rawDate ? new Date(rawDate) : null;
@@ -815,11 +853,20 @@ const TrnItem = ({ item }) => {
   const formMedia = getFormMedia(item);
 
   return (
-    <View
+    <TouchableOpacity
+      activeOpacity={0.88}
+      onPress={() =>
+        router.push({
+          pathname: "/(tabs)/trns/[id]",
+          params: { id: item?.id },
+        })
+      }
       style={[
         styles.card,
         { borderRightWidth: 6, borderRightColor: boundaryColor },
       ]}
+      accessibilityRole="button"
+      accessibilityLabel={`Transaction ${item?.id || ""}`}
     >
       <View style={styles.content}>
         <View
@@ -882,7 +929,15 @@ const TrnItem = ({ item }) => {
               </Text>
             </View>
 
-            <TouchableOpacity onPress={() => setSummaryVisible(true)}>
+            <TouchableOpacity
+              onPress={(e) => {
+                e?.stopPropagation?.();
+                setSummaryVisible(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="View form summary"
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
               <MaterialCommunityIcons
                 name="file-document-edit-outline"
                 size={26}
@@ -948,25 +1003,49 @@ const TrnItem = ({ item }) => {
             {/* <Text style={styles.idBadge}>#{trnRef}</Text> */}
           </View>
 
-          <View
-            style={[
-              styles.workflowStateBadge,
-              {
-                backgroundColor: workflowStateConfig.bg,
-                borderColor: workflowStateConfig.border,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.workflowStateText,
-                { color: workflowStateConfig.color },
-              ]}
-              numberOfLines={1}
+          {isQaFail ? (
+            <TouchableOpacity
+              style={styles.qaFailBadge}
+              onPress={handleQaFailPress}
+              accessibilityRole="button"
+              accessibilityLabel="Correct failed transaction"
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              {workflowStateConfig.label}
-            </Text>
-          </View>
+              <MaterialCommunityIcons
+                name="alert-circle-outline"
+                size={13}
+                color="#dc2626"
+                style={{ marginRight: 3 }}
+              />
+              <Text style={styles.qaFailText} numberOfLines={1}>
+                QA FAIL
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View
+              style={[
+                styles.workflowStateBadge,
+                isQaPass
+                  ? styles.qaPassBadge
+                  : {
+                      backgroundColor: workflowStateConfig.bg,
+                      borderColor: workflowStateConfig.border,
+                    },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.workflowStateText,
+                  isQaPass
+                    ? styles.qaPassText
+                    : { color: workflowStateConfig.color },
+                ]}
+                numberOfLines={1}
+              >
+                {isQaPass ? "QA PASS" : workflowStateConfig.label}
+              </Text>
+            </View>
+          )}
 
           <View
             style={[
@@ -992,7 +1071,7 @@ const TrnItem = ({ item }) => {
         mediaItems={formMedia}
         onClose={() => setSummaryVisible(false)}
       />
-    </View>
+    </TouchableOpacity>
   );
 };
 
@@ -1186,7 +1265,6 @@ export default function TrnsScreen() {
   if (noWard) {
     return (
       <View style={[styles.container, styles.center]}>
-        <TouchableOpacity onPress={() => router.push("/(tabs)/admin/operations/my-workorders")}><Text style={{ color: "#075dc5", padding: 16 }}>My Work Orders</Text></TouchableOpacity>
         <Text style={styles.loadingText}>
           Select a ward to view field transactions.
         </Text>
@@ -1198,7 +1276,6 @@ export default function TrnsScreen() {
     return (
       <View style={[styles.container, styles.center]}>
         <ActivityIndicator size="large" color="#3B82F6" />
-        <TouchableOpacity onPress={() => router.push("/(tabs)/admin/operations/my-workorders")}><Text style={{ color: "#075dc5", padding: 16 }}>My Work Orders</Text></TouchableOpacity>
         <Text style={styles.loadingText}>Syncing Audit Logs...</Text>
       </View>
     );
@@ -1206,7 +1283,6 @@ export default function TrnsScreen() {
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity onPress={() => router.push("/(tabs)/admin/operations/my-workorders")} style={{ padding: 16, backgroundColor: "#eaf2ff" }}><Text style={{ color: "#075dc5", fontWeight: "700" }}>My Work Orders</Text></TouchableOpacity>
       <FlashList
         data={displayTrns}
         renderItem={({ item }) => <TrnItem item={item} />}
@@ -1338,6 +1414,35 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: "900",
     letterSpacing: 0.25,
+  },
+
+  qaFailBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#f87171",
+    backgroundColor: "#fef2f2",
+  },
+
+  qaFailText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#dc2626",
+    letterSpacing: 0.25,
+  },
+
+  qaPassBadge: {
+    backgroundColor: "#dcfce7",
+    borderColor: "#bbf7d0",
+  },
+
+  qaPassText: {
+    color: "#166534",
   },
 
   meterNumberContainer: {

@@ -1,4 +1,11 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 
 export const TRN_DATE_PRESETS = {
   ALL: "ALL",
@@ -15,6 +22,7 @@ export const TRN_FILTER_DATA_ISSUE = "DATA_ISSUE";
 
 export const initialTrnFilterState = {
   searchQuery: "",
+  failedOnly: false,
 
   trnTypes: [],
   workflowStates: [],
@@ -36,6 +44,7 @@ export const TrnFilterContext = createContext(null);
 export function getActiveTrnFilterCount(filterState = {}) {
   return (
     (String(filterState?.searchQuery || "").trim() ? 1 : 0) +
+    (filterState?.failedOnly ? 1 : 0) +
     (filterState?.trnTypes?.length > 0 ? 1 : 0) +
     (filterState?.workflowStates?.length > 0 ? 1 : 0) +
     (filterState?.originChannels?.length > 0 ? 1 : 0) +
@@ -111,11 +120,7 @@ export function TrnFilterProvider({ children }) {
     ],
   );
 
-  return (
-    <TrnFilterContext.Provider value={value}>
-      {children}
-    </TrnFilterContext.Provider>
-  );
+  return createElement(TrnFilterContext.Provider, { value }, children);
 }
 
 export function useTrnFilter() {

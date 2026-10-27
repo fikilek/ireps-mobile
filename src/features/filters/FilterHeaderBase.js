@@ -17,21 +17,34 @@ export function FilterHeaderBase({
   onStatsPress,
   onFilterPress,
   onQuickReset,
+  onWorkOrdersPress,
+  onFailedTogglePress,
 
   showStatsButton = true,
   showSearchButton = true,
   showFilterButton = true,
+  showWorkOrdersButton = Boolean(onWorkOrdersPress),
+  showFailedToggleButton = Boolean(onFailedTogglePress),
+  isFailedActive = false,
+  compactSearch = false,
 }) {
   const safeTotalCount = Number(totalCount || 0);
   const safeFilteredCount = Number(filteredCount || 0);
   const safeFilterCount = Number(filterCount || 0);
+
+  const isSearchCompact =
+    compactSearch || showWorkOrdersButton || showFailedToggleButton;
 
   return (
     <View style={styles.headerContainer}>
       <View
         style={[
           styles.leftSection,
-          !showStatsButton && !showFilterButton && styles.leftSectionOnly,
+          !showStatsButton &&
+            !showFilterButton &&
+            !showWorkOrdersButton &&
+            !showFailedToggleButton &&
+            styles.leftSectionOnly,
         ]}
       >
         <View style={styles.statPod}>
@@ -53,15 +66,26 @@ export function FilterHeaderBase({
         {showSearchButton && !showSearch && (
           <>
             <View style={styles.podDivider} />
-            <TouchableOpacity style={styles.searchPod} onPress={onSearchPress}>
-              <Text style={styles.statLabel} numberOfLines={1}>
-                {searchLabel}
-              </Text>
+            <TouchableOpacity
+              style={[
+                styles.searchPod,
+                isSearchCompact && styles.searchPodCompact,
+              ]}
+              onPress={onSearchPress}
+              accessibilityRole="button"
+              accessibilityLabel={searchLabel}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              {!isSearchCompact && (
+                <Text style={styles.statLabel} numberOfLines={1}>
+                  {searchLabel}
+                </Text>
+              )}
               <MaterialCommunityIcons
                 name="magnify"
                 size={22}
                 color="#2563eb"
-                style={{ marginTop: -2 }}
+                style={!isSearchCompact && { marginTop: -2 }}
               />
             </TouchableOpacity>
           </>
@@ -69,11 +93,57 @@ export function FilterHeaderBase({
       </View>
 
       <View style={styles.rightSection}>
+        {showWorkOrdersButton && (
+          <TouchableOpacity
+            style={styles.actionIconBtn}
+            onPress={onWorkOrdersPress}
+            accessibilityRole="button"
+            accessibilityLabel="My Work Orders"
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <MaterialCommunityIcons
+              name="clipboard-text-outline"
+              size={22}
+              color="#475569"
+            />
+          </TouchableOpacity>
+        )}
+
+        {showFailedToggleButton && (
+          <TouchableOpacity
+            style={[
+              styles.actionIconBtn,
+              isFailedActive && styles.failedToggleBtnActive,
+            ]}
+            onPress={onFailedTogglePress}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isFailedActive }}
+            accessibilityLabel={
+              isFailedActive
+                ? "Show all transactions"
+                : "Show failed transactions"
+            }
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <MaterialCommunityIcons
+              name={isFailedActive ? "alert-circle" : "alert-circle-outline"}
+              size={22}
+              color={isFailedActive ? "#dc2626" : "#64748b"}
+            />
+          </TouchableOpacity>
+        )}
+
         {showStatsButton && (
-          <TouchableOpacity style={styles.statsBtn} onPress={onStatsPress}>
+          <TouchableOpacity
+            style={styles.statsBtn}
+            onPress={onStatsPress}
+            accessibilityRole="button"
+            accessibilityLabel="Statistics"
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
             <MaterialCommunityIcons
               name="chart-box-outline"
-              size={24}
+              size={22}
               color="#64748b"
             />
           </TouchableOpacity>
@@ -87,6 +157,9 @@ export function FilterHeaderBase({
               <TouchableOpacity
                 style={styles.podActionBtn}
                 onPress={onQuickReset}
+                accessibilityRole="button"
+                accessibilityLabel="Reset filters"
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
               >
                 <MaterialCommunityIcons
                   name="filter-off-outline"
@@ -101,6 +174,9 @@ export function FilterHeaderBase({
             <TouchableOpacity
               style={styles.podActionBtn}
               onPress={onFilterPress}
+              accessibilityRole="button"
+              accessibilityLabel="Open filters"
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
               <View>
                 <MaterialCommunityIcons
@@ -165,6 +241,12 @@ const styles = StyleSheet.create({
     maxWidth: 78,
   },
 
+  searchPodCompact: {
+    maxWidth: 36,
+    paddingHorizontal: 4,
+    justifyContent: "center",
+  },
+
   statLabel: {
     fontSize: 8,
     fontWeight: "900",
@@ -193,11 +275,25 @@ const styles = StyleSheet.create({
   rightSection: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 2,
+  },
+
+  actionIconBtn: {
+    padding: 6,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  failedToggleBtnActive: {
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fca5a5",
   },
 
   statsBtn: {
-    padding: 8,
-    marginRight: 8,
+    padding: 6,
+    marginRight: 2,
   },
 
   filterPod: {
@@ -216,7 +312,7 @@ const styles = StyleSheet.create({
   },
 
   podActionBtn: {
-    padding: 8,
+    padding: 6,
   },
 
   filterBadge: {
