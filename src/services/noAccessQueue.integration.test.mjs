@@ -41,6 +41,13 @@ function harness(t) {
       getStorage: () => ({}), ref: (_storage, path) => path,
       deleteObject: async () => { throw new Error("No Access evidence must survive a refusal"); },
       getDownloadURL: async path => `https://example.test/${path}`,
+      uploadBytes: (path, blob) => {
+        uploads.push({ path, blob });
+        let reject;
+        const promise = state.uploadMode === "success" ? Promise.resolve() : new Promise((_resolve, fail) => { reject = fail; });
+        promise.cancel = () => reject(Object.assign(new Error("User canceled the upload"), { code: "storage/canceled" }));
+        return promise;
+      },
       uploadBytesResumable: (path, blob) => {
         uploads.push({ path, blob });
         let reject;

@@ -5,6 +5,7 @@ import {
   getDownloadURL,
   getStorage,
   ref,
+  uploadBytes,
   uploadBytesResumable,
 } from "firebase/storage";
 import { functions } from "../firebase";
@@ -323,21 +324,43 @@ export const processSubmissionQueue = async ({
               const response = await fetch(mediaItem.uri);
               const blob = await response.blob();
 
-              const upload = uploadBytesResumable(storageRef, blob);
+              const uploadFn =
+                typeof uploadBytes === "function"
+                  ? uploadBytes
+                  : uploadBytesResumable;
+              const uploadPromise = uploadFn(storageRef, blob);
               let uploadTimedOut = false;
-              const uploadTimer = setTimeout(() => {
-                uploadTimedOut = true;
-                upload.cancel();
-              }, 60000);
+              let uploadTimer;
+              const timeoutPromise = new Promise((_, reject) => {
+                uploadTimer = setTimeout(() => {
+                  uploadTimedOut = true;
+                  if (typeof uploadPromise?.cancel === "function") {
+                    try {
+                      uploadPromise.cancel();
+                    } catch {}
+                  }
+                  reject(
+                    Object.assign(
+                      new Error(
+                        "The file upload timed out. It is saved on this phone and will retry automatically.",
+                      ),
+                      { code: "STORAGE_UPLOAD_TIMEOUT" },
+                    ),
+                  );
+                }, 60000);
+              });
               try {
-                await upload;
+                await Promise.race([uploadPromise, timeoutPromise]);
               } catch (error) {
                 if (uploadTimedOut) {
                   // Our deadline cancelled the request, not the worker. Keep the
                   // evidence and tell every transaction the same retryable cause.
-                  throw Object.assign(new Error(
-                    "The file upload timed out. It is saved on this phone and will retry automatically.",
-                  ), { code: "STORAGE_UPLOAD_TIMEOUT" });
+                  throw Object.assign(
+                    new Error(
+                      "The file upload timed out. It is saved on this phone and will retry automatically.",
+                    ),
+                    { code: "STORAGE_UPLOAD_TIMEOUT" },
+                  );
                 }
                 throw error;
               } finally {

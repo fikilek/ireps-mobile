@@ -80,6 +80,14 @@ async function mount(t, kind = "conventional", options = {}) {
       return { data: connection.reply };
     } },
     "firebase/storage": { getStorage: () => ({}), ref: (_storage, path) => path,
+      uploadBytes: () => {
+        events.push("upload");
+        if (connection.uploadMode !== "stalled") return Promise.resolve();
+        let reject;
+        const upload = new Promise((_resolve, fail) => { reject = fail; });
+        upload.cancel = () => reject(Object.assign(new Error("Upload cancelled"), { code: "storage/canceled" }));
+        return upload;
+      },
       uploadBytesResumable: () => {
         events.push("upload");
         if (connection.uploadMode !== "stalled") return Promise.resolve();
