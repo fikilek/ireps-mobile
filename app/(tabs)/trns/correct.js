@@ -69,8 +69,6 @@ function CorrectionEditor({ uid, loaded, router, navigation }) {
   const [explanation, setExplanation] = useState(loaded.explanation || "");
   const [takeoverReason, setTakeoverReason] = useState(loaded.takeoverReason || "");
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(loaded.error || "");
-  const [conflict, setConflict] = useState(loaded.conflict?.kind === "RETAIN_METER_FACTS" ? loaded.conflict : null);
-  const [retain, setRetain] = useState(false);
   const [retryOnly, setRetryOnly] = useState(loaded.retryOnly === true);
   const [initialValues, setInitialValues] = useState(loaded.values);
   const live = useRef(loaded.values), saved = useRef(JSON.stringify(loaded.values)), leaving = useRef(false);
@@ -109,7 +107,6 @@ function CorrectionEditor({ uid, loaded, router, navigation }) {
       setMessage(failure.message);
       const current = getQaDraft(uid, trnId);
       setRetryOnly(!!current?.pending);
-      setConflict(current?.conflict?.kind === "RETAIN_METER_FACTS" ? current.conflict : null);
     }
   };
   const submit = async (canonical, raw = canonical) => {
@@ -118,7 +115,7 @@ function CorrectionEditor({ uid, loaded, router, navigation }) {
     setBusy(true); setMessage("");
     try {
       const confirmed = await new Promise(resolve => Alert.alert("Send this correction?",
-        `The original submission and all earlier versions will be retained. QA will ${context.state === "FAIL" ? "move to Updated for another review" : "remain COMPLETED awaiting QA"}.${retain ? " Newer meter facts will be kept." : ""}`,
+        `The original submission and all earlier versions will be retained. QA will ${context.state === "FAIL" ? "move to Updated for another review" : "remain COMPLETED awaiting QA"}.`,
         [{ text: "Keep editing", style: "cancel", onPress: () => resolve(false) },
           { text: "Send correction", onPress: () => resolve(true) }], { cancelable: false }));
       if (!confirmed) return;
@@ -129,7 +126,7 @@ function CorrectionEditor({ uid, loaded, router, navigation }) {
       const persistedCanonical = { ...canonical, media: await persistQaMedia(uid, requestId, media) };
       const fields = amendmentFields(context.snapshot, persistedCanonical);
       const pending = { trnId, requestId, sourceVersion: context.sourceVersion, previousReviewId: context.previousReviewId,
-        meterVersion: context.meterVersion, explanation, takeoverReason, retainNewerMeterFacts: retain, fields };
+        meterVersion: context.meterVersion, explanation, takeoverReason, retainNewerMeterFacts: true, fields };
       putQaDraft(uid, trnId, { ...durable, pending });
       setRetryOnly(true); await send();
     } catch (failure) { setMessage(failure.message); }
@@ -142,8 +139,7 @@ function CorrectionEditor({ uid, loaded, router, navigation }) {
   const premise = useMemo(() => ({ ...context.snapshot.accessData.premise, parents: context.snapshot.accessData.parents,
     geometry: { centroid: context.snapshot.ast?.location?.gps } }), [context]);
   const value = { context, params, meter, premise, editQueueItem, initialValues, explanation, setExplanation,
-    takeoverReason, setTakeoverReason, busy, message, conflict, observe, save, submit,
-    confirmHistoricalOnly: () => { setRetain(true); setConflict(null); setMessage("Newer meter facts will be retained. Send again to confirm the correction."); } };
+    takeoverReason, setTakeoverReason, busy, message, observe, save, submit };
   if (retryOnly) return <View style={{ padding: 20, gap: 16 }}>
     <Text style={{ color: "#172b4d" }}>Correction saved on this phone. Receipt by the office has not yet been confirmed.</Text>
     {!!message && <Text style={{ color: "#8b1b1b" }}>{message}</Text>}
