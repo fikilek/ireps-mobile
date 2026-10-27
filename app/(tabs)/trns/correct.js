@@ -135,9 +135,13 @@ function CorrectionEditor({ uid, loaded, router, navigation }) {
   const seed = useMemo(() => correctionSeed(context.snapshot), [context.snapshot]);
   const meter = useMemo(() => savedMeter(context), [context]);
   const editQueueItem = useMemo(() => ({ payload: seed }), [seed]);
-  const params = useMemo(() => correctionParams(context), [context]);
-  const premise = useMemo(() => ({ ...context.snapshot.accessData.premise, parents: context.snapshot.accessData.parents,
-    geometry: { centroid: context.snapshot.ast?.location?.gps } }), [context]);
+  const premise = useMemo(() => ({
+    ...context.snapshot.accessData?.premise,
+    erfNo: context.snapshot.accessData?.erfNo || context.snapshot.accessData?.erf?.erfNo || context.snapshot.accessData?.premise?.erfNo || "NAv",
+    erfId: context.snapshot.accessData?.erfId || context.snapshot.accessData?.erf?.id || context.snapshot.accessData?.premise?.erfId || "NAv",
+    parents: context.snapshot.accessData?.parents,
+    geometry: { centroid: context.snapshot.ast?.location?.gps },
+  }), [context]);
   const value = { context, params, meter, premise, editQueueItem, initialValues, explanation, setExplanation,
     takeoverReason, setTakeoverReason, busy, message, observe, save, submit };
   if (retryOnly) return <View style={{ padding: 20, gap: 16 }}>

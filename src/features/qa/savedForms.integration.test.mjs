@@ -62,7 +62,7 @@ for (const [type, path] of entries) {
     const snapshot = fixture(type), context = { trnId: snapshot.id, snapshot };
     let formProps;
     const forbidden = () => { throw Error("A correction must not originate new work"); };
-    const qa = { editQueueItem: { payload: correctionSeed(snapshot) }, meter: savedMeter(context), premise: { id: "premise", parents: snapshot.accessData.parents }, params: correctionParams(context) };
+    const qa = { editQueueItem: { payload: correctionSeed(snapshot) }, meter: savedMeter(context), premise: { id: "premise", erfNo: snapshot.accessData.erfNo, parents: snapshot.accessData.parents }, params: correctionParams(context) };
     const component = loadEntry(path, {
       "react-native": { ...nativeHosts, Image: "Image", TextInput: "TextInput", StyleSheet: { create: x => x }, Alert: { alert() {} }, Linking: {}, },
       "react-native-paper": { ...paperHosts, Divider: "Divider", TextInput: "TextInput", RadioButton: { Group: "RadioGroup", Item: "RadioItem" } },

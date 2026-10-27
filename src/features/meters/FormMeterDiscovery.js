@@ -523,7 +523,9 @@ export default function FormMeterDiscovery() {
   const getOptions = getFormOptions;
 
   const premiseAddress =
-    `${premise?.address?.strNo || ""} ${premise?.address?.strName || ""} ${premise?.address?.strType || ""}`.trim();
+    typeof premise?.address === "string" && premise.address.trim()
+      ? premise.address.trim()
+      : `${premise?.address?.strNo || ""} ${premise?.address?.strName || ""} ${premise?.address?.strType || ""}`.trim();
 
   const landingPoint = premise?.geometry?.centroid;
 
@@ -539,7 +541,11 @@ export default function FormMeterDiscovery() {
   const [preparingFollowOn, setPreparingFollowOn] = useState("");
   // console.log(`FormMeterDiscovery ----showSuccess`, showSuccess);
 
-  const finalErfNo = premise?.erfNo || "NAv";
+  const finalErfNo =
+    premise?.erfNo ||
+    qaAmendment?.context?.snapshot?.accessData?.erfNo ||
+    editQueueItem?.payload?.accessData?.erfNo ||
+    "NAv";
   // console.log(`FormMeterDiscovery ----finalErfNo`, finalErfNo);
 
   const accessInitValues = {
@@ -2312,7 +2318,7 @@ export default function FormMeterDiscovery() {
                           fontWeight: "900",
                         }}
                       >
-                        {premise?.erfNo || "NAv"}
+                        {finalErfNo}
                       </Text>
                     </View>
                   ),

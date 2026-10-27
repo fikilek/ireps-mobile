@@ -372,7 +372,10 @@ export default function FormMeterInstallation() {
   const [queuedNotice, setQueuedNotice] = useState(null);
   // console.log(`FormMeterInstallation ----showSuccess`, showSuccess);
 
-  const finalErfNo = premise?.erfNo || "NAv";
+  const finalErfNo =
+    premise?.erfNo ||
+    qaAmendment?.context?.snapshot?.accessData?.erfNo ||
+    "NAv";
   // console.log(`FormMeterInstallation ----finalErfNo`, finalErfNo);
 
   const accessInitValues = {
@@ -1774,7 +1777,7 @@ export default function FormMeterInstallation() {
                           fontWeight: "900",
                         }}
                       >
-                        {premise?.erfNo || "NAv"}
+                        {finalErfNo}
                       </Text>
                     </View>
                   ),
