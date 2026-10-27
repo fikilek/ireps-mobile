@@ -15,11 +15,11 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   Stack,
-  useLocalSearchParams,
   useNavigation,
   useRouter,
 } from "expo-router";
-import { Formik } from "formik";
+import { Formik, useQaAmendment, useQaSearchParams as useLocalSearchParams } from "../../../../src/features/qa/QaAmendmentContext";
+import { formatStreetAddress } from "../../../../src/features/premises/streetAddress";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -82,9 +82,26 @@ export default function NoAccessScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const params = useLocalSearchParams();
+  const qa = useQaAmendment();
   const [editingItem, setEditingItem] = useState(null);
-  const [loadingDraft, setLoadingDraft] = useState(Boolean(params.queueItemId));
-  const context = useMemo(() => editingItem ? noAccessContextFromQueue(editingItem) : parseContext(params.context), [params.context, editingItem]);
+  const [loadingDraft, setLoadingDraft] = useState(Boolean(!qa && params.queueItemId));
+  const context = useMemo(() => {
+    if (qa) {
+      const snap = qa.context?.snapshot || {};
+      const accessData = snap.accessData || {};
+      const premise = accessData.premise || {};
+      const address = typeof premise.address === "string" ? premise.address : (formatStreetAddress(premise.address || {}) || "NAv");
+      return {
+        trnType: accessData.trnType || snap.trnType || "METER_DISCOVERY",
+        erfNo: accessData.erfNo || "NAv",
+        premiseAddress: address,
+        gps: snap.ast?.location?.gps || premise.geometry?.centroid || snap.media?.[0]?.gps || null,
+        meterType: snap.meterType || "",
+        wardPcode: accessData.parents?.wardPcode || "",
+      };
+    }
+    return editingItem ? noAccessContextFromQueue(editingItem) : parseContext(params.context);
+  }, [params.context, editingItem, qa]);
   useEffect(() => {
     if (!params.queueItemId) return;
     let active = true;
@@ -201,15 +218,27 @@ export default function NoAccessScreen() {
   // NA-R006: the header arrow sits OUTSIDE Formik, so it cannot ask useFormikContext what has
   // been filled in. This is the handle onto the same form the submit uses.
   const formRef = useRef(null);
-  const initialValues = useMemo(() => ({
-    reasonCode: normalizeNoAccessReasonCode(editingItem?.payload?.accessData?.access?.reasonCode),
-    reasonOther: editingItem?.payload?.accessData?.access?.reasonOther === "NAv" ? "" : editingItem?.payload?.accessData?.access?.reasonOther || "",
-    appointment: editingItem?.payload?.accessData?.access?.appointment || null,
-    media: editingItem?.payload?.media || [],
-  }), [editingItem]);
-  const validateValues = useCallback((values) => validateNoAccessCapture(values, values.media, {
-    originalAccess: editingItem?.payload?.accessData?.access,
-  }), [editingItem]);
+  const initialValues = useMemo(() => {
+    if (qa) {
+      const snapAccess = qa.context?.snapshot?.accessData?.access || {};
+      const snapMedia = qa.context?.snapshot?.media || [];
+      return {
+        reasonCode: normalizeNoAccessReasonCode(snapAccess.reasonCode),
+        reasonOther: snapAccess.reasonOther === "NAv" ? "" : snapAccess.reasonOther || "",
+        appointment: snapAccess.appointment || null,
+        media: snapMedia,
+      };
+    }
+    return {
+      reasonCode: normalizeNoAccessReasonCode(editingItem?.payload?.accessData?.access?.reasonCode),
+      reasonOther: editingItem?.payload?.accessData?.access?.reasonOther === "NAv" ? "" : editingItem?.payload?.accessData?.access?.reasonOther || "",
+      appointment: editingItem?.payload?.accessData?.access?.appointment || null,
+      media: editingItem?.payload?.media || [],
+    };
+  }, [editingItem, qa]);
+  const validateValues = useCallback((values) => validateNoAccessCapture(values, values?.media || [], {
+    originalAccess: qa ? qa.context?.snapshot?.accessData?.access : editingItem?.payload?.accessData?.access,
+  }), [editingItem, qa]);
 
   /**
    * NA-R006 — leaving by the arrow, with a stop when there is something to lose.
@@ -461,28 +490,30 @@ export default function NoAccessScreen() {
           already carries its own arrow for exactly this reason (TB-R051).
           It leaves through goBack(), so abandoning the form and finishing it end up in the
           same place: back where the worker opened it from. */}
-      <Stack.Screen
-        options={{
-          title: "No Access",
-          headerBackVisible: false,
-          headerLeft: ({ tintColor }) => (
-            <TouchableOpacity
-              style={styles.backButton}
-              activeOpacity={0.8}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel="Back"
-              onPress={leaveForm}
-            >
-              <MaterialCommunityIcons
-                name="chevron-left"
-                size={26}
-                color={tintColor || "#0f172a"}
-              />
-            </TouchableOpacity>
-          ),
-        }}
-      />
+      {!qa && (
+        <Stack.Screen
+          options={{
+            title: "No Access",
+            headerBackVisible: false,
+            headerLeft: ({ tintColor }) => (
+              <TouchableOpacity
+                style={styles.backButton}
+                activeOpacity={0.8}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Back"
+                onPress={leaveForm}
+              >
+                <MaterialCommunityIcons
+                  name="chevron-left"
+                  size={26}
+                  color={tintColor || "#0f172a"}
+                />
+              </TouchableOpacity>
+            ),
+          }}
+        />
+      )}
       <ScrollView contentContainerStyle={styles.content}>
         <Surface style={styles.context} elevation={1}>
           <Text variant="titleMedium">
@@ -509,6 +540,17 @@ export default function NoAccessScreen() {
           validateOnMount
           validateOnChange
           validateOnBlur
+          qaSerialize={(values) => {
+            const snap = qa?.context?.snapshot || {};
+            return {
+              ...snap,
+              media: values.media,
+              accessData: {
+                ...snap.accessData,
+                access: values,
+              },
+            };
+          }}
           onSubmit={(values, helpers) =>
             submit(
               {
@@ -526,7 +568,7 @@ export default function NoAccessScreen() {
               <IrepsNoAccessForm
                 visible
                 value={values}
-                originalAccess={editingItem?.payload?.accessData?.access}
+                originalAccess={qa ? qa.context?.snapshot?.accessData?.access : editingItem?.payload?.accessData?.access}
                 onChange={(next) => setValues({ ...values, ...next })}
                 mediaName="media"
                 mediaTag="noAccessPhoto"
@@ -541,7 +583,7 @@ export default function NoAccessScreen() {
               />
 
               <ForensicFooter
-                isTrnLoading={Boolean(busy)}
+                isTrnLoading={Boolean(busy || qa?.busy)}
                 // onSubmit={handleSubmit}
               />
             </View>

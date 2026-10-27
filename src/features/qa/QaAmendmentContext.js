@@ -22,10 +22,6 @@ function QaControls({ serialize }) {
     {(!!qa.context.snapshot.qa?.reasonLabel || !!qa.context.snapshot.qa?.comment) && <Text style={{ color: "#8b1b1b" }}>{[qa.context.snapshot.qa.reasonLabel, qa.context.snapshot.qa.comment].filter(Boolean).join(": ")}</Text>}
     {qa.context.takeover && <TextInput accessibilityLabel="Takeover reason" placeholder="Why are you taking over? Confirm the submitter has left." placeholderTextColor="#52647a" value={qa.takeoverReason} onChangeText={qa.setTakeoverReason} multiline maxLength={4000} style={{ color: "#172b4d", backgroundColor: "white", padding: 10 }} />}
     {!!qa.message && <Text accessibilityRole="alert" style={{ color: "#8b1b1b" }}>{qa.message}</Text>}
-    {qa.context.snapshot.accessData?.access?.hasAccess === "no" && <View style={{ flexDirection: "row", gap: 16 }}>
-      <TouchableOpacity disabled={qa.busy} onPress={() => qa.save(form.values)}><Text style={{ color: "#075dc5", padding: 8 }}>SAVE</Text></TouchableOpacity>
-      <TouchableOpacity disabled={qa.busy} onPress={() => qa.submit(serialize(form.values), form.values)}><Text style={{ color: "#075dc5", padding: 8 }}>{qa.busy ? "Sending…" : "SUBMIT"}</Text></TouchableOpacity>
-    </View>}
   </ScrollView>;
 }
 

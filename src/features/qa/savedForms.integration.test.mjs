@@ -18,9 +18,22 @@ test("No Access reopens the shared form's flat fields and saves them into the or
   const snapshot = { id: "same-trn", accessData: { trnType: "METER_DISCOVERY", premise: { id: "premise" },
     access: { hasAccess: "no", reasonCode: "Property Locked", reason: "Property Locked", appointment: null } }, media: [{ tag: "noAccessPhoto", url: "https://example.invalid/photo" }] };
   const Component = loadEntry("src/features/qa/NoAccessCorrection.js", {
-    "react-native": nativeHosts,
-    "./src/features/qa/QaAmendmentContext.js": { Formik: value => { props = value; return null; } },
+    "react-native": { ...nativeHosts, StyleSheet: { create: x => x }, Alert: { alert() {} } },
+    "react-native-paper": paperHosts,
+    "@expo/vector-icons": { MaterialCommunityIcons: "Icon" },
+    "expo-router": { useRouter: () => ({}), useNavigation: () => ({}), useLocalSearchParams: () => ({}), Stack: { Screen: () => null } },
+    "./src/features/qa/QaAmendmentContext.js": {
+      useQaAmendment: () => ({ context: { snapshot } }),
+      useQaSearchParams: () => ({}),
+      Formik: value => { props = value; return null; },
+    },
     "./components/forms/IrepsNoAccessForm.js": { IrepsNoAccessForm: "NoAccessForm" },
+    "./src/features/meters/ForensicFooter.js": { ForensicFooter: "Footer" },
+    "./src/utils/persistNoAccessMeterDiscoveryMedia.js": {},
+    "./src/services/processSubmissionQueue.js": {},
+    "./src/services/startMeterDiscoveryQueueSyncService.js": {},
+    "./src/hooks/useAuth.js": { useAuth: () => ({ user: { uid: "test-user" } }) },
+    "./src/utils/submissionQueue.js": { getSubmissionQueueItemById: async () => null },
   });
   let tree; await act(async () => { tree = create(React.createElement(Component, { snapshot })); });
   t.after(async () => { await act(async () => tree.unmount()); });

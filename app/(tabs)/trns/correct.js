@@ -6,7 +6,7 @@ import { functions } from "../../../src/firebase";
 import { returnAfterLifecycleWork } from "../../../src/utils/lifecycleReturn";
 import { useAuth } from "../../../src/hooks/useAuth";
 import { QaAmendmentContext } from "../../../src/features/qa/QaAmendmentContext";
-import NoAccessCorrection from "../../../src/features/qa/NoAccessCorrection";
+import NoAccessScreen from "../admin/operations/no-access";
 import { amendmentFields, correctionParams, correctionSeed, savedMeter } from "../../../src/features/qa/amendmentModel";
 import { getQaDraft, putQaDraft, newAmendmentId, persistQaMedia, sendQaDraft } from "../../../src/features/qa/amendmentQueue";
 import FormMeterDiscovery from "../../../src/features/meters/FormMeterDiscovery";
@@ -147,6 +147,6 @@ function CorrectionEditor({ uid, loaded, router, navigation }) {
   </View>;
   const Component = forms[context.snapshot.accessData.trnType];
   return <QaAmendmentContext.Provider value={value}>
-    {context.snapshot.accessData.access.hasAccess === "no" ? <NoAccessCorrection snapshot={seed} /> : Component ? <Component /> : <Text>Unsupported transaction form.</Text>}
+    {context.snapshot.accessData.access.hasAccess === "no" ? <NoAccessScreen /> : Component ? <Component /> : <Text>Unsupported transaction form.</Text>}
   </QaAmendmentContext.Provider>;
 }
