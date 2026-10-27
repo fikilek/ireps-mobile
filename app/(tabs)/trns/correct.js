@@ -135,6 +135,7 @@ function CorrectionEditor({ uid, loaded, router, navigation }) {
   const seed = useMemo(() => correctionSeed(context.snapshot), [context.snapshot]);
   const meter = useMemo(() => savedMeter(context), [context]);
   const editQueueItem = useMemo(() => ({ payload: seed }), [seed]);
+  const params = useMemo(() => correctionParams(context), [context]);
   const premise = useMemo(() => ({
     ...context.snapshot.accessData?.premise,
     erfNo: context.snapshot.accessData?.erfNo || context.snapshot.accessData?.erf?.erfNo || context.snapshot.accessData?.premise?.erfNo || "NAv",
