@@ -818,7 +818,7 @@ test("TB-R051 buckets carry the geofence link and schema version", () => {
   assert.equal(normalizeBucket({ id: TB, geofenceId: "  ", schemaVersion: "" }).geofenceId, null);
 });
 
-test("PR-R001 / TB-R051 batch counts include QA PASS and QA FAIL and deduct from inProgress", () => {
+test("PR-R001 / TB-R051 batch counts include QA PASS and QA FAIL and partition disjointly", () => {
   const batch = {
     id: TB,
     counts: {
@@ -836,9 +836,55 @@ test("PR-R001 / TB-R051 batch counts include QA PASS and QA FAIL and deduct from
     allocated: 17,
     unallocated: 0,
     notStarted: 0,
-    inProgress: 15,
-    completed: 1,
+    inProgress: 16,
+    completed: 0,
     qaPass: 0,
+    qaFail: 1,
+  });
+
+  const batchReviewed = {
+    id: TB,
+    counts: {
+      totalRows: 13,
+      executionStartedRows: 3,
+      completedRows: 3,
+      qaPassRows: 2,
+      qaFailRows: 1,
+      allocatedRows: 13,
+    },
+  };
+  const bucketReviewed = normalizeBucket(batchReviewed);
+  assert.deepEqual(bucketReviewed.counts, {
+    total: 13,
+    allocated: 13,
+    unallocated: 0,
+    notStarted: 10,
+    inProgress: 0,
+    completed: 0,
+    qaPass: 2,
+    qaFail: 1,
+  });
+
+  const batchMixed = {
+    id: TB,
+    counts: {
+      totalRows: 10,
+      executionStartedRows: 5,
+      completedRows: 4,
+      qaPassRows: 1,
+      qaFailRows: 1,
+      allocatedRows: 10,
+    },
+  };
+  const bucketMixed = normalizeBucket(batchMixed);
+  assert.deepEqual(bucketMixed.counts, {
+    total: 10,
+    allocated: 10,
+    unallocated: 0,
+    notStarted: 5,
+    inProgress: 1,
+    completed: 2,
+    qaPass: 1,
     qaFail: 1,
   });
 });

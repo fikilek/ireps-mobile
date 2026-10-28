@@ -149,10 +149,11 @@ function getTargetedBatchCounts(batch = {}) {
     counts?.executionStartedRows,
     counts?.inProgressRows,
   );
-  const completed = readNumber(counts?.completedRows);
+  const completedRows = readNumber(counts?.completedRows);
   const qaPass = readNumber(counts?.qaPassRows, counts?.qaPass, 0);
   const qaFail = readNumber(counts?.qaFailRows, counts?.qaFail, 0);
-  const inProgress = Math.max(started - completed - qaPass - qaFail, 0);
+  const inProgress = Math.max(started - completedRows, 0);
+  const completed = Math.max(completedRows - qaPass - qaFail, 0);
   const allocated = readNumber(counts?.allocatedRows);
   const unallocated = readNumber(
     counts?.unallocatedRows,
