@@ -56,14 +56,16 @@
 
 // -------------------------------------------
 
+import Constants from "expo-constants";
 import { initializeApp } from "firebase/app";
 import { getReactNativePersistence, initializeAuth } from "firebase/auth";
 import { initializeFirestore } from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
 import { getStorage } from "firebase/storage";
 import { MMKV } from "../redux/mmkv";
+import { resolveAppEnv } from "./resolveAppEnv.js";
 
-const APP_ENV = (process.env.EXPO_PUBLIC_APP_ENV || "dev").trim().toLowerCase();
+const APP_ENV = resolveAppEnv({ constants: Constants });
 
 const FIREBASE_CONFIGS = {
   dev: {
