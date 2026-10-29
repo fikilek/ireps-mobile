@@ -5069,19 +5069,23 @@ function TargetedBatchRowCardBase({
       : displayStatus.replace(/_/g, " ");
 
   const statusBadgeStyle = isQaFail
-    ? styles.badgeRed
-    : isQaPass || displayStatus === "COMPLETED"
-      ? styles.badgeGreen
-      : displayStatus === "IN_PROGRESS"
-        ? styles.badgeOrange
-        : null;
+    ? styles.badgeQaFail
+    : isQaPass
+      ? styles.badgeQaPass
+      : displayStatus === "COMPLETED"
+        ? styles.badgeGreen
+        : displayStatus === "IN_PROGRESS"
+          ? styles.badgeOrange
+          : null;
   const statusBadgeTextStyle = isQaFail
-    ? styles.badgeRedText
-    : isQaPass || displayStatus === "COMPLETED"
-      ? styles.badgeGreenText
-      : displayStatus === "IN_PROGRESS"
-        ? styles.badgeOrangeText
-        : null;
+    ? styles.badgeQaFailText
+    : isQaPass
+      ? styles.badgeQaPassText
+      : displayStatus === "COMPLETED"
+        ? styles.badgeGreenText
+        : displayStatus === "IN_PROGRESS"
+          ? styles.badgeOrangeText
+          : null;
   const erfId = cleanId(row?.erfId || row?.refs?.erfId);
   const erfNo = readFirstString(
     row?.erfNo,
@@ -5134,10 +5138,10 @@ function TargetedBatchRowCardBase({
           disabled={actions.premise.disabled}
           opening={openingIntent === actions.premise.intent} onPress={() => onAction({ bucket, row, intent: actions.premise.intent })} />
         <TargetedBatchActionTile label="AST" value={actions.ast.value} helperText={actions.ast.helperText} icon="meter-electric-outline"
-          tone={actions.invalidLinkage ? "issue" : "default"} disabled={actions.ast.disabled}
+          tone={actions.ast.tone || (actions.invalidLinkage ? "issue" : "default")} disabled={actions.ast.disabled}
           opening={openingIntent === actions.ast.intent} onPress={() => onAction({ bucket, row, intent: actions.ast.intent })} />
         <TargetedBatchActionTile label="NA" value={actions.noAccess.value} helperText={actions.noAccess.helperText} icon="account-cancel-outline"
-          tone={actions.noAccess.value === null ? "issue" : "default"} disabled={actions.noAccess.disabled}
+          tone={actions.noAccess.tone || (actions.noAccess.value === null ? "issue" : "default")} disabled={actions.noAccess.disabled}
           opening={openingIntent === actions.noAccess.intent} onPress={() => onAction({ bucket, row, intent: actions.noAccess.intent })} />
         <TargetedBatchActionTile label={`ERF ${hasErf ? erfNo : ""}`} value="OPEN" helperText={actions.erf.helperText} icon="vector-square"
           disabled={actions.erf.disabled} opening={openingIntent === actions.erf.intent}
@@ -5173,6 +5177,17 @@ const TARGETED_BATCH_ROW_CARD_FIELDS = [
   (row) => row?.raw?.qa?.premiseStatus,
   (row) => row?.qa?.premiseReasonLabel,
   (row) => row?.raw?.qa?.premiseReasonLabel,
+  (row) => row?.qa?.meterStatus,
+  (row) => row?.raw?.qa?.meterStatus,
+  (row) => row?.fieldMeter?.qaStatus,
+  (row) => row?.qa?.noAccessStatus,
+  (row) => row?.raw?.qa?.noAccessStatus,
+  (row) => row?.noAccess?.qaStatus,
+  (row) => row?.qa?.finalStatus,
+  (row) => row?.raw?.qa?.finalStatus,
+  (row) => row?.qa?.tbStatus,
+  (row) => row?.raw?.qa?.tbStatus,
+  (row) => row?.qaFinalStatus,
 ];
 
 // The batch is compared by id only: the card shows nothing of it, and the stable onAction
@@ -6748,6 +6763,14 @@ const styles = StyleSheet.create({
   },
   badgeQaFailText: {
     color: "#dc2626",
+  },
+  badgeQaPass: {
+    backgroundColor: "#f0fdf4",
+    borderWidth: 1,
+    borderColor: "#86efac",
+  },
+  badgeQaPassText: {
+    color: "#16a34a",
   },
   badgeMuted: { backgroundColor: "#f1f5f9" },
   badgeMutedText: { color: "#475569" },

@@ -1,3 +1,5 @@
+import { normalizeComponentQa } from "./targetedBatchRowSearch.js";
+
 export const TARGETED_BATCH_INTENTS = Object.freeze({
   OPEN_ERF: "OPEN_ERF",
   OPEN_PREMISE: "OPEN_PREMISE",
@@ -41,16 +43,22 @@ export function getTargetedBatchRowActionState(row = {}) {
     ? Math.max(0, Math.trunc(noAccessCount))
     : 0;
 
-  const qaStatus = clean(row?.qa?.premiseStatus || row?.raw?.qa?.premiseStatus).toUpperCase();
-  const qaReasonLabel = clean(row?.qa?.premiseReasonLabel || row?.raw?.qa?.premiseReasonLabel);
-  const premiseQaTone = qaStatus === "QA_FAIL" ? "issue" : "default";
-  const premiseQaHelperText = qaStatus === "QA_FAIL"
-    ? "QA FAIL"
-    : qaStatus === "QA_PENDING"
-      ? "QA PENDING"
-      : qaStatus === "QA_PASS"
-        ? "QA PASS"
-        : undefined;
+  const rawPremiseQa = clean(row?.premise?.qaStatus ?? row?.qa?.premiseStatus ?? row?.raw?.qa?.premiseStatus);
+  const rawMeterQa = clean(row?.fieldMeter?.qaStatus ?? row?.qa?.meterStatus ?? row?.raw?.qa?.meterStatus);
+  const rawNoAccessQa = clean(row?.noAccess?.qaStatus ?? row?.qa?.noAccessStatus ?? row?.raw?.qa?.noAccessStatus);
+
+  const premiseQa = normalizeComponentQa(rawPremiseQa);
+  const meterQa = normalizeComponentQa(rawMeterQa);
+  const noAccessQa = normalizeComponentQa(rawNoAccessQa);
+
+  const premiseQaTone = premiseQa === "QA FAIL" ? "issue" : undefined;
+  const premiseQaHelperText = premiseQa || undefined;
+
+  const meterQaTone = meterQa === "QA FAIL" ? "issue" : (invalidLinkage ? "issue" : undefined);
+  const meterQaHelperText = meterQa || undefined;
+
+  const noAccessQaTone = noAccessQa === "QA FAIL" ? "issue" : undefined;
+  const noAccessQaHelperText = noAccessQa || undefined;
 
   // TB-R051 (1.3.42): a Completed meter opens its meter, premise and ERF, but starts nothing: No Access stays
   // disabled. A row with no meter or premise linked (the meter was found outside this batch) opens them by
@@ -60,7 +68,7 @@ export function getTargetedBatchRowActionState(row = {}) {
       premise: {
         value: premiseId ? 1 : 0,
         disabled: false,
-        ...(premiseQaTone !== "default" ? { tone: premiseQaTone } : {}),
+        ...(premiseQaTone ? { tone: premiseQaTone } : {}),
         ...(premiseQaHelperText !== undefined ? { helperText: premiseQaHelperText } : {}),
         intent: premiseId
           ? TARGETED_BATCH_INTENTS.OPEN_PREMISE
@@ -69,7 +77,8 @@ export function getTargetedBatchRowActionState(row = {}) {
       ast: {
         value: meterId ? 1 : 0,
         disabled: false,
-        helperText: "OPEN AST",
+        ...(meterQaTone ? { tone: meterQaTone } : {}),
+        helperText: meterQaHelperText || "OPEN AST",
         intent: meterId
           ? TARGETED_BATCH_INTENTS.OPEN_AST
           : TARGETED_BATCH_INTENTS.OPEN_FOUND_METER,
@@ -77,7 +86,8 @@ export function getTargetedBatchRowActionState(row = {}) {
       noAccess: {
         value: safeNoAccessCount,
         disabled: true,
-        helperText: "COMPLETED",
+        ...(noAccessQaTone ? { tone: noAccessQaTone } : {}),
+        helperText: noAccessQaHelperText || "COMPLETED",
         intent: TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS,
       },
       erf: {
@@ -100,7 +110,7 @@ export function getTargetedBatchRowActionState(row = {}) {
     premise: {
       value: premiseId ? 1 : 0,
       disabled: false,
-      ...(premiseQaTone !== "default" ? { tone: premiseQaTone } : {}),
+      ...(premiseQaTone ? { tone: premiseQaTone } : {}),
       ...(premiseQaHelperText !== undefined ? { helperText: premiseQaHelperText } : {}),
       intent: TARGETED_BATCH_INTENTS.OPEN_PREMISE,
     },
@@ -117,7 +127,8 @@ export function getTargetedBatchRowActionState(row = {}) {
                 "The premise at this address is captured before its meter. Tap PREMISE, record it, then come back to the meter.",
             }
           : null,
-      helperText: invalidLinkage ? "LINKAGE ISSUE" : !premiseId ? "PREMISE REQUIRED" : meterId ? "OPEN AST" : "DISCOVER",
+      ...(meterQaTone ? { tone: meterQaTone } : {}),
+      helperText: meterQaHelperText || (invalidLinkage ? "LINKAGE ISSUE" : !premiseId ? "PREMISE REQUIRED" : meterId ? "OPEN AST" : "DISCOVER"),
       intent: meterId ? TARGETED_BATCH_INTENTS.OPEN_AST : TARGETED_BATCH_INTENTS.START_METER_DISCOVERY,
     },
     noAccess: {
@@ -129,11 +140,14 @@ export function getTargetedBatchRowActionState(row = {}) {
       // no access recorded against an ERF alone names nothing anyone can act on. The worker
       // is told what to do rather than being handed a button whose submission the server
       // would refuse.
-      helperText: fieldWorkMeterId
-        ? "DISCOVERY COMPLETE"
-        : !premiseId
-          ? "PREMISE REQUIRED"
-          : null,
+      ...(noAccessQaTone ? { tone: noAccessQaTone } : {}),
+      helperText: noAccessQaHelperText !== undefined
+        ? noAccessQaHelperText
+        : (fieldWorkMeterId
+            ? "DISCOVERY COMPLETE"
+            : !premiseId
+              ? "PREMISE REQUIRED"
+              : null),
       disabled: Boolean(fieldWorkMeterId),
       blocked:
         !fieldWorkMeterId && !premiseId

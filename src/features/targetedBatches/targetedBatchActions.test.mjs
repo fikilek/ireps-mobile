@@ -233,3 +233,42 @@ test("Premise QA status projection on PREMISE action tile", () => {
   assert.equal(failed.premise.tone, "issue");
 });
 
+test("Meter QA and No Access QA status projection on AST and NA action tiles", () => {
+  const rowWithMeterFail = getTargetedBatchRowActionState({
+    displayStatus: "COMPLETED",
+    refs: { erfId: "ERF_1", premiseId: "PRM_1", meterId: "MTR_0038" },
+    qa: {
+      premiseStatus: "QA_PASS",
+      meterStatus: "QA_FAIL",
+      noAccessStatus: "QA_NAV",
+    },
+  });
+  assert.equal(rowWithMeterFail.premise.helperText, "QA PASS");
+  assert.equal(rowWithMeterFail.premise.tone, undefined);
+  assert.equal(rowWithMeterFail.ast.helperText, "QA FAIL");
+  assert.equal(rowWithMeterFail.ast.tone, "issue");
+  assert.equal(rowWithMeterFail.noAccess.helperText, "QA NAv");
+  assert.equal(rowWithMeterFail.noAccess.tone, undefined);
+
+  const rowWithMeterPass = getTargetedBatchRowActionState({
+    displayStatus: "COMPLETED",
+    refs: { erfId: "ERF_1", premiseId: "PRM_1", meterId: "MTR_0038" },
+    qa: {
+      premiseStatus: "QA_PASS",
+      meterStatus: "QA_PASS",
+    },
+  });
+  assert.equal(rowWithMeterPass.ast.helperText, "QA PASS");
+  assert.equal(rowWithMeterPass.ast.tone, undefined);
+
+  const rowWithNaFail = getTargetedBatchRowActionState({
+    displayStatus: "COMPLETED",
+    refs: { erfId: "ERF_1", premiseId: "PRM_1" },
+    qa: {
+      noAccessStatus: "QA_FAIL",
+    },
+  });
+  assert.equal(rowWithNaFail.noAccess.helperText, "QA FAIL");
+  assert.equal(rowWithNaFail.noAccess.tone, "issue");
+});
+

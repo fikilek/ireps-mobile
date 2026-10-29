@@ -81,12 +81,14 @@ export const TARGETED_BATCH_STATUS_FILTERS = Object.freeze({
   QA_FAIL: "QA_FAIL",
 });
 
-function normalizeComponentQa(raw) {
+export function normalizeComponentQa(raw) {
   const clean = String(raw || "").trim().toUpperCase().replace(/_/g, " ");
+  if (!clean) return "";
   if (clean === "QA PASS" || clean === "PASS") return "QA PASS";
   if (clean === "QA FAIL" || clean === "FAIL") return "QA FAIL";
   if (clean === "QA PENDING" || clean === "PENDING") return "QA PENDING";
-  return "QA NAv";
+  if (clean === "QA NAV" || clean === "NAV" || clean === "NOT AVAILABLE" || clean === "NOT_AVAILABLE") return "QA NAv";
+  return clean;
 }
 
 // TB-R051 / PR-R001: Canonical aggregate TB QA Final from Premise QA and Meter QA
