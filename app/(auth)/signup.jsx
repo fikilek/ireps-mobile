@@ -610,7 +610,7 @@ const styles = StyleSheet.create({
   },
   modalEmptyText: {
     fontSize: 14,
-    color: "#6b7280",
+    color: FORM_PLACEHOLDER,
     paddingVertical: 12,
     paddingHorizontal: 4,
   },

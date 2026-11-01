@@ -25,6 +25,7 @@ import {
   passwordResetSentMessage,
 } from "../../src/features/auth/authMessages";
 import { useSendPasswordResetMutation } from "../../src/redux/authApi";
+import { FORM_PLACEHOLDER, FORM_TEXT } from "../../src/theme/formColors";
 
 const initialValues = {
   email: "",
@@ -128,7 +129,7 @@ const PwdReset = () => {
                     <Octicons name="mail" size={18} color="#2563eb" />
                     <TextInput
                       placeholder="Email address"
-                      placeholderTextColor="#9ca3af"
+                      placeholderTextColor={FORM_PLACEHOLDER}
                       value={values.email}
                       onChangeText={handleChange("email")}
                       onBlur={handleBlur("email")}
@@ -214,12 +215,12 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "700",
     textAlign: "center",
-    color: "#111827",
+    color: FORM_TEXT,
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
-    color: "#64748b",
+    color: FORM_TEXT,
     textAlign: "center",
     marginBottom: 22,
     fontWeight: "500",
@@ -241,7 +242,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 48,
     fontSize: 15,
-    color: "#1e293b",
+    color: FORM_TEXT,
     marginLeft: 10,
     fontWeight: "600",
   },
@@ -283,7 +284,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 13,
-    color: "#64748b",
+    color: FORM_TEXT,
   },
   signinText: {
     fontSize: 13,
