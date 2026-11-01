@@ -430,13 +430,6 @@ const Signup = () => {
                           </Pressable>
                         ))}
                       </ScrollView>
-
-                      <TouchableOpacity
-                        style={[styles.button, styles.cancelButton]}
-                        onPress={() => setShowSpModal(false)}
-                      >
-                        <Text style={styles.buttonText}>Cancel</Text>
-                      </TouchableOpacity>
                     </Pressable>
                   </Pressable>
                 </Modal>
@@ -564,10 +557,6 @@ const styles = StyleSheet.create({
   submitButton: {
     backgroundColor: "#4f46e5",
     marginLeft: 8,
-  },
-  cancelButton: {
-    backgroundColor: "#6b7280",
-    marginTop: 12,
   },
   buttonDisabled: {
     opacity: 0.6,
