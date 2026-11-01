@@ -385,11 +385,26 @@ const Signup = () => {
                   animationType="fade"
                   onRequestClose={() => setShowSpModal(false)}
                 >
-                  <View style={styles.modalOverlay}>
-                    <View style={styles.modalCard}>
-                      <Text style={styles.modalTitle}>
-                        Select Service Provider
-                      </Text>
+                  <Pressable
+                    style={styles.modalOverlay}
+                    onPress={() => setShowSpModal(false)}
+                  >
+                    <Pressable
+                      style={styles.modalCard}
+                      onPress={(e) => e.stopPropagation()}
+                    >
+                      <View style={styles.modalHeader}>
+                        <Text style={styles.modalTitle}>
+                          Select Service Provider
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => setShowSpModal(false)}
+                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                          style={styles.modalCloseButton}
+                        >
+                          <Ionicons name="close" size={24} color={FORM_TEXT} />
+                        </TouchableOpacity>
+                      </View>
 
                       <ScrollView
                         style={styles.modalList}
@@ -422,8 +437,8 @@ const Signup = () => {
                       >
                         <Text style={styles.buttonText}>Cancel</Text>
                       </TouchableOpacity>
-                    </View>
-                  </View>
+                    </Pressable>
+                  </Pressable>
                 </Modal>
               </>
             )}
@@ -588,16 +603,25 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     borderRadius: 16,
     padding: 16,
-    maxHeight: "70%",
+    maxHeight: "80%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: "700",
     color: FORM_TEXT,
-    marginBottom: 12,
+  },
+  modalCloseButton: {
+    padding: 4,
   },
   modalList: {
-    maxHeight: 320,
+    flexShrink: 1,
+    marginBottom: 8,
   },
   modalItem: {
     paddingVertical: 14,
