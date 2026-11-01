@@ -20,9 +20,17 @@ import {
 import { object, ref, string } from "yup";
 
 import { auth } from "../../src/firebase";
-import { useSignupMutation } from "../../src/redux/authApi";
-import { useGetServiceProvidersQuery } from "../../src/redux/spApi";
 import { FORM_TEXT, FORM_PLACEHOLDER } from "../../src/theme/formColors";
+import {
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_RULE_TEXT,
+  serviceProviderListMessage,
+  signupMessage,
+} from "../../src/features/auth/authMessages";
+import {
+  useGetSignupServiceProvidersQuery,
+  useSignupMutation,
+} from "../../src/redux/authApi";
 
 const initialValues = {
   surname: "",
@@ -36,12 +44,14 @@ const initialValues = {
 const validationSchema = object().shape({
   surname: string().trim().required("Surname is required"),
   name: string().trim().required("Name is required"),
-  email: string().email("Invalid email address").required("Email is required"),
+  email: string()
+    .email("That does not look like an email address")
+    .required("Email is required"),
   password: string()
-    .min(8, "Password must be at least 8 characters")
+    .min(PASSWORD_MIN_LENGTH, PASSWORD_RULE_TEXT)
     .required("Password is required"),
   confirmPassword: string()
-    .oneOf([ref("password")], "Passwords do not match")
+    .oneOf([ref("password")], "The two passwords are not the same")
     .required("Confirm your password"),
   serviceProvider: object().nullable().required("Service Provider is required"),
 });
@@ -50,60 +60,86 @@ const Signup = () => {
   const router = useRouter();
 
   const [signupGst, { isLoading: isMutationLoading }] = useSignupMutation();
-  const { data: sps, isLoading: isSpLoading } = useGetServiceProvidersQuery();
+
+  // AU-R001 2: the list comes from the back end, because nobody signing up is signed in yet.
+  const {
+    data: sps,
+    isFetching: isSpLoading,
+    isError: isSpError,
+    refetch: refetchServiceProviders,
+  } = useGetSignupServiceProvidersQuery();
 
   const [showPassword, setShowPassword] = useState(false);
   const [showSpModal, setShowSpModal] = useState(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
-  const serviceProviders = useMemo(() => {
-    return (sps || []).map((sp) => ({
-      id: sp.id,
-      name: sp.profile?.tradingName?.trim() || "Unknown SP",
-    }));
-  }, [sps]);
+  const serviceProviders = useMemo(() => sps || [], [sps]);
 
-  const isLoading = isMutationLoading || isRedirecting || isSpLoading;
+  const isLoading = isMutationLoading || isRedirecting;
 
-  const handleSignup = async (values, { resetForm }) => {
+  const submitSignup = async (values, resetForm) => {
     try {
       setIsRedirecting(true);
 
-      const result = await signupGst({
+      await signupGst({
         email: values.email.toLowerCase().trim(),
         password: values.password,
         name: values.name.trim(),
         surname: values.surname.trim(),
         serviceProvider: values.serviceProvider,
-      });
+      }).unwrap();
 
-      if (result?.data) {
-        if (auth.currentUser) {
-          await auth.currentUser.getIdToken(true);
-        }
-
-        Alert.alert(
-          "Enlistment Successful",
-          "Awaiting Manager authorization.",
-          [
-            {
-              text: "OK",
-              onPress: () => {
-                resetForm();
-                setIsRedirecting(false);
-                router.replace("/");
-              },
+      // Sign up does not let anybody in: the manager must authorise them first (AU-R001 2).
+      Alert.alert(
+        "Sign up sent",
+        "Your sign up went through. Your manager must authorise you before you can work. You will be able to sign in once they have.",
+        [
+          {
+            text: "Back to sign in",
+            onPress: () => {
+              resetForm();
+              setIsRedirecting(false);
+              router.replace("/signin");
             },
-          ],
-        );
-      } else {
-        setIsRedirecting(false);
-        Alert.alert("Sign Up Failed", "Please try again.");
-      }
+          },
+        ],
+      );
     } catch (error) {
       setIsRedirecting(false);
-      Alert.alert("Error", "Unexpected error occurred.");
+      console.log("handleSignup ---error", error?.code, error?.message);
+
+      const { title, message } = signupMessage(error);
+      Alert.alert(title, message);
     }
+  };
+
+  // Confirmation window before, progress during, result window after (AU-R001 6).
+  const handleSignup = (values, { resetForm }) => {
+    Alert.alert(
+      "Send this sign up?",
+      `Name: ${values.name.trim()} ${values.surname.trim()}\nEmail: ${values.email
+        .toLowerCase()
+        .trim()}\nService provider: ${values.serviceProvider?.name || "NAv"}`,
+      [
+        { text: "Check again", style: "cancel" },
+        { text: "Send", onPress: () => submitSignup(values, resetForm) },
+      ],
+    );
+  };
+
+  const handleServiceProviderPress = () => {
+    if (isLoading) return;
+
+    if (isSpError) {
+      const { title, message } = serviceProviderListMessage();
+      Alert.alert(title, message, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Try again", onPress: () => refetchServiceProviders() },
+      ]);
+      return;
+    }
+
+    setShowSpModal(true);
   };
 
   const renderError = (touched, error) => {
@@ -263,9 +299,7 @@ const Signup = () => {
                 <View style={styles.fieldBlock}>
                   <Pressable
                     style={styles.inputWrap}
-                    onPress={() => {
-                      if (!isLoading) setShowSpModal(true);
-                    }}
+                    onPress={handleServiceProviderPress}
                   >
                     <Ionicons
                       name="business-outline"
@@ -286,13 +320,24 @@ const Signup = () => {
                   {renderError(touched.serviceProvider, errors.serviceProvider)}
                 </View>
 
-                {/* Loading state */}
+                {/* The picker is never left empty and silent (AU-R001 2) */}
                 {isSpLoading ? (
                   <View style={styles.loaderRow}>
                     <ActivityIndicator size="small" color="#2563eb" />
                     <Text style={styles.loaderText}>
                       Loading service providers...
                     </Text>
+                  </View>
+                ) : null}
+
+                {!isSpLoading && isSpError ? (
+                  <View style={styles.loaderRow}>
+                    <Text style={styles.listErrorText}>
+                      {serviceProviderListMessage().message}
+                    </Text>
+                    <Pressable onPress={() => refetchServiceProviders()}>
+                      <Text style={styles.tryAgainText}>Try again</Text>
+                    </Pressable>
                   </View>
                 ) : null}
 
@@ -350,6 +395,13 @@ const Signup = () => {
                         style={styles.modalList}
                         showsVerticalScrollIndicator={false}
                       >
+                        {serviceProviders.length === 0 ? (
+                          <Text style={styles.modalEmptyText}>
+                            No active service providers came back. Check your
+                            signal and try again, or ask your manager.
+                          </Text>
+                        ) : null}
+
                         {serviceProviders.map((sp) => (
                           <Pressable
                             key={sp.id}
@@ -467,6 +519,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: FORM_TEXT,
   },
+  listErrorText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#dc2626",
+    marginRight: 8,
+  },
+  tryAgainText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#2563eb",
+  },
   buttonRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -544,5 +607,11 @@ const styles = StyleSheet.create({
   modalItemText: {
     fontSize: 15,
     color: FORM_TEXT,
+  },
+  modalEmptyText: {
+    fontSize: 14,
+    color: "#6b7280",
+    paddingVertical: 12,
+    paddingHorizontal: 4,
   },
 });

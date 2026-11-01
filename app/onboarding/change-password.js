@@ -15,6 +15,11 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { auth, db } from "../../src/firebase";
+import {
+  PASSWORD_MIN_LENGTH,
+  changePasswordMessage,
+  passwordProblem,
+} from "../../src/features/auth/authMessages";
 import { authApi } from "../../src/redux/authApi";
 import { FORM_TEXT, FORM_PLACEHOLDER } from "../../src/theme/formColors";
 
@@ -46,93 +51,83 @@ export default function ChangePassword() {
     );
   }, [authState, email]);
 
+  // AU-R001 1 and 7.4: one password standard, one set of words.
   const validate = () => {
-    const cleanPassword = newPassword.trim();
-    const cleanConfirm = confirmPassword.trim();
+    const problem = passwordProblem(newPassword.trim(), confirmPassword.trim());
 
-    if (!cleanPassword) {
-      Alert.alert("Missing Password", "Please enter a new password.");
-      return false;
-    }
-
-    if (cleanPassword.length < 6) {
-      Alert.alert(
-        "Weak Password",
-        "Password must be at least 6 characters long.",
-      );
-      return false;
-    }
-
-    if (!cleanConfirm) {
-      Alert.alert("Confirm Password", "Please confirm your new password.");
-      return false;
-    }
-
-    if (cleanPassword !== cleanConfirm) {
-      Alert.alert(
-        "Password Mismatch",
-        "New password and confirm password do not match.",
-      );
+    if (problem) {
+      Alert.alert(problem.title, problem.message);
       return false;
     }
 
     return true;
   };
 
-  const handleSave = async () => {
+  const save = async () => {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser?.uid || !uid) {
+      Alert.alert(
+        "Sign in again",
+        "iREPS could not find your sign-in. Sign in again, then change your password.",
+      );
+      return;
+    }
+
+    setIsSaving(true);
+
     try {
-      if (!validate()) return;
+      await updatePassword(currentUser, newPassword.trim());
+    } catch (error) {
+      console.log("change-password error", error?.code);
 
-      const currentUser = auth.currentUser;
+      const { title, message } = changePasswordMessage(error);
+      Alert.alert(title, message);
+      setIsSaving(false);
+      return;
+    }
 
-      if (!currentUser?.uid || !uid) {
-        Alert.alert(
-          "No Session",
-          "Could not find the authenticated user. Please sign in again.",
-        );
-        return;
-      }
-
-      const cleanPassword = newPassword.trim();
-
-      setIsSaving(true);
-
-      await updatePassword(currentUser, cleanPassword);
-
+    // The password HAS changed by now. Anything that fails from here on must never be reported as a
+    // failed change, or the person would go back to the old password and be locked out.
+    try {
+      // AU-R001 5: changing the password clears the demand and nothing else. A working field worker
+      // is still a working field worker; an onboarding user carries on where they were. Once the
+      // demand is cleared, the app itself moves the person to where they belong.
       await updateDoc(doc(db, "users", currentUser.uid), {
         "onboarding.mustChangePassword": false,
-        "onboarding.status": "PENDING",
         "metadata.updatedAt": new Date().toISOString(),
         "metadata.updatedByUid": currentUser.uid,
         "metadata.updatedByUser": updaterName,
       });
 
       Alert.alert(
-        "Password Updated",
-        "Password changed successfully. Next, select your active workbase.",
-        [
-          {
-            text: "Continue",
-            onPress: () => router.replace("/onboarding/select-workbase"),
-          },
-        ],
+        "Password changed",
+        "Your new password is in. Use it the next time you sign in.",
       );
     } catch (error) {
-      console.log("change-password error", error);
+      console.log("change-password flag error", error?.code);
 
-      let message = "Could not change password.";
-
-      if (error?.code === "auth/requires-recent-login") {
-        message =
-          "This action requires a recent login. Please sign out and sign in again.";
-      } else if (error?.message) {
-        message = error.message;
-      }
-
-      Alert.alert("Password Change Failed", message);
+      Alert.alert(
+        "Password changed, but not recorded",
+        "Your new password is in — use it from now on. iREPS could not record that you changed it, so it may ask you again. Check your signal, and tell your manager if it keeps asking.",
+      );
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Confirmation window before, progress during, result window after (AU-R001 6).
+  const handleSave = () => {
+    if (!validate()) return;
+
+    Alert.alert(
+      "Change your password?",
+      "You will use the new password the next time you sign in.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Change", onPress: () => save() },
+      ],
+    );
   };
 
   if (authLoading) {
@@ -169,11 +164,11 @@ export default function ChangePassword() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.heroCard}>
-          <Text style={styles.eyebrow}>STEP 1 OF 2</Text>
+          <Text style={styles.eyebrow}>PASSWORD</Text>
           <Text style={styles.title}>Change Your Password</Text>
           <Text style={styles.subtitle}>
-            For security, invited managers must change the temporary password
-            before entering iREPS.
+            iREPS needs you to set a new password before you carry on. Nobody
+            else can see it.
           </Text>
         </View>
 
@@ -236,8 +231,8 @@ export default function ChangePassword() {
           </View>
 
           <Text style={styles.hint}>
-            Use at least 6 characters. Leading and trailing spaces will be
-            removed.
+            Use at least {PASSWORD_MIN_LENGTH} characters. Leading and trailing
+            spaces will be removed.
           </Text>
 
           <TouchableOpacity

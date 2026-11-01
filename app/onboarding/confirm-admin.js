@@ -1,6 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import { useState } from "react";
 import {
   Alert,
@@ -12,7 +11,10 @@ import {
 } from "react-native";
 import { Avatar, Button, Divider, TextInput } from "react-native-paper";
 
-import { auth } from "../../src/firebase";
+import {
+  changePasswordMessage,
+  passwordProblem,
+} from "../../src/features/auth/authMessages";
 import { useAuth } from "../../src/hooks/useAuth";
 import {
   useUpdatePasswordMutation,
@@ -43,14 +45,11 @@ export default function ConformAdminProfile() {
 
   const handleFinalize = async () => {
     // 🛡️ 1. VALIDATION
-    if (!form.password || form.password !== form.confirmPassword) {
-      return Alert.alert("Security Check", "Passwords must match.");
-    }
-    if (form.password.length < 6) {
-      return Alert.alert(
-        "Security Check",
-        "Security protocol requires 6+ characters.",
-      );
+    // AU-R001 1: one password standard, including the password an invited admin sets here.
+    const problem = passwordProblem(form.password, form.confirmPassword);
+
+    if (problem) {
+      return Alert.alert(problem.title, problem.message);
     }
     if (!selectedWorkbase) {
       return Alert.alert(
@@ -60,15 +59,9 @@ export default function ConformAdminProfile() {
     }
 
     try {
-      const currentUser = auth.currentUser;
-
-      // 🛡️ 2. SILENT RE-AUTH
-      const credential = EmailAuthProvider.credential(
-        currentUser.email,
-        "password",
-      );
-      await reauthenticateWithCredential(currentUser, credential);
-
+      // AU-R001 9: there is no longer a password iREPS knows in advance — every invitation gets its
+      // own one-time password — so nothing can be re-authenticated silently here. A sign-in too old
+      // for the change is reported by its own message instead.
       // 🔑 3. ROTATE TO PERMANENT PASSWORD
       await updatePassword({ newPassword: form.password }).unwrap();
 
@@ -92,11 +85,11 @@ export default function ConformAdminProfile() {
       );
       router.replace("/(tabs)/erfs");
     } catch (err) {
-      console.error("ADM Onboarding Error:", err);
-      Alert.alert(
-        "Operational Failure",
-        err.message || "Could not finalize ADM profile.",
-      );
+      console.error("ADM Onboarding Error:", err?.code);
+
+      // AU-R001 7.4: the same words as everywhere else a password is set.
+      const { title, message } = changePasswordMessage(err);
+      Alert.alert(title, message);
     }
   };
 

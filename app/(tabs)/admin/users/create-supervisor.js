@@ -1,3 +1,4 @@
+import { invitationSentMessage } from "@/src/features/auth/authMessages";
 import { useAuth } from "@/src/hooks/useAuth";
 import { useInviteSpvMutation } from "@/src/redux/authApi";
 import { useGetServiceProvidersQuery } from "@/src/redux/spApi";
@@ -175,8 +176,10 @@ export default function CreateSupervisorScreen() {
     }
 
     try {
-      await inviteSpv({
-        email: email.trim().toLowerCase(),
+      const cleanEmail = email.trim().toLowerCase();
+
+      const result = await inviteSpv({
+        email: cleanEmail,
         name: name.trim(),
         surname: surname.trim(),
         serviceProvider: {
@@ -185,11 +188,18 @@ export default function CreateSupervisorScreen() {
         },
       }).unwrap();
 
-      Alert.alert(
-        "Supervisor Created",
-        "The Supervisor was created successfully. Default password is 'password' and must be changed on first login.",
-        [{ text: "OK", onPress: () => router.back() }],
-      );
+      // AU-R001 9: every invitation gets its own one-time password, shown once, here. It used to be
+      // the word "password" for everybody, and this window said so.
+      const { title, message } = invitationSentMessage({
+        role: "Supervisor",
+        name: name.trim(),
+        email: cleanEmail,
+        oneTimePassword: result?.oneTimePassword,
+      });
+
+      Alert.alert(title, message, [
+        { text: "I have written it down", onPress: () => router.back() },
+      ]);
     } catch (error) {
       Alert.alert(
         "Creation Failed",
