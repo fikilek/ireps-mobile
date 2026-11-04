@@ -2,9 +2,15 @@ import { normalizeComponentQa } from "./targetedBatchRowSearch.js";
 
 export const TARGETED_BATCH_INTENTS = Object.freeze({
   OPEN_ERF: "OPEN_ERF",
+  // TB-R051 (1.3.95): PREMISE captures a premise when the row has none, and otherwise opens the
+  // Premises screen with the row's premise selected.
   OPEN_PREMISE: "OPEN_PREMISE",
+  // TB-R051 (1.3.95): a premise that failed QA opens the Premise form on it, to correct it.
+  CORRECT_PREMISE: "CORRECT_PREMISE",
   START_METER_DISCOVERY: "START_METER_DISCOVERY",
   OPEN_AST: "OPEN_AST",
+  // TB-R051 (1.3.95): a meter that failed QA opens its correction form.
+  CORRECT_AST: "CORRECT_AST",
   RECORD_NO_ACCESS: "RECORD_NO_ACCESS",
   // TB-R051 (1.3.42): a Completed meter with no meter linked to its row (found outside this batch) is looked up
   // by its meter number, to open the meter or its premise.
@@ -29,7 +35,28 @@ export function isTargetedBatchFoundMeterIntent(intent) {
   );
 }
 
+// TB-R051 (1.3.95): the bottom slot of PREMISE and AST is reserved for the QA badge. A status that
+// is not available reads QA NAv - never an action word.
+export const QA_NAV_BADGE = "QA NAv";
+
 const clean = (value) => String(value ?? "").trim();
+
+function qaBadge(raw) {
+  const qa = normalizeComponentQa(raw);
+  return qa === "QA PENDING" || qa === "QA PASS" || qa === "QA FAIL" ? qa : QA_NAV_BADGE;
+}
+
+const PREMISE_FIRST_AST = Object.freeze({
+  title: "Premise first",
+  message:
+    "The premise at this address is captured before its meter. Tap PREMISE, record it, then come back to the meter.",
+});
+
+const PREMISE_FIRST_NA = Object.freeze({
+  title: "Premise first",
+  message:
+    "A No Access says which premise you could not get into. Tap PREMISE, record it, then come back.",
+});
 
 export function getTargetedBatchRowActionState(row = {}) {
   const premiseId = clean(row?.refs?.premiseId);
@@ -42,121 +69,72 @@ export function getTargetedBatchRowActionState(row = {}) {
   const safeNoAccessCount = Number.isFinite(noAccessCount)
     ? Math.max(0, Math.trunc(noAccessCount))
     : 0;
+  const completed = clean(row?.displayStatus).toUpperCase() === "COMPLETED";
 
-  const rawPremiseQa = clean(row?.premise?.qaStatus ?? row?.qa?.premiseStatus ?? row?.raw?.qa?.premiseStatus);
-  const rawMeterQa = clean(row?.fieldMeter?.qaStatus ?? row?.qa?.meterStatus ?? row?.raw?.qa?.meterStatus);
-  const rawNoAccessQa = clean(row?.noAccess?.qaStatus ?? row?.qa?.noAccessStatus ?? row?.raw?.qa?.noAccessStatus);
+  // TB-R051 (1.3.95): the server projects component QA onto the row; the phone only reads it.
+  // A component that does not exist has no QA, whatever the row holds.
+  const premiseQa = premiseId
+    ? qaBadge(row?.premise?.qaStatus ?? row?.qa?.premiseStatus ?? row?.raw?.qa?.premiseStatus)
+    : QA_NAV_BADGE;
+  const meterQa = meterId
+    ? qaBadge(row?.fieldMeter?.qaStatus ?? row?.qa?.meterStatus ?? row?.raw?.qa?.meterStatus)
+    : QA_NAV_BADGE;
 
-  const premiseQa = normalizeComponentQa(rawPremiseQa);
-  const meterQa = normalizeComponentQa(rawMeterQa);
-  const noAccessQa = normalizeComponentQa(rawNoAccessQa);
-
-  const premiseQaTone = premiseQa === "QA FAIL" ? "issue" : undefined;
-  const premiseQaHelperText = premiseQa || undefined;
-
-  const meterQaTone = meterQa === "QA FAIL" ? "issue" : (invalidLinkage ? "issue" : undefined);
-  const meterQaHelperText = meterQa || undefined;
-
-  const noAccessQaTone = noAccessQa === "QA FAIL" ? "issue" : undefined;
-  const noAccessQaHelperText = noAccessQa || undefined;
-
-  // TB-R051 (1.3.42): a Completed meter opens its meter, premise and ERF, but starts nothing: No Access stays
-  // disabled. A row with no meter or premise linked (the meter was found outside this batch) opens them by
-  // looking the meter up by its meter number.
-  if (clean(row?.displayStatus).toUpperCase() === "COMPLETED") {
-    return {
-      premise: {
-        value: premiseId ? 1 : 0,
-        disabled: false,
-        ...(premiseQaTone ? { tone: premiseQaTone } : {}),
-        ...(premiseQaHelperText !== undefined ? { helperText: premiseQaHelperText } : {}),
-        intent: premiseId
-          ? TARGETED_BATCH_INTENTS.OPEN_PREMISE
-          : TARGETED_BATCH_INTENTS.OPEN_FOUND_METER_PREMISE,
-      },
-      ast: {
-        value: meterId ? 1 : 0,
-        disabled: false,
-        ...(meterQaTone ? { tone: meterQaTone } : {}),
-        helperText: meterQaHelperText || "OPEN AST",
-        intent: meterId
-          ? TARGETED_BATCH_INTENTS.OPEN_AST
-          : TARGETED_BATCH_INTENTS.OPEN_FOUND_METER,
-      },
-      noAccess: {
-        value: safeNoAccessCount,
-        disabled: true,
-        ...(noAccessQaTone ? { tone: noAccessQaTone } : {}),
-        helperText: noAccessQaHelperText || "COMPLETED",
-        intent: TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS,
-      },
-      erf: {
-        value: clean(row?.erfNo) || "—",
-        disabled: false,
-        blocked: clean(row?.refs?.erfId)
-          ? null
-          : {
-              title: "No ERF on this row",
-              message: "This meter has no ERF linked to it, so there is nothing to open. Report it to the office.",
-            },
-        intent: TARGETED_BATCH_INTENTS.OPEN_ERF,
-      },
-      invalidLinkage,
-      completed: true,
-    };
+  // PREMISE: 0 captures; QA FAIL corrects; otherwise the Premises screen. A premise can always be
+  // edited from there. TB-R051 (1.3.42): a Completed row with no premise linked looks the found
+  // meter's premise up by its meter number.
+  let premiseIntent;
+  if (!premiseId) {
+    premiseIntent = completed
+      ? TARGETED_BATCH_INTENTS.OPEN_FOUND_METER_PREMISE
+      : TARGETED_BATCH_INTENTS.OPEN_PREMISE;
+  } else if (premiseQa === "QA FAIL") {
+    premiseIntent = TARGETED_BATCH_INTENTS.CORRECT_PREMISE;
+  } else {
+    premiseIntent = TARGETED_BATCH_INTENTS.OPEN_PREMISE;
   }
+
+  // AST: 0 starts Meter Discovery (premise first); QA FAIL corrects; otherwise the ASTs screen.
+  // TB-R051 (1.3.42): nothing starts on a Completed meter - with no meter linked it is looked up.
+  let astIntent;
+  let astBlocked = null;
+  if (meterId) {
+    astIntent = meterQa === "QA FAIL"
+      ? TARGETED_BATCH_INTENTS.CORRECT_AST
+      : TARGETED_BATCH_INTENTS.OPEN_AST;
+  } else if (completed) {
+    astIntent = TARGETED_BATCH_INTENTS.OPEN_FOUND_METER;
+  } else {
+    astIntent = TARGETED_BATCH_INTENTS.START_METER_DISCOVERY;
+    // TB-R051 (1.3.68): no button is dead; it says why.
+    if (!premiseId) astBlocked = PREMISE_FIRST_AST;
+  }
+
+  // NA: out of QA for now (1.3.95). Available until the meter is Completed; NA-R044 asks for the
+  // premise first.
+  const noAccessDisabled = completed || Boolean(fieldWorkMeterId);
 
   return {
     premise: {
       value: premiseId ? 1 : 0,
       disabled: false,
-      ...(premiseQaTone ? { tone: premiseQaTone } : {}),
-      ...(premiseQaHelperText !== undefined ? { helperText: premiseQaHelperText } : {}),
-      intent: TARGETED_BATCH_INTENTS.OPEN_PREMISE,
+      helperText: premiseQa,
+      ...(premiseQa === "QA FAIL" ? { tone: "issue" } : {}),
+      blocked: null,
+      intent: premiseIntent,
     },
     ast: {
       value: meterId ? 1 : 0,
-      // TB-R051 (1.3.68): no button is dead. Meter Discovery still needs the premise first, so the
-      // button says so when it is tapped instead of being greyed out with nothing behind it.
       disabled: false,
-      blocked:
-        !premiseId && !meterId
-          ? {
-              title: "Premise first",
-              message:
-                "The premise at this address is captured before its meter. Tap PREMISE, record it, then come back to the meter.",
-            }
-          : null,
-      ...(meterQaTone ? { tone: meterQaTone } : {}),
-      helperText: meterQaHelperText || (invalidLinkage ? "LINKAGE ISSUE" : !premiseId ? "PREMISE REQUIRED" : meterId ? "OPEN AST" : "DISCOVER"),
-      intent: meterId ? TARGETED_BATCH_INTENTS.OPEN_AST : TARGETED_BATCH_INTENTS.START_METER_DISCOVERY,
+      helperText: meterQa,
+      ...(meterQa === "QA FAIL" || invalidLinkage ? { tone: "issue" } : {}),
+      blocked: astBlocked,
+      intent: astIntent,
     },
     noAccess: {
       value: safeNoAccessCount,
-      // No Access rules NA-R044 / NA-R044.3 (1.3.0): a no access is to a PREMISE, so the
-      // button is not offered until the row has one.
-      //
-      // An ERF can hold many premises - thirteen shops at one address is a real case - so a
-      // no access recorded against an ERF alone names nothing anyone can act on. The worker
-      // is told what to do rather than being handed a button whose submission the server
-      // would refuse.
-      ...(noAccessQaTone ? { tone: noAccessQaTone } : {}),
-      helperText: noAccessQaHelperText !== undefined
-        ? noAccessQaHelperText
-        : (fieldWorkMeterId
-            ? "DISCOVERY COMPLETE"
-            : !premiseId
-              ? "PREMISE REQUIRED"
-              : null),
-      disabled: Boolean(fieldWorkMeterId),
-      blocked:
-        !fieldWorkMeterId && !premiseId
-          ? {
-              title: "Premise first",
-              message:
-                "A No Access says which premise you could not get into. Tap PREMISE, record it, then come back.",
-            }
-          : null,
+      disabled: noAccessDisabled,
+      blocked: !noAccessDisabled && !premiseId ? PREMISE_FIRST_NA : null,
       intent: TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS,
     },
     erf: {
@@ -171,7 +149,7 @@ export function getTargetedBatchRowActionState(row = {}) {
       intent: TARGETED_BATCH_INTENTS.OPEN_ERF,
     },
     invalidLinkage,
-    completed: false,
+    completed,
   };
 }
 

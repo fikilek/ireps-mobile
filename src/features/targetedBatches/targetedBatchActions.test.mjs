@@ -1,41 +1,130 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appendUniqueTargetedBatchRows, blockedTargetedBatchReason, getTargetedBatchRowActionState, isTargetedBatchFoundMeterIntent, isTargetedBatchWorkIntent, snapshotTargetedBatchRefs, targetedBatchRefsMatch, TARGETED_BATCH_INTENTS } from "./targetedBatchActions.js";
+import { appendUniqueTargetedBatchRows, blockedTargetedBatchReason, getTargetedBatchRowActionState, isTargetedBatchFoundMeterIntent, isTargetedBatchWorkIntent, QA_NAV_BADGE, snapshotTargetedBatchRefs, targetedBatchRefsMatch, TARGETED_BATCH_INTENTS } from "./targetedBatchActions.js";
 
 const row = (refs = {}, count = 0, fieldWorkMeterId = null) => ({ id: "ROW1", salesDocId: "SALE1", allocationStatus: "ALLOCATED", executionStatus: "NOT_STARTED", refs: { erfId: "ERF1", ...refs }, erfNo: "1138", noAccessCount: count, fieldWorkMeterId });
 
-// NA-R044 (1.3.0) REPLACED the pre-premise No Access this test used to assert. A no access is
-// to a premise: an ERF can hold many premises, so one recorded against an ERF alone names
-// nothing anyone can act on. Both buttons now answer the tap with the premise first.
-test("State A exposes row values, and answers both the Meter and NA taps with the premise first", () => {
-  const state = getTargetedBatchRowActionState(row());
-  assert.equal(state.premise.value, 0); assert.equal(state.ast.value, 0);
-  // TB-R051 (1.3.68): no button is dead. The button says what to do instead.
-  assert.equal(state.ast.disabled, false); assert.equal(state.ast.helperText, "PREMISE REQUIRED");
-  assert.equal(state.ast.blocked.title, "Premise first");
-  assert.match(state.ast.blocked.message, /premise/i);
-  assert.equal(state.noAccess.value, 0);
-  assert.equal(state.noAccess.helperText, "PREMISE REQUIRED");
-  assert.equal(state.noAccess.blocked.title, "Premise first");
+const ACTION_WORDS = ["OPEN AST", "DISCOVER", "PREMISE REQUIRED", "LINKAGE ISSUE", "COMPLETED", "DISCOVERY COMPLETE"];
+
+// TB-R051 (1.3.95): the bottom slot of PREMISE and AST is the QA badge and nothing else.
+test("1.3.95 the PREMISE and AST bottom slot is always a QA badge, never an action word", () => {
+  const cases = [
+    row(),
+    row({ premiseId: "P1" }, 2),
+    row({ premiseId: "P1", meterId: "A1" }, 2),
+    row({ meterId: "A1" }),
+    { ...row({ premiseId: "P1", meterId: "A1" }), displayStatus: "COMPLETED" },
+    { ...row(), displayStatus: "COMPLETED" },
+  ];
+  for (const input of cases) {
+    const state = getTargetedBatchRowActionState(input);
+    for (const tile of [state.premise, state.ast]) {
+      assert.ok(["QA NAv", "QA PENDING", "QA PASS", "QA FAIL"].includes(tile.helperText), tile.helperText);
+      assert.equal(ACTION_WORDS.includes(tile.helperText), false);
+    }
+    // NA and ERF are out of QA: no badge at all.
+    assert.equal(state.noAccess.helperText, undefined);
+    assert.equal(state.erf.helperText, undefined);
+  }
 });
 
-test("TB-R051 1.3.68 a button a worker can use carries no reason to refuse it", () => {
-  const usable = getTargetedBatchRowActionState(row({ premiseId: "P1" }, 2));
-  assert.equal(usable.ast.blocked, null);
-  assert.equal(usable.erf.blocked, null);
-  // The reason is found by the intent the tapped tile carries.
-  assert.equal(
-    blockedTargetedBatchReason(usable, TARGETED_BATCH_INTENTS.OPEN_AST),
-    null,
-  );
-  const needsPremise = getTargetedBatchRowActionState(row());
-  assert.equal(
-    blockedTargetedBatchReason(needsPremise, TARGETED_BATCH_INTENTS.START_METER_DISCOVERY).title,
-    "Premise first",
-  );
-  assert.equal(blockedTargetedBatchReason(needsPremise, null), null);
-  // Nothing to read means nothing to refuse.
-  assert.equal(blockedTargetedBatchReason(null, TARGETED_BATCH_INTENTS.OPEN_ERF), null);
+test("1.3.95 a missing component, or a missing status, reads QA NAv", () => {
+  const none = getTargetedBatchRowActionState(row());
+  assert.equal(none.premise.helperText, QA_NAV_BADGE);
+  assert.equal(none.ast.helperText, QA_NAV_BADGE);
+
+  // A premise and meter linked, but the server has not projected QA yet (ERF 1481 on DEV, 2026-11-04).
+  const unprojected = getTargetedBatchRowActionState({ ...row({ premiseId: "P1", meterId: "A1" }), displayStatus: "COMPLETED" });
+  assert.equal(unprojected.premise.helperText, QA_NAV_BADGE);
+  assert.equal(unprojected.ast.helperText, QA_NAV_BADGE);
+
+  // A status left on a row whose component is not linked is not shown.
+  const stale = getTargetedBatchRowActionState({ ...row(), qa: { premiseStatus: "QA_PASS", meterStatus: "QA_FAIL" } });
+  assert.equal(stale.premise.helperText, QA_NAV_BADGE);
+  assert.equal(stale.ast.helperText, QA_NAV_BADGE);
+});
+
+test("1.3.95 PREMISE: 0 captures, QA FAIL corrects, otherwise opens the Premises screen", () => {
+  assert.equal(getTargetedBatchRowActionState(row()).premise.intent, TARGETED_BATCH_INTENTS.OPEN_PREMISE);
+  assert.equal(getTargetedBatchRowActionState(row()).premise.value, 0);
+
+  for (const [status, badge, intent, tone] of [
+    ["QA_PENDING", "QA PENDING", TARGETED_BATCH_INTENTS.OPEN_PREMISE, undefined],
+    ["QA_PASS", "QA PASS", TARGETED_BATCH_INTENTS.OPEN_PREMISE, undefined],
+    ["QA_FAIL", "QA FAIL", TARGETED_BATCH_INTENTS.CORRECT_PREMISE, "issue"],
+  ]) {
+    for (const displayStatus of ["IN_PROGRESS", "COMPLETED"]) {
+      const state = getTargetedBatchRowActionState({ ...row({ premiseId: "P1" }), displayStatus, qa: { premiseStatus: status } });
+      assert.equal(state.premise.value, 1);
+      assert.equal(state.premise.helperText, badge);
+      assert.equal(state.premise.intent, intent);
+      assert.equal(state.premise.tone, tone);
+      assert.equal(state.premise.disabled, false);
+    }
+  }
+});
+
+test("1.3.95 AST: 0 starts Meter Discovery (premise first), QA FAIL corrects, otherwise opens the ASTs screen", () => {
+  const noPremise = getTargetedBatchRowActionState(row());
+  assert.equal(noPremise.ast.value, 0);
+  assert.equal(noPremise.ast.intent, TARGETED_BATCH_INTENTS.START_METER_DISCOVERY);
+  assert.equal(noPremise.ast.disabled, false);
+  assert.equal(noPremise.ast.blocked.title, "Premise first");
+  assert.equal(blockedTargetedBatchReason(noPremise, TARGETED_BATCH_INTENTS.START_METER_DISCOVERY).title, "Premise first");
+
+  const withPremise = getTargetedBatchRowActionState(row({ premiseId: "P1" }));
+  assert.equal(withPremise.ast.intent, TARGETED_BATCH_INTENTS.START_METER_DISCOVERY);
+  assert.equal(withPremise.ast.blocked, null);
+
+  for (const [status, badge, intent, tone] of [
+    [undefined, "QA NAv", TARGETED_BATCH_INTENTS.OPEN_AST, undefined],
+    ["QA_PENDING", "QA PENDING", TARGETED_BATCH_INTENTS.OPEN_AST, undefined],
+    ["QA_PASS", "QA PASS", TARGETED_BATCH_INTENTS.OPEN_AST, undefined],
+    ["QA_FAIL", "QA FAIL", TARGETED_BATCH_INTENTS.CORRECT_AST, "issue"],
+  ]) {
+    const state = getTargetedBatchRowActionState({ ...row({ premiseId: "P1", meterId: "A1" }), displayStatus: "COMPLETED", qa: { meterStatus: status } });
+    assert.equal(state.ast.value, 1);
+    assert.equal(state.ast.helperText, badge);
+    assert.equal(state.ast.intent, intent);
+    assert.equal(state.ast.tone, tone);
+    assert.equal(state.ast.blocked, null);
+  }
+});
+
+test("1.3.95 NA is out of QA: available until the meter is Completed, premise first", () => {
+  const noPremise = getTargetedBatchRowActionState(row({}, 0));
+  assert.equal(noPremise.noAccess.disabled, false);
+  assert.equal(noPremise.noAccess.blocked.title, "Premise first");
+
+  for (const displayStatus of ["NOT_STARTED", "IN_PROGRESS"]) {
+    const state = getTargetedBatchRowActionState({ ...row({ premiseId: "P1" }, 2), displayStatus, qa: { noAccessStatus: "QA_FAIL" } });
+    assert.equal(state.noAccess.value, 2);
+    assert.equal(state.noAccess.disabled, false);
+    assert.equal(state.noAccess.blocked, null);
+    assert.equal(state.noAccess.helperText, undefined);
+    assert.equal(state.noAccess.tone, undefined);
+  }
+
+  const completed = getTargetedBatchRowActionState({ ...row({ premiseId: "P1", meterId: "A1" }, 2), displayStatus: "COMPLETED" });
+  assert.equal(completed.noAccess.disabled, true);
+  assert.equal(completed.noAccess.blocked, null);
+
+  // A meter already linked in Sales field work also closes NA.
+  assert.equal(getTargetedBatchRowActionState(row({ premiseId: "P1" }, 1, "AST_1")).noAccess.disabled, true);
+  assert.equal(getTargetedBatchRowActionState({ ...row({}, 1), fieldWorkMeterId: undefined, raw: { fieldWorkMeterId: "AST_RAW" } }).noAccess.disabled, true);
+});
+
+test("NA count defaults safely to zero", () => {
+  for (const count of [null, undefined, "not-a-number", -4]) {
+    assert.equal(getTargetedBatchRowActionState(row({}, count)).noAccess.value, 0);
+  }
+});
+
+test("invalid linkage (meter without premise) is flagged and still opens the meter", () => {
+  const state = getTargetedBatchRowActionState(row({ meterId: "A1" }));
+  assert.equal(state.invalidLinkage, true);
+  assert.equal(state.ast.tone, "issue");
+  assert.equal(state.ast.intent, TARGETED_BATCH_INTENTS.OPEN_AST);
 });
 
 test("TB-R051 1.3.68 a row with no ERF answers the ERF tap instead of doing nothing", () => {
@@ -43,66 +132,33 @@ test("TB-R051 1.3.68 a row with no ERF answers the ERF tap instead of doing noth
     const state = getTargetedBatchRowActionState({ ...row(), refs: {}, displayStatus });
     assert.equal(state.erf.disabled, false);
     assert.equal(state.erf.blocked.title, "No ERF on this row");
-    assert.equal(
-      blockedTargetedBatchReason(state, TARGETED_BATCH_INTENTS.OPEN_ERF).title,
-      "No ERF on this row",
-    );
   }
+  assert.equal(blockedTargetedBatchReason(null, TARGETED_BATCH_INTENTS.OPEN_ERF), null);
+  assert.equal(blockedTargetedBatchReason(getTargetedBatchRowActionState(row()), null), null);
 });
 
-test("State B enables discovery for the exact linked premise", () => {
-  const state = getTargetedBatchRowActionState(row({ premiseId: "P1" }, 2));
-  assert.equal(state.premise.value, 1); assert.equal(state.ast.value, 0);
-  assert.equal(state.ast.disabled, false); assert.equal(state.ast.helperText, "DISCOVER");
-  assert.equal(state.ast.intent, TARGETED_BATCH_INTENTS.START_METER_DISCOVERY);
-  assert.equal(state.noAccess.value, 2);
-  assert.equal(state.noAccess.disabled, false);
-});
-
-test("State C opens AST without disabling NA when Sales fieldWork meterId is null", () => {
-  const state = getTargetedBatchRowActionState(row({ premiseId: "P1", meterId: "A1" }, 2));
-  assert.equal(state.ast.value, 1); assert.equal(state.ast.intent, TARGETED_BATCH_INTENTS.OPEN_AST);
-  assert.equal(state.noAccess.helperText, null); assert.equal(state.noAccess.disabled, false);
-});
-
-test("State D reports invalid row linkage without changing the NA rule", () => {
-  const state = getTargetedBatchRowActionState(row({ meterId: "A1" }));
-  assert.equal(state.invalidLinkage, true); assert.equal(state.premise.value, 0);
-  assert.equal(state.ast.helperText, "LINKAGE ISSUE"); assert.equal(state.noAccess.disabled, false);
-});
-
-test("NA is disabled only when Sales fieldWork meterId has a value", () => {
-  // The row carries a premise here, because NA-R044 makes that the other condition and this
-  // test is about the meter, not the premise.
-  for (const fieldWorkMeterId of [null, undefined, "", "   "]) {
-    const state = getTargetedBatchRowActionState(row({ premiseId: "PRM1" }, 3, fieldWorkMeterId));
-    assert.equal(state.noAccess.value, 3);
-    assert.equal(state.noAccess.disabled, false);
-    assert.equal(state.noAccess.helperText, null);
+test("TB-R051 1.3.42 a Completed meter starts nothing; with nothing linked it is looked up by number", () => {
+  for (const refs of [{}, { premiseId: "P1" }, { premiseId: "P1", meterId: "A1" }, { meterId: "A1" }]) {
+    const state = getTargetedBatchRowActionState({ ...row(refs, 2, null), displayStatus: "COMPLETED" });
+    assert.equal(state.completed, true);
+    assert.equal(state.noAccess.disabled, true);
+    assert.equal(state.ast.intent, refs.meterId ? TARGETED_BATCH_INTENTS.OPEN_AST : TARGETED_BATCH_INTENTS.OPEN_FOUND_METER);
+    assert.equal(state.premise.intent, refs.premiseId ? TARGETED_BATCH_INTENTS.OPEN_PREMISE : TARGETED_BATCH_INTENTS.OPEN_FOUND_METER_PREMISE);
+    for (const tile of [state.premise, state.ast, state.erf]) assert.equal(isTargetedBatchWorkIntent(tile.intent), false);
   }
-
-  const linked = getTargetedBatchRowActionState(row({ premiseId: "PRM1" }, 3, "AST_001"));
-  assert.equal(linked.noAccess.value, 3);
-  assert.equal(linked.noAccess.disabled, true);
-  assert.equal(linked.noAccess.helperText, "DISCOVERY COMPLETE");
+  // Only the display status completes a row.
+  assert.equal(getTargetedBatchRowActionState({ ...row(), executionStatus: "COMPLETED" }).completed, false);
 });
 
-test("NA reads fieldWork meterId from the normalized row raw fallback", () => {
-  const state = getTargetedBatchRowActionState({
-    ...row({}, 2),
-    fieldWorkMeterId: undefined,
-    raw: { fieldWorkMeterId: "AST_RAW_001" },
-  });
-  assert.equal(state.noAccess.value, 2);
-  assert.equal(state.noAccess.disabled, true);
-  assert.equal(state.noAccess.helperText, "DISCOVERY COMPLETE");
-});
-
-test("NA count defaults safely to zero", () => {
-  for (const count of [null, undefined, "not-a-number", -4]) {
-    const state = getTargetedBatchRowActionState(row({}, count));
-    assert.equal(state.noAccess.value, 0);
+test("TB-R051 work intents and found-meter intents", () => {
+  assert.equal(isTargetedBatchWorkIntent(TARGETED_BATCH_INTENTS.START_METER_DISCOVERY), true);
+  assert.equal(isTargetedBatchWorkIntent(TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS), true);
+  for (const intent of ["OPEN_AST", "OPEN_PREMISE", "CORRECT_AST", "CORRECT_PREMISE", "OPEN_ERF", "OPEN_FOUND_METER", "OPEN_FOUND_METER_PREMISE"]) {
+    assert.equal(isTargetedBatchWorkIntent(intent), false, intent);
   }
+  assert.equal(isTargetedBatchFoundMeterIntent(TARGETED_BATCH_INTENTS.OPEN_FOUND_METER), true);
+  assert.equal(isTargetedBatchFoundMeterIntent(TARGETED_BATCH_INTENTS.OPEN_FOUND_METER_PREMISE), true);
+  assert.equal(isTargetedBatchFoundMeterIntent(TARGETED_BATCH_INTENTS.OPEN_AST), false);
 });
 
 test("paging appends stably and removes duplicate and invalid IDs", () => {
@@ -115,160 +171,3 @@ test("reference snapshots detect stale row changes", () => {
   assert.equal(targetedBatchRefsMatch(original, snapshot), true);
   assert.equal(targetedBatchRefsMatch(row({ erfId: "E1", premiseId: "P1", meterId: "A1" }), snapshot), false);
 });
-
-test("TB-R051 1.3.42 a Completed meter opens its meter, premise and ERF, but No Access stays disabled", () => {
-  for (const refs of [{}, { premiseId: "P1" }, { premiseId: "P1", meterId: "A1" }, { meterId: "A1" }]) {
-    const state = getTargetedBatchRowActionState({ ...row(refs, 2, null), displayStatus: "COMPLETED" });
-    assert.equal(state.completed, true);
-    assert.equal(state.premise.disabled, false);
-    assert.equal(state.ast.disabled, false);
-    assert.equal(state.erf.disabled, false);
-    assert.equal(state.noAccess.disabled, true);
-    assert.equal(state.noAccess.helperText, "COMPLETED");
-    assert.equal(state.ast.helperText, "OPEN AST");
-    assert.equal(state.premise.value, refs.premiseId ? 1 : 0);
-    assert.equal(state.ast.value, refs.meterId ? 1 : 0);
-    assert.equal(state.noAccess.value, 2);
-    assert.equal(state.erf.value, "1138");
-    // A linked meter or premise opens directly; with none linked, the meter is looked up by its meter number.
-    assert.equal(state.ast.intent, refs.meterId ? TARGETED_BATCH_INTENTS.OPEN_AST : TARGETED_BATCH_INTENTS.OPEN_FOUND_METER);
-    assert.equal(state.premise.intent, refs.premiseId ? TARGETED_BATCH_INTENTS.OPEN_PREMISE : TARGETED_BATCH_INTENTS.OPEN_FOUND_METER_PREMISE);
-    // Nothing on a Completed meter starts work.
-    for (const tile of [state.premise, state.ast, state.erf]) assert.equal(isTargetedBatchWorkIntent(tile.intent), false);
-  }
-  // TB-R051 (1.3.68): a Completed row without its ERF link says so when tapped, like any row.
-  const noErf = getTargetedBatchRowActionState({ ...row(), refs: {}, displayStatus: "COMPLETED" });
-  assert.equal(noErf.erf.disabled, false);
-  assert.equal(noErf.erf.blocked.title, "No ERF on this row");
-});
-
-test("TB-R051 1.3.42 a VISIBLE meter whose row is not completed is Completed through its display status", () => {
-  const state = getTargetedBatchRowActionState({ ...row({ premiseId: "P1" }), executionStatus: "IN_PROGRESS", salesVisibility: "VISIBLE", displayStatus: "COMPLETED" });
-  assert.equal(state.completed, true);
-  assert.equal(state.ast.disabled, false);
-  assert.equal(state.ast.intent, TARGETED_BATCH_INTENTS.OPEN_FOUND_METER);
-  assert.equal(state.noAccess.disabled, true);
-});
-
-test("TB-R051 1.3.42 work intents and found-meter intents", () => {
-  assert.equal(isTargetedBatchWorkIntent(TARGETED_BATCH_INTENTS.START_METER_DISCOVERY), true);
-  assert.equal(isTargetedBatchWorkIntent(TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS), true);
-  for (const intent of ["OPEN_AST", "OPEN_PREMISE", "OPEN_ERF", "OPEN_FOUND_METER", "OPEN_FOUND_METER_PREMISE"]) {
-    assert.equal(isTargetedBatchWorkIntent(intent), false, intent);
-  }
-  assert.equal(isTargetedBatchFoundMeterIntent(TARGETED_BATCH_INTENTS.OPEN_FOUND_METER), true);
-  assert.equal(isTargetedBatchFoundMeterIntent(TARGETED_BATCH_INTENTS.OPEN_FOUND_METER_PREMISE), true);
-  assert.equal(isTargetedBatchFoundMeterIntent(TARGETED_BATCH_INTENTS.OPEN_AST), false);
-});
-
-test("TB-R051 open meters keep the existing button rules and are not locked", () => {
-  for (const displayStatus of [undefined, null, "", "NOT_STARTED", "IN_PROGRESS"]) {
-    const state = getTargetedBatchRowActionState({ ...row({ premiseId: "P1" }, 1), displayStatus });
-    assert.equal(state.completed, false);
-    assert.equal(state.premise.disabled, false);
-    assert.equal(state.premise.helperText, undefined);
-    assert.equal(state.ast.disabled, false);
-    assert.equal(state.ast.helperText, "DISCOVER");
-    assert.equal(state.noAccess.disabled, false);
-    assert.equal(state.noAccess.helperText, null);
-    assert.equal(state.erf.disabled, false);
-    assert.equal(state.erf.helperText, undefined);
-  }
-  // Only the display status locks; a raw executionStatus alone does not (the row API derives displayStatus).
-  assert.equal(getTargetedBatchRowActionState({ ...row(), executionStatus: "COMPLETED" }).completed, false);
-});
-
-// No Access rules NA-R044 / NA-R044.3 (1.3.0): a no access is to a PREMISE, so My Work Orders
-// does not offer the button until the row has one. An ERF can hold many premises, so a no
-// access against an ERF alone names nothing anyone can act on.
-test("NA-R044.3: a row with no premise does not offer No Access", () => {
-  const state = getTargetedBatchRowActionState({
-    refs: { erfId: "ERF_1", premiseId: null },
-  });
-
-  assert.equal(state.noAccess.helperText, "PREMISE REQUIRED");
-  assert.ok(state.noAccess.blocked, "it must say what to do, not sit there dead");
-  assert.match(state.noAccess.blocked.message, /premise/i);
-});
-
-test("NA-R044.3: a row with a premise offers No Access", () => {
-  const state = getTargetedBatchRowActionState({
-    refs: { erfId: "ERF_1", premiseId: "PRM_1" },
-  });
-
-  assert.equal(state.noAccess.blocked, null);
-  assert.equal(state.noAccess.disabled, false);
-});
-
-test("NA-R044.3: the ERF button stays available either way", () => {
-  const without = getTargetedBatchRowActionState({ refs: { erfId: "ERF_1", premiseId: null } });
-  assert.equal(without.erf.disabled, false);
-  assert.equal(without.erf.blocked, null);
-});
-
-test("Premise QA status projection on PREMISE action tile", () => {
-  const pending = getTargetedBatchRowActionState({
-    refs: { erfId: "ERF_1", premiseId: "PRM_1" },
-    qa: { premiseStatus: "QA_PENDING" },
-  });
-  assert.equal(pending.premise.helperText, "QA PENDING");
-  assert.equal(pending.premise.tone, undefined);
-
-  const passed = getTargetedBatchRowActionState({
-    refs: { erfId: "ERF_1", premiseId: "PRM_1" },
-    qa: { premiseStatus: "QA_PASS" },
-  });
-  assert.equal(passed.premise.helperText, "QA PASS");
-  assert.equal(passed.premise.tone, undefined);
-
-  const failed = getTargetedBatchRowActionState({
-    refs: { erfId: "ERF_1", premiseId: "PRM_1" },
-    qa: {
-      premiseStatus: "QA_FAIL",
-      premiseReasonCode: "ADDRESS_INCORRECT",
-      premiseReasonLabel: "Address Incorrect (wrong street number)",
-    },
-  });
-  assert.equal(failed.premise.helperText, "QA FAIL");
-  assert.equal(failed.premise.tone, "issue");
-});
-
-test("Meter QA and No Access QA status projection on AST and NA action tiles", () => {
-  const rowWithMeterFail = getTargetedBatchRowActionState({
-    displayStatus: "COMPLETED",
-    refs: { erfId: "ERF_1", premiseId: "PRM_1", meterId: "MTR_0038" },
-    qa: {
-      premiseStatus: "QA_PASS",
-      meterStatus: "QA_FAIL",
-      noAccessStatus: "QA_NAV",
-    },
-  });
-  assert.equal(rowWithMeterFail.premise.helperText, "QA PASS");
-  assert.equal(rowWithMeterFail.premise.tone, undefined);
-  assert.equal(rowWithMeterFail.ast.helperText, "QA FAIL");
-  assert.equal(rowWithMeterFail.ast.tone, "issue");
-  assert.equal(rowWithMeterFail.noAccess.helperText, "QA NAv");
-  assert.equal(rowWithMeterFail.noAccess.tone, undefined);
-
-  const rowWithMeterPass = getTargetedBatchRowActionState({
-    displayStatus: "COMPLETED",
-    refs: { erfId: "ERF_1", premiseId: "PRM_1", meterId: "MTR_0038" },
-    qa: {
-      premiseStatus: "QA_PASS",
-      meterStatus: "QA_PASS",
-    },
-  });
-  assert.equal(rowWithMeterPass.ast.helperText, "QA PASS");
-  assert.equal(rowWithMeterPass.ast.tone, undefined);
-
-  const rowWithNaFail = getTargetedBatchRowActionState({
-    displayStatus: "COMPLETED",
-    refs: { erfId: "ERF_1", premiseId: "PRM_1" },
-    qa: {
-      noAccessStatus: "QA_FAIL",
-    },
-  });
-  assert.equal(rowWithNaFail.noAccess.helperText, "QA FAIL");
-  assert.equal(rowWithNaFail.noAccess.tone, "issue");
-});
-

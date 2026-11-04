@@ -56,7 +56,9 @@ export default function TargetedBatchActionTile({ label, value, helperText, icon
         ) : (
           <Text style={styles.helper} numberOfLines={1}>{helperText}</Text>
         )
-      ) : null}
+      ) : (
+        <View style={styles.pillPlaceholder} />
+      )}
     </Pressable>
   );
 }
@@ -66,6 +68,7 @@ const styles = StyleSheet.create({
   labelRow: { flexDirection: "row", alignItems: "center", gap: 3 }, label: { color: "#475569", fontSize: 9, fontWeight: "900" },
   value: { color: "#0f172a", fontSize: 18, fontWeight: "900" }, helper: { color: "#64748b", fontSize: 7, fontWeight: "800", textAlign: "center" },
   disabled: { backgroundColor: "#f8fafc", opacity: 0.72 }, issue: { backgroundColor: "#fff7ed" }, issueText: { color: "#c2410c" }, pressed: { backgroundColor: "#eff6ff" },
+  pillPlaceholder: { height: 16 },
   pill: {
     paddingHorizontal: 4,
     paddingVertical: 1,

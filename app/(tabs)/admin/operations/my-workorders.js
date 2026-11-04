@@ -186,8 +186,10 @@ const TARGETED_BATCH_NOT_IN_WORK_ORDERS_MESSAGE = `${BATCH_DISCOVERY_REASONS.NOT
 // TB-R051: no silent waits; the banner names the button that is preparing.
 const TARGETED_BATCH_INTENT_LABELS = Object.freeze({
   [TARGETED_BATCH_INTENTS.OPEN_PREMISE]: "Premise",
+  [TARGETED_BATCH_INTENTS.CORRECT_PREMISE]: "Premise",
   [TARGETED_BATCH_INTENTS.START_METER_DISCOVERY]: "Meter",
   [TARGETED_BATCH_INTENTS.OPEN_AST]: "Meter",
+  [TARGETED_BATCH_INTENTS.CORRECT_AST]: "Meter",
   [TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS]: "No Access",
   [TARGETED_BATCH_INTENTS.OPEN_ERF]: "ERF",
   [TARGETED_BATCH_INTENTS.OPEN_FOUND_METER]: "Meter",
@@ -1887,7 +1889,7 @@ export default function WorkorderManagementSystem() {
           setRowPremiseChoice({ rowId: currentRow.id, erfId: pending.erfId });
           return;
         } else if (
-          pending.intent === TARGETED_BATCH_INTENTS.OPEN_PREMISE &&
+          pending.intent === TARGETED_BATCH_INTENTS.CORRECT_PREMISE &&
           premiseId
         ) {
           const erfId = cleanId(currentRow?.erfId || currentRow?.refs?.erfId || pending.erfId);
@@ -1901,6 +1903,31 @@ export default function WorkorderManagementSystem() {
           });
           openRowPremiseForm({ row: currentRow, params: { id: erfId, premiseId } });
           return;
+        } else if (
+          pending.intent === TARGETED_BATCH_INTENTS.CORRECT_AST
+        ) {
+          const trnId = cleanId(currentRow?.refs?.trnId || currentRow?.fieldMeter?.trnId || meterId);
+          if (!trnId) {
+            clearPendingTargetedBatchAction(pending.requestKey);
+            Alert.alert("AST Correction Error", "No transaction ID found for this meter.");
+            return;
+          }
+          clearPendingTargetedBatchAction(pending.requestKey);
+          setTargetedBatchMapOpen(false);
+          updateGeo({
+            selectedWard: pending.ward,
+            selectedErf,
+            selectedPremise: premise || null,
+            selectedMeter: meter || null,
+            lastSelectionType: "METER",
+          });
+          router.push({ pathname: "/(tabs)/trns/correct", params: { trnId } });
+          return;
+        } else if (
+          pending.intent === TARGETED_BATCH_INTENTS.OPEN_PREMISE &&
+          premiseId
+        ) {
+          navigationTarget = "/(tabs)/premises";
         } else {
           navigationTarget = "/(tabs)/premises";
         }
