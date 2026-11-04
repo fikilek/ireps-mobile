@@ -47,15 +47,15 @@ function qaBadge(raw) {
 }
 
 const PREMISE_FIRST_AST = Object.freeze({
-  title: "Premise first",
+  title: "⚠️ Warning",
   message:
-    "The premise at this address is captured before its meter. Tap PREMISE, record it, then come back to the meter.",
+    "Cannot discover meter without a premise. Please capture the premise first.",
 });
 
 const PREMISE_FIRST_NA = Object.freeze({
-  title: "Premise first",
+  title: "⚠️ Warning",
   message:
-    "A No Access says which premise you could not get into. Tap PREMISE, record it, then come back.",
+    "Cannot record No Access without a premise. Please capture the premise first.",
 });
 
 export function getTargetedBatchRowActionState(row = {}) {

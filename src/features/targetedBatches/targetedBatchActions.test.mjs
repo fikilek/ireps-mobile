@@ -69,8 +69,8 @@ test("1.3.95 AST: 0 starts Meter Discovery (premise first), QA FAIL corrects, ot
   assert.equal(noPremise.ast.value, 0);
   assert.equal(noPremise.ast.intent, TARGETED_BATCH_INTENTS.START_METER_DISCOVERY);
   assert.equal(noPremise.ast.disabled, false);
-  assert.equal(noPremise.ast.blocked.title, "Premise first");
-  assert.equal(blockedTargetedBatchReason(noPremise, TARGETED_BATCH_INTENTS.START_METER_DISCOVERY).title, "Premise first");
+  assert.equal(noPremise.ast.blocked.title, "⚠️ Warning");
+  assert.equal(blockedTargetedBatchReason(noPremise, TARGETED_BATCH_INTENTS.START_METER_DISCOVERY).title, "⚠️ Warning");
 
   const withPremise = getTargetedBatchRowActionState(row({ premiseId: "P1" }));
   assert.equal(withPremise.ast.intent, TARGETED_BATCH_INTENTS.START_METER_DISCOVERY);
@@ -94,7 +94,7 @@ test("1.3.95 AST: 0 starts Meter Discovery (premise first), QA FAIL corrects, ot
 test("1.3.95 NA is out of QA: available until the meter is Completed, premise first", () => {
   const noPremise = getTargetedBatchRowActionState(row({}, 0));
   assert.equal(noPremise.noAccess.disabled, false);
-  assert.equal(noPremise.noAccess.blocked.title, "Premise first");
+  assert.equal(noPremise.noAccess.blocked.title, "⚠️ Warning");
 
   for (const displayStatus of ["NOT_STARTED", "IN_PROGRESS"]) {
     const state = getTargetedBatchRowActionState({ ...row({ premiseId: "P1" }, 2), displayStatus, qa: { noAccessStatus: "QA_FAIL" } });

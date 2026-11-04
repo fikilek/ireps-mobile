@@ -175,12 +175,12 @@ const WMS_NOT_UP_TO_DATE_MESSAGE = "Not up to date — reconnecting";
 const TARGETED_BATCH_ACTION_TIMEOUT_MS = 30000;
 
 // TB-R051: no false errors; a meter whose Sales record could not be read is refused in field language.
-const TARGETED_BATCH_SALES_NOT_READABLE_TITLE = "Sales record not readable";
+const TARGETED_BATCH_SALES_NOT_READABLE_TITLE = "⚠️ Sales Record Not Readable";
 const TARGETED_BATCH_SALES_NOT_READABLE_MESSAGE =
   "The meter's Sales record could not be read. Leave the batch and open it again; if it keeps failing, report it.";
 
 // TB-R051: a batch meter's buttons act only while it is still in this worker's work orders, the same as Discover.
-const TARGETED_BATCH_NOT_IN_WORK_ORDERS_TITLE = "Batch meter";
+const TARGETED_BATCH_NOT_IN_WORK_ORDERS_TITLE = "⚠️ Batch Meter";
 const TARGETED_BATCH_NOT_IN_WORK_ORDERS_MESSAGE = `${BATCH_DISCOVERY_REASONS.NOT_IN_WORK_ORDERS}.`;
 
 // TB-R051: no silent waits; the banner names the button that is preparing.
@@ -207,7 +207,7 @@ const TARGETED_BATCH_STATUS_FILTER_BUTTONS = [
 ];
 
 // TB-R051 (1.3.42): nothing starts work on a Completed meter.
-const TARGETED_BATCH_COMPLETED_TITLE = "Meter completed";
+const TARGETED_BATCH_COMPLETED_TITLE = "ℹ️ Meter Completed";
 const TARGETED_BATCH_COMPLETED_MESSAGE =
   "This meter is Completed: it has been found. Nothing can be started on it; you can open its meter, premise and ERF.";
 
@@ -1026,7 +1026,7 @@ export default function WorkorderManagementSystem() {
 
       if (!context) {
         Alert.alert(
-          "Targeted Batch Row Not Ready",
+          "⚠️ Row Not Ready",
           "The premise could not be joined to this meter. Please try again.",
         );
         return;
@@ -1217,7 +1217,7 @@ export default function WorkorderManagementSystem() {
     if (!actorUid || fieldWorkorderActor) return;
 
     Alert.alert(
-      "WMS Access Blocked",
+      "⚠️ Access Blocked",
       "My Workorders is only available to FWR and SPV(SUBC) users.",
       [
         {
@@ -1558,12 +1558,12 @@ export default function WorkorderManagementSystem() {
       const currentRow = targetedBatchRows.find((row) => row?.id === pending.rowId);
       if (selectedTargetedBatchId !== pending.bucketId || !currentRow) {
         clearPendingTargetedBatchAction(pending.requestKey);
-        Alert.alert(currentRow ? "Targeted Batch no longer available." : "Targeted Batch row no longer available.");
+        Alert.alert(currentRow ? "⚠️ Batch No Longer Available" : "⚠️ Batch Row No Longer Available");
         return;
       }
       if (!targetedBatchRefsMatch(currentRow, pending.refsSnapshot)) {
         clearPendingTargetedBatchAction(pending.requestKey);
-        Alert.alert("Targeted Batch row changed", "The row linkage changed while the action was preparing. Please try again.");
+        Alert.alert("⚠️ Row Linkage Changed", "The row linkage changed while the action was preparing. Please try again.");
         return;
       }
       // TB-R051 (1.3.42): nothing starts work on a Completed meter, also when it became Completed while the
@@ -1663,7 +1663,7 @@ export default function WorkorderManagementSystem() {
           const connectionFailed =
             lookup.code === "unavailable" || lookup.code === "deadline-exceeded";
           Alert.alert(
-            "Meter not looked up",
+            "⚠️ Meter Not Looked Up",
             `Meter ${lookup.meterNo || "of this row"} could not be looked up. ${
               connectionFailed
                 ? "Check your connection and try again."
@@ -1678,7 +1678,7 @@ export default function WorkorderManagementSystem() {
         });
         if (choice.outcome !== "OPEN") {
           clearPendingTargetedBatchAction(pending.requestKey);
-          Alert.alert("Meter found outside this batch", foundMeterMessage(choice, lookup.meterNo));
+          Alert.alert("ℹ️ Meter Found Outside Batch", foundMeterMessage(choice, lookup.meterNo));
           return;
         }
         const foundMeter = (all?.meters || []).find(
@@ -1697,7 +1697,7 @@ export default function WorkorderManagementSystem() {
           if (!foundPremiseId) {
             clearPendingTargetedBatchAction(pending.requestKey);
             Alert.alert(
-              "No premise",
+              "⚠️ No Premise",
               `Meter ${lookup.meterNo || "of this row"} was found outside this batch, and its record has no premise.`,
             );
             return;
@@ -3250,7 +3250,7 @@ export default function WorkorderManagementSystem() {
 
     if (!scope.lmPcode || !scope.wardPcode) {
       Alert.alert(
-        "Targeted Batch Ward Scope Missing",
+        "⚠️ Ward Scope Missing",
         "This Targeted Batch does not carry its required LM and ward scope.",
       );
       return false;
@@ -3261,7 +3261,7 @@ export default function WorkorderManagementSystem() {
       scope.rowLmPcode !== scope.lmPcode
     ) {
       Alert.alert(
-        "Targeted Batch LM Scope Conflict",
+        "⚠️ LM Scope Conflict",
         "This row does not match the Targeted Batch municipality scope.",
       );
       return false;
@@ -3272,7 +3272,7 @@ export default function WorkorderManagementSystem() {
       scope.rowWardPcode !== scope.wardPcode
     ) {
       Alert.alert(
-        "Targeted Batch Ward Scope Conflict",
+        "⚠️ Ward Scope Conflict",
         "This row does not match the Targeted Batch ward scope.",
       );
       return false;
@@ -3282,7 +3282,7 @@ export default function WorkorderManagementSystem() {
 
     if (activeLmPcode !== scope.lmPcode) {
       Alert.alert(
-        "Targeted Batch Workbase Mismatch",
+        "⚠️ Workbase Mismatch",
         `This batch belongs to ${scope.lmPcode}, but the active workbase is ${activeLmPcode || "NAv"}.`,
       );
       return false;
@@ -3295,7 +3295,7 @@ export default function WorkorderManagementSystem() {
 
     if (!targetWard) {
       Alert.alert(
-        "Targeted Batch Ward Not Available",
+        "⚠️ Ward Not Available",
         `Ward ${scope.wardPcode} is not available in the active ${scope.lmPcode} workbase.`,
       );
       return false;
