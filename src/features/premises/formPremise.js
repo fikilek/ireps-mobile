@@ -1272,6 +1272,7 @@ export default function FormPremise() {
       // picked from the ones already on the ERF.
       const linkedTargetedBatchContext =
         (!isEdit && !isDuplicate ? targetedBatchContext : null) || rowPremiseJoin;
+      const mdBgoContext = selectedErf?.bmdContext || null;
 
       // TB-R051: a batch row selected elsewhere after the form opened never replaces the form's batch.
       const laterSelectedErfContext = normalizeTargetedBatchContext(
@@ -1369,6 +1370,15 @@ export default function FormPremise() {
             ...(linkedTargetedBatchContext
               ? {
                   targetedBatchContext: linkedTargetedBatchContext,
+                }
+              : {}),
+
+            ...(mdBgoContext
+              ? {
+                  mdBgoContext: {
+                    ...mdBgoContext,
+                    erfId: String(systemFields?.erfId || mdBgoContext?.erfId || "").trim(),
+                  },
                 }
               : {}),
 

@@ -77,6 +77,7 @@ import {
 import {
   useAcceptRejectBgoBatchMutation,
   useGetBgoBucketsQuery,
+  useGetMdBgoRowsQuery,
   useReverseBgoBatchAcceptanceMutation,
 } from "../../../../src/redux/bgoApi";
 import {
@@ -492,6 +493,8 @@ function buildBmdSelectedErf({ erf = {}, bucket = {}, warehouseErf = null }) {
     },
     bmdContext: {
       batchId: bucket?.id || bgo?.batchId || "NAv",
+      rowId: erf?.bgoRowId || erf?.rowId || erf?.id || "NAv",
+      erfId: erf?.erfId || erf?.id || "NAv",
       batchMode: "BMD",
       sourceModule: "BULK_METER_DISCOVERY",
       operationType: "METER_DISCOVERY",
@@ -1262,6 +1265,10 @@ export default function WorkorderManagementSystem() {
     [actorUid, actorRole, actorSpId, actorName, selectedBgoBatchId],
   );
   const bgoDetailQuerySkipped = !fieldWorkorderActor || !selectedBgoBatchId;
+  const { data: mdBgoRowsData } = useGetMdBgoRowsQuery(
+    { bgoBatchId: selectedBgoBatchId },
+    { skip: bgoDetailQuerySkipped },
+  );
   const {
     data: bgoDetailData,
     isLoading: isLoadingBgoDetailTrns,
@@ -3672,6 +3679,7 @@ export default function WorkorderManagementSystem() {
       ) : showBmdErfWorklist ? (
         <MdBgoErfWorklist
           bucket={selectedBucket}
+          rows={mdBgoRowsData?.rows || []}
           onBack={backToBuckets}
           onOpenErf={handleOpenBmdErf}
         />
@@ -4623,24 +4631,32 @@ function getWardShortLabel(scope = {}) {
   return clean;
 }
 
-function MdBgoErfWorklist({ bucket, onBack, onOpenErf }) {
+function MdBgoErfWorklist({ bucket, rows = [], onBack, onOpenErf }) {
   const liveStats = bucket?.mdBgoLiveStats || {};
   const counts = bucket?.counts || {};
   const scope = getBmdBucketScope(bucket);
   const wardLabel = getWardShortLabel(scope);
 
   const erfItems = useMemo(() => {
-    return getBmdErfRefsFromBucket(bucket)
-      .reduce((acc, erf) => {
-        const erfStats = liveStats?.byErfId?.[erf?.id] || createEmptyMdBgoErfStats();
-        acc.push({
+    return rows
+      .map((row) => {
+        const erf = row?.erf || {};
+        const erfId = cleanId(erf?.id || row?.erfId);
+        const premiseId = cleanId(row?.refs?.premiseId || row?.premise?.id);
+        const erfStats = liveStats?.byErfId?.[erfId] || createEmptyMdBgoErfStats();
+        return {
           ...erf,
+          id: erfId,
+          erfId,
+          bgoRowId: row?.id,
+          rowNo: row?.rowNo,
+          premiseId: premiseId || null,
+          premiseNo: row?.premise?.premiseNo || null,
           liveStats: erfStats,
-        });
-        return acc;
-      }, [])
+        };
+      })
       .sort(sortMdBgoErfWorkItems);
-  }, [bucket, liveStats]);
+  }, [bucket, liveStats, rows]);
 
   const renderErfItem = ({ item }) => (
     <MdBgoErfCard
@@ -4698,7 +4714,7 @@ function MdBgoErfWorklist({ bucket, onBack, onOpenErf }) {
             />
             <Text style={styles.stateTitle}>No ERFs in this worklist</Text>
             <Text style={styles.stateText}>
-              This accepted MD-BGO batch does not have ERF references stamped yet.
+          Waiting for this batch’s live ERF work rows.
             </Text>
           </View>
         }
@@ -4722,7 +4738,9 @@ function MdBgoErfCard({ erf, bucket, onOpenErf }) {
         </View>
 
         <View style={styles.mdBgoErfMain}>
-          <Text style={styles.mdBgoErfTitle}>ERF {erf?.erfNo || "NAv"}</Text>
+        <Text style={styles.mdBgoErfTitle}>
+          {erf?.premiseId ? `Premise ${erf?.premiseNo || erf.premiseId} · ` : ""}ERF {erf?.erfNo || "NAv"}
+        </Text>
           <Text style={styles.mdBgoErfSub} numberOfLines={1}>
             {erf?.erfType || "NAv"}
           </Text>

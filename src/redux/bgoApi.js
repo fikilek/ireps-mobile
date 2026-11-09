@@ -13,6 +13,7 @@ import {
 const bgoBucketKey = (args = {}) =>
   `${String(args?.actorUid || "").trim()}:${String(args?.actorSpId || "").trim()}`;
 const bgoBucketLiveData = createLiveDataStore();
+const mdBgoRowsLiveData = createLiveDataStore();
 
 const BGO_STREAM_LIMIT = 200;
 
@@ -776,6 +777,45 @@ export const bgoApi = createApi({
       providesTags: ["BGO"],
     }),
 
+    getMdBgoRows: builder.query({
+      queryFn(args = {}) {
+        const key = String(args?.bgoBatchId || "").trim();
+        return { data: mdBgoRowsLiveData.read(key, { rows: [], stream: LIVE_STREAM_STATUS.CONNECTING }) };
+      },
+      async onCacheEntryAdded(args = {}, { updateCachedData, cacheDataLoaded, cacheEntryRemoved }) {
+        const batchId = String(args?.bgoBatchId || "").trim();
+        if (!batchId) return;
+        const liveData = mdBgoRowsLiveData.open(batchId);
+        let stop = () => {};
+        try {
+          await cacheDataLoaded;
+          stop = listenWhereIn(
+            { collectionName: "bgo_rows", field: "bgoBatchId", values: [batchId], label: "MD_BGO_ROWS" },
+            (docs) => {
+              const data = liveData.publish({
+                rows: (docs || []).filter((doc) => {
+                  const row = doc?.data || doc || {};
+                  return String(row?.batchMode || "").toUpperCase() === "BMD" &&
+                    String(row?.operationType || "").toUpperCase() === "METER_DISCOVERY";
+                }).map((doc) => ({ id: doc?.id, ...(doc?.data || doc || {}) }))
+                  .sort((a, b) => Number(a?.rowNo || 0) - Number(b?.rowNo || 0)),
+                stream: LIVE_STREAM_STATUS.LIVE,
+              });
+              updateCachedData(() => data);
+            },
+            (error) => console.error("[MD_BGO_ROWS_STREAM_ERROR]", error),
+          );
+        } catch (error) {
+          console.error("[MD_BGO_ROWS_STREAM_SETUP_ERROR]", error);
+        }
+        await cacheEntryRemoved;
+        stop();
+        liveData.close();
+      },
+      serializeQueryArgs: ({ endpointName, queryArgs }) => `${endpointName}:${String(queryArgs?.bgoBatchId || "").trim()}`,
+      keepUnusedDataFor: MY_WORK_ORDERS_KEEP_SECONDS,
+    }),
+
     acceptRejectBgoBatch: builder.mutation({
       async queryFn(payload) {
         try {
@@ -860,6 +900,7 @@ export const bgoApi = createApi({
 
 export const {
   useGetBgoBucketsQuery,
+  useGetMdBgoRowsQuery,
   useAcceptRejectBgoBatchMutation,
   useReverseBgoBatchAcceptanceMutation,
 } = bgoApi;
