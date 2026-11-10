@@ -2,11 +2,14 @@ import { createApi, fakeBaseQuery } from "@reduxjs/toolkit/query/react";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../firebase";
 import { listenActorTeams, listenWhereIn } from "./firestoreListeners";
+import { canOpenMdBgoRows } from "../features/bgoBatches/bgoBatchCardModel";
+import { followMdBgoCardRows } from "../features/bgoBatches/bgoBatchCardStream";
 import {
   LIVE_STREAM_STATUS,
   MY_WORK_ORDERS_KEEP_SECONDS,
   createLiveDataStore,
   followActorAllocatedDocuments,
+  idsKey,
 } from "./liveSubscription";
 
 // TB-R052: one live BGO batch list per worker and service provider.
@@ -14,6 +17,7 @@ const bgoBucketKey = (args = {}) =>
   `${String(args?.actorUid || "").trim()}:${String(args?.actorSpId || "").trim()}`;
 const bgoBucketLiveData = createLiveDataStore();
 const mdBgoRowsLiveData = createLiveDataStore();
+const mdBgoCardLiveData = createLiveDataStore();
 
 const BGO_STREAM_LIMIT = 200;
 
@@ -645,8 +649,7 @@ function normalizeBgoBucket(batch = {}) {
         releaseState === BGO_RELEASE_STATES.RELEASED,
       canViewErfs:
         isBmdBgo &&
-        workflowState === "ACCEPTED" &&
-        releaseState === BGO_RELEASE_STATES.RELEASED,
+        canOpenMdBgoRows(workflowState, releaseState),
       canReverseAcceptance:
         !isBmdBgo &&
         workflowState === "ACCEPTED" &&
@@ -777,6 +780,36 @@ export const bgoApi = createApi({
       providesTags: ["BGO"],
     }),
 
+    getMdBgoCardRows: builder.query({
+      queryFn(args = {}) {
+        return { data: mdBgoCardLiveData.read(idsKey(args.batchIds), {
+          countsByBatchId: {}, stream: LIVE_STREAM_STATUS.CONNECTING, error: null,
+        }) };
+      },
+      async onCacheEntryAdded(args = {}, { updateCachedData, cacheDataLoaded, cacheEntryRemoved }) {
+        const liveData = mdBgoCardLiveData.open(idsKey(args.batchIds));
+        let stop = () => {};
+        try {
+          await cacheDataLoaded;
+          stop = followMdBgoCardRows({
+            batchIds: args.batchIds,
+            listen: (values, next, error) => listenWhereIn({
+              collectionName: "bgo_rows", field: "bgoBatchId", values, label: "MD_BGO_CARD_ROWS",
+            }, next, error),
+            onChange: (data) => updateCachedData(() => liveData.publish(data)),
+          });
+        } catch (error) {
+          const data = liveData.publish({ countsByBatchId: {}, stream: LIVE_STREAM_STATUS.ERROR, error: error.message });
+          updateCachedData(() => data);
+        }
+        await cacheEntryRemoved;
+        stop();
+        liveData.close();
+      },
+      serializeQueryArgs: ({ endpointName, queryArgs }) => `${endpointName}:${idsKey(queryArgs?.batchIds)}`,
+      keepUnusedDataFor: 0,
+    }),
+
     getMdBgoRows: builder.query({
       queryFn(args = {}) {
         const key = String(args?.bgoBatchId || "").trim();
@@ -900,6 +933,7 @@ export const bgoApi = createApi({
 
 export const {
   useGetBgoBucketsQuery,
+  useGetMdBgoCardRowsQuery,
   useGetMdBgoRowsQuery,
   useAcceptRejectBgoBatchMutation,
   useReverseBgoBatchAcceptanceMutation,

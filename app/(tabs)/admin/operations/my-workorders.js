@@ -1,3 +1,4 @@
+import BatchCardPresentation from "../../../../src/components/workOrders/BatchCardPresentation";
 import { getQaDraft } from "../../../../src/features/qa/amendmentQueue";
 import { usePendingQaRecovery } from "../../../../src/features/qa/usePendingQaRecovery";
 import { ACCESS_GATE, NO_ACCESS_ROUTE, buildAssetNoAccessContext } from "../../../../src/features/meters/accessGate";
@@ -77,6 +78,7 @@ import {
 import {
   useAcceptRejectBgoBatchMutation,
   useGetBgoBucketsQuery,
+  useGetMdBgoCardRowsQuery,
   useGetMdBgoRowsQuery,
   useReverseBgoBatchAcceptanceMutation,
 } from "../../../../src/redux/bgoApi";
@@ -1295,6 +1297,13 @@ export default function WorkorderManagementSystem() {
     { skip: !fieldWorkorderActor },
   );
 
+  const mdBgoCardBatchIds = useMemo(() => (bgoData?.buckets || [])
+    .filter(isBmdBgoBucket).map((batch) => batch.id), [bgoData?.buckets]);
+  const { data: mdBgoCardRows } = useGetMdBgoCardRowsQuery(
+    { batchIds: mdBgoCardBatchIds },
+    { skip: selectedBucketCategory !== "BGOB" || Boolean(selectedBucket) || mdBgoCardBatchIds.length === 0 },
+  );
+
   const {
     data: targetedBatchData,
     error: targetedBatchError,
@@ -2149,12 +2158,16 @@ export default function WorkorderManagementSystem() {
 
         return {
           ...liveBucket,
+          cardCounts: mdBgoCardRows?.countsByBatchId?.[bucket.id] || null,
+          cardCountsStream: mdBgoCardRows?.stream,
+          cardCountsError: mdBgoCardRows?.error,
           counts,
           totalTrns: liveBucket?.totalTrns || counts.total || 0,
         };
       });
   }, [
     bgoData?.buckets,
+    mdBgoCardRows,
     actorUid,
     actorSpId,
     bgoTeamIds,
@@ -2182,6 +2195,9 @@ export default function WorkorderManagementSystem() {
     actorSpId,
     targetedBatchTeamIds,
   ]);
+
+  const bgoBucketsRef = useRef(bgoBuckets);
+  bgoBucketsRef.current = bgoBuckets;
 
   useEffect(() => {
     const openingId = openingTargetedBatchIdRef.current;
@@ -2463,6 +2479,15 @@ export default function WorkorderManagementSystem() {
 
     if (bucket?.bucketType === "BGOB") {
       const isBmd = isBmdBgoBucket(bucket);
+      if (isBmd) {
+        if (actionBusy) return;
+        const latest = bgoBucketsRef.current.find((candidate) => candidate.id === bucket.id);
+        if (!latest) {
+          Alert.alert("BGO Batch Unavailable", "This batch is no longer available in your allocated worklist.");
+          return;
+        }
+        bucket = latest;
+      }
       const canOpen = isBmd
         ? bucket?.permissions?.canViewErfs === true
         : bucket?.permissions?.canViewTrns === true;
@@ -4083,7 +4108,7 @@ function BgoBucketLanding({
       </Pressable>
 
       <Text style={[styles.sectionEyebrow, { marginTop: 10 }]}>Bulk Work</Text>
-      <Text style={styles.sectionTitle}>BGO Buckets</Text>
+      <Text style={styles.sectionTitle}>BGO Batches</Text>
 
       <View style={styles.bucketList}>
         {isLoading ? (
@@ -4118,7 +4143,7 @@ function BgoBucketLanding({
         ) : null}
 
         {buckets.map((bucket) => (
-          <BucketCard
+          <BgoBatchCard
             key={bucket.id}
             bucket={bucket}
             deciding={deciding}
@@ -4166,62 +4191,15 @@ function TargetedBatchCard({
     !fieldWorkorderActor;
 
   return (
-    <View style={styles.bucketCard}>
-      <View style={styles.groupTopRow}>
-        <View style={styles.groupIcon}>
-          <MaterialCommunityIcons
-            name="target-account"
-            size={23}
-            color="#2563eb"
-          />
-        </View>
-
-        <View style={styles.bucketStatusBadge}>
-          <Text style={styles.bucketStatusText}>{statusText}</Text>
-        </View>
-      </View>
-
-      <Text style={styles.groupTitle}>
-        Targeted Batch • {bucket?.id || "NAv"}
-      </Text>
-      <Text style={styles.groupSub}>
-        {bucket?.subtitle || "Sales targeted field work"}
-      </Text>
-
-      {/* PR-R001 / TB-R051: Level 2 Batch Card stats row, exactly matching Level 3 */}
-      <View style={styles.tbCardStatusRow}>
-        {TARGETED_BATCH_STATUS_FILTER_BUTTONS.map((button) => {
-          const isTotal = button.key === TARGETED_BATCH_STATUS_FILTERS.TOTAL;
-          const count = isTotal
-            ? counts?.total ?? bucket?.totalRows ?? 0
-            : counts?.[button.summaryKey] ?? 0;
-
-          return (
-            <View
-              key={button.key}
-              style={[
-                styles.tbStatusFilter,
-                isTotal && styles.tbStatusFilterTotal,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.tbStatusFilterLabel,
-                  isTotal && styles.tbStatusFilterLabelTotal,
-                ]}
-                numberOfLines={2}
-              >
-                {button.label}
-              </Text>
-              <Text style={[styles.tbStatusFilterValue, { color: button.color }]}>
-                {count}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
-
-      <View style={styles.bucketMetaGrid}>
+    <BatchCardPresentation
+      styles={styles}
+      icon="target-account"
+      status={statusText}
+      title={`Targeted Batch • ${bucket?.id || "NAv"}`}
+      subtitle={bucket?.subtitle || "Sales targeted field work"}
+      counts={{ ...counts, total: counts?.total ?? bucket?.totalRows ?? 0 }}
+      tiles={TARGETED_BATCH_STATUS_FILTER_BUTTONS}
+      metadata={<>
         <InfoLine
           icon="account-hard-hat-outline"
           label="Target"
@@ -4248,8 +4226,8 @@ function TargetedBatchCard({
           icon="clock-outline"
           label="Age"
           value={formatAge(bucket?.ageSeconds)}
-        />
-      </View>
+        /></>}
+    >
 
       {processingThisBatch ? (
         <View style={styles.bgoProcessingBox}>
@@ -4344,7 +4322,7 @@ function TargetedBatchCard({
           </View>
         ) : null}
       </View>
-    </View>
+    </BatchCardPresentation>
   );
 }
 
@@ -4372,6 +4350,98 @@ function InlineStatusCard({
         {text ? <Text style={styles.inlineStatusText}>{text}</Text> : null}
       </View>
     </View>
+  );
+}
+
+function BgoBatchCard(props) {
+  if (!isBmdBgoBucket(props.bucket)) return <BucketCard {...props} />;
+  return <MdBgoBatchCard {...props} />;
+}
+
+function MdBgoBatchCard({ bucket, deciding, processingBgoBucketAction,
+  fieldWorkorderActor, onOpenBucket, onAcceptBgoBucket, onRejectBgoBucket }) {
+  const processing = processingBgoBucketAction?.bucketId === bucket.id;
+  const action = normalizeUpper(processingBgoBucketAction?.action);
+  const [opening, setOpening] = useState(false);
+  const openingRef = useRef(false);
+  const openFrame = useRef(null);
+  useEffect(() => () => {
+    if (openFrame.current !== null) cancelAnimationFrame(openFrame.current);
+  }, []);
+  const disabled = deciding || processing || opening || !fieldWorkorderActor;
+  const scope = getBmdBucketScope(bucket);
+  const status = normalizeUpper(bucket.workflowState) === "IN_PROGRESS" ? "In Progress"
+    : normalizeUpper(bucket.workflowState) === "COMPLETED" ? "Completed" : getBgoBucketStatusText(bucket);
+  const openRows = () => {
+    if (disabled || openingRef.current) return;
+    openingRef.current = true;
+    setOpening(true);
+    openFrame.current = requestAnimationFrame(() => {
+      openFrame.current = requestAnimationFrame(() => {
+        openFrame.current = null;
+        onOpenBucket(bucket);
+        openingRef.current = false;
+        setOpening(false);
+      });
+    });
+  };
+  return (
+    <BatchCardPresentation
+      styles={styles}
+      icon="map-marker-radius-outline"
+      status={status}
+      title={bucket.id || "NAv"}
+      subtitle={`Meter Discovery • ${getWardShortLabel(scope)}`}
+      counts={bucket.cardCounts}
+      tiles={TARGETED_BATCH_STATUS_FILTER_BUTTONS}
+      metadata={<>
+        <InfoLine icon="account-hard-hat-outline" label="Target" value={bucket.targetText || "NAv"} />
+        <InfoLine icon="map-marker-outline" label="Municipality" value={scope.lmName || "NAv"} />
+        <InfoLine icon="map-marker-radius-outline" label="Geofence" value={bucket.geofenceName || "NAv"} />
+        <InfoLine icon="clock-outline" label="Age" value={formatAge(bucket.ageSeconds)} />
+      </>}
+    >
+      {bucket.cardCountsStream !== "LIVE" ? (
+        <InlineStatusCard
+          icon={bucket.cardCountsError ? "alert-circle-outline" : "cloud-sync-outline"}
+          title={bucket.cardCountsError ? "Batch row stream failed" : "Updating row counts"}
+          text={bucket.cardCountsError || "Waiting for current batch rows. Counts display NAv until confirmed."}
+          tone={bucket.cardCountsError ? "error" : "info"}
+        />
+      ) : null}
+      {processing ? (
+        <View style={styles.bgoProcessingBox}>
+          <ActivityIndicator size="small" color="#2563eb" />
+          <View style={styles.bgoProcessingTextWrap}>
+            <Text style={styles.bgoProcessingTitle}>{action === "REJECT" ? "Rejecting BGO batch..." : "Accepting BGO batch..."}</Text>
+            <Text style={styles.bgoProcessingText}>Recording the whole-batch decision before field execution.</Text>
+          </View>
+        </View>
+      ) : null}
+      <View style={styles.actionsRow}>
+        {bucket.permissions?.canAccept ? (
+          <Pressable style={[styles.actionBtn, styles.acceptBtn, disabled && styles.actionDisabled]} disabled={disabled} onPress={() => onAcceptBgoBucket(bucket)}>
+            {processing && action === "ACCEPT" ? <ActivityIndicator size="small" color="#14532d" /> : null}
+            <Text style={styles.acceptBtnText}>{processing && action === "ACCEPT" ? "Accepting…" : "ACCEPT"}</Text>
+          </Pressable>
+        ) : null}
+        {bucket.permissions?.canReject ? (
+          <Pressable style={[styles.actionBtn, styles.rejectBtn, disabled && styles.actionDisabled]} disabled={disabled} onPress={() => onRejectBgoBucket(bucket)}>
+            {processing && action === "REJECT" ? <ActivityIndicator size="small" color="#991b1b" /> : null}
+            <Text style={styles.rejectBtnText}>{processing && action === "REJECT" ? "Rejecting…" : "REJECT"}</Text>
+          </Pressable>
+        ) : null}
+        {bucket.permissions?.canViewErfs ? (
+          <Pressable style={[styles.actionBtn, styles.executeBtn, disabled && styles.actionDisabled]} disabled={disabled} onPress={openRows}>
+            {opening ? <ActivityIndicator size="small" color="#fff" /> : null}
+            <Text style={styles.executeBtnText}>{opening ? "OPENING..." : "VIEW ROWS"}</Text>
+          </Pressable>
+        ) : null}
+        {!bucket.permissions?.canAccept && !bucket.permissions?.canReject && !bucket.permissions?.canViewErfs ? (
+          <View style={styles.noActionBox}><Text style={styles.noActionText}>{status === "Rejected" ? "BGO batch rejected before execution." : "BGO batch not open for execution."}</Text></View>
+        ) : null}
+      </View>
+    </BatchCardPresentation>
   );
 }
 
