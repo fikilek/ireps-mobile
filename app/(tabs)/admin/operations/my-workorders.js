@@ -3838,7 +3838,7 @@ function BucketTypeLanding({
 
       <View style={styles.bucketTypeList}>
         <BucketTypeCard
-          title="Individual Work"
+          title="ITO"
           subtitle="Individually issued lifecycle TRNs"
           icon="account-hard-hat-outline"
           count={individualCount}
@@ -3862,7 +3862,7 @@ function BucketTypeLanding({
         />
 
         <BucketTypeCard
-          title="BGO Buckets"
+          title="BGO Batches"
           subtitle="Bulk geofence originated work"
           icon="map-marker-radius-outline"
           count={bgoCount}
