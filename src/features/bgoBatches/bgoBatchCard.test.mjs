@@ -11,7 +11,7 @@ test("counts permanent work rows, including several premises on the same ERF", (
   const rows = [row("1", "ISSUED"), row("2", "IN_PROGRESS"), row("3", "COMPLETED"), row("4", "CANCELLED"), row("5", "IN_PROGRESS")];
   rows[1].erf = rows[4].erf = { id: "same-erf" };
   const counts = summarizeMdBgoCardRows(["a", "empty"], [...rows, rows[0], row("other", "COMPLETED", "unassigned")]);
-  assert.deepEqual(counts.a, { total: 4, notStarted: 1, inProgress: 2, completed: 1, qaPass: null, qaFail: null });
+  assert.deepEqual(counts.a, { total: 4, notStarted: 1, inProgress: 2, completed: 1, qaPass: 0, qaFail: 0 });
   assert.equal(counts.empty.total, 0);
 });
 
@@ -20,7 +20,22 @@ test("does not invent progress for invalid states or QA from premise capture", (
   rows[1].premise = { qaStatus: "QA_PASS" };
   const counts = summarizeMdBgoCardRows(["a"], rows).a;
   assert.equal(counts.notStarted, null);
-  assert.equal(counts.qaPass, null);
+  assert.equal(counts.qaPass, 0);
+  assert.equal(counts.qaFail, 0);
+});
+
+test("rows-header QA counters show zero for MD BGO while TB preserves its recorded QA counts", async () => {
+  const screen = await readFile(new URL("../../../app/(tabs)/admin/operations/my-workorders.js", import.meta.url), "utf8");
+  const countExpression = screen.match(/const count =\s*button.key === TARGETED_BATCH_STATUS_FILTERS.TOTAL[\s\S]*?;/)?.[0];
+  assert.ok(countExpression, "execute the actual rows-header count expression");
+  const count = new Function("button", "summary", "qaAvailable", "allRowCount", "TARGETED_BATCH_STATUS_FILTERS", `${countExpression}\nreturn count;`);
+  for (const key of ["qaPass", "qaFail"]) {
+    const button = { key, summaryKey: key };
+    assert.equal(count(button, { [key]: 0 }, false, 59, { TOTAL: "TOTAL" }), 0);
+    assert.equal(count(button, {}, false, 59, { TOTAL: "TOTAL" }), 0);
+    assert.equal(count(button, { [key]: 3 }, true, 59, { TOTAL: "TOTAL" }), 3);
+  }
+  assert.equal(count({ key: "IN_PROGRESS", summaryKey: "inProgress" }, {}, false, 59, { TOTAL: "TOTAL" }), "NAv");
 });
 
 test("excludes non-MD documents and keeps not-started states consistent", () => {

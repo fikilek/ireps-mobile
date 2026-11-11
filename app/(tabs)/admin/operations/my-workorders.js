@@ -4852,7 +4852,7 @@ function TargetedBatchRowsWorklist({
           const count =
             button.key === TARGETED_BATCH_STATUS_FILTERS.TOTAL
               ? summary?.total ?? allRowCount
-              : !qaAvailable && ["qaPass", "qaFail"].includes(button.summaryKey) ? "NAv" : summary?.[button.summaryKey] ?? (qaAvailable ? 0 : "NAv");
+              : !qaAvailable && ["qaPass", "qaFail"].includes(button.summaryKey) ? 0 : summary?.[button.summaryKey] ?? (qaAvailable ? 0 : "NAv");
 
           return (
             <Pressable

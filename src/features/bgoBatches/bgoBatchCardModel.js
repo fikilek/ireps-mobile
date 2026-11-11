@@ -5,10 +5,10 @@ export function canOpenMdBgoRows(workflowState, releaseState) {
     upper(releaseState) === "RELEASED_TO_EXECUTION";
 }
 
-// Work rows are the unit of progress. QA has no authoritative row projection yet.
+// Work rows are the unit of progress. No recorded overall QA results display as zero.
 export function summarizeMdBgoCardRows(batchIds = [], rows = []) {
   const result = Object.fromEntries(batchIds.map((id) => [id, {
-    total: 0, notStarted: 0, inProgress: 0, completed: 0, qaPass: null, qaFail: null,
+    total: 0, notStarted: 0, inProgress: 0, completed: 0, qaPass: 0, qaFail: 0,
   }]));
   const seen = new Set();
   for (const row of rows) {
