@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { preserveMdBgoErfSelection } from "../features/bgoBatches/mdBgoRows";
 import { useGetLocalMunicipalityByIdQuery } from "../redux/geoApi";
 import {
   getRestorableLastActiveScope,
@@ -251,6 +252,9 @@ export const GeoProvider = ({ children }) => {
         Object.prototype.hasOwnProperty.call(updates, key);
 
       let next = { ...prev, ...updates };
+      if (hasUpdate("selectedErf") && !hasUpdate("selectedLm") && !hasUpdate("selectedWard")) {
+        next.selectedErf = preserveMdBgoErfSelection(prev.selectedErf, updates.selectedErf);
+      }
 
       // cascade clears
       if (hasUpdate("selectedLm")) {

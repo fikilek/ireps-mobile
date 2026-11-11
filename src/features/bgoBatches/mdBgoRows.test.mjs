@@ -1,13 +1,36 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { buildMdBgoMobileRows, buildMdBgoCaptureContext, buildMdBgoMapPoints, parseMdBgoContext } from "./mdBgoRows.js";
+import { buildMdBgoMobileRows, buildMdBgoCaptureContext, buildMdBgoMapPoints, parseMdBgoContext, preserveMdBgoErfSelection } from "./mdBgoRows.js";
 import { followMdBgoAssets } from "./mdBgoAssetStream.js";
 import { getTargetedBatchRowActionState } from "../targetedBatches/targetedBatchActions.js";
 import { buildNoAccessPayload, noAccessContextFromQueue } from "../meters/noAccessCapture.js";
 import { sortTargetedBatchRowsByLastWorked, searchTargetedBatchRows } from "../targetedBatches/targetedBatchRowSearch.js";
 
 const seed = { id: "B_ROW_1", bgoBatchId: "B", batchMode: "BMD", operationType: "METER_DISCOVERY", erf: { id: "E", erfNo: "25", centroid: { latitude: -28, longitude: 30 } }, workflow: { state: "ISSUED" } };
+
+test("same-ERF navigation preserves BGO context for repeatable premise capture, never another ERF or explicit reset", () => {
+  const context = buildMdBgoCaptureContext({ id: "B" }, seed);
+  const previous = { id: "E", bmdContext: context };
+  assert.deepEqual(preserveMdBgoErfSelection(previous, { id: "E", erfNo: "25" }).bmdContext, context);
+  assert.equal(preserveMdBgoErfSelection(previous, { id: "OTHER" }).bmdContext, undefined);
+  assert.equal(preserveMdBgoErfSelection(previous, null), null);
+  assert.equal(preserveMdBgoErfSelection(previous, { id: "E", bmdContext: null }).bmdContext, null);
+});
+
+test("two captured flat premises display two actionable rows before either meter exists", () => {
+  const rows = ["A", "B"].map((unit, index) => ({ ...seed, id: `B_ROW_${index + 1}`, refs: { premiseId: `P${unit}` }, workflow: { state: "IN_PROGRESS" } }));
+  const result = buildMdBgoMobileRows({ rows, premises: ["A", "B"].map(unit => ({ id: `P${unit}`, propertyType: { name: "ZK Flats", unitNo: unit } })) });
+  assert.equal(result.length, 2);
+  for (const [index, row] of result.entries()) {
+    assert.match(row.addressLine, new RegExp(index ? "B$" : "A$"));
+    assert.equal(row.meterNo, "NAv");
+    const actions = getTargetedBatchRowActionState(row);
+    assert.equal(actions.premise.value, 1);
+    assert.equal(actions.ast.value, 0);
+    assert.equal(row.displayStatus, "IN_PROGRESS");
+  }
+});
 test("ERF seed displays Meter NAv with confirmed zero Premise, AST and No Access action counts", () => {
   const [row] = buildMdBgoMobileRows({ rows: [seed] });
   assert.equal(row.meterNo, "NAv");

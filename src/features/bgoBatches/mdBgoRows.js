@@ -25,6 +25,12 @@ export function carryMdBgoContext(erf, context) {
   return context?.batchMode === "BMD" && context.erfId === erf.id ? { ...plain, bmdContext: context } : plain;
 }
 
+// Same-ERF navigation must not drop the batch before a flat is duplicated.
+export function preserveMdBgoErfSelection(previousErf, nextErf) {
+  if (!nextErf || Object.prototype.hasOwnProperty.call(nextErf, "bmdContext")) return nextErf;
+  return carryMdBgoContext(nextErf, previousErf?.bmdContext);
+}
+
 export function buildMdBgoMobileRows({ rows = [], premises = [], meters = [], erfs = [], geoLibrary = {} }) {
   const premiseById = new Map(premises.map((p) => [p.id, p]));
   const meterById = new Map(meters.map((m) => [m.id, m]));
