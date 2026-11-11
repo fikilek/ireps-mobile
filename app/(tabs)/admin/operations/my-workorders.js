@@ -1140,6 +1140,11 @@ export default function WorkorderManagementSystem() {
     [cancelTargetedBatchPreparationFrames],
   );
 
+  const selectedMdBgoBatchId =
+    selectedBucket?.bucketType === "BGOB" && isBmdBgoBucket(selectedBucket)
+      ? selectedBucket?.id || null
+      : null;
+
   const selectedBgoBatchId =
     selectedBucket?.bucketType === "BGOB" && !isBmdBgoBucket(selectedBucket)
       ? selectedBucket?.id || null
@@ -1256,22 +1261,23 @@ export default function WorkorderManagementSystem() {
     [actorUid, actorRole, actorSpId, actorName, selectedBgoBatchId],
   );
   const bgoDetailQuerySkipped = !fieldWorkorderActor || !selectedBgoBatchId;
+  const mdBgoRowsQuerySkipped = !fieldWorkorderActor || !selectedMdBgoBatchId;
   const { currentData: mdBgoRowsData } = useGetMdBgoRowsQuery(
-    { bgoBatchId: selectedBgoBatchId },
-    { skip: bgoDetailQuerySkipped },
+    { bgoBatchId: selectedMdBgoBatchId },
+    { skip: mdBgoRowsQuerySkipped },
   );
   const mdBgoAssetIds = useMemo(() => ({
     premiseIds: [...new Set((mdBgoRowsData?.rows || []).map((r) => r.refs?.premiseId).filter(Boolean))],
     meterIds: [...new Set((mdBgoRowsData?.rows || []).map((r) => r.refs?.meterId).filter(Boolean))],
     erfIds: [...new Set((mdBgoRowsData?.rows || []).map((r) => r.erf?.id).filter(Boolean))],
   }), [mdBgoRowsData?.rows]);
-  const { currentData: mdBgoAssets } = useGetMdBgoAssetsQuery(mdBgoAssetIds, { skip: bgoDetailQuerySkipped || !mdBgoRowsData?.rows?.length });
+  const { currentData: mdBgoAssets } = useGetMdBgoAssetsQuery(mdBgoAssetIds, { skip: mdBgoRowsQuerySkipped || !mdBgoRowsData?.rows?.length });
   const mdBgoRows = useMemo(() => buildMdBgoMobileRows({ rows: mdBgoRowsData?.rows || [],
     premises: mdBgoAssets?.premises || [], meters: mdBgoAssets?.meters || [], erfs: mdBgoAssets?.erfs || [],
   }), [mdBgoRowsData?.rows, mdBgoAssets]);
   const mdBgoSummary = useMemo(() => mdBgoRowsData?.stream === "LIVE"
-    ? summarizeMdBgoCardRows([selectedBgoBatchId], mdBgoRowsData.rows)[selectedBgoBatchId] : null,
-    [mdBgoRowsData, selectedBgoBatchId]);
+    ? summarizeMdBgoCardRows([selectedMdBgoBatchId], mdBgoRowsData.rows)[selectedMdBgoBatchId] : null,
+    [mdBgoRowsData, selectedMdBgoBatchId]);
   const visibleMdBgoRows = useMemo(() => sortTargetedBatchRowsByLastWorked(
     searchTargetedBatchRows(mdBgoRows.filter((row) => mdBgoFilter === "TOTAL" || row.displayStatus === mdBgoFilter), mdBgoSearch), mdBgoOrder,
   ), [mdBgoRows, mdBgoFilter, mdBgoSearch, mdBgoOrder]);
