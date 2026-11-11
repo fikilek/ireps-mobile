@@ -1,3 +1,4 @@
+import { parseMdBgoContext } from "../bgoBatches/mdBgoRows";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -669,6 +670,11 @@ export default function FormPremise() {
   const { geoState, updateGeo } = useGeo();
 
   const selectedErf = geoState?.selectedErf || null;
+  const mdBgoFormContext = useRef({ key: null, raw: null });
+  const mdBgoFormKey = JSON.stringify([id, premiseId, duplicateId, queueItemId, params.mdBgoContext]);
+  if (mdBgoFormContext.current.key !== mdBgoFormKey) {
+    mdBgoFormContext.current = { key: mdBgoFormKey, raw: params.mdBgoContext || selectedErf?.bmdContext || null };
+  }
 
   // TB-R051: the batch goes with the work. The form keeps the batch it opened with: the route param is the
   // checked context and wins over the selected ERF's; without it, the selected ERF's context when the form
@@ -1272,7 +1278,7 @@ export default function FormPremise() {
       // picked from the ones already on the ERF.
       const linkedTargetedBatchContext =
         (!isEdit && !isDuplicate ? targetedBatchContext : null) || rowPremiseJoin;
-      const mdBgoContext = selectedErf?.bmdContext || null;
+      const mdBgoContext = parseMdBgoContext(isQueueEdit ? queueItem?.payload?.mdBgoContext : mdBgoFormContext.current.raw);
 
       // TB-R051: a batch row selected elsewhere after the form opened never replaces the form's batch.
       const laterSelectedErfContext = normalizeTargetedBatchContext(

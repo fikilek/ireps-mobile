@@ -442,6 +442,7 @@ function BatchGroupMarkerBase({
   longitude,
   status,
   source,
+  sourceText,
   count,
   selected,
   erfNo = "",
@@ -476,7 +477,7 @@ function BatchGroupMarkerBase({
             ]}
           >
             <Text style={styles.pinText}>
-              {TARGETED_BATCH_MAP_SOURCE_LABELS[source] || "?"}
+              {sourceText || TARGETED_BATCH_MAP_SOURCE_LABELS[source] || "?"}
             </Text>
           </View>
 
@@ -721,6 +722,9 @@ export default function TargetedBatchMapModal({
   error,
   onClose,
   renderRowCard,
+  mapPointsOverride,
+  batchOnly = false,
+  batchAssets,
 }) {
   // Own map ref; never the shared MapContext ref.
   const mapRef = useRef(null);
@@ -748,7 +752,7 @@ export default function TargetedBatchMapModal({
   // TB-R051 (1.3.38): ERFs on, Premises and Other Sales meters off, Normal map when the map opens.
   // TB-R051 (1.3.81): the map opens on the batch's Sales meters alone. The ERF boundaries and numbers
   // are a heavy read and the worker asks for them with the ERFs button.
-  const [erfsOn, setErfsOn] = useState(false);
+  const [erfsOn, setErfsOn] = useState(batchOnly);
   const [premisesOn, setPremisesOn] = useState(false);
   const [otherSalesOn, setOtherSalesOn] = useState(false);
   const [mapType, setMapType] = useState("standard");
@@ -759,6 +763,8 @@ export default function TargetedBatchMapModal({
   const { all: warehouseAll, sync: warehouseSync } = useWarehouse();
 
   const safeRows = Array.isArray(rows) ? rows : EMPTY_LIST;
+  const batchErfIds = useMemo(() => new Set(safeRows.map((r) => r.erfId || r.refs?.erfId).filter(Boolean)), [safeRows]);
+  const batchPremiseIds = useMemo(() => new Set(safeRows.map((r) => r.refs?.premiseId).filter(Boolean)), [safeRows]);
   const bucketId = readFirstString(bucket?.id);
   const geofenceId = readFirstString(bucket?.geofenceId);
 
@@ -778,11 +784,11 @@ export default function TargetedBatchMapModal({
   const mapPoints = useMemo(
     () =>
       visible
-        ? buildTargetedBatchMapPoints(safeRows, {
+        ? mapPointsOverride || buildTargetedBatchMapPoints(safeRows, {
             erfCentroidById: erfCentroidById || {},
           })
         : EMPTY_POINTS,
-    [visible, safeRows, erfCentroidById],
+    [visible, safeRows, erfCentroidById, mapPointsOverride],
   );
   const groups = mapPoints?.groups || EMPTY_LIST;
   const unplaced = mapPoints?.unplaced || EMPTY_LIST;
@@ -900,13 +906,14 @@ export default function TargetedBatchMapModal({
     batchWardIsActive &&
     warehouseSync?.erfs?.status === "ready" &&
     Array.isArray(warehouseAll?.erfs);
-  const warehouseErfEntries = warehouseErfsReady ? warehouseAll.erfs : null;
+  const exactErfEntries = useMemo(() => batchOnly ? erfEntriesFromDocs(batchAssets?.erfs || []) : null, [batchOnly, batchAssets?.erfs]);
+  const warehouseErfEntries = batchOnly ? exactErfEntries.metaEntries : warehouseErfsReady ? warehouseAll.erfs : null;
   // The warehouse rebuilds geoLibrary whenever its meters, premises or transactions change, but the ERF entries in
   // it only change with the ERF pack (all.erfs). The layer follows all.erfs, so 400 ERF boundaries are not redrawn
   // on every meter update.
   const warehouseGeoRef = useRef(null);
-  warehouseGeoRef.current = warehouseAll?.geoLibrary || null;
-  const warehousePremises =
+  warehouseGeoRef.current = batchOnly ? exactErfEntries.geoEntries : warehouseAll?.geoLibrary || null;
+  const warehousePremises = batchOnly ? (batchAssets?.premises || EMPTY_LIST) :
     batchWardIsActive &&
     Array.isArray(warehouseAll?.prems) &&
     warehouseAll.prems.length > 0
@@ -918,6 +925,7 @@ export default function TargetedBatchMapModal({
     open: Boolean(visible),
     wanted:
       (erfsOn || otherSalesOn) &&
+      !batchOnly &&
       !offline &&
       !layerScopeError &&
       !warehouseErfsReady,
@@ -938,7 +946,7 @@ export default function TargetedBatchMapModal({
     () => (areaErfDocs ? erfEntriesFromDocs(areaErfDocs) : null),
     [areaErfDocs],
   );
-  const erfsReady = warehouseErfsReady || Boolean(areaErfEntries);
+  const erfsReady = batchOnly ? batchAssets?.stream === "LIVE" : warehouseErfsReady || Boolean(areaErfEntries);
   const erfsLoadFailed = !erfsReady && erfAreaLoad.status === "ERROR";
   // A read that reached its limit may have left ERFs out, and not the furthest ones.
   const erfsReadLimited =
@@ -965,7 +973,7 @@ export default function TargetedBatchMapModal({
       }) || EMPTY_ERF_LAYER
     );
   }, [batchShape, warehouseErfEntries, areaErfEntries]);
-  const layerErfs = Array.isArray(erfLayer?.erfs) ? erfLayer.erfs : EMPTY_LIST;
+  const layerErfs = Array.isArray(erfLayer?.erfs) ? erfLayer.erfs.filter((erf) => !batchOnly || batchErfIds.has(erf.id)) : EMPTY_LIST;
   const drawnErfs = erfsOn && !layerScopeError ? layerErfs : EMPTY_LIST;
   const erfPolygons = useMemo(
     () =>
@@ -1034,8 +1042,8 @@ export default function TargetedBatchMapModal({
       return EMPTY_LIST;
     }
     const found = premisesInArea({ shape: batchShape, premises: premisesSource });
-    return Array.isArray(found) ? found : EMPTY_LIST;
-  }, [visible, premisesOn, batchShape, premisesSource]);
+    return Array.isArray(found) ? found.filter((p) => !batchOnly || batchPremiseIds.has(p.id)) : EMPTY_LIST;
+  }, [visible, premisesOn, batchShape, premisesSource, batchOnly, batchPremiseIds]);
   const drawnPremises = useMemo(
     () =>
       premisesOn && !layerScopeError
@@ -1203,7 +1211,7 @@ export default function TargetedBatchMapModal({
     setOpeningSettled(false);
     // TB-R051 (1.3.81): every opening starts with ERFs, Premises and Other Sales meters off, and the
     // Normal map: only the batch's own Sales meters are drawn until the worker asks for more.
-    setErfsOn(false);
+    setErfsOn(batchOnly);
     setPremisesOn(false);
     setOtherSalesOn(false);
     setMapType("standard");
@@ -1211,7 +1219,7 @@ export default function TargetedBatchMapModal({
     locateRequestRef.current += 1;
     locatingRef.current = false;
     setLocating(false);
-  }, [visible, bucketId]);
+  }, [visible, bucketId, batchOnly]);
 
   // TB-R051 (1.3.70): how many metres one pixel covers at the zoom the map is at. The region's latitude
   // delta spans the height of the map area, measured in the same pixels the label is drawn in. Until the
@@ -1735,11 +1743,11 @@ export default function TargetedBatchMapModal({
           </View>
 
           <View style={styles.legendRow}>
-            {SOURCE_LEGEND.map(({ source, label }) => (
+            {(batchOnly ? [{ source: "GPS", label: "Field position" }, { source: "ERF", label: "ERF position" }] : SOURCE_LEGEND).map(({ source, label }) => (
               <View key={source} style={styles.legendItem}>
                 <View style={styles.legendLetter}>
                   <Text style={styles.legendLetterText}>
-                    {TARGETED_BATCH_MAP_SOURCE_LABELS[source]}
+                    {batchOnly && source === "GPS" ? "GPS" : TARGETED_BATCH_MAP_SOURCE_LABELS[source]}
                   </Text>
                 </View>
                 <Text style={styles.legendText}>{label}</Text>
@@ -1843,6 +1851,7 @@ export default function TargetedBatchMapModal({
                 longitude={group.longitude}
                 status={group.status}
                 source={group.source}
+                sourceText={batchOnly && group.source === "GPS" ? "GPS" : undefined}
                 count={group.rows?.length || 0}
                 selected={selectedGroup?.key === group.key}
                 erfNo={erfNumbersOnPins.byGroup[group.key] || ""}
@@ -1926,6 +1935,7 @@ export default function TargetedBatchMapModal({
               busy={premisesBusy}
               onPress={togglePremises}
             />
+            {!batchOnly ? (
             <MapLayerButton
               icon="gauge"
               word="Sales"
@@ -1939,6 +1949,7 @@ export default function TargetedBatchMapModal({
               disabled={Boolean(offline)}
               onPress={toggleOtherSales}
             />
+            ) : null}
             {/* TB-R051 (1.3.38): the only centre button; the map's own top-right button stays hidden. */}
             <MapLayerButton
               icon="crosshairs-gps"

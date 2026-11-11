@@ -1,7 +1,8 @@
 import { createApi, fakeBaseQuery } from "@reduxjs/toolkit/query/react";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../firebase";
-import { listenActorTeams, listenWhereIn } from "./firestoreListeners";
+import { listenActorTeams, listenWhereIn, listenDocumentsByIds } from "./firestoreListeners";
+import { followMdBgoAssets } from "../features/bgoBatches/mdBgoAssetStream";
 import { canOpenMdBgoRows } from "../features/bgoBatches/bgoBatchCardModel";
 import { followMdBgoCardRows } from "../features/bgoBatches/bgoBatchCardStream";
 import {
@@ -10,6 +11,7 @@ import {
   createLiveDataStore,
   followActorAllocatedDocuments,
   idsKey,
+  createFollowingSubscription,
 } from "./liveSubscription";
 
 // TB-R052: one live BGO batch list per worker and service provider.
@@ -18,6 +20,8 @@ const bgoBucketKey = (args = {}) =>
 const bgoBucketLiveData = createLiveDataStore();
 const mdBgoRowsLiveData = createLiveDataStore();
 const mdBgoCardLiveData = createLiveDataStore();
+const mdBgoAssetsLiveData = createLiveDataStore();
+const mdBgoAssetsKey = (args = {}) => JSON.stringify([idsKey(args.premiseIds), idsKey(args.meterIds), idsKey(args.erfIds)]);
 
 const BGO_STREAM_LIMIT = 200;
 
@@ -810,6 +814,24 @@ export const bgoApi = createApi({
       keepUnusedDataFor: 0,
     }),
 
+    getMdBgoAssets: builder.query({
+      queryFn(args = {}) { return { data: mdBgoAssetsLiveData.read(mdBgoAssetsKey(args), { premises: [], meters: [], erfs: [], stream: "CONNECTING", error: null }) }; },
+      async onCacheEntryAdded(args = {}, { updateCachedData, cacheDataLoaded, cacheEntryRemoved }) {
+        const store = mdBgoAssetsLiveData.open(mdBgoAssetsKey(args));
+        let stop = () => {};
+        try {
+          await cacheDataLoaded;
+          stop = followMdBgoAssets({ ...args, listen: listenDocumentsByIds,
+            onChange: (data) => updateCachedData(() => store.publish(data)) });
+        } catch (error) {
+          updateCachedData(() => store.publish({ premises: [], meters: [], erfs: [], stream: "ERROR", error: error.message }));
+        }
+        await cacheEntryRemoved; stop(); store.close();
+      },
+      serializeQueryArgs: ({ endpointName, queryArgs }) => `${endpointName}:${mdBgoAssetsKey(queryArgs)}`,
+      keepUnusedDataFor: 0,
+    }),
+
     getMdBgoRows: builder.query({
       queryFn(args = {}) {
         const key = String(args?.bgoBatchId || "").trim();
@@ -822,24 +844,29 @@ export const bgoApi = createApi({
         let stop = () => {};
         try {
           await cacheDataLoaded;
-          stop = listenWhereIn(
+          let rows = [];
+          const follow = createFollowingSubscription({
+            subscribe: (_key, { isCurrent, live, fail }) => listenWhereIn(
             { collectionName: "bgo_rows", field: "bgoBatchId", values: [batchId], label: "MD_BGO_ROWS" },
-            (docs) => {
-              const data = liveData.publish({
-                rows: (docs || []).filter((doc) => {
+            (docs, meta) => {
+              if (!isCurrent()) return;
+              rows = (docs || []).filter((doc) => {
                   const row = doc?.data || doc || {};
                   return String(row?.batchMode || "").toUpperCase() === "BMD" &&
                     String(row?.operationType || "").toUpperCase() === "METER_DISCOVERY";
                 }).map((doc) => ({ id: doc?.id, ...(doc?.data || doc || {}) }))
-                  .sort((a, b) => Number(a?.rowNo || 0) - Number(b?.rowNo || 0)),
-                stream: LIVE_STREAM_STATUS.LIVE,
-              });
-              updateCachedData(() => data);
+                  .sort((a, b) => Number(a?.rowNo || 0) - Number(b?.rowNo || 0));
+              live(meta);
             },
-            (error) => console.error("[MD_BGO_ROWS_STREAM_ERROR]", error),
-          );
+            fail,
+          ),
+            onStatus: (stream, error) => updateCachedData(() => liveData.publish({ rows, stream, error: error?.message || null })),
+          });
+          follow.setKey(batchId);
+          stop = () => follow.stop();
         } catch (error) {
           console.error("[MD_BGO_ROWS_STREAM_SETUP_ERROR]", error);
+          updateCachedData(() => liveData.publish({ rows: [], stream: LIVE_STREAM_STATUS.ERROR, error: error.message }));
         }
         await cacheEntryRemoved;
         stop();
@@ -935,6 +962,7 @@ export const {
   useGetBgoBucketsQuery,
   useGetMdBgoCardRowsQuery,
   useGetMdBgoRowsQuery,
+  useGetMdBgoAssetsQuery,
   useAcceptRejectBgoBatchMutation,
   useReverseBgoBatchAcceptanceMutation,
 } = bgoApi;

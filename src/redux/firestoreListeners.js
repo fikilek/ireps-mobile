@@ -3,6 +3,7 @@
 // Metadata changes are included so an answer from the phone's memory is later confirmed by the server.
 import {
   collection,
+  documentId,
   onSnapshot,
   query,
   where,
@@ -44,4 +45,8 @@ export function listenWhereIn({ collectionName, field, values, label }, onDocs, 
     onDocs,
     onError,
   );
+}
+
+export function listenDocumentsByIds(collectionName, ids, onDocs, onError) {
+  return listenQuery(query(collection(db, collectionName), where(documentId(), "in", ids)), "MD_BGO_LINKED_DOCUMENTS", onDocs, onError);
 }

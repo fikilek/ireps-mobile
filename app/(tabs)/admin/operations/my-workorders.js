@@ -1,3 +1,5 @@
+import { buildMdBgoMobileRows, buildMdBgoCaptureContext, buildMdBgoMapPoints } from "../../../../src/features/bgoBatches/mdBgoRows";
+import { summarizeMdBgoCardRows } from "../../../../src/features/bgoBatches/bgoBatchCardModel";
 import BatchCardPresentation from "../../../../src/components/workOrders/BatchCardPresentation";
 import { getQaDraft } from "../../../../src/features/qa/amendmentQueue";
 import { usePendingQaRecovery } from "../../../../src/features/qa/usePendingQaRecovery";
@@ -80,6 +82,7 @@ import {
   useGetBgoBucketsQuery,
   useGetMdBgoCardRowsQuery,
   useGetMdBgoRowsQuery,
+  useGetMdBgoAssetsQuery,
   useReverseBgoBatchAcceptanceMutation,
 } from "../../../../src/redux/bgoApi";
 import {
@@ -744,24 +747,6 @@ function bumpMdBgoErfActivity(stats, activityMs = 0) {
   }
 }
 
-function sortMdBgoErfWorkItems(a = {}, b = {}) {
-  const aMs = Number(a?.liveStats?.latestActivityMs || 0);
-  const bMs = Number(b?.liveStats?.latestActivityMs || 0);
-
-  if (aMs !== bMs) return bMs - aMs;
-
-  const aNo = Number(String(a?.erfNo || "").replace(/\D/g, ""));
-  const bNo = Number(String(b?.erfNo || "").replace(/\D/g, ""));
-
-  if (Number.isFinite(aNo) && Number.isFinite(bNo) && aNo !== bNo) {
-    return aNo - bNo;
-  }
-
-  return String(a?.erfNo || a?.id || "").localeCompare(
-    String(b?.erfNo || b?.id || ""),
-  );
-}
-
 function buildMdBgoLiveStatsForBucket({
   bucket = {},
   premises = [],
@@ -1013,6 +998,10 @@ export default function WorkorderManagementSystem() {
       nextTargetedBatchStatusFilter(current, tapped),
     );
   }, []);
+  const [mdBgoMapOpen, setMdBgoMapOpen] = useState(false);
+  const [mdBgoSearch, setMdBgoSearch] = useState("");
+  const [mdBgoFilter, setMdBgoFilter] = useState("TOTAL");
+  const [mdBgoOrder, setMdBgoOrder] = useState(DEFAULT_TARGETED_BATCH_ROW_ORDER);
   const [targetedBatchMapOpen, setTargetedBatchMapOpen] = useState(false);
   // TB-R067 (1.3.73): the row whose premise is being chosen. Only the row is kept: the list itself is
   // worked out again from what the phone holds now, so a premise joined a moment ago by somebody else does
@@ -1267,10 +1256,26 @@ export default function WorkorderManagementSystem() {
     [actorUid, actorRole, actorSpId, actorName, selectedBgoBatchId],
   );
   const bgoDetailQuerySkipped = !fieldWorkorderActor || !selectedBgoBatchId;
-  const { data: mdBgoRowsData } = useGetMdBgoRowsQuery(
+  const { currentData: mdBgoRowsData } = useGetMdBgoRowsQuery(
     { bgoBatchId: selectedBgoBatchId },
     { skip: bgoDetailQuerySkipped },
   );
+  const mdBgoAssetIds = useMemo(() => ({
+    premiseIds: [...new Set((mdBgoRowsData?.rows || []).map((r) => r.refs?.premiseId).filter(Boolean))],
+    meterIds: [...new Set((mdBgoRowsData?.rows || []).map((r) => r.refs?.meterId).filter(Boolean))],
+    erfIds: [...new Set((mdBgoRowsData?.rows || []).map((r) => r.erf?.id).filter(Boolean))],
+  }), [mdBgoRowsData?.rows]);
+  const { currentData: mdBgoAssets } = useGetMdBgoAssetsQuery(mdBgoAssetIds, { skip: bgoDetailQuerySkipped || !mdBgoRowsData?.rows?.length });
+  const mdBgoRows = useMemo(() => buildMdBgoMobileRows({ rows: mdBgoRowsData?.rows || [],
+    premises: mdBgoAssets?.premises || [], meters: mdBgoAssets?.meters || [], erfs: mdBgoAssets?.erfs || [],
+  }), [mdBgoRowsData?.rows, mdBgoAssets]);
+  const mdBgoSummary = useMemo(() => mdBgoRowsData?.stream === "LIVE"
+    ? summarizeMdBgoCardRows([selectedBgoBatchId], mdBgoRowsData.rows)[selectedBgoBatchId] : null,
+    [mdBgoRowsData, selectedBgoBatchId]);
+  const visibleMdBgoRows = useMemo(() => sortTargetedBatchRowsByLastWorked(
+    searchTargetedBatchRows(mdBgoRows.filter((row) => mdBgoFilter === "TOTAL" || row.displayStatus === mdBgoFilter), mdBgoSearch), mdBgoOrder,
+  ), [mdBgoRows, mdBgoFilter, mdBgoSearch, mdBgoOrder]);
+  const mdBgoMapPoints = useMemo(() => buildMdBgoMapPoints(mdBgoRows), [mdBgoRows]);
   const {
     data: bgoDetailData,
     isLoading: isLoadingBgoDetailTrns,
@@ -3153,34 +3158,41 @@ export default function WorkorderManagementSystem() {
     } else openAccessForm();
   }
 
-  function handleOpenBmdErf({ bucket, erf }) {
-    if (!bucket?.id || !erf?.id) {
-      Alert.alert(
-        "MD-BGO ERF Not Ready",
-        "This ERF work item is missing its batch or ERF reference.",
-      );
-      return;
-    }
-
-    const warehouseErf = Array.isArray(all?.erfs)
-      ? all.erfs.find((item) => item?.id === erf.id)
-      : null;
-
-    const selectedErf = buildBmdSelectedErf({
-      erf,
-      bucket,
-      warehouseErf,
-    });
-
-    // Keep GeoContext as the single selection authority.
-    // We only select the ERF here; GeoContext handles the cascade that clears
-    // selectedPremise/selectedMeter and bumps flightSignal.
-    updateGeo({
-      selectedErf,
-      lastSelectionType: "ERF",
-    });
-
-    router.push("/(tabs)/premises");
+  function handleMdBgoRowAction({ bucket, row, intent }) {
+    try {
+      const liveBucket = bgoBucketsRef.current.find((b) => b.id === bucket?.id);
+      if (!liveBucket?.permissions?.canViewErfs || !fieldWorkorderActor || actionBusy) throw new Error("This MD BGO batch is no longer available for field work.");
+      const liveRow = mdBgoRows.find((r) => r.id === row.id);
+      if (!liveRow) throw new Error("This MD BGO work row is no longer available.");
+      const context = buildMdBgoCaptureContext(liveBucket, liveRow);
+      const erf = buildBmdSelectedErf({ bucket: liveBucket, erf: { ...liveRow.raw.erf, id: liveRow.erfId, bgoRowId: liveRow.id },
+        warehouseErf: (mdBgoAssets?.erfs || []).find((e) => e.id === liveRow.erfId) });
+      erf.bmdContext = context;
+      const premise = (mdBgoAssets?.premises || []).find((p) => p.id === liveRow.refs?.premiseId) || null;
+      const meter = (mdBgoAssets?.meters || []).find((m) => m.id === liveRow.refs?.meterId) || null;
+      if (liveRow.refs?.premiseId && !premise) throw new Error("Linked premise details are still loading. Please try again once the row data is ready.");
+      if (liveRow.refs?.meterId && !meter) throw new Error("Linked meter details are still loading. Please try again once the row data is ready.");
+      const actions = getTargetedBatchRowActionState(liveRow);
+      if (actions.completed && isTargetedBatchWorkIntent(intent)) throw new Error("This work row is completed. Open its meter to view the registered details.");
+      if ([TARGETED_BATCH_INTENTS.START_METER_DISCOVERY, TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS].includes(intent) && !premise) throw new Error("Capture the premise first, and wait for its server acknowledgement before registering a meter or No Access.");
+      const scope = getBmdBucketScope(liveBucket);
+      updateGeo({ selectedWard: { id: scope.wardPcode, pcode: scope.wardPcode, name: scope.wardName }, selectedErf: erf, selectedPremise: premise, selectedMeter: meter,
+        lastSelectionType: meter ? "METER" : premise ? "PREMISE" : "ERF" });
+      setMdBgoMapOpen(false);
+      if (intent === TARGETED_BATCH_INTENTS.OPEN_ERF) router.push("/(tabs)/erfs");
+      else if (intent === TARGETED_BATCH_INTENTS.CORRECT_AST) router.push({ pathname: "/(tabs)/trns/correct", params: { trnId: liveRow.refs.trnId || liveRow.refs.meterId } });
+      else if (intent === TARGETED_BATCH_INTENTS.CORRECT_PREMISE) router.push({ pathname: "/premises/formPremise", params: { id: liveRow.erfId, premiseId: premise.id } });
+      else if (intent === TARGETED_BATCH_INTENTS.OPEN_AST || intent === TARGETED_BATCH_INTENTS.OPEN_FOUND_METER) router.push("/(tabs)/asts");
+      else if (intent === TARGETED_BATCH_INTENTS.START_METER_DISCOVERY) router.push({ pathname: "/(tabs)/premises/form", params: {
+        premiseId: premise.id, action: JSON.stringify({ access: "yes", meterType: "electricity" }), mdBgoContext: JSON.stringify(context),
+      } });
+      else if (intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS) router.push({ pathname: NO_ACCESS_ROUTE, params: { context: JSON.stringify({
+        trnType: "METER_DISCOVERY", erfId: liveRow.erfId, erfNo: liveRow.erfNo, premiseId: premise.id,
+        premiseAddress: liveRow.addressLine, lmPcode: scope.lmPcode, wardPcode: scope.wardPcode, mdBgoContext: context, returnTo: context.returnTo,
+      }) } });
+      else if (!premise) router.push({ pathname: "/premises/formPremise", params: { id: liveRow.erfId, mdBgoContext: JSON.stringify(context) } });
+      else router.push("/(tabs)/premises");
+    } catch (error) { Alert.alert("MD BGO Row Not Ready", error.message); }
   }
 
   // TB-R051: returns true only when the action is now pending (preparing); false when it was refused.
@@ -3702,11 +3714,17 @@ export default function WorkorderManagementSystem() {
           onBack={backToBuckets}
         />
       ) : showBmdErfWorklist ? (
-        <MdBgoErfWorklist
+        <TargetedBatchRowsWorklist
           bucket={selectedBucket}
-          rows={mdBgoRowsData?.rows || []}
-          onBack={backToBuckets}
-          onOpenErf={handleOpenBmdErf}
+          rows={visibleMdBgoRows} allRows={mdBgoRows} totalRowCount={mdBgoRows.length}
+          summary={mdBgoSummary || {}} batchLabel="MD BGO" qaAvailable={false}
+          isLoading={!mdBgoRowsData || mdBgoRowsData.stream === "CONNECTING"}
+          error={mdBgoRowsData?.error || mdBgoAssets?.error ? { message: mdBgoRowsData?.error || mdBgoAssets?.error } : null}
+          searchText={mdBgoSearch} onSearchTextChange={setMdBgoSearch}
+          statusFilter={mdBgoFilter} onStatusFilterPress={(key) => setMdBgoFilter(nextTargetedBatchStatusFilter(mdBgoFilter, key))}
+          rowOrder={mdBgoOrder} onRowOrderPress={() => setMdBgoOrder(nextTargetedBatchRowOrder(mdBgoOrder))}
+          offline={offline} onOpenMap={() => setMdBgoMapOpen(true)}
+          onBack={backToBuckets} onAction={handleMdBgoRowAction}
         />
       ) : showTargetedBatchRows ? (
         <TargetedBatchRowsWorklist
@@ -3768,6 +3786,13 @@ export default function WorkorderManagementSystem() {
         onSubmit={handleReject}
       />
 
+      <TargetedBatchMapModal
+        visible={mdBgoMapOpen && showBmdErfWorklist} bucket={{ ...selectedBucket, scope: getBmdBucketScope(selectedBucket || {}) }}
+        rows={mdBgoRows} offline={offline} loading={!mdBgoRowsData || mdBgoRowsData.stream === "CONNECTING"}
+        error={mdBgoRowsData?.error || mdBgoAssets?.error} onClose={() => setMdBgoMapOpen(false)}
+        mapPointsOverride={mdBgoMapPoints} batchOnly batchAssets={mdBgoAssets}
+        renderRowCard={(row) => <TargetedBatchRowCard row={row} bucket={selectedBucket} onAction={handleMdBgoRowAction} />}
+      />
       <TargetedBatchMapModal
         visible={targetedBatchMapVisible}
         bucket={selectedBucket}
@@ -4701,150 +4726,10 @@ function getWardShortLabel(scope = {}) {
   return clean;
 }
 
-function MdBgoErfWorklist({ bucket, rows = [], onBack, onOpenErf }) {
-  const liveStats = bucket?.mdBgoLiveStats || {};
-  const counts = bucket?.counts || {};
-  const scope = getBmdBucketScope(bucket);
-  const wardLabel = getWardShortLabel(scope);
-
-  const erfItems = useMemo(() => {
-    return rows
-      .map((row) => {
-        const erf = row?.erf || {};
-        const erfId = cleanId(erf?.id || row?.erfId);
-        const premiseId = cleanId(row?.refs?.premiseId || row?.premise?.id);
-        const erfStats = liveStats?.byErfId?.[erfId] || createEmptyMdBgoErfStats();
-        return {
-          ...erf,
-          id: erfId,
-          erfId,
-          bgoRowId: row?.id,
-          rowNo: row?.rowNo,
-          premiseId: premiseId || null,
-          premiseNo: row?.premise?.premiseNo || null,
-          liveStats: erfStats,
-        };
-      })
-      .sort(sortMdBgoErfWorkItems);
-  }, [bucket, liveStats, rows]);
-
-  const renderErfItem = ({ item }) => (
-    <MdBgoErfCard
-      erf={item}
-      bucket={bucket}
-      onOpenErf={onOpenErf}
-    />
-  );
-
-  return (
-    <View style={styles.detailWrap}>
-      <View style={styles.mdBgoSummaryCard}>
-        <Pressable style={styles.mdBgoBackPill} onPress={onBack}>
-          <MaterialCommunityIcons
-            name="chevron-left"
-            size={18}
-            color="#0f172a"
-          />
-          <Text style={styles.backPillText}>Buckets</Text>
-        </Pressable>
-
-        <Text style={styles.mdBgoWardText} numberOfLines={1}>
-          {wardLabel}
-        </Text>
-
-        <View style={styles.mdBgoCompactStat}>
-          <Text style={styles.mdBgoCompactStatLabel}>ERFs</Text>
-          <Text style={styles.mdBgoCompactStatValue}>{counts.erfs ?? erfItems.length}</Text>
-        </View>
-
-        <View style={styles.mdBgoCompactStat}>
-          <Text style={styles.mdBgoCompactStatLabel}>Premises</Text>
-          <Text style={styles.mdBgoCompactStatValue}>{counts.premises ?? 0}</Text>
-        </View>
-
-        <View style={styles.mdBgoCompactStat}>
-          <Text style={styles.mdBgoCompactStatLabel}>Meters</Text>
-          <Text style={styles.mdBgoCompactStatValue}>{counts.meters ?? 0}</Text>
-        </View>
-      </View>
-
-      <FlashList
-        data={erfItems}
-        keyExtractor={(item, index) => item?.id || String(index)}
-        renderItem={renderErfItem}
-        estimatedItemSize={104}
-        style={styles.scroll}
-        contentContainerStyle={styles.flashListContent}
-        ListEmptyComponent={
-          <View style={styles.emptyListCard}>
-            <MaterialCommunityIcons
-              name="vector-square-remove"
-              size={35}
-              color="#94a3b8"
-            />
-            <Text style={styles.stateTitle}>No ERFs in this worklist</Text>
-            <Text style={styles.stateText}>
-          Waiting for this batch’s live ERF work rows.
-            </Text>
-          </View>
-        }
-      />
-    </View>
-  );
-}
-
-function MdBgoErfCard({ erf, bucket, onOpenErf }) {
-  const liveStats = erf?.liveStats || createEmptyMdBgoErfStats();
-
-  return (
-    <View style={styles.mdBgoErfCard}>
-      <View style={styles.mdBgoErfHeader}>
-        <View style={styles.mdBgoErfIcon}>
-          <MaterialCommunityIcons
-            name="vector-square"
-            size={21}
-            color="#2563eb"
-          />
-        </View>
-
-        <View style={styles.mdBgoErfMain}>
-        <Text style={styles.mdBgoErfTitle}>
-          {erf?.premiseId ? `Premise ${erf?.premiseNo || erf.premiseId} · ` : ""}ERF {erf?.erfNo || "NAv"}
-        </Text>
-          <Text style={styles.mdBgoErfSub} numberOfLines={1}>
-            {erf?.erfType || "NAv"}
-          </Text>
-        </View>
-
-        <View style={styles.mdBgoErfStatusBadge}>
-          <Text style={styles.mdBgoErfStatusText}>NOT STARTED</Text>
-        </View>
-      </View>
-
-      <View style={styles.mdBgoErfFooterRow}>
-        <View style={styles.mdBgoErfMiniStat}>
-          <Text style={styles.mdBgoErfMiniStatLabel}>Premises</Text>
-          <Text style={styles.mdBgoErfMiniStatValue}>{liveStats?.premiseCount ?? 0}</Text>
-        </View>
-
-        <View style={styles.mdBgoErfMiniStat}>
-          <Text style={styles.mdBgoErfMiniStatLabel}>Meters</Text>
-          <Text style={styles.mdBgoErfMiniStatValue}>{liveStats?.meterCount ?? 0}</Text>
-        </View>
-
-        <Pressable
-          style={styles.mdBgoOpenErfBtn}
-          onPress={() => onOpenErf({ bucket, erf })}
-        >
-          <Text style={styles.executeBtnText}>OPEN ERF</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
 function TargetedBatchRowsWorklist({
   bucket,
+  batchLabel = "Targeted Batch",
+  qaAvailable = true,
   rows = [],
   allRows,
   totalRowCount,
@@ -4961,7 +4846,7 @@ function TargetedBatchRowsWorklist({
           const count =
             button.key === TARGETED_BATCH_STATUS_FILTERS.TOTAL
               ? summary?.total ?? allRowCount
-              : summary?.[button.summaryKey] ?? 0;
+              : !qaAvailable && ["qaPass", "qaFail"].includes(button.summaryKey) ? "NAv" : summary?.[button.summaryKey] ?? (qaAvailable ? 0 : "NAv");
 
           return (
             <Pressable
@@ -4971,6 +4856,7 @@ function TargetedBatchRowsWorklist({
                 selected && { borderColor: button.color, backgroundColor: `${button.color}14` },
                 pressed && styles.tbStatusFilterPressed,
               ]}
+              disabled={!qaAvailable && ["qaPass", "qaFail"].includes(button.summaryKey)}
               onPress={() => onStatusFilterPress?.(button.key)}
               accessibilityRole="button"
               accessibilityState={{ selected }}
@@ -5071,7 +4957,7 @@ function TargetedBatchRowsWorklist({
         <View style={styles.detailPreparingCard}>
           <ActivityIndicator size="small" color="#2563eb" />
           <Text style={styles.detailPreparingTitle}>
-            Loading Targeted Batch rows...
+            Loading {batchLabel} rows...
           </Text>
           <Text style={styles.detailPreparingText}>
             Preparing the accepted ERF worklist for premise discovery.
@@ -5085,10 +4971,10 @@ function TargetedBatchRowsWorklist({
             color="#dc2626"
           />
           <Text style={styles.detailPreparingTitle}>
-            Targeted Batch rows failed
+            {batchLabel} rows failed
           </Text>
           <Text style={styles.detailPreparingText}>
-            {error?.message || "Could not load the Targeted Batch rows."}
+            {error?.message || `Could not load the ${batchLabel} rows.`}
           </Text>
         </View>
       ) : (
@@ -5173,7 +5059,7 @@ function TargetedBatchRowCardBase({
   // TB-R051: the status the phone shows (Sales VISIBLE or a completed row is Completed).
   const displayStatus =
     normalizeUpper(row?.displayStatus || row?.executionStatus) || "NOT_STARTED";
-  const tbQa = calculateTbQaFinal(row);
+  const tbQa = row?.sourceModule === "BULK_METER_DISCOVERY" ? "QA NAv" : calculateTbQaFinal(row);
   const isQaFail = tbQa === "QA FAIL";
   const isQaPass = tbQa === "QA PASS";
 
@@ -5232,8 +5118,7 @@ function TargetedBatchRowCardBase({
             </Text>
           ) : null}
           <Text style={styles.mdBgoErfSub} numberOfLines={1}>
-            Account {row?.accountNumber || "NAv"} •{" "}
-            {row?.customerName || "NAv"}
+            {row?.sourceModule === "BULK_METER_DISCOVERY" ? `ERF ${row.erfNo || "NAv"}` : <>Account {row?.accountNumber || "NAv"} • {row?.customerName || "NAv"}</>}
           </Text>
           <Text style={styles.mdBgoErfSub} numberOfLines={2}>
             {row?.addressLine || row?.address || row?.town || "NAv"}
@@ -5270,6 +5155,7 @@ function TargetedBatchRowCardBase({
 // This list must hold every row field the card and getTargetedBatchRowActionState read.
 const TARGETED_BATCH_ROW_CARD_FIELDS = [
   (row) => row?.id,
+  (row) => row?.sourceModule,
   (row) => row?.displayStatus,
   (row) => row?.executionStatus,
   (row) => row?.erfId,

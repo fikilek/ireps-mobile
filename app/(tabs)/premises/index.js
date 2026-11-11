@@ -1,3 +1,4 @@
+import { carryMdBgoContext } from "../../../src/features/bgoBatches/mdBgoRows";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { FlashList } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
@@ -137,6 +138,11 @@ export default function PremisesScreen() {
     (p) => {
       const parentErf = erfById[p?.erfId] || null;
 
+      if (selectedErf?.bmdContext?.erfId === p?.erfId) {
+        updateGeo({ selectedErf: carryMdBgoContext(parentErf || selectedErf, { ...selectedErf.bmdContext, premiseId: p.id }), selectedPremise: p, lastSelectionType: "PREMISE" });
+        openMissionDiscovery({ premiseId: p.id, premise: p });
+        return;
+      }
       // TB-R051: read the batch before the selection changes.
       askDiscoveryPath({
         premise: p,
@@ -151,7 +157,7 @@ export default function PremisesScreen() {
     },
     [
       erfById,
-      selectedErf?.targetedBatchContext,
+      selectedErf,
       updateGeo,
       router,
       openMissionDiscovery,
@@ -162,6 +168,10 @@ export default function PremisesScreen() {
 
   // TB-R051: a new premise on an ERF selected with a batch is checked live first.
   const handleAddPremise = useCallback(() => {
+    if (selectedErf?.bmdContext) {
+      router.push({ pathname: "/premises/formPremise", params: { id: selectedErf.id, mdBgoContext: JSON.stringify(selectedErf.bmdContext) } });
+      return;
+    }
     askPremisePath({
       erf: selectedErf,
       updateGeo,
@@ -193,10 +203,10 @@ export default function PremisesScreen() {
     (p) => {
       router.push({
         pathname: "/premises/formPremise",
-        params: { id: p?.erfId, duplicateId: p?.id },
+        params: { id: p?.erfId, duplicateId: p?.id, ...(selectedErf?.bmdContext?.erfId === p?.erfId ? { mdBgoContext: JSON.stringify(selectedErf.bmdContext) } : {}) },
       });
     },
-    [router],
+    [router, selectedErf?.bmdContext],
   );
 
   // The owner, 3 Oct: "i want these to be btns, a click must route to AstsScreen and select

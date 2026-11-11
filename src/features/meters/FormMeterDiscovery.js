@@ -1,3 +1,4 @@
+import { parseMdBgoContext } from "../bgoBatches/mdBgoRows";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { buildDeviceCaptureTimes } from "./deviceCaptureTimes";
 import * as Location from "expo-location"; // Ensure this is imported at the to
@@ -392,6 +393,7 @@ export default function FormMeterDiscovery() {
     action: actionRaw,
     queueItemId: queueItemIdRaw,
     targetedBatchContext: routeTargetedBatchContext,
+    mdBgoContext: routeMdBgoContext,
   } = useLocalSearchParams();
 
   const queueItemId = Array.isArray(queueItemIdRaw)
@@ -409,8 +411,7 @@ export default function FormMeterDiscovery() {
     [editQueueItem?.payload?.targetedBatchContext, routeTargetedBatchContext],
   );
 
-  const targetedBatchReturnTo =
-    targetedBatchContext?.returnTo || "/(tabs)/premises";
+
 
   const { data: allServiceProviders = [] } = useGetServiceProvidersQuery();
 
@@ -430,6 +431,11 @@ export default function FormMeterDiscovery() {
   const [liveLocation, setLiveLocation] = useState(null);
   const { geoState, updateGeo } = useGeo();
   const activeErf = geoState?.selectedErf;
+  const mdBgoContext = useMemo(() => {
+    try { return parseMdBgoContext(editQueueItem?.payload?.mdBgoContext || editQueueItem?.payload?.origin?.mdBgo || routeMdBgoContext || activeErf?.bmdContext); }
+    catch (error) { return { contextError: error.message }; }
+  }, [editQueueItem?.payload?.mdBgoContext, editQueueItem?.payload?.origin?.mdBgo, routeMdBgoContext, activeErf?.bmdContext]);
+  const targetedBatchReturnTo = mdBgoContext?.returnTo || targetedBatchContext?.returnTo || "/(tabs)/premises";
 
   const [inProgress, setInProgress] = useState(false);
 
@@ -1494,6 +1500,11 @@ export default function FormMeterDiscovery() {
         text: String(values?.fieldComment?.text ?? "").trim(),
       };
 
+      if (mdBgoContext) {
+        if (mdBgoContext.contextError) throw new Error(mdBgoContext.contextError);
+        if (targetedBatchContext) throw new Error("A capture cannot belong to both MD BGO and Targeted Batches.");
+        cleanPayload.mdBgoContext = { ...mdBgoContext, premiseId: gate?.resolvedPremiseId || premise?.id || mdBgoContext.premiseId };
+      }
       if (targetedBatchContext) {
         const missingContextFields =
           getMissingTargetedBatchContextFields(targetedBatchContext);
@@ -2025,7 +2036,7 @@ export default function FormMeterDiscovery() {
             parentTrnType: "METER_DISCOVERY",
             // Where the worker lands when the work that follows is done: back
             // to the batch they came from, or to the meters list.
-            returnTo: targetedBatchContext
+            returnTo: (targetedBatchContext || mdBgoContext)
               ? targetedBatchReturnTo
               : "/(tabs)/asts",
           };
