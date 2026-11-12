@@ -21,7 +21,7 @@ const bgoBucketLiveData = createLiveDataStore();
 const mdBgoRowsLiveData = createLiveDataStore();
 const mdBgoCardLiveData = createLiveDataStore();
 const mdBgoAssetsLiveData = createLiveDataStore();
-const mdBgoAssetsKey = (args = {}) => JSON.stringify([idsKey(args.premiseIds), idsKey(args.meterIds), idsKey(args.erfIds)]);
+const mdBgoAssetsKey = (args = {}) => JSON.stringify([idsKey(args.premiseIds), idsKey(args.meterIds), idsKey(args.trnIds), idsKey(args.erfIds)]);
 
 const BGO_STREAM_LIMIT = 200;
 
@@ -797,6 +797,7 @@ export const bgoApi = createApi({
           await cacheDataLoaded;
           stop = followMdBgoCardRows({
             batchIds: args.batchIds,
+            listenDocuments: listenDocumentsByIds,
             listen: (values, next, error) => listenWhereIn({
               collectionName: "bgo_rows", field: "bgoBatchId", values, label: "MD_BGO_CARD_ROWS",
             }, next, error),
@@ -815,7 +816,7 @@ export const bgoApi = createApi({
     }),
 
     getMdBgoAssets: builder.query({
-      queryFn(args = {}) { return { data: mdBgoAssetsLiveData.read(mdBgoAssetsKey(args), { premises: [], meters: [], erfs: [], stream: "CONNECTING", error: null }) }; },
+      queryFn(args = {}) { return { data: mdBgoAssetsLiveData.read(mdBgoAssetsKey(args), { premises: [], meters: [], trns: [], erfs: [], stream: "CONNECTING", error: null }) }; },
       async onCacheEntryAdded(args = {}, { updateCachedData, cacheDataLoaded, cacheEntryRemoved }) {
         const store = mdBgoAssetsLiveData.open(mdBgoAssetsKey(args));
         let stop = () => {};
@@ -824,7 +825,7 @@ export const bgoApi = createApi({
           stop = followMdBgoAssets({ ...args, listen: listenDocumentsByIds,
             onChange: (data) => updateCachedData(() => store.publish(data)) });
         } catch (error) {
-          updateCachedData(() => store.publish({ premises: [], meters: [], erfs: [], stream: "ERROR", error: error.message }));
+          updateCachedData(() => store.publish({ premises: [], meters: [], trns: [], erfs: [], stream: "ERROR", error: error.message }));
         }
         await cacheEntryRemoved; stop(); store.close();
       },

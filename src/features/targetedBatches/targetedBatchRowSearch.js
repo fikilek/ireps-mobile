@@ -4,6 +4,7 @@
 // Street read the same address, and at the door the worker is given an account number and a name, so those
 // are what they have to search on (owner, 2026-09-24). TB-R042 is untouched: it bars accounts from batching
 // decisions, and finding a row on a list already in the worker's hand is not one.
+import { calculateMdBgoQaFinal } from "../bgoBatches/mdBgoQa.js";
 const PLACEHOLDERS = new Set(["", "-", "nav", "n/a", "na", "null", "undefined"]);
 
 const collapse = (value) => String(value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -93,6 +94,7 @@ export function normalizeComponentQa(raw) {
 
 // TB-R051 / PR-R001: Canonical aggregate TB QA Final from Premise QA and Meter QA
 export function calculateTbQaFinal(row) {
+  if (row?.sourceModule === "BULK_METER_DISCOVERY") return calculateMdBgoQaFinal(row);
   // 1. Direct authoritative persisted TB QA status on the row
   const tbStatus = normalizeComponentQa(
     row?.qa?.tbStatus ||

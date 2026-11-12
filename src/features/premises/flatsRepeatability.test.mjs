@@ -250,7 +250,7 @@ test("preserves successful save navigation regression fix", () => {
   // cannot cross tabs (2026-09-24).
   assert.match(
     formSource,
-    /if \(originatedFromTargetedBatch \|\| isQueueEdit \|\| rowPremiseJoin\) \{[\s\S]{0,240}?returnAfterLifecycleWork\(router, successRoute, "\/\(tabs\)\/premises"\);\s*\} else \{\s*leaveForm\(\);/,
+    /if \(originatedFromTargetedBatch \|\| returnToMdBgoWorkorders \|\| isQueueEdit \|\| rowPremiseJoin\) \{[\s\S]{0,240}?returnAfterLifecycleWork\(router, successRoute, "\/\(tabs\)\/premises"\);\s*\} else \{\s*leaveForm\(\);/,
   );
 
   // And every way out names where it goes, instead of popping a stack that may hold nothing beneath

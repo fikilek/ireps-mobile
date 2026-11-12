@@ -97,6 +97,6 @@ test("switching MD BGO batches uses separate caches and never reads another batc
     assert.deepEqual(h.listeners[1].query.values, ["MD_BGO_SECOND"]);
     assert.deepEqual(h.api.endpoints.getMdBgoRows.select(second)(h.store.getState()).data.rows, []);
     assert.equal(h.api.endpoints.getMdBgoRows.select(first)(h.store.getState()).data.rows[0].id, seed.id);
-    assert.match(screen, /summarizeMdBgoCardRows\(\[selectedMdBgoBatchId\], mdBgoRowsData.rows\)\[selectedMdBgoBatchId\]/);
+    assert.match(screen, /summarizeMdBgoCardRows\(\[selectedMdBgoBatchId\], mdBgoRows\)\[selectedMdBgoBatchId\]/);
   } finally { h.close(); }
 });

@@ -740,10 +740,11 @@ export default function FormPremise() {
   // that tab: back left the tab altogether, the form stayed standing in it, and tapping Premises
   // landed on it again with no way out (owner, 2026-09-27). Naming where to go means there is
   // always a way out, and returnAfterLifecycleWork clears the form off the tab behind it.
+  const returnToMdBgoWorkorders = Boolean(isEdit && params.mdBgoContext);
   const leaveForm = () => {
     returnAfterLifecycleWork(
       router,
-      originatedFromTargetedBatch
+      (originatedFromTargetedBatch || returnToMdBgoWorkorders)
         ? "/(tabs)/admin/operations/my-workorders"
         : "/(tabs)/premises",
       "/(tabs)/premises",
@@ -1638,7 +1639,9 @@ export default function FormPremise() {
           String(targetedBatchLink?.rowId || "").trim() ===
             linkedTargetedBatchContext.rowId,
       );
-      const successRoute = targetedBatchPremiseLinked
+      const successRoute = returnToMdBgoWorkorders
+        ? "/(tabs)/admin/operations/my-workorders"
+        : targetedBatchPremiseLinked
         ? linkedTargetedBatchContext.returnTo ||
           "/(tabs)/admin/operations/my-workorders"
         : "/(tabs)/premises";
@@ -1648,7 +1651,7 @@ export default function FormPremise() {
 
       ToastAndroid.show("Premise saved.", ToastAndroid.LONG);
 
-      if (originatedFromTargetedBatch || isQueueEdit || rowPremiseJoin) {
+      if (originatedFromTargetedBatch || returnToMdBgoWorkorders || isQueueEdit || rowPremiseJoin) {
         // My Work Orders is in the Admin tab and this form is in Premises, and REPLACE cannot cross tabs.
         returnAfterLifecycleWork(router, successRoute, "/(tabs)/premises");
       } else {

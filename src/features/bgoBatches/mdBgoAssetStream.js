@@ -1,8 +1,8 @@
 import { createFollowingSubscription, idsKey, idsFromKey, listenInChunks, combineLiveStatuses } from "../../redux/liveSubscription.js";
 
-export function followMdBgoAssets({ premiseIds = [], meterIds = [], erfIds = [], listen, onChange }) {
-  const data = { premises: [], meters: [], erfs: [] };
-  const groups = [["premises", "premises", premiseIds], ["meters", "asts", meterIds], ["erfs", "ireps_erfs", erfIds]];
+export function followMdBgoAssets({ premiseIds = [], meterIds = [], trnIds = [], erfIds = [], listen, onChange }) {
+  const data = { premises: [], meters: [], trns: [], erfs: [] };
+  const groups = [["premises", "premises", premiseIds], ["meters", "asts", meterIds], ["trns", "trns", trnIds], ["erfs", "ireps_erfs", erfIds]];
   const statuses = Object.fromEntries(groups.map(([key, _collection, ids]) => [key, ids.length ? "CONNECTING" : "LIVE"]));
   const errors = {};
   const publish = () => onChange({ ...data, stream: combineLiveStatuses(Object.values(statuses)), error: Object.values(errors).filter(Boolean).join("; ") || null });

@@ -1,4 +1,5 @@
 import { readErfCentroid } from "../targetedBatches/targetedBatchMapPoints.js";
+import { mdBgoTrnId, mdBgoPremiseQa, mdBgoMeterQa } from "./mdBgoQa.js";
 
 const text = (v) => String(v ?? "").trim();
 export function parseMdBgoContext(raw) {
@@ -31,13 +32,17 @@ export function preserveMdBgoErfSelection(previousErf, nextErf) {
   return carryMdBgoContext(nextErf, previousErf?.bmdContext);
 }
 
-export function buildMdBgoMobileRows({ rows = [], premises = [], meters = [], erfs = [], geoLibrary = {} }) {
+export function buildMdBgoMobileRows({ rows = [], premises = [], meters = [], trns = [], erfs = [], geoLibrary = {}, qaReady = true }) {
   const premiseById = new Map(premises.map((p) => [p.id, p]));
   const meterById = new Map(meters.map((m) => [m.id, m]));
   const erfById = new Map(erfs.map((e) => [e.id, e]));
+  const trnById = new Map(trns.map(t => [t.id, t]));
   return rows.filter((r) => r.workflow?.state !== "CANCELLED").map((row) => {
     const premise = premiseById.get(row.refs?.premiseId);
     const meter = meterById.get(row.refs?.meterId);
+    const trn = trnById.get(mdBgoTrnId(row));
+    const premiseStatus = qaReady ? mdBgoPremiseQa(premise) : "QA NAv";
+    const meterStatus = qaReady ? mdBgoMeterQa(trn) : "QA NAv";
     const erfId = row.erf?.id;
     const erf = erfById.get(erfId);
     const address = premise?.premiseAddress || [premise?.address?.strNo, premise?.address?.strName, premise?.address?.strType].filter(Boolean).join(" ") || row.erf?.address || "NAv";
@@ -49,7 +54,9 @@ export function buildMdBgoMobileRows({ rows = [], premises = [], meters = [], er
     return {
       ...row, raw: row, sourceModule: "BULK_METER_DISCOVERY", erfId,
       erfNo: row.erf?.erfNo || erf?.erfNo || "NAv", refs: { ...row.refs, erfId },
-      premise: premise || row.premise || null, fieldMeter: meter || null,
+      premise: premise ? { ...premise, qaStatus: premiseStatus } : null,
+      fieldMeter: meter ? { ...meter, qaStatus: meterStatus } : null,
+      qaReady, qa: { premiseStatus, meterStatus }, trn: trn || null,
       meterNo: row.meter?.meterNo || meter?.ast?.astData?.astNo || "NAv",
       address, addressLine, propertyName: premise?.propertyType?.name || "",
       displayStatus: state === "COMPLETED" ? "COMPLETED" : state === "IN_PROGRESS" ? "IN_PROGRESS" : "NOT_STARTED",

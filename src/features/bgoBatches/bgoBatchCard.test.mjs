@@ -24,7 +24,7 @@ test("does not invent progress for invalid states or QA from premise capture", (
   assert.equal(counts.qaFail, 0);
 });
 
-test("rows-header QA counters show zero for MD BGO while TB preserves its recorded QA counts", async () => {
+test("rows-header displays live QA counts and explicit unknown values without forcing zero", async () => {
   const screen = await readFile(new URL("../../../app/(tabs)/admin/operations/my-workorders.js", import.meta.url), "utf8");
   const countExpression = screen.match(/const count =\s*button.key === TARGETED_BATCH_STATUS_FILTERS.TOTAL[\s\S]*?;/)?.[0];
   assert.ok(countExpression, "execute the actual rows-header count expression");
@@ -35,7 +35,8 @@ test("rows-header QA counters show zero for MD BGO while TB preserves its record
     assert.equal(count(button, {}, false, 59, { TOTAL: "TOTAL" }), 0);
     assert.equal(count(button, { [key]: 3 }, true, 59, { TOTAL: "TOTAL" }), 3);
   }
-  assert.equal(count({ key: "IN_PROGRESS", summaryKey: "inProgress" }, {}, false, 59, { TOTAL: "TOTAL" }), "NAv");
+  assert.equal(count({ key: "IN_PROGRESS", summaryKey: "inProgress" }, {inProgress:"NAv"}, true, 59, { TOTAL: "TOTAL" }), "NAv");
+  assert.doesNotMatch(screen, /qaAvailable=\{false\}/);
 });
 
 test("excludes non-MD documents and keeps not-started states consistent", () => {

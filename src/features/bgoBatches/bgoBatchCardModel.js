@@ -1,3 +1,4 @@
+import { calculateMdBgoQaFinal } from "./mdBgoQa.js";
 const upper = (value) => String(value || "").trim().toUpperCase();
 
 export function canOpenMdBgoRows(workflowState, releaseState) {
@@ -18,7 +19,10 @@ export function summarizeMdBgoCardRows(batchIds = [], rows = []) {
     if (state === "CANCELLED" || seen.has(row.id)) continue;
     seen.add(row.id);
     counts.total += 1;
-    if (state === "IN_PROGRESS") counts.inProgress += 1;
+    const qa = calculateMdBgoQaFinal(row);
+    if (qa === "QA FAIL") counts.qaFail += 1;
+    else if (qa === "QA PASS") counts.qaPass += 1;
+    else if (state === "IN_PROGRESS") counts.inProgress += 1;
     else if (state === "COMPLETED") counts.completed += 1;
     else if (["READY_FOR_ALLOCATION", "ISSUED", "ALLOCATED"].includes(state)) {
       if (counts.notStarted !== null) counts.notStarted += 1;

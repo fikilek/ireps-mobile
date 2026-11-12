@@ -1269,17 +1269,19 @@ export default function WorkorderManagementSystem() {
   const mdBgoAssetIds = useMemo(() => ({
     premiseIds: [...new Set((mdBgoRowsData?.rows || []).map((r) => r.refs?.premiseId).filter(Boolean))],
     meterIds: [...new Set((mdBgoRowsData?.rows || []).map((r) => r.refs?.meterId).filter(Boolean))],
+    trnIds: [...new Set((mdBgoRowsData?.rows || []).map((r) => r.refs?.trnId || r.meter?.trnId || r.refs?.meterId).filter(Boolean))],
     erfIds: [...new Set((mdBgoRowsData?.rows || []).map((r) => r.erf?.id).filter(Boolean))],
   }), [mdBgoRowsData?.rows]);
   const { currentData: mdBgoAssets } = useGetMdBgoAssetsQuery(mdBgoAssetIds, { skip: mdBgoRowsQuerySkipped || !mdBgoRowsData?.rows?.length });
   const mdBgoRows = useMemo(() => buildMdBgoMobileRows({ rows: mdBgoRowsData?.rows || [],
-    premises: mdBgoAssets?.premises || [], meters: mdBgoAssets?.meters || [], erfs: mdBgoAssets?.erfs || [],
+    premises: mdBgoAssets?.premises || [], meters: mdBgoAssets?.meters || [], trns: mdBgoAssets?.trns || [], erfs: mdBgoAssets?.erfs || [],
+    qaReady: mdBgoAssets?.stream === "LIVE",
   }), [mdBgoRowsData?.rows, mdBgoAssets]);
-  const mdBgoSummary = useMemo(() => mdBgoRowsData?.stream === "LIVE"
-    ? summarizeMdBgoCardRows([selectedMdBgoBatchId], mdBgoRowsData.rows)[selectedMdBgoBatchId] : null,
-    [mdBgoRowsData, selectedMdBgoBatchId]);
+  const mdBgoSummary = useMemo(() => mdBgoRowsData?.stream === "LIVE" && (!mdBgoRows.length || mdBgoAssets?.stream === "LIVE")
+    ? summarizeMdBgoCardRows([selectedMdBgoBatchId], mdBgoRows)[selectedMdBgoBatchId] : null,
+    [mdBgoRowsData, mdBgoAssets?.stream, mdBgoRows, selectedMdBgoBatchId]);
   const visibleMdBgoRows = useMemo(() => sortTargetedBatchRowsByLastWorked(
-    searchTargetedBatchRows(mdBgoRows.filter((row) => mdBgoFilter === "TOTAL" || row.displayStatus === mdBgoFilter), mdBgoSearch), mdBgoOrder,
+    searchTargetedBatchRows(filterTargetedBatchRowsByStatus(mdBgoRows, mdBgoFilter), mdBgoSearch), mdBgoOrder,
   ), [mdBgoRows, mdBgoFilter, mdBgoSearch, mdBgoOrder]);
   const mdBgoMapPoints = useMemo(() => buildMdBgoMapPoints(mdBgoRows), [mdBgoRows]);
   const {
@@ -3179,6 +3181,9 @@ export default function WorkorderManagementSystem() {
       if (liveRow.refs?.premiseId && !premise) throw new Error("Linked premise details are still loading. Please try again once the row data is ready.");
       if (liveRow.refs?.meterId && !meter) throw new Error("Linked meter details are still loading. Please try again once the row data is ready.");
       const actions = getTargetedBatchRowActionState(liveRow);
+      if ([TARGETED_BATCH_INTENTS.OPEN_PREMISE, TARGETED_BATCH_INTENTS.CORRECT_PREMISE].includes(intent)) intent = actions.premise.intent;
+      if ([TARGETED_BATCH_INTENTS.OPEN_AST, TARGETED_BATCH_INTENTS.CORRECT_AST].includes(intent)) intent = actions.ast.intent;
+      if ([TARGETED_BATCH_INTENTS.CORRECT_PREMISE, TARGETED_BATCH_INTENTS.CORRECT_AST].includes(intent) && (mdBgoRowsData?.stream !== "LIVE" || mdBgoAssets?.stream !== "LIVE")) throw new Error("Current QA details are not confirmed. Please reconnect before opening this correction.");
       if (actions.completed && isTargetedBatchWorkIntent(intent)) throw new Error("This work row is completed. Open its meter to view the registered details.");
       if ([TARGETED_BATCH_INTENTS.START_METER_DISCOVERY, TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS].includes(intent) && !premise) throw new Error("Capture the premise first, and wait for its server acknowledgement before registering a meter or No Access.");
       const scope = getBmdBucketScope(liveBucket);
@@ -3187,7 +3192,7 @@ export default function WorkorderManagementSystem() {
       setMdBgoMapOpen(false);
       if (intent === TARGETED_BATCH_INTENTS.OPEN_ERF) router.push("/(tabs)/erfs");
       else if (intent === TARGETED_BATCH_INTENTS.CORRECT_AST) router.push({ pathname: "/(tabs)/trns/correct", params: { trnId: liveRow.refs.trnId || liveRow.refs.meterId } });
-      else if (intent === TARGETED_BATCH_INTENTS.CORRECT_PREMISE) router.push({ pathname: "/premises/formPremise", params: { id: liveRow.erfId, premiseId: premise.id } });
+      else if (intent === TARGETED_BATCH_INTENTS.CORRECT_PREMISE) router.push({ pathname: "/premises/formPremise", params: { id: liveRow.erfId, premiseId: premise.id, mdBgoContext: JSON.stringify(context) } });
       else if (intent === TARGETED_BATCH_INTENTS.OPEN_AST || intent === TARGETED_BATCH_INTENTS.OPEN_FOUND_METER) router.push("/(tabs)/asts");
       else if (intent === TARGETED_BATCH_INTENTS.START_METER_DISCOVERY) router.push({ pathname: "/(tabs)/premises/form", params: {
         premiseId: premise.id, action: JSON.stringify({ access: "yes", meterType: "electricity" }), mdBgoContext: JSON.stringify(context),
@@ -3723,7 +3728,7 @@ export default function WorkorderManagementSystem() {
         <TargetedBatchRowsWorklist
           bucket={selectedBucket}
           rows={visibleMdBgoRows} allRows={mdBgoRows} totalRowCount={mdBgoRows.length}
-          summary={mdBgoSummary || {}} batchLabel="MD BGO" qaAvailable={false}
+          summary={mdBgoSummary || { total: null, notStarted: "NAv", inProgress: "NAv", completed: "NAv", qaPass: "NAv", qaFail: "NAv" }} batchLabel="MD BGO"
           isLoading={!mdBgoRowsData || mdBgoRowsData.stream === "CONNECTING"}
           error={mdBgoRowsData?.error || mdBgoAssets?.error ? { message: mdBgoRowsData?.error || mdBgoAssets?.error } : null}
           searchText={mdBgoSearch} onSearchTextChange={setMdBgoSearch}
@@ -4735,7 +4740,6 @@ function getWardShortLabel(scope = {}) {
 function TargetedBatchRowsWorklist({
   bucket,
   batchLabel = "Targeted Batch",
-  qaAvailable = true,
   rows = [],
   allRows,
   totalRowCount,
@@ -4852,7 +4856,7 @@ function TargetedBatchRowsWorklist({
           const count =
             button.key === TARGETED_BATCH_STATUS_FILTERS.TOTAL
               ? summary?.total ?? allRowCount
-              : !qaAvailable && ["qaPass", "qaFail"].includes(button.summaryKey) ? 0 : summary?.[button.summaryKey] ?? (qaAvailable ? 0 : "NAv");
+              : summary?.[button.summaryKey] ?? 0;
 
           return (
             <Pressable
@@ -4862,7 +4866,6 @@ function TargetedBatchRowsWorklist({
                 selected && { borderColor: button.color, backgroundColor: `${button.color}14` },
                 pressed && styles.tbStatusFilterPressed,
               ]}
-              disabled={!qaAvailable && ["qaPass", "qaFail"].includes(button.summaryKey)}
               onPress={() => onStatusFilterPress?.(button.key)}
               accessibilityRole="button"
               accessibilityState={{ selected }}
@@ -5065,7 +5068,7 @@ function TargetedBatchRowCardBase({
   // TB-R051: the status the phone shows (Sales VISIBLE or a completed row is Completed).
   const displayStatus =
     normalizeUpper(row?.displayStatus || row?.executionStatus) || "NOT_STARTED";
-  const tbQa = row?.sourceModule === "BULK_METER_DISCOVERY" ? "QA NAv" : calculateTbQaFinal(row);
+  const tbQa = calculateTbQaFinal(row);
   const isQaFail = tbQa === "QA FAIL";
   const isQaPass = tbQa === "QA PASS";
 
