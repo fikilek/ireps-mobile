@@ -3893,7 +3893,7 @@ function BucketTypeLanding({
 
       <View style={styles.bucketTypeList}>
         <BucketTypeCard
-          title="ITO"
+          title="Adhoc Trns (Individual)"
           subtitle="Individually issued lifecycle TRNs"
           icon="account-hard-hat-outline"
           count={individualCount}

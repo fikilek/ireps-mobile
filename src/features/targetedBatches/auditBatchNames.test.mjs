@@ -18,7 +18,8 @@ test("actual landing cards use audit names and preserve counts and open actions"
   assert.equal(targeted.props.count, 3); assert.equal(sweep.props.count, 1);
   targeted.props.onPress(); assert.equal(opened, "TBB");
   sweep.props.onPress(); assert.equal(opened, "BGOB");
-  assert.ok(cards.some(c => c.props.title === "ITO"));
+  const individual = cards.find(c => c.props.title === "Adhoc Trns (Individual)");
+  assert.ok(individual); individual.props.onPress(); assert.equal(opened, "INDVG");
 });
 test("batch-list headings match their landing card audit names", () => {
   assert.match(source, /styles.sectionTitle}>Targeted Audit Batches<\/Text>/);
