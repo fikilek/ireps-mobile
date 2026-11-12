@@ -170,9 +170,11 @@ test("no marker keeps drawing pictures for longer than it did before", () => {
   assert.doesNotMatch(modalSource, /\n\s+tracksViewChanges\n/, "no marker tracks for good");
 });
 
-test("the map opens on the Sales meters alone (1.3.81)", () => {
+test("TB opens on Sales meters; exact BGO batch mode starts its own ERFs", () => {
   // The ERF boundaries and numbers are the slow part of the map; the worker asks for them with the button.
-  assert.match(modalSource, /const \[erfsOn, setErfsOn\] = useState\(false\);/);
+  assert.match(modalSource, /batchOnly = false/);
+  assert.match(modalSource, /const \[erfsOn, setErfsOn\] = useState\(batchOnly\);/);
+  assert.match(modalSource, /setErfsOn\(batchOnly\)/);
   assert.doesNotMatch(modalSource, /setErfsOn\(true\)/);
 });
 
