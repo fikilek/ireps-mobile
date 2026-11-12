@@ -110,7 +110,7 @@ export default function PremisesScreen() {
     (p) => {
       router.push({
         pathname: "/premises/formPremise",
-        params: { id: p?.erfId, premiseId: p?.id },
+        params: { returnTo: "/(tabs)/premises", id: p?.erfId, premiseId: p?.id },
       });
     },
     [router],
@@ -169,7 +169,7 @@ export default function PremisesScreen() {
   // TB-R051: a new premise on an ERF selected with a batch is checked live first.
   const handleAddPremise = useCallback(() => {
     if (selectedErf?.bmdContext) {
-      router.push({ pathname: "/premises/formPremise", params: { id: selectedErf.id, mdBgoContext: JSON.stringify(selectedErf.bmdContext) } });
+      router.push({ pathname: "/premises/formPremise", params: { returnTo: "/(tabs)/premises", id: selectedErf.id, mdBgoContext: JSON.stringify(selectedErf.bmdContext) } });
       return;
     }
     askPremisePath({
@@ -180,7 +180,7 @@ export default function PremisesScreen() {
       openPremiseForm: ({ erfId, targetedBatchContext }) => {
         router.push({
           pathname: "/premises/formPremise",
-          params: {
+          params: { returnTo: "/(tabs)/premises",
             id: erfId,
             ...(targetedBatchContext ? { targetedBatchContext } : {}),
           },
@@ -203,7 +203,7 @@ export default function PremisesScreen() {
     (p) => {
       router.push({
         pathname: "/premises/formPremise",
-        params: { id: p?.erfId, duplicateId: p?.id, ...(selectedErf?.bmdContext?.erfId === p?.erfId ? { mdBgoContext: JSON.stringify(selectedErf.bmdContext) } : {}) },
+        params: { returnTo: "/(tabs)/premises", id: p?.erfId, duplicateId: p?.id, ...(selectedErf?.bmdContext?.erfId === p?.erfId ? { mdBgoContext: JSON.stringify(selectedErf.bmdContext) } : {}) },
       });
     },
     [router, selectedErf?.bmdContext],

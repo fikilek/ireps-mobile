@@ -125,7 +125,7 @@ test("actual memo comparator sees QA changes, and premise correction retains its
   assert.match(source, /premiseId: premise.id, mdBgoContext: JSON.stringify\(context\)/);
   const form = await readFile(new URL("../premises/formPremise.js", import.meta.url), "utf8");
   assert.match(form, /const returnToMdBgoWorkorders = Boolean\(isEdit && params.mdBgoContext\)/);
-  assert.match(form, /const successRoute = returnToMdBgoWorkorders\s*\? "\/\(tabs\)\/admin\/operations\/my-workorders"/);
+  assert.match(form, /const successRoute = premiseFormReturnRoute\(params.returnTo/);
 });
 
 test("actual BGO handler routes the linked failed TRN/premise and never starts a new capture", async () => {

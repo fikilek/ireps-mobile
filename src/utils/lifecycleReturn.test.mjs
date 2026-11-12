@@ -10,6 +10,7 @@ const fakeRouter = () => {
     navigate: (href) => moves.push(["navigate", href]),
     push: (href) => moves.push(["push", href]),
     dismissAll: () => moves.push(["dismissAll"]),
+    dismissTo: href => moves.push(["dismissTo", href]),
   };
 };
 
@@ -26,7 +27,7 @@ test("a route in another tab is navigated to: REPLACE cannot cross tabs", () => 
   assert.equal(returnAfterLifecycleWork(router, "/(tabs)/premises"), "navigate");
   assert.equal(returnAfterLifecycleWork(router, "/(tabs)/admin/storage/forms-submission-queue"), "navigate");
   // Emptying the tab being left is not a move; the moves themselves must all be navigate.
-  const moves = router.moves.map(([move]) => move).filter((move) => move !== "dismissAll");
+  const moves = router.moves.map(([move]) => move).filter((move) => move !== "dismissAll" && move !== "dismissTo");
   assert.deepEqual(moves, ["navigate", "navigate", "navigate"]);
 });
 
@@ -58,7 +59,7 @@ test("crossing tabs empties the tab being left, so no finished form is waiting t
   returnAfterLifecycleWork(router, "/(tabs)/admin/operations/my-workorders", "/(tabs)/premises");
 
   assert.deepEqual(router.moves, [
-    ["dismissAll"],
+    ["dismissTo", "/(tabs)/premises"],
     ["navigate", "/(tabs)/admin/operations/my-workorders"],
   ], "the tab must be emptied before the move, not after it");
 });
@@ -73,7 +74,7 @@ test("staying in the tab does not empty it, because replace already did", () => 
 
 test("a router too old to empty a tab still moves the worker", () => {
   const router = fakeRouter();
-  delete router.dismissAll;
+  delete router.dismissTo;
 
   assert.equal(
     returnAfterLifecycleWork(router, "/(tabs)/admin/operations/my-workorders", "/(tabs)/premises"),

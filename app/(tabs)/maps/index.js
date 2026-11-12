@@ -425,7 +425,7 @@ export default function MapsScreen() {
       openPremiseForm: ({ erfId, targetedBatchContext }) => {
         router.push({
           pathname: "/(tabs)/premises/formPremise",
-          params: {
+          params: { returnTo: "/(tabs)/maps",
             id: erfId,
             ...(targetedBatchContext ? { targetedBatchContext } : {}),
           },

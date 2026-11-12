@@ -49,14 +49,14 @@ export function returnAfterLifecycleWork(router, href, tab = LIFECYCLE_TAB) {
 
   const move = isSameTabRoute(href, tab) ? "replace" : "navigate";
 
-  // Crossing tabs, navigate is the only move that works - but unlike replace it leaves the
-  // finished form standing in the tab being left. The worker came back to Premises later and
-  // found New Premise still open, could not get out of it, and cleared it only to meet it
-  // again (owner, 2026-09-27). So the tab being left is emptied first.
-  if (move === "navigate" && !dismissFormStack(router)) {
-    // A form opened across tabs can be the stack's only screen. It cannot be
-    // popped, so replace it with this tab's home before switching tabs.
-    router?.replace?.(tab);
+  // Expo's dismissAll dispatches an untargeted POP_TO_TOP from the root.
+  // canDismiss may be true because sign-in is beneath the tabs, even when
+  // this form is its tab's only screen. Popping then reveals sign-in and
+  // removes the tab navigator that the queued return was targeting.
+  // An explicit destination targets the source tab's own stack instead.
+  if (move === "navigate") {
+    if (typeof router?.dismissTo === "function") router.dismissTo(tab);
+    else router?.replace?.(tab);
   }
 
   router?.[move]?.(href);

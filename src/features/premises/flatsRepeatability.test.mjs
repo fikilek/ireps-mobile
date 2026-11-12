@@ -248,10 +248,8 @@ test("preserves successful save navigation regression fix", () => {
   // A premise that came from a batch goes back to where it came from; anything else leaves the form.
   // The return is made with returnAfterLifecycleWork because My Work Orders is in another tab and REPLACE
   // cannot cross tabs (2026-09-24).
-  assert.match(
-    formSource,
-    /if \(originatedFromTargetedBatch \|\| returnToMdBgoWorkorders \|\| isQueueEdit \|\| rowPremiseJoin\) \{[\s\S]{0,240}?returnAfterLifecycleWork\(router, successRoute, "\/\(tabs\)\/premises"\);\s*\} else \{\s*leaveForm\(\);/,
-  );
+  assert.match(formSource, /returnAfterPremiseForm\(router, successRoute\)/);
+  assert.match(formSource, /const successRoute = premiseFormReturnRoute\(params.returnTo/);
 
   // And every way out names where it goes, instead of popping a stack that may hold nothing beneath
   // it. A batch row pushes this form straight into the Premises tab, where it can be the only

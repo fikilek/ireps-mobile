@@ -441,7 +441,7 @@ export default function PremiseOfflineStorageScreen() {
 
     router.push({
       pathname: "/(tabs)/premises/formPremise",
-      params: {
+      params: { returnTo: "/(tabs)/admin/storage/premise-offline-storage",
         id: erfId,
         queueItemId,
       },

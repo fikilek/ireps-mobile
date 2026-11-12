@@ -58,7 +58,7 @@ import {
 import { FORM_TEXT } from "../../theme/formColors";
 // TB-R067 (1.3.73): Commercial and Industrial are asked for a business name, not a unit name.
 import { premiseNameLabel } from "../targetedBatches/rowPremiseChoice";
-import { returnAfterLifecycleWork } from "../../utils/lifecycleReturn";
+import { premiseFormReturnRoute, returnAfterPremiseForm } from "../../utils/premiseFormReturn";
 
 const streetTypeOptions = [
   "Select...",
@@ -742,13 +742,10 @@ export default function FormPremise() {
   // always a way out, and returnAfterLifecycleWork clears the form off the tab behind it.
   const returnToMdBgoWorkorders = Boolean(isEdit && params.mdBgoContext);
   const leaveForm = () => {
-    returnAfterLifecycleWork(
-      router,
-      (originatedFromTargetedBatch || returnToMdBgoWorkorders)
-        ? "/(tabs)/admin/operations/my-workorders"
-        : "/(tabs)/premises",
-      "/(tabs)/premises",
-    );
+    returnAfterPremiseForm(router, premiseFormReturnRoute(params.returnTo, {
+      fromWorkorder: originatedFromTargetedBatch || returnToMdBgoWorkorders,
+      fromQueue: isQueueEdit,
+    }));
   };
 
   const targetedBatchContext = useMemo(() => {
@@ -1639,24 +1636,17 @@ export default function FormPremise() {
           String(targetedBatchLink?.rowId || "").trim() ===
             linkedTargetedBatchContext.rowId,
       );
-      const successRoute = returnToMdBgoWorkorders
-        ? "/(tabs)/admin/operations/my-workorders"
-        : targetedBatchPremiseLinked
-        ? linkedTargetedBatchContext.returnTo ||
-          "/(tabs)/admin/operations/my-workorders"
-        : "/(tabs)/premises";
+      const successRoute = premiseFormReturnRoute(params.returnTo, {
+        fromWorkorder: returnToMdBgoWorkorders || targetedBatchPremiseLinked,
+        fromQueue: isQueueEdit,
+      });
 
       updateGeo({ selectedPremise: null, lastSelectionType: "PREMISE" });
       // logSubmitTime("geo updated");
 
       ToastAndroid.show("Premise saved.", ToastAndroid.LONG);
 
-      if (originatedFromTargetedBatch || returnToMdBgoWorkorders || isQueueEdit || rowPremiseJoin) {
-        // My Work Orders is in the Admin tab and this form is in Premises, and REPLACE cannot cross tabs.
-        returnAfterLifecycleWork(router, successRoute, "/(tabs)/premises");
-      } else {
-        leaveForm();
-      }
+      returnAfterPremiseForm(router, successRoute);
       // logSubmitTime("SUCCESS END");
     } catch (err) {
       // logSubmitTime("ERROR END");

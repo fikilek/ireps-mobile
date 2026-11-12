@@ -1028,7 +1028,7 @@ export default function WorkorderManagementSystem() {
 
       router.push({
         pathname: "/premises/formPremise",
-        params: {
+        params: { returnTo: "/(tabs)/admin/operations/my-workorders",
           id: cleanId(row?.erfId || row?.refs?.erfId),
           ...params,
           targetedBatchContext: context,
@@ -3192,7 +3192,7 @@ export default function WorkorderManagementSystem() {
       setMdBgoMapOpen(false);
       if (intent === TARGETED_BATCH_INTENTS.OPEN_ERF) router.push("/(tabs)/erfs");
       else if (intent === TARGETED_BATCH_INTENTS.CORRECT_AST) router.push({ pathname: "/(tabs)/trns/correct", params: { trnId: liveRow.refs.trnId || liveRow.refs.meterId } });
-      else if (intent === TARGETED_BATCH_INTENTS.CORRECT_PREMISE) router.push({ pathname: "/premises/formPremise", params: { id: liveRow.erfId, premiseId: premise.id, mdBgoContext: JSON.stringify(context) } });
+      else if (intent === TARGETED_BATCH_INTENTS.CORRECT_PREMISE) router.push({ pathname: "/premises/formPremise", params: { returnTo: "/(tabs)/admin/operations/my-workorders", id: liveRow.erfId, premiseId: premise.id, mdBgoContext: JSON.stringify(context) } });
       else if (intent === TARGETED_BATCH_INTENTS.OPEN_AST || intent === TARGETED_BATCH_INTENTS.OPEN_FOUND_METER) router.push("/(tabs)/asts");
       else if (intent === TARGETED_BATCH_INTENTS.START_METER_DISCOVERY) router.push({ pathname: "/(tabs)/premises/form", params: {
         premiseId: premise.id, action: JSON.stringify({ access: "yes", meterType: "electricity" }), mdBgoContext: JSON.stringify(context),
@@ -3201,7 +3201,7 @@ export default function WorkorderManagementSystem() {
         trnType: "METER_DISCOVERY", erfId: liveRow.erfId, erfNo: liveRow.erfNo, premiseId: premise.id,
         premiseAddress: liveRow.addressLine, lmPcode: scope.lmPcode, wardPcode: scope.wardPcode, mdBgoContext: context, returnTo: context.returnTo,
       }) } });
-      else if (!premise) router.push({ pathname: "/premises/formPremise", params: { id: liveRow.erfId, mdBgoContext: JSON.stringify(context) } });
+      else if (!premise) router.push({ pathname: "/premises/formPremise", params: { returnTo: "/(tabs)/admin/operations/my-workorders", id: liveRow.erfId, mdBgoContext: JSON.stringify(context) } });
       else router.push("/(tabs)/premises");
     } catch (error) { Alert.alert("MD BGO Row Not Ready", error.message); }
   }
