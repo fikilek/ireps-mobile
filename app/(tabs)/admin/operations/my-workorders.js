@@ -3905,7 +3905,7 @@ function BucketTypeLanding({
         />
 
         <BucketTypeCard
-          title="Targeted Batches"
+          title="Targeted Audit Batches"
           subtitle="Allocated sales-targeted field work"
           icon="target-account"
           count={targetedCount}
@@ -3917,7 +3917,7 @@ function BucketTypeLanding({
         />
 
         <BucketTypeCard
-          title="BGO Batches"
+          title="Sweep Audit Batches"
           subtitle="Bulk geofence originated work"
           icon="map-marker-radius-outline"
           count={bgoCount}
@@ -4056,7 +4056,7 @@ function TargetedBatchBucketLanding({
       </Pressable>
 
       <Text style={[styles.sectionEyebrow, { marginTop: 10 }]}>Targeted Work</Text>
-      <Text style={styles.sectionTitle}>Targeted Batches</Text>
+      <Text style={styles.sectionTitle}>Targeted Audit Batches</Text>
 
       <View style={styles.bucketList}>
         {isLoading ? (
@@ -4138,7 +4138,7 @@ function BgoBucketLanding({
       </Pressable>
 
       <Text style={[styles.sectionEyebrow, { marginTop: 10 }]}>Bulk Work</Text>
-      <Text style={styles.sectionTitle}>BGO Batches</Text>
+      <Text style={styles.sectionTitle}>Sweep Audit Batches</Text>
 
       <View style={styles.bucketList}>
         {isLoading ? (
