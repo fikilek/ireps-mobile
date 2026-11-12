@@ -1,4 +1,4 @@
-// MD-BGO-R036: component QA is immediate; final QA follows completed fieldwork.
+// Current component outcomes determine final QA immediately.
 export const MD_BGO_QA_NAV = "QA NAv";
 const norm = value => String(value || "").trim().toUpperCase().replace(/_/g, " ");
 
@@ -18,7 +18,7 @@ export function mdBgoMeterQa(trn) {
 }
 
 export function calculateMdBgoQaFinal(row = {}) {
-  if (row.qaReady === false || norm(row.executionStatus || row.displayStatus || row.workflow?.state) !== "COMPLETED") return MD_BGO_QA_NAV;
+  if (row.qaReady === false) return MD_BGO_QA_NAV;
   const p = norm(row.qa?.premiseStatus), m = norm(row.qa?.meterStatus);
   if (p === "QA FAIL" || m === "QA FAIL") return "QA FAIL";
   if (p === "QA PASS" && m === "QA PASS") return "QA PASS";

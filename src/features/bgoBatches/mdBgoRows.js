@@ -1,3 +1,4 @@
+import { toWorkedMillis } from "../targetedBatches/rowLastWorked.js";
 import { readErfCentroid } from "../targetedBatches/targetedBatchMapPoints.js";
 import { mdBgoTrnId, mdBgoPremiseQa, mdBgoMeterQa } from "./mdBgoQa.js";
 
@@ -63,7 +64,7 @@ export function buildMdBgoMobileRows({ rows = [], premises = [], meters = [], tr
       executionStatus: state === "COMPLETED" ? "COMPLETED" : state === "IN_PROGRESS" ? "IN_PROGRESS" : "NOT_STARTED",
       noAccessCount: row.noAccessCount ?? row.refs?.noAccessTrnIds?.length ?? 0,
       latestActivityAt: row.metadata?.updatedAt || row.metadata?.createdAt || null,
-      lastWorkedAt: state === "IN_PROGRESS" || state === "COMPLETED" ? Date.parse(row.metadata?.updatedAt) || 0 : 0,
+      lastWorkedAt: Math.max(...[row.metadata?.updatedAt, premise?.metadata?.updatedAt, premise?.qa?.reviewedAt, trn?.metadata?.updatedAt, trn?.qa?.reviewedAt].map(toWorkedMillis)),
       mapPosition: position,
       mapSource: fieldPosition ? "GPS" : "ERF",
     };

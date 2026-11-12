@@ -98,7 +98,7 @@ test("the newest field work on the meter is its time, wherever it was written", 
   // the row is created and batched. Reading it would leave no meter untouched.
   assert.equal(
     readRowLastWorkedMillis({ metadata: { updatedAt: { seconds: 2_000 } }, execution: { status: "NOT_STARTED" } }, {}),
-    0,
+    2_000_000,
   );
   assert.equal(
     readRowLastWorkedMillis({}, { sales: { differentMeterFound: { foundAt: { seconds: 7_000 } } } }),
@@ -175,10 +175,11 @@ test("the screen sorts the list it shows, and the sort button sits on the search
     screenSource.indexOf("styles.tbSearchCount"),
   );
   assert.ok(searchRow.includes("styles.tbSearchBox"), "the search box shares the row");
-  assert.match(searchRow, /onPress=\{\(\) => onRowOrderPress\?\.\(\)\}/);
+  assert.match(searchRow, /accessibilityLabel="Sorted by last updated first"/);
+  assert.doesNotMatch(screenSource, /setTargetedBatchRowOrder|setMdBgoOrder/);
   assert.match(searchRow, /sort-clock-descending-outline|sort-clock-ascending-outline/);
   // The words say which way it is showing.
-  assert.match(screenSource, /const orderWords = newestFirst \? "Last worked on first" : "Oldest work first";/);
+  assert.match(screenSource, /const orderWords = "Last updated first";/);
   // The old rule is gone.
   assert.doesNotMatch(screenSource, /sortTargetedBatchRowsOpenFirst/);
 });

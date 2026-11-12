@@ -29,9 +29,9 @@ const ids = (list) => list.map((row) => row.id);
 
 test("TB-R051 / PR-R001: 8 canonical cases governing aggregate TB QA Final", () => {
   // Before COMPLETED, unreviewed is QA NAv, but component failure immediately yields QA FAIL
-  assert.equal(calculateTbQaFinal({ displayStatus: "NOT_STARTED", qa: { premiseStatus: "QA_PASS", meterStatus: "QA_PASS" } }), "QA NAv");
+  assert.equal(calculateTbQaFinal({ displayStatus: "NOT_STARTED", qa: { premiseStatus: "QA_PASS", meterStatus: "QA_PASS" } }), "QA PASS");
   assert.equal(calculateTbQaFinal({ displayStatus: "IN_PROGRESS", qa: { premiseStatus: "QA_FAIL", meterStatus: "QA_FAIL" } }), "QA FAIL");
-  assert.equal(calculateTbQaFinal({ displayStatus: "IN_PROGRESS", qa: { tbStatus: "QA_FAIL" } }), "QA FAIL");
+  assert.equal(calculateTbQaFinal({ displayStatus: "IN_PROGRESS", qa: { tbStatus: "QA_FAIL" } }), "QA NAv");
 
   // Case 3: Completed with both QA PENDING -> QA PENDING
   assert.equal(calculateTbQaFinal({ displayStatus: "COMPLETED", qa: { premiseStatus: "QA_PENDING", meterStatus: "QA_PENDING" } }), "QA PENDING");
@@ -121,7 +121,7 @@ test("TB-R051 1.3.92 the header: six filters Total, Not Started, In Progress, Co
 test("TB-R051 1.3.42 the list follows the filter; another batch, or an action from the map, starts on Total", () => {
   assert.match(screenSource, /filterTargetedBatchRowsByStatus\(targetedBatchRows, targetedBatchStatusFilter\),\s*targetedBatchSearchText,/);
   // TB-R051 (1.3.68): another batch also opens on the order a batch opens on.
-  assert.match(screenSource, /setTargetedBatchSearchText\(""\);\s*setTargetedBatchStatusFilter\(TARGETED_BATCH_STATUS_FILTERS\.TOTAL\);\s*setTargetedBatchRowOrder\(DEFAULT_TARGETED_BATCH_ROW_ORDER\);\s*setTargetedBatchMapOpen\(false\);[\s\S]{0,200}?setRowPremiseChoice\(null\);\s*\}, \[selectedTargetedBatchId\]\);/);
+  assert.match(screenSource, /setTargetedBatchSearchText\(""\);\s*setTargetedBatchStatusFilter\(TARGETED_BATCH_STATUS_FILTERS\.TOTAL\);\s*setTargetedBatchMapOpen\(false\);[\s\S]{0,200}?setRowPremiseChoice\(null\);\s*\}, \[selectedTargetedBatchId\]\);/);
   const mapAction = screenSource.slice(screenSource.indexOf("const handleTargetedBatchMapRowAction"), screenSource.indexOf("const pendingTargetedBatchRowId"));
   assert.match(mapAction, /setTargetedBatchStatusFilter\(TARGETED_BATCH_STATUS_FILTERS\.TOTAL\);/);
   // The batch map always gets every meter.

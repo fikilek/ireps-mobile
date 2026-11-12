@@ -22,19 +22,19 @@ test("current premise/TRN badges activate existing correction actions, ignoring 
   assert.equal(result.displayStatus, "COMPLETED");
 });
 
-test("component failure is immediately correctable before completion; final and counts remain In Progress", () => {
+test("component failure is immediately correctable before completion; final and counts immediately show QA FAIL", () => {
   const [result] = buildMdBgoMobileRows({ rows: [row("R", "IN_PROGRESS")], ...data, premises: [{ id: "P", qa: { status: "QA_FAIL" } }] });
   const actions = getTargetedBatchRowActionState(result);
   assert.equal(actions.premise.helperText, "QA FAIL");
   assert.equal(actions.premise.intent, TARGETED_BATCH_INTENTS.CORRECT_PREMISE);
-  assert.equal(calculateTbQaFinal(result), "QA NAv");
-  assert.equal(filterTargetedBatchRowsByStatus([result], "IN_PROGRESS").length, 1);
-  assert.equal(filterTargetedBatchRowsByStatus([result], "QA_FAIL").length, 0);
-  assert.deepEqual(summarizeMdBgoCardRows(["B"], [result]).B, { total: 1, notStarted: 0, inProgress: 1, completed: 0, qaPass: 0, qaFail: 0 });
+  assert.equal(calculateTbQaFinal(result), "QA FAIL");
+  assert.equal(filterTargetedBatchRowsByStatus([result], "IN_PROGRESS").length, 0);
+  assert.equal(filterTargetedBatchRowsByStatus([result], "QA_FAIL").length, 1);
+  assert.deepEqual(summarizeMdBgoCardRows(["B"], [result]).B, { total: 1, notStarted: 0, inProgress: 0, completed: 0, qaPass: 0, qaFail: 1 });
 });
 
-test("completion gate and all final combinations preserve pending/missing semantics; No Access is excluded", () => {
-  for (const state of ["ISSUED", "IN_PROGRESS"]) assert.equal(calculateMdBgoQaFinal({ workflow: { state }, qa: { premiseStatus: "QA_FAIL", meterStatus: "QA_FAIL" } }), "QA NAv");
+test("all execution states and final combinations preserve pending/missing semantics; No Access is excluded", () => {
+  for (const state of ["ISSUED", "IN_PROGRESS"]) assert.equal(calculateMdBgoQaFinal({ workflow: { state }, qa: { premiseStatus: "QA_FAIL", meterStatus: "QA_FAIL" } }), "QA FAIL");
   for (const [p, m, expected] of [["QA_FAIL", "QA_NAv", "QA FAIL"], ["QA_PASS", "QA_FAIL", "QA FAIL"], ["QA_PASS", "QA_PASS", "QA PASS"], ["QA_PENDING", "QA_PENDING", "QA PENDING"], ["QA_PASS", "QA_PENDING", "QA PENDING"], ["QA_PENDING", "QA_PASS", "QA PENDING"], ["QA_PASS", "QA_NAv", "QA NAv"], ["QA_NAv", "QA_PASS", "QA NAv"]]) {
     assert.equal(calculateMdBgoQaFinal({ workflow: { state: "COMPLETED" }, qa: { premiseStatus: p, meterStatus: m, noAccessStatus: "QA_FAIL", tbStatus: "QA_PASS" } }), expected);
   }
@@ -106,7 +106,7 @@ test("actual shared mobile row card renders QA and invokes the failed component 
     let action;
     const tree = Card({ row: result, bucket: { id: "B" }, onAction: value => { action = value; } });
     const all = nodes(tree);
-    assert.ok(all.includes(state === "COMPLETED" ? "QA FAIL" : "IN PROGRESS"));
+    assert.ok(all.includes("QA FAIL"));
     const ast = all.find(node => node?.type === "ActionTile" && node.props.label === "AST");
     assert.equal(ast.props.helperText, "QA FAIL");
     ast.props.onPress(); assert.equal(action.intent, TARGETED_BATCH_INTENTS.CORRECT_AST);

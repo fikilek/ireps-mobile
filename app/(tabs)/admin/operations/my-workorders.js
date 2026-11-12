@@ -61,7 +61,6 @@ import {
   nextTargetedBatchStatusFilter,
   searchTargetedBatchRows,
   sortTargetedBatchRowsByLastWorked,
-  nextTargetedBatchRowOrder,
   DEFAULT_TARGETED_BATCH_ROW_ORDER,
   TARGETED_BATCH_ROW_ORDERS,
   TARGETED_BATCH_STATUS_FILTERS,
@@ -985,13 +984,9 @@ export default function WorkorderManagementSystem() {
   const [targetedBatchStatusFilter, setTargetedBatchStatusFilter] = useState(
     TARGETED_BATCH_STATUS_FILTERS.TOTAL,
   );
-  // TB-R051 (1.3.68): a batch opens with the meter worked on most recently at the top; the sort button toggles.
-  const [targetedBatchRowOrder, setTargetedBatchRowOrder] = useState(
-    DEFAULT_TARGETED_BATCH_ROW_ORDER,
-  );
-  const handleTargetedBatchRowOrderPress = useCallback(() => {
-    setTargetedBatchRowOrder((current) => nextTargetedBatchRowOrder(current));
-  }, []);
+  // Owner: updated rows always appear first, including corrections and QA.
+  const targetedBatchRowOrder = DEFAULT_TARGETED_BATCH_ROW_ORDER;
+  const handleTargetedBatchRowOrderPress = undefined;
 
   const handleTargetedBatchStatusFilterPress = useCallback((tapped) => {
     setTargetedBatchStatusFilter((current) =>
@@ -1001,7 +996,7 @@ export default function WorkorderManagementSystem() {
   const [mdBgoMapOpen, setMdBgoMapOpen] = useState(false);
   const [mdBgoSearch, setMdBgoSearch] = useState("");
   const [mdBgoFilter, setMdBgoFilter] = useState("TOTAL");
-  const [mdBgoOrder, setMdBgoOrder] = useState(DEFAULT_TARGETED_BATCH_ROW_ORDER);
+  const mdBgoOrder = DEFAULT_TARGETED_BATCH_ROW_ORDER;
   const [targetedBatchMapOpen, setTargetedBatchMapOpen] = useState(false);
   // TB-R067 (1.3.73): the row whose premise is being chosen. Only the row is kept: the list itself is
   // worked out again from what the phone holds now, so a premise joined a moment ago by somebody else does
@@ -1368,7 +1363,6 @@ export default function WorkorderManagementSystem() {
   useEffect(() => {
     setTargetedBatchSearchText("");
     setTargetedBatchStatusFilter(TARGETED_BATCH_STATUS_FILTERS.TOTAL);
-    setTargetedBatchRowOrder(DEFAULT_TARGETED_BATCH_ROW_ORDER);
     setTargetedBatchMapOpen(false);
     // TB-R067 (1.3.73): a choice left open would send the new batch's id with the old batch's row.
     setRowPremiseChoice(null);
@@ -3733,7 +3727,7 @@ export default function WorkorderManagementSystem() {
           error={mdBgoRowsData?.error || mdBgoAssets?.error ? { message: mdBgoRowsData?.error || mdBgoAssets?.error } : null}
           searchText={mdBgoSearch} onSearchTextChange={setMdBgoSearch}
           statusFilter={mdBgoFilter} onStatusFilterPress={(key) => setMdBgoFilter(nextTargetedBatchStatusFilter(mdBgoFilter, key))}
-          rowOrder={mdBgoOrder} onRowOrderPress={() => setMdBgoOrder(nextTargetedBatchRowOrder(mdBgoOrder))}
+          rowOrder={mdBgoOrder}
           offline={offline} onOpenMap={() => setMdBgoMapOpen(true)}
           onBack={backToBuckets} onAction={handleMdBgoRowAction}
         />
@@ -4769,7 +4763,7 @@ function TargetedBatchRowsWorklist({
   const searchActive = searchQuery.length > 0;
   // TB-R051 (1.3.68): which way the meters are sorted, said in words under the search box.
   const newestFirst = rowOrder !== TARGETED_BATCH_ROW_ORDERS.OLDEST_FIRST;
-  const orderWords = newestFirst ? "Last worked on first" : "Oldest work first";
+  const orderWords = "Last updated first";
   // TB-R051 (1.3.42): a status other than Total narrows the list.
   const statusButton =
     TARGETED_BATCH_STATUS_FILTER_BUTTONS.find((button) => button.key === statusFilter) ||
@@ -4923,13 +4917,9 @@ function TargetedBatchRowsWorklist({
         {/* TB-R051 (1.3.68): the order of the meters, and which way it is showing. */}
         <Pressable
           style={({ pressed }) => [styles.tbSortButton, pressed && styles.tbSortButtonPressed]}
-          onPress={() => onRowOrderPress?.()}
-          accessibilityRole="button"
-          accessibilityLabel={
-            newestFirst
-              ? "Sorted by last worked on first. Tap to show the oldest work first."
-              : "Sorted by the oldest work first. Tap to show what was last worked on first."
-          }
+          disabled
+          onPress={undefined}
+          accessibilityLabel="Sorted by last updated first"
           hitSlop={6}
         >
           <MaterialCommunityIcons

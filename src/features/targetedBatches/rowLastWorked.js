@@ -7,9 +7,7 @@
 // (TB-R063) on the Sales record. The newest of them is the time; a meter with none has never been
 // worked on.
 //
-// The row's `metadata.updatedAt` is NOT one of them. Every row on DEV carries it, untouched ones
-// included, because it moves when the row is created and batched. Reading it as field work would
-// give every meter in the batch a time and leave none of them untouched.
+// Owner amendment: persisted row metadata and QA activity also order corrections and reviews.
 
 // Timestamps reach the phone as a Firestore Timestamp, a plain {seconds}, or a string.
 export function toWorkedMillis(value) {
@@ -45,6 +43,9 @@ export function readRowLastWorkedMillis(row = {}, { fieldWork = null, sales = nu
 
   return Math.max(
     0,
+    toWorkedMillis(row?.metadata?.updatedAt),
+    toWorkedMillis(row?.qa?.premiseReviewedAt),
+    toWorkedMillis(row?.qa?.meterReviewedAt),
     toWorkedMillis(fieldWork?.updatedAt),
     toWorkedMillis(fieldWork?.submittedAt),
     toWorkedMillis(row?.execution?.completedAt),

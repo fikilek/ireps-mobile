@@ -95,17 +95,6 @@ export function normalizeComponentQa(raw) {
 // TB-R051 / PR-R001: Canonical aggregate TB QA Final from Premise QA and Meter QA
 export function calculateTbQaFinal(row) {
   if (row?.sourceModule === "BULK_METER_DISCOVERY") return calculateMdBgoQaFinal(row);
-  // 1. Direct authoritative persisted TB QA status on the row
-  const tbStatus = normalizeComponentQa(
-    row?.qa?.tbStatus ||
-      row?.raw?.qa?.tbStatus ||
-      row?.qa?.finalStatus ||
-      row?.raw?.qa?.finalStatus,
-  );
-  if (tbStatus === "QA FAIL") return "QA FAIL";
-  if (tbStatus === "QA PASS") return "QA PASS";
-  if (tbStatus === "QA PENDING") return "QA PENDING";
-
   const premiseQa = normalizeComponentQa(row?.qa?.premiseStatus || row?.raw?.qa?.premiseStatus);
   const meterQa = normalizeComponentQa(row?.qa?.meterStatus || row?.raw?.qa?.meterStatus);
 
@@ -113,11 +102,6 @@ export function calculateTbQaFinal(row) {
   // A failure in either Premise QA or Meter QA makes TB QA Final QA FAIL.
   if (premiseQa === "QA FAIL" || meterQa === "QA FAIL") {
     return "QA FAIL";
-  }
-
-  const salesState = String(row?.displayStatus || row?.executionStatus || "").trim().toUpperCase();
-  if (salesState !== "COMPLETED") {
-    return "QA NAv";
   }
 
   // 3. Both components must pass for TB QA Final to be QA PASS.
@@ -144,9 +128,10 @@ export function targetedBatchRowStatus(row) {
   const tbQa = calculateTbQaFinal(row);
   if (tbQa === "QA FAIL") return TARGETED_BATCH_STATUS_FILTERS.QA_FAIL;
 
+  if (tbQa === "QA PASS") return TARGETED_BATCH_STATUS_FILTERS.QA_PASS;
+
   const status = String(row?.displayStatus || row?.executionStatus || "").trim().toUpperCase();
   if (status === "COMPLETED") {
-    if (tbQa === "QA PASS") return TARGETED_BATCH_STATUS_FILTERS.QA_PASS;
     return TARGETED_BATCH_STATUS_FILTERS.COMPLETED;
   }
   if (status === "IN_PROGRESS") return TARGETED_BATCH_STATUS_FILTERS.IN_PROGRESS;

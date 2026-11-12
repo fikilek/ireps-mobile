@@ -1,3 +1,4 @@
+import { followTargetedCardRows } from "../features/targetedBatches/targetedBatchCardStream.js";
 import { createApi, fakeBaseQuery } from "@reduxjs/toolkit/query/react";
 import {
   collection,
@@ -22,6 +23,7 @@ import {
   LIVE_STREAM_STATUS,
   MY_WORK_ORDERS_KEEP_SECONDS,
   createLiveDataStore,
+  combineLiveStatuses,
   followActorAllocatedDocuments,
   isDocumentId,
   readFromCache,
@@ -541,6 +543,16 @@ export const targetedBatchApi = createApi({
         { updateCachedData, cacheDataLoaded, cacheEntryRemoved },
       ) {
         let stopTargetedBatches = () => {};
+        let stopCardRows = () => {}, cardKey = null, latestBuckets = null;
+        let cardData = { countsByBatchId: {}, stream: LIVE_STREAM_STATUS.CONNECTING };
+        const publishBuckets = () => {
+          if (!latestBuckets) return;
+          const base = buildTargetedBatchBucketData(latestBuckets);
+          const data = liveData.publish({ ...base, meta: { ...base.meta, stream: combineLiveStatuses([base.meta.stream, cardData.stream]) }, buckets: base.buckets.map(bucket => ({
+            ...bucket, totalRows: cardData.countsByBatchId[bucket.id]?.total ?? null, counts: cardData.countsByBatchId[bucket.id] || { total: null, notStarted: null, inProgress: null, completed: null, qaPass: null, qaFail: null },
+          })) });
+          updateCachedData(() => data);
+        };
         const liveData = targetedBatchBucketLiveData.open(targetedBatchBucketKey(args));
 
         try {
@@ -562,15 +574,18 @@ export const targetedBatchApi = createApi({
                 onError,
               ),
             onChange: ({ docs, loaded, stream, teamIds }) => {
-              const data = liveData.publish(
-                buildTargetedBatchBucketData({
-                  batches: docs,
-                  loaded,
-                  stream,
-                  actorTeamIds: teamIds,
-                }),
-              );
-              updateCachedData(() => data);
+              latestBuckets = { batches: docs, loaded, stream, actorTeamIds: teamIds };
+              const ids = docs.map(batch => batch.id).sort();
+              const key = JSON.stringify(ids);
+              if (key !== cardKey) {
+                stopCardRows(); cardKey = key;
+                cardData = { countsByBatchId: {}, stream: LIVE_STREAM_STATUS.CONNECTING };
+                stopCardRows = followTargetedCardRows({ batchIds: ids,
+                  listen: (values, next, error) => listenWhereIn({ collectionName: "tb_rows", field: "tbId", values, label: "TARGETED_CARD_ROWS" }, next, error),
+                  onChange: data => { cardData = data; publishBuckets(); },
+                });
+              }
+              publishBuckets();
             },
           });
         } catch (error) {
@@ -582,6 +597,7 @@ export const targetedBatchApi = createApi({
 
         await cacheEntryRemoved;
         stopTargetedBatches();
+        stopCardRows();
         liveData.close();
       },
       serializeQueryArgs: ({ endpointName, queryArgs }) =>
