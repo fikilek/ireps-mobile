@@ -200,6 +200,9 @@ const PremiseCard = memo(
     // const beacon = getPropertyBeacon(propertyTypeStr);
     const status = getStatusConfig(item?.occupancy?.status || "");
     const qaBadge = getPremiseQaBadge(item);
+    const canEditFromQa = qaBadge.label === "QA FAIL" && typeof onEditPress === "function";
+    const QaBadgeContainer = canEditFromQa ? Pressable : View;
+    const handleEditPremise = () => onEditPress?.(item);
     const occupancyStatus = item?.occupancy?.status || "Unknown";
     const noAccessTrnIds = Array.isArray(item?.noAccessTrnIds)
       ? item?.noAccessTrnIds.length
@@ -365,14 +368,19 @@ const PremiseCard = memo(
             </View>
           </TouchableOpacity>
 
-          <View accessibilityLabel={`Premise ${qaBadge.label}`} style={[
+          <QaBadgeContainer
+            accessibilityLabel={`Premise ${qaBadge.label}`}
+            accessibilityRole={canEditFromQa ? "button" : undefined}
+            accessibilityHint={canEditFromQa ? "Open this premise for correction" : undefined}
+            onPress={canEditFromQa ? handleEditPremise : undefined}
+            style={[
             styles.qaBadge,
             { backgroundColor: qaBadge.backgroundColor, borderColor: qaBadge.borderColor },
           ]}>
             <Text style={[styles.qaBadgeText, { color: qaBadge.color }]} numberOfLines={1} adjustsFontSizeToFit>
               {qaBadge.label}
             </Text>
-          </View>
+          </QaBadgeContainer>
           </View>
 
           <View style={styles.identityColumn}>
@@ -485,7 +493,7 @@ const PremiseCard = memo(
 
               {/* EDIT Btn*/}
               <TouchableOpacity
-                onPress={() => onEditPress?.(item)}
+                onPress={handleEditPremise}
                 style={styles.editIconBtn}
               >
                 <MaterialCommunityIcons

@@ -44,7 +44,8 @@ test("actual shared card places live QA below its property icon and preserves op
   const flatten = tree => tree == null ? [] : Array.isArray(tree) ? tree.flatMap(flatten) : typeof tree === "object" ? [tree, ...flatten(tree.props?.children)] : [tree];
   for (const status of ["QA_FAIL", "QA_PASS", "QA_PENDING", undefined]) {
     const item = { id: "P", qa: { status }, occupancy: { status: "Pending" }, address: { strNo: "3577", strName: "Starling Street" }, propertyType: { type: "Residential" } };
-    const nodes = flatten(Card({ item, wardNo: "006" }));
+    const edited = [];
+    const nodes = flatten(Card({ item, wardNo: "006", onEditPress: premise => edited.push(premise) }));
     const label = getPremiseQaBadge(item).label;
     const badge = nodes.find(n => n?.props?.accessibilityLabel === `Premise ${label}`);
     assert.ok(badge, `${label} renders from changed item`);
@@ -54,5 +55,23 @@ test("actual shared card places live QA below its property icon and preserves op
     assert.equal(children[1], badge, "QA badge is directly below the property icon");
     assert.ok(flatten(badge).includes(label));
     assert.ok(nodes.includes("PENDING"), "operational ribbon is separate from QA");
+    if (status === "QA_FAIL") {
+      assert.equal(badge.type, "Pressable");
+      assert.equal(badge.props.accessibilityRole, "button");
+      const existingEditButton = nodes.find(n => n !== badge && n?.props?.onPress === badge.props.onPress);
+      assert.ok(existingEditButton, "badge and existing edit button share the exact action");
+      badge.props.onPress();
+      assert.deepEqual(edited, [item], "opens the selected premise using the existing edit callback");
+      existingEditButton.props.onPress();
+      assert.deepEqual(edited, [item, item], "existing edit action remains usable");
+    } else {
+      assert.equal(badge.type, "View");
+      assert.equal(badge.props.onPress, undefined);
+      assert.equal(badge.props.accessibilityRole, undefined);
+      assert.deepEqual(edited, [], "nonfailed QA badges remain display-only");
+    }
   }
+  const withoutEdit = flatten(Card({ item: { id: "P", qa: { status: "QA_FAIL" } } }))
+    .find(n => n?.props?.accessibilityLabel === "Premise QA FAIL");
+  assert.equal(withoutEdit.type, "View", "no action is exposed when the caller cannot edit");
 });
