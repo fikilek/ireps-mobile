@@ -13,6 +13,7 @@ import { useGeo } from "../../context/GeoContext";
 import { useWarehouse } from "../../context/WarehouseContext";
 import { erfWithCarriedBatchContext } from "../targetedBatches/targetedBatchContextCarry";
 import { updatedAtLabel } from "../../utils/updatedAtLabel";
+import { getPremiseQaBadge } from "./premiseQaBadge";
 import {
   formatRepeatablePremiseIdentity,
   getDuplicateConfirmationMessage,
@@ -198,6 +199,7 @@ const PremiseCard = memo(
 
     // const beacon = getPropertyBeacon(propertyTypeStr);
     const status = getStatusConfig(item?.occupancy?.status || "");
+    const qaBadge = getPremiseQaBadge(item);
     const occupancyStatus = item?.occupancy?.status || "Unknown";
     const noAccessTrnIds = Array.isArray(item?.noAccessTrnIds)
       ? item?.noAccessTrnIds.length
@@ -338,6 +340,7 @@ const PremiseCard = memo(
         )}
 
         <View style={styles.cardHeader}>
+          <View style={styles.beaconColumn}>
           {/* A tap on this GIANT icon selects erf and presmise and navigates to erfs */}
           <TouchableOpacity
             onPress={handleBeaconPress}
@@ -361,6 +364,16 @@ const PremiseCard = memo(
               />
             </View>
           </TouchableOpacity>
+
+          <View accessibilityLabel={`Premise ${qaBadge.label}`} style={[
+            styles.qaBadge,
+            { backgroundColor: qaBadge.backgroundColor, borderColor: qaBadge.borderColor },
+          ]}>
+            <Text style={[styles.qaBadgeText, { color: qaBadge.color }]} numberOfLines={1} adjustsFontSizeToFit>
+              {qaBadge.label}
+            </Text>
+          </View>
+          </View>
 
           <View style={styles.identityColumn}>
             <View
@@ -727,6 +740,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   cardHeader: { flexDirection: "row", alignItems: "center" },
+  beaconColumn: { width: 64, alignItems: "flex-start", gap: 5 },
+  qaBadge: { width: 52, borderWidth: 1, borderRadius: 8, paddingHorizontal: 2, paddingVertical: 3, alignItems: "center" },
+  qaBadgeText: { fontSize: 8, fontWeight: "800" },
   beaconContainer: {
     width: 52,
     height: 52,
