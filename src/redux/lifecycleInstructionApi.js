@@ -213,6 +213,7 @@ function getWorkflowState(trn = {}) {
 
 function getBgoBatchIdFromTrn(trn = {}) {
   return readFirstString(
+    trn?.origin?.trnBgo?.batchId,
     trn?.bgo?.batchId,
     trn?.bucket?.batchId,
     trn?.refs?.bgoBatchId,
@@ -1035,17 +1036,13 @@ async function streamWmsWorkItems(
 
     if (cleanMode === "BGO_BUCKET" && selectedBgoBatchId) {
       const streamLimit = Number(args?.limit || WMS_DEMO_STREAM_LIMIT);
-      follow("trns", `BGO:${selectedBgoBatchId}`, (_key, onDocs, onError) =>
-        listenTrns(
-          [
-            where("bgo.batchId", "==", selectedBgoBatchId),
-            firestoreLimit(streamLimit),
-          ],
-          "WMS_BGO_TRN",
-          onDocs,
-          onError,
-        ),
-      );
+      follow("trns", `BGO:${selectedBgoBatchId}`, (_key, onDocs, onError) => {
+        const latest = new Map();
+        const stops = ["bgo.batchId", "origin.trnBgo.batchId"].map(field => listenTrns(
+          [where(field,"==",selectedBgoBatchId),firestoreLimit(streamLimit)], `WMS_BGO_${field}`,
+          (docs,meta)=>{latest.set(field,{docs,meta});if(latest.size<2)return;onDocs([...new Map([...latest.values()].flatMap(answer=>answer.docs).map(doc=>[doc.id,doc])).values()],{...meta,fromCache:[...latest.values()].some(answer=>answer.meta?.fromCache===true)});},onError));
+        return ()=>stops.forEach(stop=>stop());
+      });
     } else {
       // Open office work orders, and finished ones from office channels only: a completed field form of the
       // same type is not an office work order and is never read. The list is read when all three have answered.

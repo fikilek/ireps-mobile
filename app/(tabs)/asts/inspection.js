@@ -1,3 +1,4 @@
+import { isBulkInstruction } from "../../../src/features/workOrders/bulkInstructionPolicy";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
 import { Stack, useRouter } from "expo-router";
@@ -3776,13 +3777,13 @@ export default function InspectionScreen() {
                 </View>
               </Surface>
 
-              <OfficeInstructionSection
+              {!isBulkInstruction(action) && <OfficeInstructionSection
                 title="Inspection Instruction"
                 icon="clipboard-search-outline"
                 color="#2563eb"
                 instruction={officeInstruction}
                 media={officeInstructionMedia}
-              />
+              />}
 
               {!isKnownMeterKind && (
                 <Surface style={styles.blockedCard} elevation={1}>

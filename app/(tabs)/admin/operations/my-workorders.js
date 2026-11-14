@@ -3079,6 +3079,7 @@ export default function WorkorderManagementSystem() {
 
     const action = {
       source: "WMS",
+      origin: item?.raw?.origin || null,
 
       // ✅ This is the accepted WMS work item / lifecycle instruction TRN.
       id: instructionTrnId,

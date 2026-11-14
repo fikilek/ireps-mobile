@@ -1,7 +1,7 @@
 import { createApi, fakeBaseQuery } from "@reduxjs/toolkit/query/react";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../firebase";
-import { listenActorTeams, listenWhereIn, listenDocumentsByIds } from "./firestoreListeners";
+import { listenActorTeams, listenTrnBgoAllocated, listenWhereIn, listenDocumentsByIds } from "./firestoreListeners";
 import { followMdBgoAssets } from "../features/bgoBatches/mdBgoAssetStream";
 import { canOpenMdBgoRows } from "../features/bgoBatches/bgoBatchCardModel";
 import { followMdBgoCardRows } from "../features/bgoBatches/bgoBatchCardStream";
@@ -605,7 +605,7 @@ function normalizeBgoBucket(batch = {}) {
     title: isBmdBgo ? "Bulk Meter Discovery" : getTrnTypeLabel(trnType),
     subtitle: isBmdBgo
       ? `${geofenceRef?.name || "MD-BGO"} • ${counts.erfs || 0} ERFs`
-      : geofenceRef?.name || "Bulk Geofence Batch",
+      : batch?.contractVersion ? `Ward ${batch.wardName || batch.wardPcode}` : geofenceRef?.name || "Bulk Geofence Batch",
     trnType,
     trnCode,
     trnTypeLabel: getTrnTypeLabel(trnType),
@@ -747,17 +747,17 @@ export const bgoApi = createApi({
             spId: args?.actorSpId,
             includeUid: true,
             listenTeams: listenActorTeams,
-            listenAllocated: (values, onDocs, onError) =>
-              listenWhereIn(
-                {
-                  collectionName: "bgo_batches",
-                  field: "bgo.targetId",
-                  values,
-                  label: "BGO_BUCKET",
-                },
-                onDocs,
-                onError,
-              ),
+            listenAllocated: (values, onDocs, onError) => {
+              const latest = new Map();
+              const stops = ["bgo_batches", "tc_uploads"].map(collectionName =>
+                (collectionName === "tc_uploads" ? (next, error) => listenTrnBgoAllocated(args.actorUid, values, next, error) : (next, error) => listenWhereIn({collectionName,field:"bgo.targetId",values,label:`BGO_BUCKET_${collectionName}`},next,error))((docs,meta) => {
+                  latest.set(collectionName,{docs,meta});
+                  if (latest.size < 2) return;
+                  const merged = [...new Map([...latest.values()].flatMap(answer=>answer.docs).map(doc=>[doc.id,doc])).values()];
+                  onDocs(merged,{...meta,fromCache:[...latest.values()].some(answer=>answer.meta?.fromCache===true)});
+                }, onError));
+              return () => stops.forEach(stop=>stop());
+            },
             onChange: ({ docs, loaded, stream, teamIds }) => {
               const data = liveData.publish(
                 buildBgoBucketData({

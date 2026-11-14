@@ -1,3 +1,4 @@
+import { bulkInstructionSchema, isBulkInstruction } from "../../../src/features/workOrders/bulkInstructionPolicy";
 import { isLifecycleInstructionLocked } from "../../../src/features/workOrders/instructionLock";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
@@ -1912,7 +1913,7 @@ export default function FormMeterReading() {
         qaSerialize={values => buildExecutionPayload(values, values.media)}
         initialValues={actionInit}
         onSubmit={handleSubmitMeterReading}
-        validationSchema={MeterReadingSchema}
+        validationSchema={bulkInstructionSchema(MeterReadingSchema, action)}
         initialErrors={{
           meterReading: {
             reading: "Meter reading is required",
@@ -2167,7 +2168,7 @@ export default function FormMeterReading() {
                 </View>
               </Surface>
 
-              {instructionLocked ? (
+              {!isBulkInstruction(action) && (instructionLocked ? (
                 <OfficeInstructionSection
                   title="Meter Reading Instruction"
                   icon="text-box-remove-outline"
@@ -2220,7 +2221,7 @@ export default function FormMeterReading() {
                     }
                   />
                 </Surface>
-              )}
+              ))}
 
 
 

@@ -321,7 +321,9 @@ test("TB-R052 queued forms are confirmed from exactly their own TRNs, followed a
 
 test("TB-R052 an opened BGO batch reads only its own TRNs, with no queue check", async () => {
   const stream = await startWmsStream({ ...WMS_ARGS, mode: "BGO_BUCKET", bgoBatchId: "BGO_1", limit: 2000 });
-  assert.deepEqual(stream.byLabel("WMS_BGO_TRN").target.constraints, [{ field: "bgo.batchId", op: "==", value: "BGO_1" }, { limit: 2000 }]);
+  for (const field of ["bgo.batchId", "origin.trnBgo.batchId"]) {
+    assert.deepEqual(stream.byLabel(`WMS_BGO_${field}`).target.constraints, [{ field, op: "==", value: "BGO_1" }, { limit: 2000 }]);
+  }
   assert.equal(stream.live().filter((listener) => /^WMS_(OPEN|COMPLETED|CANCELLED|QUEUE)_TRN$/.test(listener.label)).length, 0);
   assert.equal(stream.intervals.size, 0);
   await stream.remove();
@@ -392,7 +394,9 @@ test("TB-R052 targeted batches are read by allocation target for the worker's te
 test("TB-R052 BGO batches are read by target for the worker, their teams and service provider", () => {
   const buckets = endpoint(bgoSource, "getBgoBuckets", "acceptRejectBgoBatch: builder.mutation");
   assert.doesNotMatch(bgoSource, /firebase\/firestore/);
-  assert.match(buckets, /collectionName: "bgo_batches",\s*field: "bgo\.targetId"/);
+  assert.match(buckets, /\["bgo_batches", "tc_uploads"\]/);
+  assert.match(buckets, /listenTrnBgoAllocated\(args.actorUid, values/);
+  assert.match(buckets, /field:"bgo.targetId"/);
   assert.match(buckets, /includeUid: true/);
   assert.match(buckets, /keepUnusedDataFor: MY_WORK_ORDERS_KEEP_SECONDS/);
 });

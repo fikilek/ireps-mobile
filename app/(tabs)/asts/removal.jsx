@@ -1,3 +1,4 @@
+import { bulkInstructionSchema, isBulkInstruction } from "../../../src/features/workOrders/bulkInstructionPolicy";
 import { isLifecycleInstructionLocked } from "../../../src/features/workOrders/instructionLock";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
@@ -1955,7 +1956,7 @@ export default function FormMeterRemoval() {
         qaSerialize={values => buildExecutionPayload(values, values.media)}
         initialValues={actionInit}
         onSubmit={handleSubmitRemoval}
-        validationSchema={RemovalSchema}
+        validationSchema={bulkInstructionSchema(RemovalSchema, action)}
         enableReinitialize={true}
         validateOnMount={true}
         validateOnChange={true}
@@ -2077,7 +2078,7 @@ export default function FormMeterRemoval() {
                 </View>
               </Surface>
 
-              {instructionLocked ? (
+              {!isBulkInstruction(action) && (instructionLocked ? (
                 <OfficeInstructionSection
                   title="Removal Instruction"
                   icon="text-box-remove-outline"
@@ -2152,7 +2153,7 @@ export default function FormMeterRemoval() {
                     />
                   </View>
                 </Surface>
-              )}
+              ))}
 
 
 

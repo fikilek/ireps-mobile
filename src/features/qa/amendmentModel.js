@@ -51,7 +51,7 @@ export function correctionParams(context) {
   const astId = trn.ast?.astData?.astId || trn.id;
   return { trnId: trn.id, astId, sourceAstId: astId, premiseId: trn.accessData?.premise?.id || "",
     instructionTrnId: trn.origin?.channel === "OFFICE" ? trn.id : "",
-    action: JSON.stringify({ ...trn, raw: trn, access: trn.accessData?.access?.hasAccess, meterType: trn.meterType, sourceAstId: astId }) };
+    action: JSON.stringify({ ...trn, instructionTrnId: trn.origin?.channel === "OFFICE" ? trn.id : "", raw: trn, access: trn.accessData?.access?.hasAccess, meterType: trn.meterType, sourceAstId: astId }) };
 }
 
 export function savedMeter(context) {
