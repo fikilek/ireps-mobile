@@ -62,4 +62,6 @@ test("my-workorders splits BGOB into 4 buckets and routes TRN BGO rows to Target
   assert.match(screen, /onPress=\{\(\) => onOpen\("TRNBGO"\)\}/);
   assert.match(screen, /showTrnBgoWorklist/);
   assert.match(screen, /buildTrnBgoMobileRows/);
+  assert.doesNotMatch(screen, /if \(!isBmdBgoBucket\(props\.bucket\)\) return <BucketCard/);
+  assert.match(screen, /const canView = isBmd \? bucket\.permissions\?\.canViewErfs : bucket\.permissions\?\.canViewTrns/);
 });
