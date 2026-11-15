@@ -3324,8 +3324,11 @@ export default function WorkorderManagementSystem() {
                 trnType: item.trnType || liveRow.trnType,
                 returnTo: "/(tabs)/admin/operations/my-workorders",
               }),
-              instructionTrnId: item.id || liveRow.id,
-              origin: item.raw?.origin || { channel: "OFFICE" },
+              trnBgoContext: {
+                batchId: liveBucket.id,
+                instructionTrnId: item.id || liveRow.id,
+              },
+              origin: { channel: "FIELD" },
               assignment: item.raw?.assignment || {},
             }),
           },
