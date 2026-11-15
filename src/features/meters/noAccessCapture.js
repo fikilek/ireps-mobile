@@ -80,6 +80,7 @@ export function buildNoAccessPayload({ context = {}, trnId, capturedAt, value, m
     },
     ...(context.targetedBatchContext ? { targetedBatchContext: context.targetedBatchContext } : {}),
     ...(context.mdBgoContext ? { mdBgoContext: context.mdBgoContext } : {}),
+    ...(context.trnBgoContext ? { trnBgoContext: context.trnBgoContext } : {}),
   };
 }
 
@@ -103,6 +104,7 @@ export function noAccessContextFromQueue(item = {}) {
     assignment: payload.assignment,
     targetedBatchContext: payload.targetedBatchContext || payload.origin?.targetedBatch,
     mdBgoContext: payload.mdBgoContext || payload.origin?.mdBgo,
+    trnBgoContext: payload.trnBgoContext || payload.origin?.trnBgoNoAccess,
     returnTo: "/(tabs)/admin/storage/forms-submission-queue",
   };
 }
