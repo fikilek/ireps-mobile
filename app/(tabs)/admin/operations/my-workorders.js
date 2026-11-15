@@ -1,4 +1,5 @@
 import { buildMdBgoMobileRows, buildMdBgoCaptureContext, buildMdBgoMapPoints } from "../../../../src/features/bgoBatches/mdBgoRows";
+import { buildTrnBgoMobileRows, summarizeTrnBgoRows } from "../../../../src/features/bgoBatches/trnBgoRows";
 import { summarizeMdBgoCardRows } from "../../../../src/features/bgoBatches/bgoBatchCardModel";
 import BatchCardPresentation from "../../../../src/components/workOrders/BatchCardPresentation";
 import { getQaDraft } from "../../../../src/features/qa/amendmentQueue";
@@ -995,6 +996,10 @@ export default function WorkorderManagementSystem() {
   }, []);
   const [mdBgoMapOpen, setMdBgoMapOpen] = useState(false);
   const [mdBgoSearch, setMdBgoSearch] = useState("");
+  const [trnBgoMapOpen, setTrnBgoMapOpen] = useState(false);
+  const [trnBgoSearch, setTrnBgoSearch] = useState("");
+  const [trnBgoFilter, setTrnBgoFilter] = useState(TARGETED_BATCH_STATUS_FILTERS.TOTAL);
+  const [trnBgoOrder, setTrnBgoOrder] = useState(DEFAULT_TARGETED_BATCH_ROW_ORDER);
   const [mdBgoFilter, setMdBgoFilter] = useState("TOTAL");
   const mdBgoOrder = DEFAULT_TARGETED_BATCH_ROW_ORDER;
   const [targetedBatchMapOpen, setTargetedBatchMapOpen] = useState(false);
@@ -1177,7 +1182,8 @@ export default function WorkorderManagementSystem() {
         // TB-R051: the batch map closes whenever the screen loses focus. A detached tab dismisses the
         // map's Modal on Android, and a map still marked open would swallow back and never show again.
         if (targetedBatchScreenMountedRef.current) {
-          setTargetedBatchMapOpen(false);
+      setTargetedBatchMapOpen(false);
+      setTrnBgoMapOpen(false);
           // TB-R067: and the premise choice with it, for the same reason.
           setRowPremiseChoice(null);
         }
@@ -1754,7 +1760,8 @@ export default function WorkorderManagementSystem() {
             selectedMeter: openMeter ? foundMeter : null,
             lastSelectionType: openMeter ? "METER" : "PREMISE",
           });
-          setTargetedBatchMapOpen(false);
+      setTargetedBatchMapOpen(false);
+      setTrnBgoMapOpen(false);
           router.push(openMeter ? "/(tabs)/asts" : "/(tabs)/premises");
         } catch (error) {
           clearPendingTargetedBatchAction(pending.requestKey);
@@ -1896,7 +1903,8 @@ export default function WorkorderManagementSystem() {
           });
 
           clearPendingTargetedBatchAction(pending.requestKey);
-          setTargetedBatchMapOpen(false);
+      setTargetedBatchMapOpen(false);
+      setTrnBgoMapOpen(false);
           updateGeo({
             selectedWard: pending.ward,
             selectedErf,
@@ -1917,7 +1925,8 @@ export default function WorkorderManagementSystem() {
         ) {
           const erfId = cleanId(currentRow?.erfId || currentRow?.refs?.erfId || pending.erfId);
           clearPendingTargetedBatchAction(pending.requestKey);
-          setTargetedBatchMapOpen(false);
+      setTargetedBatchMapOpen(false);
+      setTrnBgoMapOpen(false);
           updateGeo({
             selectedWard: pending.ward,
             selectedErf,
@@ -1936,7 +1945,8 @@ export default function WorkorderManagementSystem() {
             return;
           }
           clearPendingTargetedBatchAction(pending.requestKey);
-          setTargetedBatchMapOpen(false);
+      setTargetedBatchMapOpen(false);
+      setTrnBgoMapOpen(false);
           updateGeo({
             selectedWard: pending.ward,
             selectedErf,
@@ -1981,7 +1991,8 @@ export default function WorkorderManagementSystem() {
         });
 
         // TB-R051: the batch map never stays marked open behind the screen the action opens.
-        setTargetedBatchMapOpen(false);
+      setTargetedBatchMapOpen(false);
+      setTrnBgoMapOpen(false);
         router.push(navigationTarget);
       } catch (error) {
         clearPendingTargetedBatchAction(pending.requestKey);
@@ -2203,6 +2214,8 @@ export default function WorkorderManagementSystem() {
     targetedBatchTeamIds,
   ]);
 
+  const mdBgoBuckets = useMemo(() => bgoBuckets.filter((bucket) => isBmdBgoBucket(bucket)), [bgoBuckets]);
+  const trnBgoBuckets = useMemo(() => bgoBuckets.filter((bucket) => !isBmdBgoBucket(bucket)), [bgoBuckets]);
   const bgoBucketsRef = useRef(bgoBuckets);
   bgoBucketsRef.current = bgoBuckets;
 
@@ -2416,6 +2429,24 @@ export default function WorkorderManagementSystem() {
     return [];
   }, [bgoDetailItems, individualItems, selectedBucket, selectedGroup]);
 
+  const trnBgoRows = useMemo(
+    () => (selectedBucket?.bucketType === "BGOB" && !isBmdBgoBucket(selectedBucket) ? buildTrnBgoMobileRows(allVisibleBucketItems) : []),
+    [selectedBucket, allVisibleBucketItems],
+  );
+  const trnBgoSummary = useMemo(
+    () => summarizeTrnBgoRows(trnBgoRows),
+    [trnBgoRows],
+  );
+  const visibleTrnBgoRows = useMemo(
+    () =>
+      sortTargetedBatchRowsByLastWorked(
+        searchTargetedBatchRows(filterTargetedBatchRowsByStatus(trnBgoRows, trnBgoFilter), trnBgoSearch),
+        trnBgoOrder,
+      ),
+    [trnBgoRows, trnBgoFilter, trnBgoSearch, trnBgoOrder],
+  );
+  const trnBgoMapPoints = useMemo(() => buildMdBgoMapPoints(trnBgoRows), [trnBgoRows]);
+
   useEffect(() => {
     if (selectedBucket?.bucketType !== "BGOB") {
       setPreparingBgoDetail(false);
@@ -2465,10 +2496,10 @@ export default function WorkorderManagementSystem() {
       return;
     }
 
-    if (bucketType === "BGOB") {
+    if (bucketType === "BGOB" || bucketType === "TRNBGO") {
       if (!bgoBucketReady || bgoError) return;
 
-      setSelectedBucketCategory("BGOB");
+      setSelectedBucketCategory(bucketType);
       setSelectedBucket(null);
       setSelectedGroup(null);
       setStateFilter("ALL");
@@ -3449,9 +3480,11 @@ export default function WorkorderManagementSystem() {
   const showIndividualGroups =
     selectedBucket?.bucketType === "INDVG" && !selectedGroup;
 
+  const showTrnBgoWorklist =
+    selectedBucket?.bucketType === "BGOB" && !showBmdErfWorklist;
   const showTrnDetail =
-    (selectedBucket?.bucketType === "BGOB" && !showBmdErfWorklist) ||
-    (selectedBucket?.bucketType === "INDVG" && selectedGroup);
+    selectedBucket?.bucketType === "INDVG" && selectedGroup;
+    // showTrnDetail is now INDVG-only; TRN BGO uses showTrnBgoWorklist
 
   const detailTitle =
     selectedBucket?.bucketType === "BGOB"
@@ -3462,13 +3495,14 @@ export default function WorkorderManagementSystem() {
     selectedBucket?.bucketType === "BGOB" ? "Buckets" : "Types";
 
   const targetedBatchMapVisible =
-    targetedBatchMapOpen && showTargetedBatchRows;
+    (targetedBatchMapOpen && showTargetedBatchRows) || (trnBgoMapOpen && showTrnBgoWorklist);
 
   // TB-R051: the phone's back button goes up one level (map, rows, batches, work types) before leaving the screen.
   // Mirrors the render below: each level runs the same handler as its on-screen back button.
   hardwareBackHandlerRef.current = () => {
     if (targetedBatchMapVisible) {
       setTargetedBatchMapOpen(false);
+      setTrnBgoMapOpen(false);
       return true;
     }
 
@@ -3476,13 +3510,13 @@ export default function WorkorderManagementSystem() {
 
     if (
       !selectedBucket &&
-      (selectedBucketCategory === "TBB" || selectedBucketCategory === "BGOB")
+      (selectedBucketCategory === "TBB" || selectedBucketCategory === "BGOB" || selectedBucketCategory === "TRNBGO")
     ) {
       backToBucketCategories();
       return true;
     }
 
-    if (showIndividualGroups || showBmdErfWorklist || showTargetedBatchRows) {
+    if (showIndividualGroups || showBmdErfWorklist || showTrnBgoWorklist || showTargetedBatchRows) {
       backToBuckets();
       return true;
     }
@@ -3565,6 +3599,7 @@ export default function WorkorderManagementSystem() {
 
       // The map is a Modal and would cover the screen the action opens.
       setTargetedBatchMapOpen(false);
+      setTrnBgoMapOpen(false);
       // TB-R051: no silent waits; the banner under the search box says what is opening, and an empty
       // search (and Total, 1.3.42) keeps the row's tile spinner in the list.
       setTargetedBatchSearchText("");
@@ -3676,7 +3711,8 @@ export default function WorkorderManagementSystem() {
           bgoReady={bgoBucketReady}
           bgoLoading={!bgoBucketReady && !bgoError}
           bgoError={bgoError}
-          bgoCount={bgoBuckets.length}
+          trnBgoCount={trnBgoBuckets.length}
+          bgoCount={mdBgoBuckets.length}
           onOpen={openBucketCategory}
         />
       ) : !selectedBucket && selectedBucketCategory === "TBB" ? (
@@ -3694,11 +3730,14 @@ export default function WorkorderManagementSystem() {
           onAcceptTargetedBatch={handleAcceptTargetedBatch}
           onRejectTargetedBatch={setRejectItem}
         />
-      ) : !selectedBucket && selectedBucketCategory === "BGOB" ? (
+      ) : !selectedBucket && (selectedBucketCategory === "BGOB" || selectedBucketCategory === "TRNBGO") ? (
         <BgoBucketLanding
           isLoading={!bgoBucketReady && !bgoError}
           error={bgoError}
-          buckets={bgoBuckets}
+          buckets={selectedBucketCategory === "TRNBGO" ? trnBgoBuckets : mdBgoBuckets}
+          eyebrow={selectedBucketCategory === "TRNBGO" ? "Bulk Adhoc Work" : "Bulk Work"}
+          title={selectedBucketCategory === "TRNBGO" ? "Adhoc Trns (Bulk)" : "Sweep Audit"}
+          emptyTitle={selectedBucketCategory === "TRNBGO" ? "No Adhoc Trns (Bulk) batches available" : "No Sweep Audit batches available"}
           deciding={actionBusy}
           processingBgoBucketAction={processingBgoBucketAction}
           managerActor={managerActor}
@@ -3759,6 +3798,27 @@ export default function WorkorderManagementSystem() {
           openingAction={pendingTargetedBatchAction}
           hasMore={false}
         />
+      ) : showTrnBgoWorklist ? (
+        <TargetedBatchRowsWorklist
+          bucket={selectedBucket}
+          rows={visibleTrnBgoRows}
+          allRows={trnBgoRows}
+          totalRowCount={trnBgoRows.length}
+          summary={trnBgoSummary}
+          batchLabel="TRN BGO"
+          isLoading={isPreparingBgoDetail}
+          error={bgoDetailError}
+          searchText={trnBgoSearch}
+          onSearchTextChange={setTrnBgoSearch}
+          statusFilter={trnBgoFilter}
+          onStatusFilterPress={(key) => setTrnBgoFilter(nextTargetedBatchStatusFilter(trnBgoFilter, key))}
+          rowOrder={trnBgoOrder}
+          onRowOrderPress={() => setTrnBgoOrder((prev) => prev === TARGETED_BATCH_ROW_ORDERS.OLDEST_FIRST ? DEFAULT_TARGETED_BATCH_ROW_ORDER : TARGETED_BATCH_ROW_ORDERS.OLDEST_FIRST)}
+          offline={offline}
+          onOpenMap={() => setTrnBgoMapOpen(true)}
+          onBack={backToBuckets}
+          onAction={({ row }) => handleExecute(row?.trnItem)}
+        />
       ) : showTrnDetail ? (
         <GroupDetail
           title={detailTitle}
@@ -3798,6 +3858,18 @@ export default function WorkorderManagementSystem() {
         error={mdBgoRowsData?.error || mdBgoAssets?.error} onClose={() => setMdBgoMapOpen(false)}
         mapPointsOverride={mdBgoMapPoints} batchOnly batchAssets={mdBgoAssets}
         renderRowCard={(row) => <TargetedBatchRowCard row={row} bucket={selectedBucket} onAction={handleMdBgoRowAction} />}
+      />
+      <TargetedBatchMapModal
+        visible={trnBgoMapOpen && showTrnBgoWorklist}
+        bucket={selectedBucket}
+        rows={trnBgoRows}
+        offline={offline}
+        loading={isPreparingBgoDetail}
+        error={bgoDetailError}
+        onClose={() => setTrnBgoMapOpen(false)}
+        mapPointsOverride={trnBgoMapPoints}
+        batchOnly
+        renderRowCard={(row) => <TargetedBatchRowCard row={row} bucket={selectedBucket} onAction={({ row: r }) => { setTrnBgoMapOpen(false); handleExecute(r?.trnItem); }} />}
       />
       <TargetedBatchMapModal
         visible={targetedBatchMapVisible}
@@ -3881,6 +3953,7 @@ function BucketTypeLanding({
   bgoReady,
   bgoLoading,
   bgoError,
+  trnBgoCount,
   bgoCount,
   onOpen,
 }) {
@@ -3906,7 +3979,19 @@ function BucketTypeLanding({
         />
 
         <BucketTypeCard
-          title="Targeted Audit Batches"
+          title="Adhoc Trns (Bulk)"
+          subtitle="Bulk-originated TRN Ward batches"
+          icon="format-list-bulleted-square"
+          count={trnBgoCount}
+          countLabel="Batches"
+          ready={bgoReady}
+          loading={bgoLoading}
+          error={bgoError}
+          onPress={() => onOpen("TRNBGO")}
+        />
+
+        <BucketTypeCard
+          title="Targeted Audit"
           subtitle="Allocated sales-targeted field work"
           icon="target-account"
           count={targetedCount}
@@ -3918,11 +4003,11 @@ function BucketTypeLanding({
         />
 
         <BucketTypeCard
-          title="Sweep Audit Batches"
-          subtitle="Bulk geofence originated work"
+          title="Sweep Audit"
+          subtitle="Bulk geofence Meter Discovery work"
           icon="map-marker-radius-outline"
           count={bgoCount}
-          countLabel="Buckets"
+          countLabel="Batches"
           ready={bgoReady}
           loading={bgoLoading}
           error={bgoError}
@@ -4057,7 +4142,7 @@ function TargetedBatchBucketLanding({
       </Pressable>
 
       <Text style={[styles.sectionEyebrow, { marginTop: 10 }]}>Targeted Work</Text>
-      <Text style={styles.sectionTitle}>Targeted Audit Batches</Text>
+      <Text style={styles.sectionTitle}>Targeted Audit</Text>
 
       <View style={styles.bucketList}>
         {isLoading ? (
@@ -4113,6 +4198,9 @@ function BgoBucketLanding({
   isLoading,
   error,
   buckets = [],
+  eyebrow = "Bulk Work",
+  title = "Sweep Audit",
+  emptyTitle = "No Sweep Audit batches available",
   deciding,
   processingBgoBucketAction,
   managerActor,
@@ -4138,8 +4226,8 @@ function BgoBucketLanding({
         <Text style={styles.backPillText}>Work Buckets</Text>
       </Pressable>
 
-      <Text style={[styles.sectionEyebrow, { marginTop: 10 }]}>Bulk Work</Text>
-      <Text style={styles.sectionTitle}>Sweep Audit Batches</Text>
+      <Text style={[styles.sectionEyebrow, { marginTop: 10 }]}>{eyebrow}</Text>
+      <Text style={styles.sectionTitle}>{title}</Text>
 
       <View style={styles.bucketList}>
         {isLoading ? (
@@ -4167,7 +4255,7 @@ function BgoBucketLanding({
           ) : (
             <InlineStatusCard
               icon="playlist-remove"
-              title="No BGO buckets available"
+              title={emptyTitle}
               text="There are no BGO buckets assigned to you right now. New BGO batches will appear here after they are created for your user, team, or service provider."
             />
           )
@@ -5118,7 +5206,7 @@ function TargetedBatchRowCardBase({
             </Text>
           ) : null}
           <Text style={styles.mdBgoErfSub} numberOfLines={1}>
-            {row?.sourceModule === "BULK_METER_DISCOVERY" ? `ERF ${row.erfNo || "NAv"}` : <>Account {row?.accountNumber || "NAv"} • {row?.customerName || "NAv"}</>}
+            {row?.sourceModule === "BULK_METER_DISCOVERY" ? `ERF ${row.erfNo || "NAv"}` : row?.sourceModule === "TRN_BGO" ? `${row.trnTypeLabel || row.trnType || "TRN"} • ERF ${row.erfNo || "NAv"}` : <>Account {row?.accountNumber || "NAv"} • {row?.customerName || "NAv"}</>}
           </Text>
           <Text style={styles.mdBgoErfSub} numberOfLines={2}>
             {row?.addressLine || row?.address || row?.town || "NAv"}
@@ -5132,6 +5220,18 @@ function TargetedBatchRowCardBase({
         </View>
       </View>
 
+      {row?.sourceModule === "TRN_BGO" ? (
+        <View style={styles.mdBgoErfFooterRow}>
+          <TargetedBatchActionTile
+            label={row?.trnTypeLabel || "TRN"}
+            value={row?.workflowState === "QA FAIL" ? "CORRECT" : "EXECUTE"}
+            helperText={row?.displayStatus === "COMPLETED" ? "Completed" : "Open form"}
+            icon="clipboard-text-play-outline"
+            tone={row?.workflowState === "QA FAIL" ? "issue" : "default"}
+            onPress={() => onAction({ bucket, row, intent: "TRN_BGO_EXECUTE" })}
+          />
+        </View>
+      ) : (
       <View style={styles.mdBgoErfFooterRow}>
         <TargetedBatchActionTile label="PREMISE" value={actions.premise.value} helperText={actions.premise.helperText} icon="home-outline"
           tone={actions.premise.tone || "default"}
@@ -5147,6 +5247,7 @@ function TargetedBatchRowCardBase({
           disabled={actions.erf.disabled} opening={openingIntent === actions.erf.intent}
           onPress={() => onAction({ bucket, row, intent: actions.erf.intent })} />
       </View>
+      )}
     </View>
   );
 }
