@@ -367,6 +367,8 @@ function isPhotoMedia(media = {}) {
 
 function getBgoBatchIdFromItem(item = {}) {
   return (
+    item?.raw?.origin?.trnBgo?.batchId ||
+    item?.origin?.trnBgo?.batchId ||
     item?.raw?.bgo?.batchId ||
     item?.raw?.bucket?.batchId ||
     item?.bgo?.batchId ||
