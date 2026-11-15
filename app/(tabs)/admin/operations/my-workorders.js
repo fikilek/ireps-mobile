@@ -463,14 +463,14 @@ function getBmdErfRefsFromBucket(bucket = {}) {
 function getBmdBucketScope(bucket = {}) {
   const scope = bucket?.raw?.scope || bucket?.scope || {};
 
-  const lmPcode = readFirstString(scope?.lmPcode, scope?.lmId);
-  const wardPcode = readFirstString(scope?.wardPcode, scope?.wardId);
+  const lmPcode = readFirstString(scope?.lmPcode, scope?.lmId, bucket?.raw?.lmPcode, bucket?.lmPcode);
+  const wardPcode = readFirstString(scope?.wardPcode, scope?.wardId, bucket?.raw?.wardPcode, bucket?.wardPcode);
 
   return {
     lmPcode,
-    lmName: readFirstString(scope?.lmName, lmPcode, "NAv"),
+    lmName: readFirstString(scope?.lmName, bucket?.raw?.lmName, lmPcode, "NAv"),
     wardPcode,
-    wardName: readFirstString(scope?.wardName, wardPcode, "NAv"),
+    wardName: readFirstString(scope?.wardName, bucket?.raw?.wardName, wardPcode, "NAv"),
   };
 }
 
@@ -4473,7 +4473,7 @@ function InlineStatusCard({
 }
 
 function BgoBatchCard(props) {
-  if (!isBmdBgoBucket(props.bucket)) return <BucketCard {...props} />;
+  // Both MD BGO (Sweep Audit) and TRN BGO (Adhoc Trns Bulk) share the BatchCardPresentation layout.
   return <MdBgoBatchCard {...props} />;
 }
 
@@ -4488,7 +4488,19 @@ function MdBgoBatchCard({ bucket, deciding, processingBgoBucketAction,
     if (openFrame.current !== null) cancelAnimationFrame(openFrame.current);
   }, []);
   const disabled = deciding || processing || opening || !fieldWorkorderActor;
+  const isBmd = isBmdBgoBucket(bucket);
   const scope = getBmdBucketScope(bucket);
+  const bgoCounts = bucket?.counts || {};
+  const trnCardCounts = {
+    total: bucket?.totalTrns ?? bgoCounts.total ?? 0,
+    notStarted: bgoCounts.notExecuted ?? bgoCounts.waiting ?? 0,
+    inProgress: bgoCounts.inProgress ?? 0,
+    completed: bgoCounts.executed ?? bgoCounts.completed ?? 0,
+    qaPass: bgoCounts.qaPass ?? 0,
+    qaFail: bgoCounts.qaFail ?? 0,
+  };
+  const cardCounts = isBmd ? bucket.cardCounts : trnCardCounts;
+  const canView = isBmd ? bucket.permissions?.canViewErfs : bucket.permissions?.canViewTrns;
   const status = normalizeUpper(bucket.workflowState) === "IN_PROGRESS" ? "In Progress"
     : normalizeUpper(bucket.workflowState) === "COMPLETED" ? "Completed" : getBgoBucketStatusText(bucket);
   const openRows = () => {
@@ -4510,8 +4522,8 @@ function MdBgoBatchCard({ bucket, deciding, processingBgoBucketAction,
       icon="map-marker-radius-outline"
       status={status}
       title={bucket.id || "NAv"}
-      subtitle={`Meter Discovery • ${getWardShortLabel(scope)}`}
-      counts={bucket.cardCounts}
+      subtitle={`${isBmd ? "Meter Discovery" : (bucket.trnTypeLabel || bucket.trnType || "TRN")} • ${getWardShortLabel(scope)}`}
+      counts={cardCounts}
       tiles={TARGETED_BATCH_STATUS_FILTER_BUTTONS}
       metadata={<>
         <InfoLine icon="account-hard-hat-outline" label="Target" value={bucket.targetText || "NAv"} />
@@ -4520,7 +4532,7 @@ function MdBgoBatchCard({ bucket, deciding, processingBgoBucketAction,
         <InfoLine icon="clock-outline" label="Age" value={formatAge(bucket.ageSeconds)} />
       </>}
     >
-      {bucket.cardCountsStream !== "LIVE" ? (
+      {isBmd && bucket.cardCountsStream !== "LIVE" ? (
         <InlineStatusCard
           icon={bucket.cardCountsError ? "alert-circle-outline" : "cloud-sync-outline"}
           title={bucket.cardCountsError ? "Batch row stream failed" : "Updating row counts"}
@@ -4550,13 +4562,13 @@ function MdBgoBatchCard({ bucket, deciding, processingBgoBucketAction,
             <Text style={styles.rejectBtnText}>{processing && action === "REJECT" ? "Rejecting…" : "REJECT"}</Text>
           </Pressable>
         ) : null}
-        {bucket.permissions?.canViewErfs ? (
+        {canView ? (
           <Pressable style={[styles.actionBtn, styles.executeBtn, disabled && styles.actionDisabled]} disabled={disabled} onPress={openRows}>
             {opening ? <ActivityIndicator size="small" color="#fff" /> : null}
             <Text style={styles.executeBtnText}>{opening ? "OPENING..." : "VIEW ROWS"}</Text>
           </Pressable>
         ) : null}
-        {!bucket.permissions?.canAccept && !bucket.permissions?.canReject && !bucket.permissions?.canViewErfs ? (
+        {!bucket.permissions?.canAccept && !bucket.permissions?.canReject && !canView ? (
           <View style={styles.noActionBox}><Text style={styles.noActionText}>{status === "Rejected" ? "BGO batch rejected before execution." : "BGO batch not open for execution."}</Text></View>
         ) : null}
       </View>
