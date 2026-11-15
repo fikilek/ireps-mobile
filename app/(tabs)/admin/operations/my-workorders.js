@@ -2431,9 +2431,23 @@ export default function WorkorderManagementSystem() {
     return [];
   }, [bgoDetailItems, individualItems, selectedBucket, selectedGroup]);
 
+  const trnBgoAssetIds = useMemo(() => {
+    const isTrnBgo = selectedBucket?.bucketType === "BGOB" && !isBmdBgoBucket(selectedBucket);
+    if (!isTrnBgo || !allVisibleBucketItems.length) {
+      return { premiseIds: [], meterIds: [], trnIds: [], erfIds: [] };
+    }
+    const premiseIds = [...new Set(allVisibleBucketItems.map((item) => cleanId(item?.premiseId || item?.raw?.accessData?.premise?.id || item?.raw?.accessData?.premiseId)).filter(Boolean))];
+    const meterIds = [...new Set(allVisibleBucketItems.map((item) => cleanId(item?.raw?.ast?.astData?.astId || item?.raw?.ast?.astId || item?.raw?.ast?.id || item?.raw?.accessData?.ast?.id)).filter(Boolean))];
+    const erfIds = [...new Set(allVisibleBucketItems.map((item) => cleanId(item?.raw?.accessData?.premise?.erfId || item?.raw?.property?.erfId || item?.raw?.accessData?.erf?.id)).filter(Boolean))];
+    return { premiseIds, meterIds, trnIds: [], erfIds };
+  }, [selectedBucket, allVisibleBucketItems]);
+  const { currentData: trnBgoAssets } = useGetMdBgoAssetsQuery(trnBgoAssetIds, {
+    skip: !(selectedBucket?.bucketType === "BGOB" && !isBmdBgoBucket(selectedBucket)) || !allVisibleBucketItems.length,
+  });
+
   const trnBgoRows = useMemo(
-    () => (selectedBucket?.bucketType === "BGOB" && !isBmdBgoBucket(selectedBucket) ? buildTrnBgoMobileRows(allVisibleBucketItems) : []),
-    [selectedBucket, allVisibleBucketItems],
+    () => (selectedBucket?.bucketType === "BGOB" && !isBmdBgoBucket(selectedBucket) ? buildTrnBgoMobileRows(allVisibleBucketItems, trnBgoAssets || {}) : []),
+    [selectedBucket, allVisibleBucketItems, trnBgoAssets],
   );
   const trnBgoSummary = useMemo(
     () => summarizeTrnBgoRows(trnBgoRows),
@@ -3234,6 +3248,122 @@ export default function WorkorderManagementSystem() {
     } catch (error) { Alert.alert("MD BGO Row Not Ready", error.message); }
   }
 
+  function handleTrnBgoRowAction({ bucket, row, intent }) {
+    try {
+      const liveBucket = bgoBucketsRef.current.find((b) => b.id === bucket?.id) || selectedBucket;
+      if (!liveBucket?.permissions?.canViewTrns || !fieldWorkorderActor || actionBusy) {
+        throw new Error("This TRN BGO batch is no longer available for field work.");
+      }
+      const liveRow = trnBgoRows.find((r) => r.id === row?.id) || row;
+      if (!liveRow) throw new Error("This TRN BGO work row is no longer available.");
+
+      if (intent === "TRN_BGO_EXECUTE") {
+        setTrnBgoMapOpen(false);
+        handleExecute(liveRow?.trnItem);
+        return;
+      }
+
+      const scope = getBmdBucketScope(liveBucket);
+      const warehouseErf =
+        (trnBgoAssets?.erfs || []).find((e) => e.id === liveRow.erfId) ||
+        (all?.erfs || []).find((e) => cleanId(e?.id || e?.erfId) === cleanId(liveRow.erfId)) ||
+        null;
+      const erf = liveRow.erfId || warehouseErf
+        ? buildBmdSelectedErf({
+            bucket: liveBucket,
+            erf: {
+              id: liveRow.erfId || warehouseErf?.id || warehouseErf?.erfId,
+              erfNo: liveRow.erfNo !== "NAv" ? liveRow.erfNo : warehouseErf?.erfNo,
+              wardPcode: liveRow.wardPcode || scope.wardPcode,
+              lmPcode: scope.lmPcode,
+            },
+            warehouseErf,
+          })
+        : null;
+      const premise =
+        (trnBgoAssets?.premises || []).find((p) => p.id === liveRow.premiseId) ||
+        (all?.prems || []).find((p) => cleanId(p?.id) === cleanId(liveRow.premiseId)) ||
+        (liveRow.premiseId
+          ? {
+              id: liveRow.premiseId,
+              erfId: liveRow.erfId,
+              erfNo: liveRow.erfNo,
+              addressText: liveRow.addressLine,
+              wardPcode: liveRow.wardPcode || scope.wardPcode,
+            }
+          : null);
+      const meter =
+        (trnBgoAssets?.meters || []).find((m) => m.id === liveRow.meterId) ||
+        (all?.asts || []).find((m) => cleanId(m?.id || m?.astData?.astId) === cleanId(liveRow.meterId)) ||
+        (liveRow.meterId
+          ? {
+              id: liveRow.meterId,
+              astNo: liveRow.meterNo,
+              astData: { astId: liveRow.meterId, astNo: liveRow.meterNo },
+            }
+          : null);
+
+      if (intent === TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS) {
+        if (liveRow.displayStatus === "COMPLETED") {
+          Alert.alert("Completed", "This TRN execution is already completed.");
+          return;
+        }
+        setTrnBgoMapOpen(false);
+        const item = liveRow.trnItem || {};
+        const sourceAstId =
+          liveRow.meterId ||
+          item.raw?.ast?.astData?.astId ||
+          item.raw?.ast?.astId ||
+          item.raw?.ast?.id ||
+          "";
+        router.push({
+          pathname: NO_ACCESS_ROUTE,
+          params: {
+            context: JSON.stringify({
+              ...buildAssetNoAccessContext({ ...item.raw, id: sourceAstId }, {
+                trnType: item.trnType || liveRow.trnType,
+                returnTo: "/(tabs)/admin/operations/my-workorders",
+              }),
+              instructionTrnId: item.id || liveRow.id,
+              origin: item.raw?.origin || { channel: "OFFICE" },
+              assignment: item.raw?.assignment || {},
+            }),
+          },
+        });
+        return;
+      }
+
+      const selectionType =
+        intent === TARGETED_BATCH_INTENTS.OPEN_ERF
+          ? "ERF"
+          : intent === TARGETED_BATCH_INTENTS.OPEN_AST
+            ? "METER"
+            : "PREMISE";
+
+      updateGeo({
+        selectedWard: { id: scope.wardPcode || liveRow.wardPcode, pcode: scope.wardPcode || liveRow.wardPcode, name: scope.wardName || liveRow.wardLabel },
+        selectedErf: erf,
+        selectedPremise: premise,
+        selectedMeter: meter,
+        lastSelectionType: selectionType,
+      });
+      setTrnBgoMapOpen(false);
+
+      if (intent === TARGETED_BATCH_INTENTS.OPEN_ERF) {
+        if (!erf) throw new Error("Linked ERF details are not available for this row.");
+        router.push("/(tabs)/erfs");
+      } else if (intent === TARGETED_BATCH_INTENTS.OPEN_AST) {
+        if (!meter) throw new Error("Linked meter details are not available for this row.");
+        router.push("/(tabs)/asts");
+      } else {
+        if (!premise) throw new Error("Linked premise details are not available for this row.");
+        router.push("/(tabs)/premises");
+      }
+    } catch (error) {
+      Alert.alert("TRN BGO Row Not Ready", error.message);
+    }
+  }
+
   // TB-R051: returns true only when the action is now pending (preparing); false when it was refused.
   function prepareTargetedBatchAction({ bucket, row, intent }) {
     const erfId = cleanId(row?.erfId || row?.refs?.erfId);
@@ -3819,7 +3949,7 @@ export default function WorkorderManagementSystem() {
           offline={offline}
           onOpenMap={() => setTrnBgoMapOpen(true)}
           onBack={backToBuckets}
-          onAction={({ row }) => handleExecute(row?.trnItem)}
+          onAction={handleTrnBgoRowAction}
         />
       ) : showTrnDetail ? (
         <GroupDetail
@@ -3871,7 +4001,8 @@ export default function WorkorderManagementSystem() {
         onClose={() => setTrnBgoMapOpen(false)}
         mapPointsOverride={trnBgoMapPoints}
         batchOnly
-        renderRowCard={(row) => <TargetedBatchRowCard row={row} bucket={selectedBucket} onAction={({ row: r }) => { setTrnBgoMapOpen(false); handleExecute(r?.trnItem); }} />}
+        batchAssets={trnBgoAssets}
+        renderRowCard={(row) => <TargetedBatchRowCard row={row} bucket={selectedBucket} onAction={handleTrnBgoRowAction} />}
       />
       <TargetedBatchMapModal
         visible={targetedBatchMapVisible}
@@ -5220,7 +5351,7 @@ function TargetedBatchRowCardBase({
             </Text>
           ) : null}
           <Text style={styles.mdBgoErfSub} numberOfLines={1}>
-            {row?.sourceModule === "BULK_METER_DISCOVERY" ? `ERF ${row.erfNo || "NAv"}` : row?.sourceModule === "TRN_BGO" ? `${row.trnTypeLabel || row.trnType || "TRN"} • ERF ${row.erfNo || "NAv"}` : <>Account {row?.accountNumber || "NAv"} • {row?.customerName || "NAv"}</>}
+            {row?.sourceModule === "BULK_METER_DISCOVERY" ? `ERF ${row.erfNo || "NAv"}` : row?.sourceModule === "TRN_BGO" ? `${row.wardLabel || "Ward NAv"} • ERF ${row.erfNo || "NAv"}` : <>Account {row?.accountNumber || "NAv"} • {row?.customerName || "NAv"}</>}
           </Text>
           <Text style={styles.mdBgoErfSub} numberOfLines={2}>
             {row?.addressLine || row?.address || row?.town || "NAv"}
@@ -5235,15 +5366,121 @@ function TargetedBatchRowCardBase({
       </View>
 
       {row?.sourceModule === "TRN_BGO" ? (
-        <View style={styles.mdBgoErfFooterRow}>
-          <TargetedBatchActionTile
-            label={row?.trnTypeLabel || "TRN"}
-            value={row?.workflowState === "QA FAIL" ? "CORRECT" : "EXECUTE"}
-            helperText={row?.displayStatus === "COMPLETED" ? "Completed" : "Open form"}
-            icon="clipboard-text-play-outline"
-            tone={row?.workflowState === "QA FAIL" ? "issue" : "default"}
+        <View style={styles.trnBgoRowsWrap}>
+          {/* Row 1: 4 icon-first tiles (Premise, Meter, NA with count badge, ERF) */}
+          <View style={styles.trnBgoRow1Tiles}>
+            <Pressable
+              style={({ pressed }) => [styles.trnBgoTile, pressed && styles.trnBgoTilePressed]}
+              onPress={() => onAction({ bucket, row, intent: TARGETED_BATCH_INTENTS.OPEN_PREMISE })}
+            >
+              <View style={styles.trnBgoTileIconWrap}>
+                <MaterialCommunityIcons name="home-outline" size={18} color="#2563eb" />
+              </View>
+              <Text style={styles.trnBgoTileLabel} numberOfLines={1}>PREMISE</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.trnBgoTile, pressed && styles.trnBgoTilePressed]}
+              onPress={() => onAction({ bucket, row, intent: TARGETED_BATCH_INTENTS.OPEN_AST })}
+            >
+              <View style={styles.trnBgoTileIconWrap}>
+                <MaterialCommunityIcons name="meter-electric-outline" size={18} color="#2563eb" />
+              </View>
+              <Text style={styles.trnBgoTileLabel} numberOfLines={1}>METER</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.trnBgoTile,
+                row?.displayStatus === "COMPLETED" && styles.trnBgoTileDisabled,
+                pressed && row?.displayStatus !== "COMPLETED" && styles.trnBgoTilePressed,
+              ]}
+              disabled={row?.displayStatus === "COMPLETED"}
+              onPress={() => onAction({ bucket, row, intent: TARGETED_BATCH_INTENTS.RECORD_NO_ACCESS })}
+            >
+              <View style={[styles.trnBgoTileIconWrap, styles.trnBgoTileIconWrapNa, row?.displayStatus === "COMPLETED" && styles.trnBgoTileIconWrapNaDisabled]}>
+                <MaterialCommunityIcons
+                  name="account-cancel-outline"
+                  size={18}
+                  color={row?.displayStatus === "COMPLETED" ? "#64748b" : "#b45309"}
+                />
+                <View style={[styles.trnBgoNaBadge, Number(row?.noAccessCount || 0) > 0 && styles.trnBgoNaBadgeHasNa]}>
+                  <Text style={styles.trnBgoNaBadgeText}>{Number(row?.noAccessCount || 0)}</Text>
+                </View>
+              </View>
+              <Text style={styles.trnBgoTileLabel} numberOfLines={1}>NA</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.trnBgoTile, pressed && styles.trnBgoTilePressed]}
+              onPress={() => onAction({ bucket, row, intent: TARGETED_BATCH_INTENTS.OPEN_ERF })}
+            >
+              <View style={styles.trnBgoTileIconWrap}>
+                <MaterialCommunityIcons name="vector-square" size={18} color="#2563eb" />
+              </View>
+              <Text style={styles.trnBgoTileLabel} numberOfLines={1}>ERF</Text>
+            </Pressable>
+          </View>
+
+          {/* Row 2: TRN Execution Bar */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.trnBgoRow2Bar,
+              row?.workflowState === "QA FAIL" && styles.trnBgoRow2BarFail,
+              row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2BarCompleted,
+              pressed && styles.trnBgoTilePressed,
+            ]}
             onPress={() => onAction({ bucket, row, intent: "TRN_BGO_EXECUTE" })}
-          />
+          >
+            <View style={styles.trnBgoRow2Left}>
+              <MaterialCommunityIcons
+                name={row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" ? "check-circle-outline" : "clipboard-text-outline"}
+                size={18}
+                color={row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" ? "#15803d" : "#ffffff"}
+              />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={[
+                    styles.trnBgoRow2Title,
+                    row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2TitleCompleted,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {row?.trnTypeLabel || "TRN"}
+                </Text>
+                <Text
+                  style={[
+                    styles.trnBgoRow2Sub,
+                    row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2SubCompleted,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {row?.workflowState === "QA FAIL"
+                    ? "Tap to correct TRN"
+                    : row?.displayStatus === "COMPLETED"
+                      ? "Execution completed"
+                      : row?.displayStatus === "IN_PROGRESS"
+                        ? "Tap to continue TRN form"
+                        : "Tap to open TRN form"}
+                </Text>
+              </View>
+            </View>
+            <View
+              style={[
+                styles.trnBgoRow2Cta,
+                row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2CtaCompleted,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.trnBgoRow2CtaText,
+                  row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2CtaTextCompleted,
+                ]}
+              >
+                {row?.workflowState === "QA FAIL" ? "CORRECT ›" : row?.displayStatus === "COMPLETED" ? "VIEW ›" : "EXECUTE ›"}
+              </Text>
+            </View>
+          </Pressable>
         </View>
       ) : (
       <View style={styles.mdBgoErfFooterRow}>
@@ -7524,6 +7761,158 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     marginTop: 9,
+  },
+
+  trnBgoRowsWrap: {
+    gap: 9,
+    marginTop: 10,
+  },
+
+  trnBgoRow1Tiles: {
+    flexDirection: "row",
+    gap: 7,
+  },
+
+  trnBgoTile: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+
+  trnBgoTilePressed: {
+    opacity: 0.78,
+  },
+
+  trnBgoTileDisabled: {
+    opacity: 0.45,
+    backgroundColor: "#f1f5f9",
+  },
+
+  trnBgoTileIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: "#eff6ff",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+
+  trnBgoTileIconWrapNa: {
+    backgroundColor: "#fef3c7",
+  },
+
+  trnBgoTileIconWrapNaDisabled: {
+    backgroundColor: "#e2e8f0",
+  },
+
+  trnBgoNaBadge: {
+    position: "absolute",
+    top: -5,
+    right: -7,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    backgroundColor: "#0f172a",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: "#ffffff",
+  },
+
+  trnBgoNaBadgeHasNa: {
+    backgroundColor: "#d97706",
+  },
+
+  trnBgoNaBadgeText: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+
+  trnBgoTileLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#334155",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+
+  trnBgoRow2Bar: {
+    backgroundColor: "#0f172a",
+    borderRadius: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+
+  trnBgoRow2BarCompleted: {
+    backgroundColor: "#ecfdf5",
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+  },
+
+  trnBgoRow2BarFail: {
+    backgroundColor: "#dc2626",
+  },
+
+  trnBgoRow2Left: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+
+  trnBgoRow2Title: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+  trnBgoRow2TitleCompleted: {
+    color: "#15803d",
+  },
+
+  trnBgoRow2Sub: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 11,
+  },
+
+  trnBgoRow2SubCompleted: {
+    color: "#166534",
+  },
+
+  trnBgoRow2Cta: {
+    backgroundColor: "rgba(255,255,255,0.16)",
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+
+  trnBgoRow2CtaCompleted: {
+    backgroundColor: "#dcfce7",
+  },
+
+  trnBgoRow2CtaText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+
+  trnBgoRow2CtaTextCompleted: {
+    color: "#15803d",
   },
 
   mdBgoErfMiniStat: {

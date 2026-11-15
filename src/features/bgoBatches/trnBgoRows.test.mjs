@@ -65,4 +65,8 @@ test("my-workorders splits BGOB into 4 buckets and routes TRN BGO rows to Target
   assert.doesNotMatch(screen, /if \(!isBmdBgoBucket\(props\.bucket\)\) return <BucketCard/);
   assert.match(screen, /const canView = isBmd \? bucket\.permissions\?\.canViewErfs : bucket\.permissions\?\.canViewTrns/);
   assert.match(screen, /item\?\.raw\?\.origin\?\.trnBgo\?\.batchId/);
+  assert.match(screen, /handleTrnBgoRowAction/);
+  assert.match(screen, /trnBgoRow1Tiles/);
+  assert.match(screen, /trnBgoRow2Bar/);
+  assert.match(screen, /trnBgoNaBadge/);
 });
