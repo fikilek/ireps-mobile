@@ -5014,7 +5014,7 @@ function TargetedBatchRowsWorklist({
     ? TARGETED_BATCH_INTENT_LABELS[openingAction?.intent] || "the batch action"
     : null;
   const openingMeterNo = readFirstString(openingRow?.meterNo);
-  const openingText = openingAction
+  const openingText = openingAction && openingAction.intent !== "TRN_BGO_EXECUTE"
     ? openingMeterNo
       ? `Opening ${openingLabel} for meter ${openingMeterNo}…`
       : `Opening ${openingLabel}…`
