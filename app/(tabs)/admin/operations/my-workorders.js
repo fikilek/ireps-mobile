@@ -1,10 +1,10 @@
 import { buildMdBgoMobileRows, buildMdBgoCaptureContext, buildMdBgoMapPoints } from "../../../../src/features/bgoBatches/mdBgoRows";
-import { buildTrnBgoMobileRows, summarizeTrnBgoRows } from "../../../../src/features/bgoBatches/trnBgoRows";
+import { buildTrnBgoMobileRows, buildWorkorderNoAccessContext, summarizeTrnBgoRows } from "../../../../src/features/bgoBatches/trnBgoRows";
 import { summarizeMdBgoCardRows } from "../../../../src/features/bgoBatches/bgoBatchCardModel";
 import BatchCardPresentation from "../../../../src/components/workOrders/BatchCardPresentation";
 import { getQaDraft } from "../../../../src/features/qa/amendmentQueue";
 import { usePendingQaRecovery } from "../../../../src/features/qa/usePendingQaRecovery";
-import { ACCESS_GATE, NO_ACCESS_ROUTE, buildAssetNoAccessContext } from "../../../../src/features/meters/accessGate";
+import { ACCESS_GATE, NO_ACCESS_ROUTE } from "../../../../src/features/meters/accessGate";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNetInfo } from "@react-native-community/netinfo";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
@@ -3191,17 +3191,11 @@ export default function WorkorderManagementSystem() {
         source: "WMS",
       },
     });
-    if (["METER_INSPECTION", "METER_DISCONNECTION", "METER_RECONNECTION", "METER_REMOVAL", "METER_READING"].includes(item.trnType)) {
+    if (!item.raw?.origin?.trnBgo && ["METER_INSPECTION", "METER_DISCONNECTION", "METER_RECONNECTION", "METER_REMOVAL", "METER_READING"].includes(item.trnType)) {
       Alert.alert(ACCESS_GATE.title, ACCESS_GATE.message, [
         { text: "Cancel", style: "cancel", onPress: () => setProcessingItemAction(null) },
         { text: ACCESS_GATE.no, onPress: () => router.push({ pathname: NO_ACCESS_ROUTE,
-          params: { context: JSON.stringify({
-            ...buildAssetNoAccessContext({ ...item.raw, id: sourceAstId }, {
-              trnType: item.trnType, returnTo: "/(tabs)/admin/operations/my-workorders",
-            }),
-            instructionTrnId, origin: item.raw?.origin || { channel: "OFFICE" },
-            assignment: item.raw?.assignment || {},
-          }) },
+          params: { context: JSON.stringify(buildWorkorderNoAccessContext({ item, sourceAstId })) },
         }) },
         { text: ACCESS_GATE.yes, onPress: openAccessForm },
       ]);
@@ -3319,18 +3313,11 @@ export default function WorkorderManagementSystem() {
         router.push({
           pathname: NO_ACCESS_ROUTE,
           params: {
-            context: JSON.stringify({
-              ...buildAssetNoAccessContext({ ...item.raw, id: sourceAstId }, {
-                trnType: item.trnType || liveRow.trnType,
-                returnTo: "/(tabs)/admin/operations/my-workorders",
-              }),
-              trnBgoContext: {
-                batchId: liveBucket.id,
-                instructionTrnId: item.id || liveRow.id,
-              },
-              origin: { channel: "FIELD" },
-              assignment: item.raw?.assignment || {},
-            }),
+            context: JSON.stringify(buildWorkorderNoAccessContext({
+              item: { ...item, id: item.id || liveRow.id, trnType: item.trnType || liveRow.trnType },
+              sourceAstId,
+              batchId: liveBucket.id,
+            })),
           },
         });
         return;

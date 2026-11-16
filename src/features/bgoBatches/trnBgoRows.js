@@ -1,4 +1,5 @@
 import { toWorkedMillis } from "../targetedBatches/rowLastWorked.js";
+import { buildAssetNoAccessContext } from "../meters/accessGate.js";
 import { readErfCentroid } from "../targetedBatches/targetedBatchMapPoints.js";
 
 const TRN_TYPE_LABELS = {
@@ -141,4 +142,30 @@ export function summarizeTrnBgoRows(rows = []) {
     else if (row.qaFinalStatus === "QA FAIL") summary.qaFail += 1;
   }
   return summary;
+}
+
+export function buildWorkorderNoAccessContext({ item = {}, sourceAstId = "", batchId = "", returnTo = "/(tabs)/admin/operations/my-workorders" } = {}) {
+  const base = buildAssetNoAccessContext({ ...(item.raw || {}), id: sourceAstId }, {
+    trnType: item.trnType,
+    returnTo,
+  });
+  const trnBgoOrigin = item.raw?.origin?.trnBgo;
+  const resolvedBatchId = String(batchId || trnBgoOrigin?.batchId || "").trim();
+  if (trnBgoOrigin || resolvedBatchId) {
+    return {
+      ...base,
+      trnBgoContext: {
+        batchId: resolvedBatchId,
+        instructionTrnId: item.id,
+      },
+      origin: { channel: "FIELD" },
+      assignment: item.raw?.assignment || {},
+    };
+  }
+  return {
+    ...base,
+    instructionTrnId: item.id,
+    origin: item.raw?.origin || { channel: "OFFICE" },
+    assignment: item.raw?.assignment || {},
+  };
 }
