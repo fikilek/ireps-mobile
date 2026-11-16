@@ -178,18 +178,24 @@ function getBatchWardScope(bucket = {}, rows = []) {
     lmPcode: readFirstString(
       batchScope?.lmPcode,
       batchScope?.lmId,
+      bucket?.lmPcode,
+      bucket?.raw?.lmPcode,
       rowScope?.lmPcode,
       rowScope?.lmId,
+      firstRow?.lmPcode,
     ),
     wardPcode: readFirstString(
       batchScope?.wardPcode,
       batchScope?.wardId,
       batchScope?.ward?.pcode,
       batchScope?.ward?.id,
+      bucket?.wardPcode,
+      bucket?.raw?.wardPcode,
       rowScope?.wardPcode,
       rowScope?.wardId,
       rowScope?.ward?.pcode,
       rowScope?.ward?.id,
+      firstRow?.wardPcode,
     ),
   };
 }
@@ -766,7 +772,8 @@ export default function TargetedBatchMapModal({
   const batchErfIds = useMemo(() => new Set(safeRows.map((r) => r.erfId || r.refs?.erfId).filter(Boolean)), [safeRows]);
   const batchPremiseIds = useMemo(() => new Set(safeRows.map((r) => r.refs?.premiseId).filter(Boolean)), [safeRows]);
   const bucketId = readFirstString(bucket?.id);
-  const geofenceId = readFirstString(bucket?.geofenceId);
+  const rawGeofenceId = readFirstString(bucket?.geofenceId);
+  const geofenceId = rawGeofenceId.toUpperCase() === "NAV" ? "" : rawGeofenceId;
 
   // TB-R051 online only: with no rows on the phone, say why instead of "no position" or "0 no position".
   const rowsState =

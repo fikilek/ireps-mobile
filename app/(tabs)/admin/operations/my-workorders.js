@@ -3987,7 +3987,7 @@ export default function WorkorderManagementSystem() {
         bucket={selectedBucket}
         rows={trnBgoRows}
         offline={offline}
-        loading={isPreparingBgoDetail}
+        loading={isPreparingBgoDetail || ((isLoadingBgoDetailTrns || isFetchingBgoDetailTrns) && trnBgoRows.length === 0)}
         error={bgoDetailError}
         onClose={() => setTrnBgoMapOpen(false)}
         mapPointsOverride={trnBgoMapPoints}
