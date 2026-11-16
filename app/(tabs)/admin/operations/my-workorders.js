@@ -3940,7 +3940,7 @@ export default function WorkorderManagementSystem() {
           onOpenMap={() => setTrnBgoMapOpen(true)}
           onBack={backToBuckets}
           onAction={handleTrnBgoRowAction}
-          openingAction={processingItemAction?.type === "EXECUTE" ? { rowId: processingItemAction.itemId, intent: "TRN_BGO_EXECUTE" } : null}
+          openingAction={processingItemAction?.action === "EXECUTE" ? { rowId: processingItemAction.itemId, intent: "TRN_BGO_EXECUTE" } : null}
         />
       ) : showTrnDetail ? (
         <GroupDetail
@@ -3993,7 +3993,7 @@ export default function WorkorderManagementSystem() {
         mapPointsOverride={trnBgoMapPoints}
         batchOnly
         batchAssets={trnBgoAssets}
-        renderRowCard={(row) => <TargetedBatchRowCard row={row} bucket={selectedBucket} onAction={handleTrnBgoRowAction} openingIntent={processingItemAction?.type === "EXECUTE" && processingItemAction?.itemId === row?.id ? "TRN_BGO_EXECUTE" : null} />}
+        renderRowCard={(row) => <TargetedBatchRowCard row={row} bucket={selectedBucket} onAction={handleTrnBgoRowAction} openingIntent={processingItemAction?.action === "EXECUTE" && processingItemAction?.itemId === row?.id ? "TRN_BGO_EXECUTE" : null} />}
       />
       <TargetedBatchMapModal
         visible={targetedBatchMapVisible}
