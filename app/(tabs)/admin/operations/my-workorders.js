@@ -3175,7 +3175,7 @@ export default function WorkorderManagementSystem() {
       meterNo: item?.meterNo,
     });
 
-    const openAccessForm = () => router.push({
+    const openAccessForm = () => requestAnimationFrame(() => router.push({
       pathname,
       params: {
         // ✅ Primary WMS execution id.
@@ -3190,7 +3190,7 @@ export default function WorkorderManagementSystem() {
         action: JSON.stringify(action),
         source: "WMS",
       },
-    });
+    }));
     if (!item.raw?.origin?.trnBgo && ["METER_INSPECTION", "METER_DISCONNECTION", "METER_RECONNECTION", "METER_REMOVAL", "METER_READING"].includes(item.trnType)) {
       Alert.alert(ACCESS_GATE.title, ACCESS_GATE.message, [
         { text: "Cancel", style: "cancel", onPress: () => setProcessingItemAction(null) },
@@ -3940,6 +3940,7 @@ export default function WorkorderManagementSystem() {
           onOpenMap={() => setTrnBgoMapOpen(true)}
           onBack={backToBuckets}
           onAction={handleTrnBgoRowAction}
+          openingAction={processingItemAction?.type === "EXECUTE" ? { rowId: processingItemAction.itemId, intent: "TRN_BGO_EXECUTE" } : null}
         />
       ) : showTrnDetail ? (
         <GroupDetail
@@ -3992,7 +3993,7 @@ export default function WorkorderManagementSystem() {
         mapPointsOverride={trnBgoMapPoints}
         batchOnly
         batchAssets={trnBgoAssets}
-        renderRowCard={(row) => <TargetedBatchRowCard row={row} bucket={selectedBucket} onAction={handleTrnBgoRowAction} />}
+        renderRowCard={(row) => <TargetedBatchRowCard row={row} bucket={selectedBucket} onAction={handleTrnBgoRowAction} openingIntent={processingItemAction?.type === "EXECUTE" && processingItemAction?.itemId === row?.id ? "TRN_BGO_EXECUTE" : null} />}
       />
       <TargetedBatchMapModal
         visible={targetedBatchMapVisible}
@@ -5414,11 +5415,12 @@ function TargetedBatchRowCardBase({
 
           {/* Row 2: TRN Execution Bar */}
           <Pressable
+            disabled={openingIntent === "TRN_BGO_EXECUTE"}
             style={({ pressed }) => [
               styles.trnBgoRow2Bar,
               row?.workflowState === "QA FAIL" && styles.trnBgoRow2BarFail,
               row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2BarCompleted,
-              pressed && styles.trnBgoTilePressed,
+              (pressed || openingIntent === "TRN_BGO_EXECUTE") && styles.trnBgoTilePressed,
             ]}
             onPress={() => onAction({ bucket, row, intent: "TRN_BGO_EXECUTE" })}
           >
@@ -5461,14 +5463,21 @@ function TargetedBatchRowCardBase({
                 row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2CtaCompleted,
               ]}
             >
-              <Text
-                style={[
-                  styles.trnBgoRow2CtaText,
-                  row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2CtaTextCompleted,
-                ]}
-              >
-                {row?.workflowState === "QA FAIL" ? "CORRECT ›" : row?.displayStatus === "COMPLETED" ? "VIEW ›" : "EXECUTE ›"}
-              </Text>
+              {openingIntent === "TRN_BGO_EXECUTE" ? (
+                <ActivityIndicator
+                  size="small"
+                  color={row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" ? "#15803d" : "#ffffff"}
+                />
+              ) : (
+                <Text
+                  style={[
+                    styles.trnBgoRow2CtaText,
+                    row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2CtaTextCompleted,
+                  ]}
+                >
+                  {row?.workflowState === "QA FAIL" ? "CORRECT ›" : row?.displayStatus === "COMPLETED" ? "VIEW ›" : "EXECUTE ›"}
+                </Text>
+              )}
             </View>
           </Pressable>
         </View>
