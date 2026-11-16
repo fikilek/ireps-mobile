@@ -3996,7 +3996,7 @@ export default function WorkorderManagementSystem() {
         renderRowCard={(row) => <TargetedBatchRowCard row={row} bucket={selectedBucket} onAction={handleTrnBgoRowAction} openingIntent={processingItemAction?.action === "EXECUTE" && processingItemAction?.itemId === row?.id ? "TRN_BGO_EXECUTE" : null} />}
       />
       <TargetedBatchMapModal
-        visible={targetedBatchMapVisible}
+        visible={targetedBatchMapOpen && showTargetedBatchRows}
         bucket={selectedBucket}
         rows={targetedBatchRows}
         erfCentroidById={targetedBatchErfCentroidById}
