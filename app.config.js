@@ -1,4 +1,6 @@
-const APP_ENV = process.env.APP_ENV || process.env.EXPO_PUBLIC_APP_ENV || "dev";
+const APP_ENV = (process.env.APP_ENV || process.env.EXPO_PUBLIC_APP_ENV || "")
+  .trim()
+  .toLowerCase();
 
 const APP_VARIANTS = {
   dev: {
@@ -39,7 +41,15 @@ const APP_VARIANTS = {
   },
 };
 
-const variant = APP_VARIANTS[APP_ENV] || APP_VARIANTS.dev;
+const variant = APP_VARIANTS[APP_ENV];
+
+if (!variant) {
+  throw new Error(
+    `[app.config.js] Missing or invalid APP_ENV / EXPO_PUBLIC_APP_ENV: "${APP_ENV}". Expected one of: ${Object.keys(
+      APP_VARIANTS,
+    ).join(", ")}.`,
+  );
+}
 
 export default {
   expo: {
