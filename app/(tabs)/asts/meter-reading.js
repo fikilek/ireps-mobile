@@ -2703,7 +2703,6 @@ export default function FormMeterReading() {
                     ],
                   );
                 }}
-                onSave={() => handleSaveMeterReading(values)}
                 onSubmit={handleSubmit}
                 disabledReason="Complete all required fields before submitting."
               />

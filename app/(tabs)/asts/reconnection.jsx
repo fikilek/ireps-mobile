@@ -1195,7 +1195,7 @@ export default function FormMeterReconnection() {
         {
           payload: cleanPayload,
           context: nextContext,
-          status: "IN_PROGRESS",
+          status: "PENDING",
           result: {
             success: false,
             code: "LOCAL_SAVE_ONLY",
@@ -1215,7 +1215,7 @@ export default function FormMeterReconnection() {
         formType: "METER_RECONNECTION",
         payload: cleanPayload,
         context: nextContext,
-        status: "IN_PROGRESS",
+        status: "PENDING",
         createdByUid: agentUid,
         createdByUser: agentName,
       });
@@ -1471,13 +1471,12 @@ export default function FormMeterReconnection() {
       const isOnline = netState.isConnected && netState.isInternetReachable;
 
       if (!isOnline) {
-        setInProgress(false);
-
-        Alert.alert(
-          "Offline",
-          "You are offline. Use SAVE to keep this RCN execution form locally, then submit when online.",
+        await saveDraftToQueue(
+          values,
+          "Saved on this phone, not sent",
+          "You are offline, so the reconnection was NOT sent. It is saved on this phone and ready to sync from Admin → Storage → Offline Submission Forms when you are online.",
         );
-
+        setInProgress(false);
         return;
       }
 
@@ -2026,7 +2025,6 @@ export default function FormMeterReconnection() {
                     ],
                   );
                 }}
-                onSave={() => handleSaveReconnection(values)}
                 onSubmit={handleSubmit}
                 disabledReason="Complete all required fields before submitting."
               />

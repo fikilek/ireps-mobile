@@ -3229,8 +3229,8 @@ export default function InspectionScreen() {
           );
         } else {
           Alert.alert(
-            "Offline: nothing was sent",
-            "You are offline. Press SAVE to keep this inspection on the phone, then submit it when you are online.",
+            "Confirm differences first",
+            "You are offline. Confirm the meter comparison differences first, then press SUBMIT to save it on this phone until you are online.",
           );
         }
 
@@ -4629,7 +4629,6 @@ export default function InspectionScreen() {
                     ],
                   );
                 }}
-                onSave={() => handleSaveInspection(values)}
                 onSubmit={handleSubmit}
                 disabledReason={
                   eligibilityBlockMessage ||
