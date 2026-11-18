@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildTrnBgoMobileRows,
   buildWorkorderNoAccessContext,
+  deriveTrnBgoQaBadge,
   resolveTrnBgoMeterState,
 } from "./trnBgoRows.js";
 
@@ -78,5 +79,9 @@ test("buildTrnBgoMobileRows projects live meterState from streamed asts doc over
     },
   );
   assert.equal(rows[0].meterState, "DISCONNECTED");
+  assert.equal(rows[0].qaBadge, "QA NAv");
+  assert.equal(deriveTrnBgoQaBadge("COMPLETED"), "QA PENDING");
+  assert.equal(deriveTrnBgoQaBadge("QA PASS"), "QA PASS");
+  assert.equal(deriveTrnBgoQaBadge("QA FAIL"), "QA FAIL");
   assert.equal(resolveTrnBgoMeterState(null, null), "NAv");
 });
