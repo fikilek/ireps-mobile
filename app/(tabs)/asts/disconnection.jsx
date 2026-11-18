@@ -1306,7 +1306,7 @@ export default function FormMeterDisconnection() {
         {
           payload: cleanPayload,
           context: nextContext,
-          status: "IN_PROGRESS",
+          status: "PENDING",
           result: {
             success: false,
             code: "LOCAL_SAVE_ONLY",
@@ -1326,7 +1326,7 @@ export default function FormMeterDisconnection() {
         formType: "METER_DISCONNECTION",
         payload: cleanPayload,
         context: nextContext,
-        status: "IN_PROGRESS",
+        status: "PENDING",
         createdByUid: agentUid,
         createdByUser: agentName,
       });
@@ -1591,13 +1591,12 @@ export default function FormMeterDisconnection() {
       const isOnline = netState.isConnected && netState.isInternetReachable;
 
       if (!isOnline) {
-        setInProgress(false);
-
-        Alert.alert(
-          "Offline: nothing was sent",
-          "You are offline. Press SAVE to keep this disconnection on the phone, then submit it when you are online.",
+        await saveDraftToQueue(
+          values,
+          "Saved on this phone, not sent",
+          `You are offline, so the disconnection was NOT sent. It is saved on this phone and ready to sync from ${SAVED_FORMS_PLACE} when you are online.`,
         );
-
+        setInProgress(false);
         return;
       }
 
@@ -2160,7 +2159,6 @@ export default function FormMeterDisconnection() {
                     ],
                   );
                 }}
-                onSave={() => handleSaveDisconnection(values)}
                 onSubmit={handleSubmit}
                 disabledReason="Complete all required fields before submitting."
               />

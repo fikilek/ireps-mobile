@@ -1655,14 +1655,6 @@ export default function FormAccountData() {
                 ))}
               </SectionCard>
 
-              <TouchableOpacity
-                style={styles.saveDraftBtn}
-                onPress={() => handleSaveDraft(values)}
-                activeOpacity={0.85}
-              >
-                <MaterialCommunityIcons name="content-save-outline" size={20} color="#0f172a" />
-                <Text style={styles.saveDraftText}>SAVE DRAFT LOCALLY</Text>
-              </TouchableOpacity>
                 </>
               )}
             </ScrollView>
