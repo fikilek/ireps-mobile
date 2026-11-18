@@ -5472,27 +5472,57 @@ function TargetedBatchRowCardBase({
                 </Text>
               </View>
             </View>
-            <View
-              style={[
-                styles.trnBgoRow2Cta,
-                row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2CtaCompleted,
-              ]}
-            >
-              {openingIntent === "TRN_BGO_EXECUTE" ? (
-                <ActivityIndicator
-                  size="small"
-                  color={row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" ? "#15803d" : "#ffffff"}
-                />
-              ) : (
+            <View style={styles.trnBgoRow2Right}>
+              <View
+                style={[
+                  styles.trnBgoQaBadge,
+                  row?.qaBadge === "QA PASS"
+                    ? styles.trnBgoQaBadgePass
+                    : row?.qaBadge === "QA FAIL"
+                      ? styles.trnBgoQaBadgeFail
+                      : row?.qaBadge === "QA PENDING"
+                        ? styles.trnBgoQaBadgePending
+                        : styles.trnBgoQaBadgeNav,
+                ]}
+              >
                 <Text
                   style={[
-                    styles.trnBgoRow2CtaText,
-                    row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2CtaTextCompleted,
+                    styles.trnBgoQaBadgeText,
+                    row?.qaBadge === "QA PASS"
+                      ? styles.trnBgoQaBadgeTextPass
+                      : row?.qaBadge === "QA FAIL"
+                        ? styles.trnBgoQaBadgeTextFail
+                        : row?.qaBadge === "QA PENDING"
+                          ? styles.trnBgoQaBadgeTextPending
+                          : styles.trnBgoQaBadgeTextNav,
                   ]}
+                  numberOfLines={1}
                 >
-                  {row?.workflowState === "QA FAIL" ? "CORRECT ›" : row?.displayStatus === "COMPLETED" ? "VIEW ›" : "EXECUTE ›"}
+                  {row?.qaBadge || "QA NAv"}
                 </Text>
-              )}
+              </View>
+              <View
+                style={[
+                  styles.trnBgoRow2Cta,
+                  row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2CtaCompleted,
+                ]}
+              >
+                {openingIntent === "TRN_BGO_EXECUTE" ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" ? "#15803d" : "#ffffff"}
+                  />
+                ) : (
+                  <Text
+                    style={[
+                      styles.trnBgoRow2CtaText,
+                      row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2CtaTextCompleted,
+                    ]}
+                  >
+                    {row?.workflowState === "QA FAIL" ? "CORRECT ›" : row?.displayStatus === "COMPLETED" ? "VIEW ›" : "EXECUTE ›"}
+                  </Text>
+                )}
+              </View>
             </View>
           </Pressable>
         </View>
@@ -5556,6 +5586,7 @@ const TARGETED_BATCH_ROW_CARD_FIELDS = [
   (row) => row?.qa?.tbStatus,
   (row) => row?.raw?.qa?.tbStatus,
   (row) => row?.qaFinalStatus,
+  (row) => row?.qaBadge,
 ];
 
 // The batch is compared by id only: the card shows nothing of it, and the stable onAction
@@ -7944,6 +7975,27 @@ const styles = StyleSheet.create({
   trnBgoRow2CtaTextCompleted: {
     color: "#15803d",
   },
+
+  trnBgoRow2Right: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  trnBgoQaBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  trnBgoQaBadgePass: { backgroundColor: "#dcfce7", borderColor: "#86efac" },
+  trnBgoQaBadgeFail: { backgroundColor: "#fee2e2", borderColor: "#fca5a5" },
+  trnBgoQaBadgePending: { backgroundColor: "#fef3c7", borderColor: "#fcd34d" },
+  trnBgoQaBadgeNav: { backgroundColor: "#f1f5f9", borderColor: "#cbd5e1" },
+  trnBgoQaBadgeText: { fontSize: 10, fontWeight: "900", letterSpacing: 0.3 },
+  trnBgoQaBadgeTextPass: { color: "#15803d" },
+  trnBgoQaBadgeTextFail: { color: "#b91c1c" },
+  trnBgoQaBadgeTextPending: { color: "#b45309" },
+  trnBgoQaBadgeTextNav: { color: "#475569" },
 
   mdBgoErfMiniStat: {
     minWidth: 72,

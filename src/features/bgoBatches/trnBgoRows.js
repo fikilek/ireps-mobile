@@ -71,6 +71,14 @@ export function resolveTrnBgoMeterState(meterDoc = null, raw = null) {
   return "NAv";
 }
 
+export function deriveTrnBgoQaBadge(workflowState = "") {
+  const upper = String(workflowState || "").trim().toUpperCase();
+  if (upper === "QA PASS") return "QA PASS";
+  if (upper === "QA FAIL") return "QA FAIL";
+  if (upper === "COMPLETED") return "QA PENDING";
+  return "QA NAv";
+}
+
 export function buildTrnBgoMobileRows(items = [], assets = {}) {
   const premisesById = new Map((assets?.premises || []).filter((p) => p?.id).map((p) => [p.id, p]));
   const metersById = new Map((assets?.meters || []).filter((m) => m?.id).map((m) => [m.id, m]));
@@ -119,6 +127,7 @@ export function buildTrnBgoMobileRows(items = [], assets = {}) {
       executionStatus: displayStatus,
       qa: qaStatus ? { finalStatus: qaStatus, tbStatus: qaStatus } : null,
       qaFinalStatus: qaStatus,
+      qaBadge: deriveTrnBgoQaBadge(workflowState),
       meterId,
       meterNo: item?.meterNo || meterDoc?.astData?.astNo || meterDoc?.astNo || raw?.ast?.astData?.astNo || "NAv",
       meterState: resolveTrnBgoMeterState(meterDoc, raw),
