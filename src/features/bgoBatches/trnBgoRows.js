@@ -55,6 +55,22 @@ function readNoAccessCount(item = {}, raw = {}, premiseDoc = null) {
   return accessStatus.includes("NO") ? 1 : 0;
 }
 
+export function resolveTrnBgoMeterState(meterDoc = null, raw = null) {
+  const candidates = [
+    meterDoc?.status?.state,
+    meterDoc?.ast?.status?.state,
+    meterDoc?.state?.state,
+    meterDoc?.astData?.astState?.state,
+    raw?.ast?.status?.state,
+    raw?.ast?.state?.state,
+  ];
+  for (const candidate of candidates) {
+    const clean = String(candidate || "").trim().toUpperCase();
+    if (clean && clean !== "NAV") return clean;
+  }
+  return "NAv";
+}
+
 export function buildTrnBgoMobileRows(items = [], assets = {}) {
   const premisesById = new Map((assets?.premises || []).filter((p) => p?.id).map((p) => [p.id, p]));
   const metersById = new Map((assets?.meters || []).filter((m) => m?.id).map((m) => [m.id, m]));
@@ -105,6 +121,7 @@ export function buildTrnBgoMobileRows(items = [], assets = {}) {
       qaFinalStatus: qaStatus,
       meterId,
       meterNo: item?.meterNo || meterDoc?.astData?.astNo || meterDoc?.astNo || raw?.ast?.astData?.astNo || "NAv",
+      meterState: resolveTrnBgoMeterState(meterDoc, raw),
       premiseId,
       erfId,
       erfNo,
