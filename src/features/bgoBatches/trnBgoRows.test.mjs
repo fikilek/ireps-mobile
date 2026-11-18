@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildWorkorderNoAccessContext } from "./trnBgoRows.js";
+import {
+  buildTrnBgoMobileRows,
+  buildWorkorderNoAccessContext,
+  resolveTrnBgoMeterState,
+} from "./trnBgoRows.js";
 
 test("buildWorkorderNoAccessContext routes TRN BGO items through trnBgoContext without top-level instructionTrnId", () => {
   const item = {
@@ -49,4 +53,30 @@ test("buildWorkorderNoAccessContext retains instructionTrnId for Adhoc Individua
   assert.equal(ctx.instructionTrnId, "TRN_IND_1");
   assert.equal(ctx.trnBgoContext, undefined);
   assert.deepEqual(ctx.origin, { channel: "OFFICE" });
+});
+
+test("buildTrnBgoMobileRows projects live meterState from streamed asts doc over static snapshot", () => {
+  const rows = buildTrnBgoMobileRows(
+    [
+      {
+        id: "TRN_MDCN_1",
+        trnType: "METER_DISCONNECTION",
+        workflowState: "IN_PROGRESS",
+        raw: {
+          ast: {
+            astData: { astId: "AST_1", astNo: "04297749634" },
+            status: { state: "CONNECTED" },
+          },
+          accessData: { premiseId: "P1", premise: { id: "P1", erfNo: "5267", address: "5267 CRAIGSIDE STREET" } },
+        },
+      },
+    ],
+    {
+      meters: [{ id: "AST_1", status: { state: "disconnected" }, astData: { astNo: "04297749634" } }],
+      premises: [],
+      erfs: [],
+    },
+  );
+  assert.equal(rows[0].meterState, "DISCONNECTED");
+  assert.equal(resolveTrnBgoMeterState(null, null), "NAv");
 });

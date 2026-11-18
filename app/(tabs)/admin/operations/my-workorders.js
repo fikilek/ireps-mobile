@@ -5334,6 +5334,21 @@ function TargetedBatchRowCardBase({
           <Text style={styles.mdBgoErfTitle}>
             Meter {row?.meterNo || "NAv"}
           </Text>
+          {row?.sourceModule === "TRN_BGO" ? (
+            <Text
+              style={[
+                styles.trnBgoMeterStateLine,
+                row?.meterState === "CONNECTED"
+                  ? styles.trnBgoMeterStateConnected
+                  : row?.meterState === "DISCONNECTED"
+                    ? styles.trnBgoMeterStateDisconnected
+                    : styles.trnBgoMeterStateNeutral,
+              ]}
+              numberOfLines={1}
+            >
+              Status: {row?.meterState || "NAv"}
+            </Text>
+          ) : null}
           {/* TB-R051 (1.3.68): a different meter was captured at this ERF (TB-R063). Meter opens the one
               that is actually there, so the worker reads both numbers before tapping anything. */}
           {row?.foundMeterNo ? (
@@ -5516,6 +5531,7 @@ const TARGETED_BATCH_ROW_CARD_FIELDS = [
   (row) => row?.refs?.premiseId,
   (row) => row?.refs?.meterId,
   (row) => row?.meterNo,
+  (row) => row?.meterState,
   (row) => row?.foundMeterNo,
   (row) => row?.accountNumber,
   (row) => row?.customerName,
@@ -7740,6 +7756,21 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     marginTop: 1,
     textTransform: "uppercase",
+  },
+  trnBgoMeterStateLine: {
+    fontSize: 11,
+    fontWeight: "900",
+    marginTop: 2,
+    textTransform: "uppercase",
+  },
+  trnBgoMeterStateConnected: {
+    color: "#15803d",
+  },
+  trnBgoMeterStateDisconnected: {
+    color: "#b91c1c",
+  },
+  trnBgoMeterStateNeutral: {
+    color: "#475569",
   },
 
   mdBgoErfStatusBadge: {
