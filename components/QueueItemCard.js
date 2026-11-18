@@ -8,6 +8,11 @@ import {
 import { Surface, Text } from "react-native-paper";
 import { formatStreetAddress } from "../src/features/premises/streetAddress";
 import { refusalMessage } from "../src/features/meters/noAccessSubmitMessages";
+import {
+  canEditQueueItem,
+  getQueueItemDisplayResult,
+  getQueueItemSyncLabel,
+} from "../src/utils/queueItemDisplay";
 
 // The badge is what a worker reads. CONFLICT is a coder's word for "the server said no", and the button
 // under it already reads Refused — two words for one state (owner, 26 Sep). The stored status stays
@@ -77,10 +82,7 @@ export default function QueueItemCard({
   const premiseId = item?.context?.premiseId || "NAv";
   // m06: a refused job stops being SENT again, but the worker must still be able to open it. Leaving
   // only Remove would make throwing the work away the only way out of a refusal.
-  const canEdit =
-    item?.status === "PENDING" ||
-    item?.status === "FAILED" ||
-    item?.status === "CONFLICT";
+  const canEdit = canEditQueueItem(item?.status);
 
   // A queue card must never be able to crash this screen. A premise address is a STRING on a
   // well-formed record, but a malformed item can carry the structured object a premise holds
@@ -104,70 +106,13 @@ export default function QueueItemCard({
     item?.metadata?.updatedAt || item?.metadata?.createdAt || "NAv",
   );
 
-  const displayResult = (() => {
-    if (item?.status === "PENDING") {
-      return {
-        code: "PENDING",
-        message: "Draft saved locally",
-      };
-    }
-
-    if (item?.status === "SYNCING") {
-      return {
-        code: "SYNCING",
-        message: "Submission is currently being synced",
-      };
-    }
-
-    if (item?.status === "FAILED") {
-      return {
-        code: item?.result?.code || "FAILED",
-        message: item?.result?.message || "Submission sync failed.",
-      };
-    }
-
-    if (item?.status === "SUCCESS") {
-      return {
-        code: item?.result?.code || "SUCCESS",
-        message: item?.result?.message || "TRN created successfully.",
-      };
-    }
-
-    // NA-R066 - A REFUSAL IS ANSWERED IN THE WORKER'S OWN WORDS, ON THE SCREEN WHERE THEY MEET IT.
-    //
-    // This card is that screen, and until 7 October 2026 it printed the raw server code in capitals
-    // with the sentence clipped to two lines: INSTRUCTION_NOT_ACCEPTED, INVALID_PREMISE_ID. The
-    // Error Register's forty-eight rows of a worker's own words were written for exactly this
-    // moment and the one place they were needed went around them.
-    //
-    // The code is kept and still shown, small, because the office needs it to answer a phone call.
-    // What changes is which of the two the worker reads first.
-    const refusalCode = item?.result?.code || "NAv";
-    const words = refusalMessage(refusalCode, item?.result?.message);
-
-    return {
-      code: refusalCode,
-      message: words?.title ? `${words.title}. ${words.body}` : item?.result?.message || "NAv",
-    };
-  })();
+  const displayResult = getQueueItemDisplayResult(item, refusalMessage);
 
   const meterGps = item?.payload?.ast?.location?.gps;
   const canOpenMap =
     typeof meterGps?.lat === "number" && typeof meterGps?.lng === "number";
 
-  const syncLabel = !isOnline
-    ? "Offline"
-    : item?.status === "SYNCING"
-      ? "Syncing..."
-      : item?.status === "SUCCESS"
-        ? "Synced"
-        : item?.status === "PENDING"
-          ? "Sync"
-          : // x11: a job the server refused is not waiting for anything. "Pending Only" read as though
-            // it still had a chance, on work that will never be accepted.
-            item?.status === "CONFLICT"
-            ? "Refused"
-            : "Pending Only";
+  const syncLabel = getQueueItemSyncLabel({ isOnline, status: item?.status });
 
   const syncDisabled = busy || !isOnline || item?.status !== "PENDING";
 
