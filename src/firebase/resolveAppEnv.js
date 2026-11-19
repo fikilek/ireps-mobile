@@ -5,7 +5,7 @@
 
 export function resolveAppEnv({ env = process.env, constants = null } = {}) {
   // Lock 1: Explicit environment variable (strictly validated, zero guessing)
-  const envVar = (env?.EXPO_PUBLIC_APP_ENV || env?.APP_ENV || "").trim().toLowerCase();
+  const envVar = (env?.APP_ENV || env?.EXPO_PUBLIC_APP_ENV || "").trim().toLowerCase();
   if (envVar && ["dev", "test", "trial", "live"].includes(envVar)) {
     return envVar;
   }
