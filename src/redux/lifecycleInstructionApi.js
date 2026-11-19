@@ -808,11 +808,6 @@ function buildWmsData({
     .filter((trn) => !isBinnedWorkOrder(trn))
     .filter((trn) => WMS_LCT_TYPES.includes(getTrnType(trn)))
     .filter((trn) => WMS_WORKFLOW_STATES.includes(getWorkflowState(trn)))
-    .filter(
-      (trn) =>
-        cleanMode !== "BGO_BUCKET" ||
-        !["QA FAIL", "QA PASS"].includes(getWorkflowState(trn)),
-    )
     .filter((trn) => normalizeUpper(trn?.origin?.channel) !== "FIELD")
     .filter((trn) => {
       const trnBgoBatchId = getBgoBatchIdFromTrn(trn);
