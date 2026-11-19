@@ -5433,23 +5433,22 @@ function TargetedBatchRowCardBase({
             disabled={openingIntent === "TRN_BGO_EXECUTE"}
             style={({ pressed }) => [
               styles.trnBgoRow2Bar,
-              row?.workflowState === "QA FAIL" && styles.trnBgoRow2BarFail,
-              row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2BarCompleted,
+              row?.displayStatus === "COMPLETED" && styles.trnBgoRow2BarCompleted,
               (pressed || openingIntent === "TRN_BGO_EXECUTE") && styles.trnBgoTilePressed,
             ]}
             onPress={() => onAction({ bucket, row, intent: "TRN_BGO_EXECUTE" })}
           >
             <View style={styles.trnBgoRow2Left}>
               <MaterialCommunityIcons
-                name={row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" ? "check-circle-outline" : "clipboard-text-outline"}
+                name={row?.displayStatus === "COMPLETED" ? "check-circle-outline" : "clipboard-text-outline"}
                 size={18}
-                color={row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" ? "#15803d" : "#ffffff"}
+                color={row?.displayStatus === "COMPLETED" ? "#15803d" : "#ffffff"}
               />
               <View style={{ flex: 1 }}>
                 <Text
                   style={[
                     styles.trnBgoRow2Title,
-                    row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2TitleCompleted,
+                    row?.displayStatus === "COMPLETED" && styles.trnBgoRow2TitleCompleted,
                   ]}
                   numberOfLines={1}
                 >
@@ -5458,7 +5457,7 @@ function TargetedBatchRowCardBase({
                 <Text
                   style={[
                     styles.trnBgoRow2Sub,
-                    row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2SubCompleted,
+                    row?.displayStatus === "COMPLETED" && styles.trnBgoRow2SubCompleted,
                   ]}
                   numberOfLines={1}
                 >
@@ -5504,19 +5503,19 @@ function TargetedBatchRowCardBase({
               <View
                 style={[
                   styles.trnBgoRow2Cta,
-                  row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2CtaCompleted,
+                  row?.displayStatus === "COMPLETED" && styles.trnBgoRow2CtaCompleted,
                 ]}
               >
                 {openingIntent === "TRN_BGO_EXECUTE" ? (
                   <ActivityIndicator
                     size="small"
-                    color={row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" ? "#15803d" : "#ffffff"}
+                    color={row?.displayStatus === "COMPLETED" ? "#15803d" : "#ffffff"}
                   />
                 ) : (
                   <Text
                     style={[
                       styles.trnBgoRow2CtaText,
-                      row?.displayStatus === "COMPLETED" && row?.workflowState !== "QA FAIL" && styles.trnBgoRow2CtaTextCompleted,
+                      row?.displayStatus === "COMPLETED" && styles.trnBgoRow2CtaTextCompleted,
                     ]}
                   >
                     {row?.workflowState === "QA FAIL" ? "CORRECT ›" : row?.displayStatus === "COMPLETED" ? "VIEW ›" : "EXECUTE ›"}
