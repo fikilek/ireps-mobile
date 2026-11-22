@@ -4,7 +4,7 @@ import { summarizeMdBgoCardRows } from "../../../../src/features/bgoBatches/bgoB
 import BatchCardPresentation from "../../../../src/components/workOrders/BatchCardPresentation";
 import { getQaDraft } from "../../../../src/features/qa/amendmentQueue";
 import { usePendingQaRecovery } from "../../../../src/features/qa/usePendingQaRecovery";
-import { ACCESS_GATE, NO_ACCESS_ROUTE } from "../../../../src/features/meters/accessGate";
+import { accessGateFor, NO_ACCESS_ROUTE } from "../../../../src/features/meters/accessGate";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNetInfo } from "@react-native-community/netinfo";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
@@ -3192,12 +3192,13 @@ export default function WorkorderManagementSystem() {
       },
     }));
     if (!item.raw?.origin?.trnBgo && ["METER_INSPECTION", "METER_DISCONNECTION", "METER_RECONNECTION", "METER_REMOVAL", "METER_READING"].includes(item.trnType)) {
-      Alert.alert(ACCESS_GATE.title, ACCESS_GATE.message, [
-        { text: "Cancel", style: "cancel", onPress: () => setProcessingItemAction(null) },
-        { text: ACCESS_GATE.no, onPress: () => router.push({ pathname: NO_ACCESS_ROUTE,
+      const gate = accessGateFor(item.trnType);
+      Alert.alert(gate.title, gate.message, [
+        { text: gate.cancel || "Cancel", style: "cancel", onPress: () => setProcessingItemAction(null) },
+        { text: gate.no, onPress: () => router.push({ pathname: NO_ACCESS_ROUTE,
           params: { context: JSON.stringify(buildWorkorderNoAccessContext({ item, sourceAstId })) },
         }) },
-        { text: ACCESS_GATE.yes, onPress: openAccessForm },
+        { text: gate.yes, onPress: openAccessForm },
       ]);
     } else openAccessForm();
   }

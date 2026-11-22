@@ -21,7 +21,7 @@ import { useIsFocused } from "@react-navigation/native";
 import { useWorkAccessCheck } from "../meters/useWorkAccessCheck";
 import { WorkAccessCheckModal } from "../../../components/WorkAccessProgress";
 import {
-  ACCESS_GATE,
+  accessGateFor,
   NO_ACCESS_ROUTE,
   assetCanRecordNoAccess,
   buildAssetNoAccessContext,
@@ -785,10 +785,11 @@ const AstItem = ({ item }) => {
     const erfId = item?.accessData?.erfId || "";
     const premiseId = item?.accessData?.premise?.id || "";
     return withFrontGate({ erfId, premiseId }, () => {
-      Alert.alert(ACCESS_GATE.title, ACCESS_GATE.message, [
+      const gate = accessGateFor(trnType);
+      Alert.alert(gate.title, gate.message, [
         { text: "CANCEL", style: "cancel" },
         {
-          text: ACCESS_GATE.no,
+          text: gate.no,
           style: "destructive",
           onPress: () => {
             if (!assetCanRecordNoAccess(item)) {
@@ -815,7 +816,7 @@ const AstItem = ({ item }) => {
           },
         },
         {
-          text: ACCESS_GATE.yes,
+          text: gate.yes,
           onPress: () => openLifecycleForm({ pathname, trnType }),
         },
       ]);

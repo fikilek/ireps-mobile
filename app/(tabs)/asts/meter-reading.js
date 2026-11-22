@@ -414,7 +414,7 @@ function getHasAccess(values = {}) {
 }
 
 function isNoAccess(values = {}) {
-  return getHasAccess(values) === "no" && !String(values?.meterReading?.reading ?? "").trim();
+  return getHasAccess(values) === "no";
 }
 
 function hasMediaTag(media = [], tag) {
@@ -431,7 +431,7 @@ function buildBackendMeterReadingPayload(
   meterReading = {},
   { isPrepaid = false, noAccess = false, readingVariance = null } = {},
 ) {
-  if (noAccess && !String(meterReading?.reading ?? "").trim()) {
+  if (noAccess) {
     return {
       reading: "",
       tokenReading: "",
@@ -603,6 +603,9 @@ const MeterReadingSchema = object()
       const meterReading = values?.meterReading || {};
       const media = values?.media || [];
 
+      if (isNoAccess(values) && String(meterReading?.reading ?? "").trim()) {
+        return this.createError({path: "accessData.access.hasAccess", message: "A captured reading requires READING AVAILABLE. NO READING records an unavailable display reading."});
+      }
       if (isNoAccess(values)) {
         if (!isSelectWithOtherFilled(access?.reasonSelect)) {
           return this.createError({
@@ -1360,6 +1363,7 @@ export default function FormMeterReading() {
   function buildExecutionPayload(values, mediaOverride) {
     const baseSystemFields = buildTrnSystemFields();
     const noAccess = isNoAccess(values);
+    if (noAccess && String(values?.meterReading?.reading ?? "").trim()) throw new Error("A captured reading conflicts with NO READING. Correct the reading availability before saving.");
     const noAccessReason = noAccess
       ? selectWithOtherToText(values?.accessData?.access?.reasonSelect)
       : "NAv";

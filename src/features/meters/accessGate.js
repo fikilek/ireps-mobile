@@ -38,6 +38,16 @@ export const ACCESS_GATE = Object.freeze({
   no: "NO ACCESS",
 });
 
+// NA-R001.1: MREAD asks about the display, not physical touch.
+export const MREAD_ACCESS_GATE = Object.freeze({
+  title: "Is a meter reading available?",
+  message: "Choose READING AVAILABLE if you can obtain the reading from the display. Physical touch is not required.",
+  cancel: "CANCEL",
+  no: "NO READING",
+  yes: "READING AVAILABLE",
+});
+export const accessGateFor = trnType => String(trnType || "").toUpperCase() === "METER_READING" ? MREAD_ACCESS_GATE : ACCESS_GATE;
+
 export const NO_ACCESS_ROUTE = "/(tabs)/admin/operations/no-access";
 
 /**

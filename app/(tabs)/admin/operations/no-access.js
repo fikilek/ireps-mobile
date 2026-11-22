@@ -493,7 +493,7 @@ export default function NoAccessScreen() {
       {!qa && (
         <Stack.Screen
           options={{
-            title: "No Access",
+            title: trnType === "METER_READING" ? "No Reading" : "No Access",
             headerBackVisible: false,
             headerLeft: ({ tintColor }) => (
               <TouchableOpacity
@@ -519,6 +519,7 @@ export default function NoAccessScreen() {
           <Text variant="titleMedium">
             {context.meterNo ? `Meter ${context.meterNo}` : "No Access"}
           </Text>
+          {trnType === "METER_READING" ? <Text>The reading could not be obtained from the display. This visit does not complete the meter reading.</Text> : null}
           <Text>ERF {context.erfNo || "NAv"}</Text>
           {context.tbId ? <Text>Batch {context.tbId}</Text> : null}
           {/* Owner, 3 Oct 2026: the card must show the premise ADDRESS, not a status word.

@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   ACCESS_GATE,
+  accessGateFor,
   assetCanRecordNoAccess,
   buildAssetNoAccessContext,
 } from "./accessGate.js";
@@ -95,4 +96,11 @@ test("a premise with no address yet gives empty words, not an object and not a c
   );
   assert.equal(context.premiseAddress, "");
   assert.equal(context.premisePropertyType, "");
+});
+
+test("MREAD asks reading availability and retains the approved exact options",()=>{
+ const gate=accessGateFor("METER_READING");
+ assert.equal(gate.title,"Is a meter reading available?");
+ assert.deepEqual([gate.cancel,gate.no,gate.yes],["CANCEL","NO READING","READING AVAILABLE"]);
+ assert.equal(accessGateFor("METER_INSPECTION"),ACCESS_GATE);
 });

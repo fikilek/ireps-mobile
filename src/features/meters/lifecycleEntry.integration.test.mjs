@@ -61,7 +61,7 @@ async function mount(t, state = "CONNECTED", office = false) {
 }
 
 for (const [label, type, meterState] of actions) {
-  for (const answer of ["NO ACCESS", "YES, I REACHED IT"]) {
+  for (const answer of (type === "READING" ? ["NO READING", "READING AVAILABLE"] : ["NO ACCESS", "YES, I REACHED IT"])) {
     test(`${type}: immediate progress then ${answer} preserves the transaction and meter`, async t => {
       const form = await mount(t, meterState);
       await form.tap(label);
@@ -77,12 +77,12 @@ for (const [label, type, meterState] of actions) {
       await form.choose(answer);
       assert.equal(form.routes.length, 1);
       const route = form.routes[0];
-      const context = JSON.parse(answer === "NO ACCESS" ? route.params.context : route.params.action);
+      const context = JSON.parse(["NO ACCESS", "NO READING"].includes(answer) ? route.params.context : route.params.action);
       assert.equal(context.trnType, `METER_${type}`);
       assert.equal(context.astId, "asset-1");
       assert.equal(context.premiseId, "premise-5187");
       assert.equal(context.returnTo, "/(tabs)/asts");
-      if (answer === "NO ACCESS") {
+      if (["NO ACCESS", "NO READING"].includes(answer)) {
         assert.equal(route.pathname, "/(tabs)/admin/operations/no-access");
         assert.equal(context.erfId, "erf-5187");
       } else {
@@ -123,7 +123,7 @@ test("an offline meter check still permits the access question", async t => {
   await form.tap("MREAD");
   await form.result("UNCHECKED");
   assert.equal(form.spinners, 0);
-  await form.choose("NO ACCESS");
+  await form.choose("NO READING");
   assert.equal(JSON.parse(form.routes[0].params.context).trnType, "METER_READING");
 });
 
