@@ -54,6 +54,7 @@ const FORM_OPTIONS = Object.freeze({
   meter_statuses: Object.freeze([
     option("Connected", "CONNECTED"),
     option("Disconnected", "DISCONNECTED"),
+    option("Removed", "REMOVED"),
   ]),
 
   off_grid_supply: Object.freeze([
@@ -172,7 +173,7 @@ const FORM_OPTIONS = Object.freeze({
   // Same words and codes as the server held on 22 Sep 2026, so saved data does
   // not change.
   // The meter lifecycle states, so a form can show the state the record holds.
-  // A worker only ever chooses Connected or Disconnected (meter_statuses).
+  // An inspection worker chooses Connected, Disconnected, or Removed (meter_statuses).
   meter_lifecycle_states: Object.freeze([
     option("Field", "FIELD"),
     option("Connected", "CONNECTED"),

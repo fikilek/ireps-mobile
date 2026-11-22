@@ -85,10 +85,10 @@ test("the lists that came from the server keep the server's words and codes", ()
   assert.equal(getLocalSelectLookup("meter_reading_instructions").options.length, 6);
 });
 
-test("a worker chooses Connected or Disconnected; the record may hold any state", () => {
+test("an inspection worker chooses Connected, Disconnected, or Removed; the record may hold any state", () => {
   assert.deepEqual(
     getLocalSelectLookup("meter_statuses").options.map((o) => o.code),
-    ["CONNECTED", "DISCONNECTED"],
+    ["CONNECTED", "DISCONNECTED", "REMOVED"],
   );
   assert.deepEqual(
     getLocalSelectLookup("meter_lifecycle_states").options.map((o) => o.code),
