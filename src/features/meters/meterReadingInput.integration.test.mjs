@@ -451,3 +451,19 @@ test("a slow upload cannot trap the worker on the form and its later timeout kee
   assert.equal(form.calls[0].payload.meterReading.readingAt, captured.meterReading.readingAt);
   assert.equal(form.queue[0].status, "SUCCESS");
 });
+
+test("a captured reading is retained when physical access is no", async t => {
+  const form = await mount(t);
+  await form.type("524"); await form.photo(); await form.gps();
+  await act(async () => form.state.setFieldValue("accessData.access.hasAccess", "no"));
+  assert.equal(form.value,"524"); assert.equal(form.canSubmit,true);
+  await form.save();
+  assert.equal(form.queue[0].payload.meterReading.reading,"524");
+  assert.equal(form.queue[0].payload.accessData.access.hasAccess,"no");
+});
+test("negative conventional reading keeps its sign and still requires a variance reason", async t => {
+  const form = await mount(t);
+  await form.type("-12"); await form.photo(); await form.gps();
+  assert.equal(form.value,"-12"); assert.equal(form.canSubmit,false);
+  assert.ok(form.renderer.root.findAllByType("Text").some(node => node.props.children === "Reading Lower Than Last Reading"));
+});

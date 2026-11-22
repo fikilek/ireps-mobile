@@ -249,7 +249,7 @@ function buildReadingVariancePayload(
     previousReadingNumber: previousReading?.readingNumber ?? null,
     previousReadingAt: previousReading?.readingAt || "",
     previousTrnId: previousReading?.trnId || "NAv",
-    currentReading: String(meterReading?.reading || "").trim(),
+    currentReading: String(meterReading?.reading ?? "").trim(),
     currentReadingNumber: parseReadingNumber(meterReading?.reading),
     currentReadingAt: String(meterReading?.readingAt || "").trim(),
   };
@@ -414,7 +414,7 @@ function getHasAccess(values = {}) {
 }
 
 function isNoAccess(values = {}) {
-  return getHasAccess(values) === "no";
+  return getHasAccess(values) === "no" && !String(values?.meterReading?.reading ?? "").trim();
 }
 
 function hasMediaTag(media = [], tag) {
@@ -431,7 +431,7 @@ function buildBackendMeterReadingPayload(
   meterReading = {},
   { isPrepaid = false, noAccess = false, readingVariance = null } = {},
 ) {
-  if (noAccess) {
+  if (noAccess && !String(meterReading?.reading ?? "").trim()) {
     return {
       reading: "",
       tokenReading: "",
@@ -443,7 +443,7 @@ function buildBackendMeterReadingPayload(
   }
 
   const payload = {
-    reading: isPrepaid ? "" : String(meterReading?.reading || ""),
+    reading: isPrepaid ? "" : String(meterReading?.reading ?? ""),
     tokenReading: isPrepaid ? String(meterReading?.tokenReading || "") : "",
     readingAt: String(meterReading?.readingAt || ""),
     noReadingReason: selectWithOtherToText(meterReading?.noReadingReason),
@@ -603,7 +603,7 @@ const MeterReadingSchema = object()
       const meterReading = values?.meterReading || {};
       const media = values?.media || [];
 
-      if (String(access?.hasAccess || "").toLowerCase() === "no") {
+      if (isNoAccess(values)) {
         if (!isSelectWithOtherFilled(access?.reasonSelect)) {
           return this.createError({
             path: "accessData.access.reasonSelect",
@@ -621,7 +621,7 @@ const MeterReadingSchema = object()
         return true;
       }
 
-      const reading = String(meterReading?.reading || "").trim();
+      const reading = String(meterReading?.reading ?? "").trim();
       const tokenReading = String(meterReading?.tokenReading || "").trim();
       const readingAt = String(meterReading?.readingAt || "").trim();
       const readingGps = meterReading?.readingGps || null;
@@ -1365,7 +1365,7 @@ export default function FormMeterReading() {
       : "NAv";
 
     const hasReading =
-      String(values?.meterReading?.reading || "").trim() ||
+      String(values?.meterReading?.reading ?? "").trim() ||
       String(values?.meterReading?.tokenReading || "").trim();
 
     const hasNoReadingReason =
@@ -1969,7 +1969,7 @@ export default function FormMeterReading() {
           const gpsSubmitAllowed = noAccess || gpsCaptureAllowed;
 
           const hasMeterReadingValue = Boolean(
-            String(values?.meterReading?.reading || "").trim(),
+            String(values?.meterReading?.reading ?? "").trim(),
           );
           const hasTokenReadingValue = Boolean(
             String(values?.meterReading?.tokenReading || "").trim(),
@@ -2411,9 +2411,9 @@ export default function FormMeterReading() {
                             label="Meter Reading"
                             value={values?.meterReading?.reading}
                             onChangeText={(text) => {
-                              const cleanText = text.replace(/[^\d.]/g, "");
+                              const cleanText = text.replace(/[^\d.-]/g, "").replace(/(?!^)-/g, "");
                               const previousText = String(
-                                values?.meterReading?.reading || "",
+                                values?.meterReading?.reading ?? "",
                               ).trim();
 
                               setFieldValue("meterReading.reading", cleanText);
@@ -2540,7 +2540,7 @@ export default function FormMeterReading() {
                               fallbackGps={fallbackGps}
                               required={
                                 !!String(
-                                  values?.meterReading?.reading || "",
+                                  values?.meterReading?.reading ?? "",
                                 ).trim()
                               }
                             />
@@ -2548,7 +2548,7 @@ export default function FormMeterReading() {
                         </>
                       )}
 
-                      {!String(values?.meterReading?.reading || "").trim() &&
+                      {!String(values?.meterReading?.reading ?? "").trim() &&
                         !String(
                           values?.meterReading?.tokenReading || "",
                         ).trim() &&
@@ -2585,7 +2585,7 @@ export default function FormMeterReading() {
                           </TouchableOpacity>
                         )}
 
-                      {!String(values?.meterReading?.reading || "").trim() &&
+                      {!String(values?.meterReading?.reading ?? "").trim() &&
                         !String(
                           values?.meterReading?.tokenReading || "",
                         ).trim() &&
@@ -2703,6 +2703,7 @@ export default function FormMeterReading() {
                     ],
                   );
                 }}
+                onSave={() => handleSaveMeterReading(values)}
                 onSubmit={handleSubmit}
                 disabledReason="Complete all required fields before submitting."
               />
