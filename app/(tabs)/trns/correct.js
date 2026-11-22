@@ -104,7 +104,9 @@ function CorrectionEditor({ uid, loaded, router, navigation }) {
       Alert.alert("Correction received", `QA ${result.amendment.state}. The office has received the correction and its history.`);
       returnAfterLifecycleWork(router, "/(tabs)/admin/operations/my-workorders", "/(tabs)/trns");
     } catch (failure) {
-      setMessage(failure.message);
+      const msg = failure?.message || "Could not send this correction.";
+      setMessage(msg);
+      Alert.alert("Correction Failed", msg);
       const current = getQaDraft(uid, trnId);
       setRetryOnly(!!current?.pending);
     }
@@ -129,7 +131,11 @@ function CorrectionEditor({ uid, loaded, router, navigation }) {
         meterVersion: context.meterVersion, explanation, takeoverReason, retainNewerMeterFacts: true, fields };
       putQaDraft(uid, trnId, { ...durable, pending });
       setRetryOnly(true); await send();
-    } catch (failure) { setMessage(failure.message); }
+    } catch (failure) {
+      const msg = failure?.message || "Could not send this correction.";
+      setMessage(msg);
+      Alert.alert("Correction Failed", msg);
+    }
     finally { setBusy(false); }
   };
   const seed = useMemo(() => correctionSeed(context.snapshot), [context.snapshot]);
