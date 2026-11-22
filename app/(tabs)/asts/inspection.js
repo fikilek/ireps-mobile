@@ -1416,9 +1416,9 @@ function selectToStoredValue(select = {}) {
   return String(select?.code || "").trim();
 }
 
-// MN-R001 8: an inspection records Connected or Disconnected only.
+// MN-R001 8: an inspection records Connected, Disconnected, or Removed.
 function isFoundStatus(state) {
-  return ["CONNECTED", "DISCONNECTED"].includes(
+  return ["CONNECTED", "DISCONNECTED", "REMOVED"].includes(
     String(state || "").trim().toUpperCase(),
   );
 }
@@ -1427,6 +1427,7 @@ function statusWords(state) {
   const clean = String(state || "").trim().toUpperCase();
   if (clean === "CONNECTED") return "Connected";
   if (clean === "DISCONNECTED") return "Disconnected";
+  if (clean === "REMOVED") return "Removed";
   return clean || "NAv";
 }
 
@@ -3345,7 +3346,9 @@ export default function InspectionScreen() {
           .trim()
           .toUpperCase();
         const meterAsFound =
-          foundState === "CONNECTED" || foundState === "DISCONNECTED"
+          foundState === "CONNECTED" ||
+          foundState === "DISCONNECTED" ||
+          foundState === "REMOVED"
             ? {
                 ...astDoc,
                 status: { ...(astDoc?.status || {}), state: foundState },
