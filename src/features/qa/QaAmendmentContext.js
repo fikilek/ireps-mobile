@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect } from "react";
 import { Formik as BaseFormik, useFormikContext } from "formik";
-import { ScrollView, View, Text, TextInput, TouchableOpacity } from "react-native";
+import { ScrollView, View, Text, TextInput, TouchableOpacity, Alert } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 
 export const QaAmendmentContext = createContext(null);
@@ -29,7 +29,14 @@ export function Formik({ qaSerialize = value => value, children, ...props }) {
   const qa = useQaAmendment();
   if (!qa) return <BaseFormik {...props}>{children}</BaseFormik>;
   return <BaseFormik {...props} initialValues={qa.initialValues || props.initialValues} enableReinitialize={false}
-    initialStatus={{ qaAmendment: true }} onSubmit={values => qa.submit(qaSerialize(values), values)}>
+    initialStatus={{ qaAmendment: true }} onSubmit={values => {
+      try {
+        return qa.submit(qaSerialize(values), values);
+      } catch (error) {
+        Alert.alert("Correction Error", error?.message || "Could not prepare this correction.");
+        return undefined;
+      }
+    }}>
     {form => <View style={{ flex: 1 }}>
       <QaControls serialize={qaSerialize} />
       <View style={{ flex: 1 }} pointerEvents={qa.busy ? "none" : "auto"}>{typeof children === "function" ? children(form) : children}</View>

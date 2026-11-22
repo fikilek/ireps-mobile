@@ -1652,7 +1652,7 @@ const InspectionSchema = object()
       if (!isFoundStatus(values?.status?.state)) {
         return this.createError({
           path: "status.stateSelect",
-          message: "Choose the status you found: Connected or Disconnected",
+          message: "Choose the status you found: Connected, Disconnected, or Removed",
         });
       }
 
@@ -3597,7 +3597,7 @@ export default function InspectionScreen() {
   return (
     <>
       <ScreenLock
-        visible={inProgress}
+        visible={inProgress || Boolean(qaAmendment?.busy)}
         title="SYNCING"
         status="Submitting meter inspection."
       />
@@ -4610,7 +4610,7 @@ export default function InspectionScreen() {
                 submitLabel="SUBMIT INSP"
                 canSave={true}
                 canSubmit={isValid && isEligible}
-                loading={inProgress}
+                loading={inProgress || Boolean(qaAmendment?.busy)}
                 saveLoading={saveInProgress}
                 onReset={() => {
                   Alert.alert(
