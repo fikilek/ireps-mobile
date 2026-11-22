@@ -3087,6 +3087,14 @@ export default function WorkorderManagementSystem() {
       router.push({ pathname: "/(tabs)/trns/correct", params: { trnId: item.id } });
       return;
     }
+    if (item?.workflowState === "QA FAIL") {
+      setProcessingItemAction(null);
+      Alert.alert(
+        "Correction Not Allowed",
+        "Only the original submitter can correct this QA FAIL work item.",
+      );
+      return;
+    }
     if (!isExecutableWorkflowState(item?.workflowState)) {
       setProcessingItemAction(null);
       Alert.alert(

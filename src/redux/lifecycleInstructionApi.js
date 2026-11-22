@@ -508,6 +508,25 @@ function getTrnServiceProviderId(trn = {}) {
   );
 }
 
+function resolveContractorMncId(spId, serviceProviders = []) {
+  const cleanSpId = readFirstString(spId);
+  if (!cleanSpId) return null;
+  const sp = serviceProviders.find((item) => item?.id === cleanSpId) || null;
+  if (!sp) return cleanSpId;
+  if (serviceProviderLooksMnc(sp)) return sp.id;
+  return getParentMncId(sp) || sp.id;
+}
+
+function isSameContractorScope(trnSpId, actorSpId, serviceProviders = []) {
+  const left = readFirstString(trnSpId);
+  const right = readFirstString(actorSpId);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const leftMnc = resolveContractorMncId(left, serviceProviders);
+  const rightMnc = resolveContractorMncId(right, serviceProviders);
+  return Boolean(leftMnc && rightMnc && leftMnc === rightMnc);
+}
+
 function isInManagementScope({ trn, allowedSpIds }) {
   const trnSpId = getTrnServiceProviderId(trn);
   if (!trnSpId) return false;
@@ -749,7 +768,11 @@ function normalizeWmsWorkItem({
         workflowState === "QA FAIL" &&
         isFieldExecutor &&
         trn?.workflow?.completedByUid === actor?.uid &&
-        getTrnServiceProviderId(trn) === actor?.spId &&
+        isSameContractorScope(
+          getTrnServiceProviderId(trn),
+          actor?.spId,
+          serviceProviders,
+        ) &&
         (!trn?.qa?.state || trn.qa.state === "FAIL"),
 
       canAccept: canAcceptReject,
