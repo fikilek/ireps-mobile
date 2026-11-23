@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildTrnBgoMobileRows,
   buildWorkorderNoAccessContext,
+  deriveTrnBgoBatchCardStatus,
   deriveTrnBgoQaBadge,
   resolveTrnBgoMeterState,
   summarizeTrnBgoCardRows,
@@ -192,4 +193,24 @@ test("summarizeTrnBgoCardRows and followTrnBgoCardRows reuse row classification 
   assert.equal(results.at(-1).stream, "ERROR");
   assert.deepEqual(results.at(-1).countsByBatchId, {});
   stop();
+});
+
+test("deriveTrnBgoBatchCardStatus derives Completed and In Progress from live cardCounts before fallback", () => {
+  assert.equal(
+    deriveTrnBgoBatchCardStatus({ total: 4, notStarted: 0, inProgress: 0, completed: 2, qaPass: 0, qaFail: 2 }, "Accepted"),
+    "Completed",
+  );
+  assert.equal(
+    deriveTrnBgoBatchCardStatus({ total: 4, notStarted: 1, inProgress: 1, completed: 1, qaPass: 0, qaFail: 1 }, "Accepted"),
+    "In Progress",
+  );
+  assert.equal(
+    deriveTrnBgoBatchCardStatus({ total: 4, notStarted: 3, inProgress: 0, completed: 1, qaPass: 0, qaFail: 0 }, "Accepted"),
+    "In Progress",
+  );
+  assert.equal(
+    deriveTrnBgoBatchCardStatus({ total: 4, notStarted: 4, inProgress: 0, completed: 0, qaPass: 0, qaFail: 0 }, "Accepted"),
+    "Accepted",
+  );
+  assert.equal(deriveTrnBgoBatchCardStatus(null, "Accepted"), "Accepted");
 });

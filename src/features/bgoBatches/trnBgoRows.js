@@ -195,6 +195,15 @@ export function summarizeTrnBgoCardRows(batchIds = [], trns = []) {
   return result;
 }
 
+export function deriveTrnBgoBatchCardStatus(counts = null, fallbackStatus = "NAv") {
+  const total = Number(counts?.total || 0);
+  const done = Number(counts?.completed || 0) + Number(counts?.qaPass || 0) + Number(counts?.qaFail || 0);
+  const inProgress = Number(counts?.inProgress || 0);
+  if (total > 0 && done >= total) return "Completed";
+  if (inProgress > 0 || done > 0) return "In Progress";
+  return fallbackStatus;
+}
+
 export function buildWorkorderNoAccessContext({ item = {}, sourceAstId = "", batchId = "", returnTo = "/(tabs)/admin/operations/my-workorders" } = {}) {
   const base = buildAssetNoAccessContext({ ...(item.raw || {}), id: sourceAstId }, {
     trnType: item.trnType,
