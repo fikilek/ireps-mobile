@@ -81,6 +81,7 @@ import {
   useAcceptRejectBgoBatchMutation,
   useGetBgoBucketsQuery,
   useGetMdBgoCardRowsQuery,
+  useGetTrnBgoCardRowsQuery,
   useGetMdBgoRowsQuery,
   useGetMdBgoAssetsQuery,
   useReverseBgoBatchAcceptanceMutation,
@@ -1319,6 +1320,12 @@ export default function WorkorderManagementSystem() {
     { batchIds: mdBgoCardBatchIds },
     { skip: selectedBucketCategory !== "BGOB" || Boolean(selectedBucket) || mdBgoCardBatchIds.length === 0 },
   );
+  const trnBgoCardBatchIds = useMemo(() => (bgoData?.buckets || [])
+    .filter((batch) => !isBmdBgoBucket(batch)).map((batch) => batch.id), [bgoData?.buckets]);
+  const { data: trnBgoCardRows } = useGetTrnBgoCardRowsQuery(
+    { batchIds: trnBgoCardBatchIds },
+    { skip: selectedBucketCategory !== "TRNBGO" || Boolean(selectedBucket) || trnBgoCardBatchIds.length === 0 },
+  );
 
   const {
     data: targetedBatchData,
@@ -2175,12 +2182,13 @@ export default function WorkorderManagementSystem() {
           trns: all?.trns || [],
         });
         const counts = liveBucket?.counts || {};
+        const cardRows = isBmdBgoBucket(bucket) ? mdBgoCardRows : trnBgoCardRows;
 
         return {
           ...liveBucket,
-          cardCounts: mdBgoCardRows?.countsByBatchId?.[bucket.id] || null,
-          cardCountsStream: mdBgoCardRows?.stream,
-          cardCountsError: mdBgoCardRows?.error,
+          cardCounts: cardRows?.countsByBatchId?.[bucket.id] || null,
+          cardCountsStream: cardRows?.stream,
+          cardCountsError: cardRows?.error,
           counts,
           totalTrns: liveBucket?.totalTrns || counts.total || 0,
         };
@@ -2188,6 +2196,7 @@ export default function WorkorderManagementSystem() {
   }, [
     bgoData?.buckets,
     mdBgoCardRows,
+    trnBgoCardRows,
     actorUid,
     actorSpId,
     bgoTeamIds,
@@ -4623,16 +4632,7 @@ function MdBgoBatchCard({ bucket, deciding, processingBgoBucketAction,
   const disabled = deciding || processing || opening || !fieldWorkorderActor;
   const isBmd = isBmdBgoBucket(bucket);
   const scope = getBmdBucketScope(bucket);
-  const bgoCounts = bucket?.counts || {};
-  const trnCardCounts = {
-    total: bucket?.totalTrns ?? bgoCounts.total ?? 0,
-    notStarted: bgoCounts.notExecuted ?? bgoCounts.waiting ?? 0,
-    inProgress: bgoCounts.inProgress ?? 0,
-    completed: bgoCounts.executed ?? bgoCounts.completed ?? 0,
-    qaPass: bgoCounts.qaPass ?? 0,
-    qaFail: bgoCounts.qaFail ?? 0,
-  };
-  const cardCounts = isBmd ? bucket.cardCounts : trnCardCounts;
+  const cardCounts = bucket.cardCounts;
   const canView = isBmd ? bucket.permissions?.canViewErfs : bucket.permissions?.canViewTrns;
   const status = normalizeUpper(bucket.workflowState) === "IN_PROGRESS" ? "In Progress"
     : normalizeUpper(bucket.workflowState) === "COMPLETED" ? "Completed" : getBgoBucketStatusText(bucket);
@@ -4665,7 +4665,7 @@ function MdBgoBatchCard({ bucket, deciding, processingBgoBucketAction,
         <InfoLine icon="clock-outline" label="Age" value={formatAge(bucket.ageSeconds)} />
       </>}
     >
-      {isBmd && bucket.cardCountsStream !== "LIVE" ? (
+      {bucket.cardCountsStream !== "LIVE" ? (
         <InlineStatusCard
           icon={bucket.cardCountsError ? "alert-circle-outline" : "cloud-sync-outline"}
           title={bucket.cardCountsError ? "Batch row stream failed" : "Updating row counts"}

@@ -3,6 +3,42 @@ import { summarizeMdBgoCardRows } from "./bgoBatchCardModel.js";
 import { buildMdBgoMobileRows } from "./mdBgoRows.js";
 import { followMdBgoAssets } from "./mdBgoAssetStream.js";
 import { mdBgoTrnId } from "./mdBgoQa.js";
+import { summarizeTrnBgoCardRows } from "./trnBgoRows.js";
+
+export function followTrnBgoCardRows({ batchIds, listen, onChange }) {
+  let trns = [];
+  let ended = false;
+  const ids = idsFromKey(idsKey(batchIds));
+  let stream = "CONNECTING";
+  let streamError = null;
+  const publish = () => {
+    if (ended) return;
+    onChange({
+      countsByBatchId: stream === "LIVE" ? summarizeTrnBgoCardRows(ids, trns) : {},
+      stream,
+      error: streamError,
+    });
+  };
+  const follow = createFollowingSubscription({
+    subscribe: (_key, { isCurrent, live, fail }) => listenInChunks({
+      ids,
+      listen,
+      next: (docs, meta) => {
+        if (!isCurrent()) return;
+        trns = docs;
+        live(meta);
+      },
+      error: fail,
+    }),
+    onStatus: (nextStream, error) => {
+      stream = nextStream;
+      streamError = error?.message || null;
+      publish();
+    },
+  });
+  follow.setKey(idsKey(ids));
+  return () => { ended = true; follow.stop(); };
+}
 
 export function followMdBgoCardRows({ batchIds, listen, listenDocuments, onChange }) {
   let rows = [];

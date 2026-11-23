@@ -5,8 +5,10 @@ import {
   buildWorkorderNoAccessContext,
   deriveTrnBgoQaBadge,
   resolveTrnBgoMeterState,
+  summarizeTrnBgoCardRows,
   summarizeTrnBgoRows,
 } from "./trnBgoRows.js";
+import { followTrnBgoCardRows } from "./bgoBatchCardStream.js";
 import {
   calculateTbQaFinal,
   filterTargetedBatchRowsByStatus,
@@ -132,4 +134,62 @@ test("summarizeTrnBgoRows and filterTargetedBatchRowsByStatus keep 5-way disjoin
   assert.deepEqual(filterTargetedBatchRowsByStatus(rows, "COMPLETED").map((r) => r.id), ["T1", "T2", "T3"]);
   assert.deepEqual(filterTargetedBatchRowsByStatus(rows, "QA_FAIL").map((r) => r.id), ["T4"]);
   assert.deepEqual(filterTargetedBatchRowsByStatus(rows, "QA_PASS").map((r) => r.id), ["T5"]);
+});
+
+test("summarizeTrnBgoCardRows and followTrnBgoCardRows reuse row classification for batch cards", () => {
+  const counts = summarizeTrnBgoCardRows(
+    ["B1", "B2"],
+    [
+      { id: "T1", origin: { trnBgo: { batchId: "B1" } }, workflow: { state: "COMPLETED" } },
+      { id: "T2", origin: { trnBgo: { batchId: "B1" } }, workflow: { state: "COMPLETED" } },
+      { id: "T3", origin: { trnBgo: { batchId: "B1" } }, workflow: { state: "QA FAIL" } },
+      { id: "T4", origin: { trnBgo: { batchId: "B1" } }, workflow: { state: "QA FAIL" } },
+      { id: "T5", origin: { trnBgo: { batchId: "B1" } }, workflow: { state: "CANCELLED" } },
+    ],
+  );
+  assert.deepEqual(counts.B1, {
+    total: 4,
+    notStarted: 0,
+    inProgress: 0,
+    completed: 2,
+    qaPass: 0,
+    qaFail: 2,
+  });
+  assert.deepEqual(counts.B2, {
+    total: 0,
+    notStarted: 0,
+    inProgress: 0,
+    completed: 0,
+    qaPass: 0,
+    qaFail: 0,
+  });
+
+  let next;
+  let fail;
+  const results = [];
+  const stop = followTrnBgoCardRows({
+    batchIds: ["B1"],
+    listen: (_ids, n, f) => {
+      next = n;
+      fail = f;
+      return () => {};
+    },
+    onChange: (data) => results.push(data),
+  });
+  next(
+    [{ id: "T1", origin: { trnBgo: { batchId: "B1" } }, workflow: { state: "QA FAIL" } }],
+    { fromCache: true },
+  );
+  assert.deepEqual(results.at(-1).countsByBatchId, {});
+  next(
+    [{ id: "T1", origin: { trnBgo: { batchId: "B1" } }, workflow: { state: "QA FAIL" } }],
+    { fromCache: false },
+  );
+  assert.equal(results.at(-1).stream, "LIVE");
+  assert.equal(results.at(-1).countsByBatchId.B1.qaFail, 1);
+  assert.equal(results.at(-1).countsByBatchId.B1.completed, 0);
+  fail(new Error("permission-denied"));
+  assert.equal(results.at(-1).stream, "ERROR");
+  assert.deepEqual(results.at(-1).countsByBatchId, {});
+  stop();
 });

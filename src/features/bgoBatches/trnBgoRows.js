@@ -169,6 +169,32 @@ export function summarizeTrnBgoRows(rows = []) {
   return summary;
 }
 
+// Batch card stats reuse the exact same row classification as the opened TRN BGO rows list.
+export function summarizeTrnBgoCardRows(batchIds = [], trns = []) {
+  const ids = [...new Set((Array.isArray(batchIds) ? batchIds : []).filter(Boolean))];
+  const rowsByBatchId = new Map(ids.map((id) => [id, []]));
+  const seen = new Set();
+
+  for (const trn of Array.isArray(trns) ? trns : []) {
+    const batchId = String(trn?.origin?.trnBgo?.batchId || trn?.bgo?.batchId || "").trim();
+    if (!batchId || !rowsByBatchId.has(batchId) || !trn?.id || seen.has(trn.id)) continue;
+    if (String(trn?.workflow?.state || "").trim().toUpperCase() === "CANCELLED") continue;
+    seen.add(trn.id);
+    rowsByBatchId.get(batchId).push({
+      id: trn.id,
+      trnType: trn?.accessData?.trnType || trn?.trnType || "",
+      workflowState: trn?.workflow?.state || "",
+      raw: trn,
+    });
+  }
+
+  const result = {};
+  for (const [batchId, batchItems] of rowsByBatchId.entries()) {
+    result[batchId] = summarizeTrnBgoRows(buildTrnBgoMobileRows(batchItems));
+  }
+  return result;
+}
+
 export function buildWorkorderNoAccessContext({ item = {}, sourceAstId = "", batchId = "", returnTo = "/(tabs)/admin/operations/my-workorders" } = {}) {
   const base = buildAssetNoAccessContext({ ...(item.raw || {}), id: sourceAstId }, {
     trnType: item.trnType,
