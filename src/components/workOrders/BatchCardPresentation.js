@@ -22,7 +22,12 @@ export default function BatchCardPresentation({ styles, icon, status, title, sub
           const total = tile.summaryKey === "total";
           return (
             <View key={tile.key} style={[styles.tbStatusFilter, total && styles.tbStatusFilterTotal]}>
-              <Text style={[styles.tbStatusFilterLabel, total && styles.tbStatusFilterLabelTotal]} numberOfLines={2}>
+              <Text
+                style={[styles.tbStatusFilterLabel, total && styles.tbStatusFilterLabelTotal]}
+                numberOfLines={tile.label.includes(" ") ? 2 : 1}
+                adjustsFontSizeToFit={!tile.label.includes(" ")}
+                minimumFontScale={0.8}
+              >
                 {tile.label}
               </Text>
               <Text style={[styles.tbStatusFilterValue, { color: tile.color }]}>
