@@ -1,5 +1,5 @@
 import { buildMdBgoMobileRows, buildMdBgoCaptureContext, buildMdBgoMapPoints } from "../../../../src/features/bgoBatches/mdBgoRows";
-import { buildTrnBgoMobileRows, buildWorkorderNoAccessContext, summarizeTrnBgoRows } from "../../../../src/features/bgoBatches/trnBgoRows";
+import { buildTrnBgoMobileRows, buildWorkorderNoAccessContext, deriveTrnBgoBatchCardStatus, summarizeTrnBgoRows } from "../../../../src/features/bgoBatches/trnBgoRows";
 import { summarizeMdBgoCardRows } from "../../../../src/features/bgoBatches/bgoBatchCardModel";
 import BatchCardPresentation from "../../../../src/components/workOrders/BatchCardPresentation";
 import { getQaDraft } from "../../../../src/features/qa/amendmentQueue";
@@ -4634,8 +4634,9 @@ function MdBgoBatchCard({ bucket, deciding, processingBgoBucketAction,
   const scope = getBmdBucketScope(bucket);
   const cardCounts = bucket.cardCounts;
   const canView = isBmd ? bucket.permissions?.canViewErfs : bucket.permissions?.canViewTrns;
-  const status = normalizeUpper(bucket.workflowState) === "IN_PROGRESS" ? "In Progress"
+  const fallbackStatus = normalizeUpper(bucket.workflowState) === "IN_PROGRESS" ? "In Progress"
     : normalizeUpper(bucket.workflowState) === "COMPLETED" ? "Completed" : getBgoBucketStatusText(bucket);
+  const status = isBmd ? fallbackStatus : deriveTrnBgoBatchCardStatus(cardCounts, fallbackStatus);
   const openRows = () => {
     if (disabled || openingRef.current) return;
     openingRef.current = true;
