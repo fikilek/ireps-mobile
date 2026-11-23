@@ -95,6 +95,9 @@ export function normalizeComponentQa(raw) {
 // TB-R051 / PR-R001: Canonical aggregate TB QA Final from Premise QA and Meter QA
 export function calculateTbQaFinal(row) {
   if (row?.sourceModule === "BULK_METER_DISCOVERY") return calculateMdBgoQaFinal(row);
+  if (row?.sourceModule === "TRN_BGO") {
+    return normalizeComponentQa(row?.qaFinalStatus || row?.qa?.finalStatus) || "QA NAv";
+  }
   const premiseQa = normalizeComponentQa(row?.qa?.premiseStatus || row?.raw?.qa?.premiseStatus);
   const meterQa = normalizeComponentQa(row?.qa?.meterStatus || row?.raw?.qa?.meterStatus);
 

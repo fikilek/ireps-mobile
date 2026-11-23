@@ -160,12 +160,11 @@ export function summarizeTrnBgoRows(rows = []) {
   };
   for (const row of rows) {
     summary.total += 1;
-    if (row.displayStatus === "COMPLETED") summary.completed += 1;
+    if (row.qaFinalStatus === "QA FAIL") summary.qaFail += 1;
+    else if (row.qaFinalStatus === "QA PASS") summary.qaPass += 1;
+    else if (row.displayStatus === "COMPLETED") summary.completed += 1;
     else if (row.displayStatus === "IN_PROGRESS") summary.inProgress += 1;
     else summary.notStarted += 1;
-
-    if (row.qaFinalStatus === "QA PASS") summary.qaPass += 1;
-    else if (row.qaFinalStatus === "QA FAIL") summary.qaFail += 1;
   }
   return summary;
 }

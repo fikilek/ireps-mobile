@@ -5,7 +5,13 @@ import {
   buildWorkorderNoAccessContext,
   deriveTrnBgoQaBadge,
   resolveTrnBgoMeterState,
+  summarizeTrnBgoRows,
 } from "./trnBgoRows.js";
+import {
+  calculateTbQaFinal,
+  filterTargetedBatchRowsByStatus,
+  targetedBatchRowStatus,
+} from "../targetedBatches/targetedBatchRowSearch.js";
 
 test("buildWorkorderNoAccessContext routes TRN BGO items through trnBgoContext without top-level instructionTrnId", () => {
   const item = {
@@ -84,4 +90,46 @@ test("buildTrnBgoMobileRows projects live meterState from streamed asts doc over
   assert.equal(deriveTrnBgoQaBadge("QA PASS"), "QA PASS");
   assert.equal(deriveTrnBgoQaBadge("QA FAIL"), "QA FAIL");
   assert.equal(resolveTrnBgoMeterState(null, null), "NAv");
+});
+
+test("summarizeTrnBgoRows and filterTargetedBatchRowsByStatus keep 5-way disjoint counts and match TRN_BGO QA states", () => {
+  const rows = buildTrnBgoMobileRows([
+    { id: "T1", trnType: "METER_DISCONNECTION", workflowState: "COMPLETED" },
+    { id: "T2", trnType: "METER_DISCONNECTION", workflowState: "COMPLETED" },
+    { id: "T3", trnType: "METER_DISCONNECTION", workflowState: "COMPLETED" },
+    { id: "T4", trnType: "METER_DISCONNECTION", workflowState: "QA FAIL" },
+    { id: "T5", trnType: "METER_DISCONNECTION", workflowState: "QA PASS" },
+    { id: "T6", trnType: "METER_DISCONNECTION", workflowState: "IN_PROGRESS" },
+    { id: "T7", trnType: "METER_DISCONNECTION", workflowState: "ACCEPTED" },
+  ]);
+
+  const summary = summarizeTrnBgoRows(rows);
+  assert.deepEqual(summary, {
+    total: 7,
+    notStarted: 1,
+    inProgress: 1,
+    completed: 3,
+    qaPass: 1,
+    qaFail: 1,
+  });
+  assert.equal(
+    summary.notStarted + summary.inProgress + summary.completed + summary.qaPass + summary.qaFail,
+    summary.total,
+  );
+
+  assert.equal(calculateTbQaFinal(rows[3]), "QA FAIL");
+  assert.equal(calculateTbQaFinal(rows[4]), "QA PASS");
+  assert.equal(calculateTbQaFinal(rows[0]), "QA NAv");
+  assert.deepEqual(rows.map(targetedBatchRowStatus), [
+    "COMPLETED",
+    "COMPLETED",
+    "COMPLETED",
+    "QA_FAIL",
+    "QA_PASS",
+    "IN_PROGRESS",
+    "NOT_STARTED",
+  ]);
+  assert.deepEqual(filterTargetedBatchRowsByStatus(rows, "COMPLETED").map((r) => r.id), ["T1", "T2", "T3"]);
+  assert.deepEqual(filterTargetedBatchRowsByStatus(rows, "QA_FAIL").map((r) => r.id), ["T4"]);
+  assert.deepEqual(filterTargetedBatchRowsByStatus(rows, "QA_PASS").map((r) => r.id), ["T5"]);
 });
