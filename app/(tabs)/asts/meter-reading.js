@@ -1267,7 +1267,7 @@ export default function FormMeterReading() {
 
     if (!firstStatus) return;
 
-    setInitialEligible(firstStatus !== "DECOMMISSIONED");
+    setInitialEligible(true);
   }, [
     initialEligible,
     astDoc?.id,
@@ -1718,7 +1718,7 @@ export default function FormMeterReading() {
     if (!isEligible) {
       Alert.alert(
         "Not Eligible",
-        "Meter Reading is not allowed for DECOMMISSIONED meters.",
+        "Meter is not eligible for reading.",
       );
       return;
     }
@@ -1881,7 +1881,7 @@ export default function FormMeterReading() {
           </Text>
 
           <Text style={styles.notEligibleText}>
-            Meter Reading is not allowed for DECOMMISSIONED meters.
+            Meter is not eligible for reading.
           </Text>
 
           <Divider style={{ width: "100%", marginVertical: 16 }} />

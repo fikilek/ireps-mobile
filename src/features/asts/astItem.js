@@ -665,7 +665,7 @@ const AstItem = ({ item }) => {
   const isCommissionCandidate =
     meterState === "FIELD" && isValidCommissionMeterType;
 
-  const canInspect = ["FIELD", "CONNECTED", "DISCONNECTED", "REMOVED"].includes(
+  const canInspect = ["FIELD", "CONNECTED", "DISCONNECTED", "REMOVED", "DECOMMISSIONED"].includes(
     meterState,
   );
   const canDisconnect = meterState === "CONNECTED";
@@ -720,7 +720,7 @@ const AstItem = ({ item }) => {
 
   const showReadingPill = isConventionalMeter && Boolean(latestReading);
 
-  const canMeterRead = meterState !== "DECOMMISSIONED" && isConventionalMeter;
+  const canMeterRead = isConventionalMeter;
 
   const canStartMeterReading =
     canMeterRead && (canOriginateOfficeLct || canOriginateFieldLct);
@@ -926,7 +926,7 @@ const AstItem = ({ item }) => {
     if (!canInspect) {
       Alert.alert(
         "Not Eligible",
-        "Inspection is not available for DECOMMISSIONED meters.",
+        "Inspection requires a valid meter state.",
       );
       return;
     }
@@ -1019,7 +1019,7 @@ const AstItem = ({ item }) => {
     if (!canMeterRead) {
       Alert.alert(
         "Not Eligible",
-        "Meter Reading is only available for conventional meters that are not DECOMMISSIONED.",
+        "Meter Reading is only available for conventional meters.",
       );
       return;
     }
