@@ -2563,14 +2563,15 @@ export default function InspectionScreen() {
   );
   const manufacturerOptions = manufacturerLookup.options;
 
-  const statusIsEligible = !["DECOMMISSIONED"].includes(
-    normalizeUpper(lastKnown?.status?.state || action?.meterPreStatus),
+  const normalizedStatus = normalizeUpper(
+    lastKnown?.status?.state || action?.meterPreStatus,
   );
+  const statusIsEligible = Boolean(normalizedStatus);
 
   const isEligible = !!qaAmendment || (statusIsEligible && isKnownMeterKind);
 
   const eligibilityBlockMessage = !statusIsEligible
-    ? "DECOMMISSIONED meters cannot be inspected."
+    ? "Inspection requires a known meter state."
     : !isKnownMeterKind
       ? "Inspection is blocked because the existing iREPS meter kind is unknown. Update the meter record before creating an INSPECTION."
       : "";
